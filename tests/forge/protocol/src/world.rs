@@ -1,6 +1,9 @@
-use crate::fixtures::{self, LIMITS};
-use skein_fake_forge_domain::{Observation, api::Kind};
-use skein_forge::api::{Op, Repository, Write};
+use crate::fixtures::{self, LIMITS, Shape};
+use skein_fake_forge_domain::{
+    Observation,
+    api::{self as raw, Kind},
+};
+use skein_forge::api::{Answer, Error, Op, Read, Repository, Write};
 use skein_forge_client::{
     self as client, Attempt, Entry, Event, Key, Outcome, RecoveryClock, Request, Resource, Stored,
 };
@@ -61,6 +64,11 @@ pub struct World {
     releases: Vec<Release>,
     delivered: Vec<Delivered>,
     outcomes: Vec<(u64, Outcome)>,
+    read_results: Map<Token, Result<Answer, Error>>,
+    changes: Map<Resource, Answer>,
+    owner_sequence: u64,
+    hints: u64,
+    shape: Shape,
     sequence: u64,
     generation: u64,
     discarded: u64,
@@ -72,12 +80,20 @@ pub struct World {
 impl World {
     #[must_use]
     pub fn new(seed: u64, cut_chance: u32) -> Self {
+        Self::with(seed, cut_chance, Shape::Plain)
+    }
+
+    pub(crate) fn with(seed: u64, cut_chance: u32, shape: Shape) -> Self {
+        let config = match shape {
+            Shape::Plain => machine::protocol_config(),
+            Shape::Hooked => machine::hooked_protocol_config(),
+        };
         let joint = Joint::with(
             seed,
             cut_chance,
-            machine::protocol_config(),
-            fixtures::limits(),
-            fixtures::settings(),
+            config,
+            shape.limits(),
+            shape.settings(),
             fixtures::shared(),
             joint::checks(1000),
         );
@@ -96,6 +112,11 @@ impl World {
             releases: Vec::new(),
             delivered: Vec::new(),
             outcomes: Vec::new(),
+            read_results: Map::with_capacity(LIMITS.pending),
+            changes: Map::with_capacity(LIMITS.resources),
+            owner_sequence: 0,
+            hints: 0,
+            shape,
             sequence: 0,
             generation: 0,
             discarded: 0,
@@ -125,8 +146,8 @@ impl World {
                     self.writers.retain(|claimed| claimed != resource);
                 }
             }
+            Event::Hint { .. } => self.hints += 1,
             Event::Keep { .. }
-            | Event::Hint { .. }
             | Event::Pushed { .. }
             | Event::Withdraw { .. }
             | Event::Restore { .. }
@@ -152,10 +173,96 @@ impl World {
         panic!("protocol world did not reach its horizon, seed {}", self.seed);
     }
 
+    /// One read through the client, as an owner's decision read.
+    /// # Errors
+    /// Returns the client's terminal refusal or failed read.
+    pub fn read(&mut self, mut read: Read) -> Result<Answer, Error> {
+        let end = self.joint.now().saturating_add(Duration::from_secs(5));
+        for _ in 0..100 {
+            self.owner_sequence = self.owner_sequence.checked_add(1).expect("owner read sequence bound");
+            let owner = Token::new(self.owner_sequence);
+            let retry = read.clone();
+            self.event(Event::Read { owner, repository: REPO, read });
+            let mut result = None;
+            for _ in 0..TURNS {
+                if let Some(answer) = self.read_results.remove(&owner) {
+                    result = Some(answer);
+                    break;
+                }
+                assert!(self.iterate(end), "owner read exceeded 5 s, seed {}", self.seed);
+            }
+            let result = result.unwrap_or_else(|| panic!("owner read did not settle, seed {}", self.seed));
+            if result != Err(Error::Busy) {
+                return result;
+            }
+            assert!(self.iterate(end), "owner read exceeded 5 s, seed {}", self.seed);
+            read = retry;
+        }
+        panic!("owner read busy after 100 tries, seed {}", self.seed);
+    }
+
+    /// The fake's items, read past the client: (number, title, open), by number.
+    #[must_use]
+    pub fn snapshot(&self) -> Vec<(u64, Box<[u8]>, bool)> {
+        let mut rows = Vec::new();
+        let mut page = 1;
+        loop {
+            let read = raw::Read::Items {
+                order: raw::Order::LeastUpdated,
+                state: None,
+                kind: None,
+                labels: Box::new([]),
+                author: None,
+                since: Time::ZERO,
+                page,
+                limit: self.joint.fake_env.limits.limits.page_size,
+            };
+            let raw::Answer::Items { items, more, .. } =
+                self.joint.domain.inspect(&self.joint.fake_env.limits, b"org/repo", &read).expect("fake snapshot")
+            else {
+                panic!("fake snapshot must return items, seed {}", self.seed)
+            };
+            rows.extend(
+                items.into_vec().into_iter().map(|item| (item.number, item.title, item.state == raw::State::Open)),
+            );
+            if !more {
+                rows.sort_by_key(|row| row.0);
+                return rows;
+            }
+            page += 1;
+        }
+    }
+
+    pub fn person_issue(&mut self, title: &[u8]) -> u64 {
+        self.joint.issue(title, b"person")
+    }
+
+    pub fn person_edit(&mut self, number: u64, title: &[u8]) {
+        self.joint
+            .direct(raw::Op::Write(raw::Write::EditItem { number, title: Some(Box::from(title)), body: None }))
+            .expect("person edits item");
+    }
+
+    pub fn person_close(&mut self, number: u64) {
+        self.joint.close(number);
+    }
+
+    /// Hints routed to a client.
+    #[must_use]
+    pub fn hints(&self) -> u64 {
+        self.hints
+    }
+
+    /// The latest answer the client reported for a kept resource.
+    #[must_use]
+    pub fn changed(&self, resource: &Resource) -> Option<&Answer> {
+        self.changes.get(resource)
+    }
+
     pub fn restart(&mut self) {
         self.route();
         self.generation = self.generation.checked_add(1).expect("owner generation bound");
-        let component = Component::new(fixtures::settings(), &fixtures::limits(), &fixtures::shared())
+        let component = Component::new(self.shape.settings(), &self.shape.limits(), &fixtures::shared())
             .expect("component admits client limits");
         self.joint.replace(component);
         // The replaced component owns no calls from the former process.
@@ -385,7 +492,15 @@ impl World {
                 Request::Call { call, repository, op } => calls.push((*call, *repository, op.clone())),
                 Request::ReadAfreshDone => settle = true,
                 Request::Kept { result, .. } => assert_eq!(*result, Ok(())),
-                Request::Changed { .. } | Request::Drift { .. } | Request::Read { .. } | Request::OutboxDone => {}
+                Request::Changed { resource, result } => {
+                    if let Ok(answer) = result {
+                        self.changes.insert(resource.clone(), answer.clone()).expect("owner changed capacity");
+                    }
+                }
+                Request::Read { owner, result } => {
+                    assert!(self.read_results.insert(*owner, result.clone()).expect("owner read capacity").is_none());
+                }
+                Request::Drift { .. } | Request::OutboxDone => {}
             }
             decision.push(request);
         }

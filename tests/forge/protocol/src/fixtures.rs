@@ -8,6 +8,36 @@ use skein_lib::Duration;
 
 pub const LIMITS: skein_forge_client::Limits = skein_forge_client_world::LIMITS;
 
+#[derive(Clone, Copy)]
+pub(crate) enum Shape {
+    Plain,
+    Hooked,
+}
+
+impl Shape {
+    pub(crate) fn limits(self) -> Limits {
+        match self {
+            Self::Plain => limits(),
+            Self::Hooked => Limits { repositories: 1, ..fixtures::hook_limits() },
+        }
+    }
+
+    pub(crate) fn settings(self) -> Settings {
+        let mut settings = match self {
+            Self::Plain => settings(),
+            Self::Hooked => fixtures::hook_settings(),
+        };
+        settings.forges.get_mut(0).expect("fixture forge").user = 1;
+        settings
+    }
+}
+
+/// The world over the fake's signed deliveries to the component's listener.
+#[must_use]
+pub fn hooked(seed: u64) -> World {
+    World::with(seed, 0, Shape::Hooked)
+}
+
 pub(crate) fn limits() -> Limits {
     Limits { repositories: 1, ..fixtures::limits() }
 }
