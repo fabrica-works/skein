@@ -86,3 +86,17 @@ Installation mutations queue bounded lifecycle events, including repository chan
 and renames. `Service::poll` releases them on the forge clock; hosts drain
 `next_post` for configured endpoints. Domain queue hooks retain their action
 and removal reason when created.
+
+`Config::rate_quota` and `rate_window` select token admission. Hosts complete
+`Outcome::Admit` against the domain's bounded windows and execute its domain
+continuations through `step_admitted`. Local token reads also pay once.
+Responses carry the five core rate fields; JWT routes, including conditional
+log reads, carry none. Primary refusals report zero remaining; a crowded
+window table reports the secondary message and `Retry-After`.
+
+Person tokens charge their user's bucket; installation tokens charge their
+installation's separate bucket. Admission resolves the credential once to a
+bounded token-store slot or person-table index and retains no credential bytes.
+Revocation is admitted before the slot is removed: a rate refusal leaves the
+token usable after reset. A token presented on an App route is charged before
+its credential-class refusal; App JWT calls stay uncharged.

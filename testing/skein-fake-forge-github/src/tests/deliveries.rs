@@ -198,7 +198,7 @@ fn github_fake_delivery_log_refuses_after_key_revocation() {
 
 #[test]
 fn github_fake_delivery_choices_are_checked_before_allocation() {
-    for case in 0_u32..6 {
+    for case in 0_u32..9 {
         let mut config = f::config();
         match case {
             0 => config.deliveries.log_entries = 0,
@@ -213,6 +213,9 @@ fn github_fake_delivery_choices_are_checked_before_allocation() {
                 config.deliveries.endpoint =
                     Some(Endpoint { host: f::boxed(b"127.0.0.1:8080"), target: f::boxed(b"/hooks/1\r\n") });
             }
+            6 => config.deliveries.payload_size = 32768,
+            7 => config.rate_quota = 0,
+            8 => config.rate_window = Duration::ZERO,
             _ => unreachable!("table cases"),
         }
         assert_eq!(Service::new(config, &f::limits(), 1).unwrap_err(), crate::Problem::Limits);
@@ -311,5 +314,138 @@ fn github_fake_installation_lifecycle_releases_events() {
         assert_eq!(account.id, 22);
         assert_eq!(&found, change);
         assert_eq!(row.delivered_at, wall(1200));
+    }
+}
+
+#[test]
+fn github_fake_token_rates_distinguish_limited_crowded_and_free_304() {
+    use github::request::Method;
+    use skein_fake_forge_domain as domain;
+    for crowded in [false, true] {
+        let mut config = f::config();
+        config.rate_quota = 2;
+        config.rate_window = Duration::from_secs(60);
+        let mut h = f::Harness::with(f::limits(), config);
+        let token = f::bearer(h.mint(1, false).token.expose());
+        assert!(h.app(Method::Get, b"/app", b"").rate.is_none());
+        let first = request(&mut h.service, b"/app/hook/deliveries?per_page=1", None, wall(1203));
+        let validator = first.etag.unwrap();
+        let hit = request(&mut h.service, b"/app/hook/deliveries?per_page=1", Some(&validator), wall(1203));
+        assert_eq!(hit.status, 304);
+        assert!(hit.body.is_empty());
+        assert!(hit.rate.is_none());
+        if crowded {
+            for user in 1..=h.env.limits.limits.users {
+                domain::rate(&mut h.domain, &h.env, domain::RateKey::User(u64::from(user)), 2, Duration::from_secs(60))
+                    .unwrap();
+            }
+        } else {
+            // Local table reads pay the same admission as requests that call the domain.
+            for used in 1..=2 {
+                let response = h.ask(Method::Post, b"/graphql", Some(token.expose()), f::VIEWER);
+                assert_eq!(response.status, 200);
+                let heads = response.rate.unwrap();
+                assert_eq!((heads.rate.limit, heads.rate.used), (2, used));
+                assert_eq!(heads.rate.reset, wall(1260));
+            }
+        }
+        let response = h.ask(Method::Post, b"/graphql", Some(token.expose()), f::VIEWER);
+        assert_eq!(response.status, 403);
+        let heads = response.rate.unwrap();
+        assert_eq!(heads.rate.used, if crowded { 0 } else { 2 });
+        assert_eq!(heads.after.is_some(), crowded);
+        let mut fields = List::with_capacity(6);
+        crate::rates::headers(heads, true, &mut fields);
+        assert_eq!(fields.len(), 6);
+        for field in &fields {
+            if field.name.as_ref() == b"X-RateLimit-Remaining" {
+                assert_eq!(field.value.as_ref(), if crowded { b"2" } else { b"0" });
+            }
+            if field.name.as_ref() == b"Retry-After" {
+                assert_eq!(field.value.as_ref(), b"60");
+            }
+        }
+        let message = if crowded { crate::texts::SECONDARY_RATE } else { crate::texts::PRIMARY_RATE };
+        assert!(skein_lib::bytes::find(&response.body, message).is_some());
+        assert_eq!(h.calls, 0);
+        let tally = h.domain.tally();
+        assert_eq!((tally.limited, tally.crowded), if crowded { (0, 1) } else { (1, 0) });
+        h.env.now = h.env.now.saturating_add(Duration::from_secs(60));
+        h.env.wall = wall(1260);
+        assert_eq!(h.ask(Method::Post, b"/graphql", Some(token.expose()), f::VIEWER).rate.unwrap().rate.used, 1);
+    }
+    // A review traverses its author read and write under one quota unit.
+    let mut config = f::config();
+    config.rate_quota = 1;
+    let mut h = f::Harness::with_domain(f::limits(), config, super::read_support::domain_config());
+    domain::grant(&mut h.domain, b"acme/widgets", f::BOT, domain::api::Permission::Write);
+    h.branch(b"feature");
+    super::read_support::call(
+        &mut h,
+        domain::api::Op::Write(domain::api::Write::OpenPull {
+            title: f::boxed(b"feature"),
+            body: f::boxed(b"body"),
+            head: f::boxed(b"feature"),
+            base: f::boxed(b"trunk"),
+            opens_empty: true,
+        }),
+    );
+    let token = f::bearer(h.mint(1, false).token.expose());
+    let before = h.calls;
+    let response = h.ask(
+        Method::Post,
+        b"/repos/acme/widgets/pulls/1/reviews",
+        Some(token.expose()),
+        br#"{"event":"COMMENT","body":"review"}"#,
+    );
+    assert!(h.calls > before + 1, "the request needed multiple domain continuations");
+    assert!(response.status < 300);
+    assert_eq!(response.rate.unwrap().rate.used, 1);
+    assert_eq!(h.domain.tally().limited, 0);
+}
+
+#[test]
+fn github_fake_queue_hooks_keep_enqueued_and_dequeued_reasons() {
+    use skein_fake_forge_domain::{
+        Request,
+        api::{Change as DomainChange, QueueHook, QueueRemoval},
+    };
+    let mut service = Service::new(f::config(), &f::limits(), 1).unwrap();
+    for (queue, action, reason) in [
+        (QueueHook::Enqueued, b"enqueued".as_slice(), None),
+        (QueueHook::Dequeued(QueueRemoval::CiFailure), b"dequeued", Some(b"CI_FAILURE".as_slice())),
+        (QueueHook::Dequeued(QueueRemoval::MergeConflict), b"dequeued", Some(b"MERGE_CONFLICT".as_slice())),
+    ] {
+        let hook = Request::Hook {
+            repository: f::boxed(b"acme/widgets"),
+            change: DomainChange::Pull,
+            number: Some(3),
+            branch: None,
+            commit: None,
+            by: Some(9),
+            body: None,
+            ended: None,
+            queue: Some(queue),
+        };
+        assert!(service.hook(&hook, wall(1200)).unwrap().is_none());
+        let page = rows(&request(&mut service, b"/app/hook/deliveries?per_page=1", None, wall(1203)));
+        let id = page.get(0).unwrap().id;
+        let target = github::request::encode(
+            &github::request::Request::LogDelivery { id, event: Box::new([]) },
+            &f::limits().github,
+        )
+        .unwrap()
+        .target;
+        let response = request(&mut service, &target, None, wall(1203));
+        let (_, doc) = f::decode_with(
+            github::decode::log_delivery_decoder(&page.get(0).unwrap().event, &f::limits().github),
+            &response.body,
+            &f::limits().github,
+        );
+        let Document::Delivery(logged) = doc else { panic!("whole delivery") };
+        let Delivery::Pull { repository, number, action: pull } = logged.delivery else { panic!("pull payload") };
+        assert_eq!((repository, number), (2, 3));
+        assert_eq!(pull.action.as_ref(), action);
+        assert_eq!(pull.reason.as_deref(), reason);
     }
 }

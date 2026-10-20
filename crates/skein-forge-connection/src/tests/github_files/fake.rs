@@ -121,7 +121,7 @@ impl Fake {
     }
     fn drive(&mut self, event: domain::Event) -> Result<a::Answer, a::Error> {
         let mut out = Queue::with_capacity(domain::MAX_OUT);
-        domain::step(&mut self.domain, &self.env, event, &mut out);
+        domain::step_admitted(&mut self.domain, &self.env, event, &mut out);
         if out.is_empty() {
             domain::fire(&mut self.domain, &self.env, &mut out);
         }
@@ -195,37 +195,61 @@ impl Fake {
         let response = loop {
             outcome = match outcome {
                 service::Outcome::Reply(response) => break response,
+                service::Outcome::Admit(admission) => {
+                    self.service.admit(admission, &mut self.domain, &self.env, ReplyTo::new(Token::new(77)))
+                }
                 service::Outcome::Call(pending, event) => {
                     let result = self.drive(event);
                     self.service.finish(pending, result, ReplyTo::new(Token::new(77)), &self.domain)
                 }
             };
         };
-        let status = skein_lib::Decimal::of(u64::from(response.status));
-        let length = skein_lib::Decimal::of(u64::try_from(response.body.len()).expect("body length"));
-        let pieces =
-            [b"HTTP/1.1 ".as_slice(), status.as_bytes(), b" Answer\r\nContent-Length: ", length.as_bytes(), b"\r\n"];
-        let mut size = response.body.len().checked_add(2).expect("body framing");
-        for piece in pieces {
-            size = size.checked_add(piece.len()).expect("head length");
-        }
-        if let Some(link) = &response.link {
-            size = size.checked_add(link.len()).expect("link length").checked_add(8).expect("link framing");
-        }
-        let mut out = Writer::new(size);
-        for piece in pieces {
-            out.put(piece).expect("response room");
-        }
-        if let Some(link) = response.link {
-            out.put(b"Link: ").expect("link");
-            out.put(&link).expect("link");
-            out.put(b"\r\n").expect("link");
-        }
-        out.put(b"\r\n").expect("head end");
-        out.put(&response.body).expect("body");
-        out.finish()
+        encode(response)
     }
 }
+fn encode(response: service::Response) -> Box<[u8]> {
+    let mut fields = List::with_capacity(7);
+    if let Some(rate) = response.rate {
+        skein_fake_forge_github::rates::headers(rate, response.status == 403, &mut fields);
+    }
+    if let Some(etag) = response.etag {
+        fields.push(skein_http::Header { name: Box::from(b"ETag".as_slice()), value: etag }).expect("etag header");
+    }
+    let status = skein_lib::Decimal::of(u64::from(response.status));
+    let length = skein_lib::Decimal::of(u64::try_from(response.body.len()).expect("body length"));
+    let pieces =
+        [b"HTTP/1.1 ".as_slice(), status.as_bytes(), b" Answer\r\nContent-Length: ", length.as_bytes(), b"\r\n"];
+    let mut size = response.body.len().checked_add(2).expect("body framing");
+    for piece in pieces {
+        size = size.checked_add(piece.len()).expect("head length");
+    }
+    if let Some(link) = &response.link {
+        size = size.checked_add(link.len()).expect("link length").checked_add(8).expect("link framing");
+    }
+    for field in &fields {
+        size =
+            size.checked_add(field.name.len()).unwrap().checked_add(field.value.len()).unwrap().checked_add(4).unwrap();
+    }
+    let mut out = Writer::new(size);
+    for piece in pieces {
+        out.put(piece).expect("response room");
+    }
+    for field in &fields {
+        out.put(&field.name).expect("field name");
+        out.put(b": ").expect("field separator");
+        out.put(&field.value).expect("field value");
+        out.put(b"\r\n").expect("field end");
+    }
+    if let Some(link) = response.link {
+        out.put(b"Link: ").expect("link");
+        out.put(&link).expect("link");
+        out.put(b"\r\n").expect("link");
+    }
+    out.put(b"\r\n").expect("head end");
+    out.put(&response.body).expect("body");
+    out.finish()
+}
+
 pub(super) fn object(value: u64) -> skein_forge::api::Commit {
     let mut commit = [0; 32];
     for (out, byte) in commit.iter_mut().zip(value.to_be_bytes()) {
@@ -323,6 +347,8 @@ fn github_service(page: u32) -> service::Service {
     service::Service::new(
         service::Config {
             deliveries: skein_fake_forge_github::delivery::Config::standard(),
+            rate_quota: 5000,
+            rate_window: Duration::from_secs(3600),
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(b"http://logs.example.test".as_slice()),
             third_origin: None,

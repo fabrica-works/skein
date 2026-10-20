@@ -298,21 +298,36 @@ impl Installations {
 
     /// Suspension is checked by the route; it does not revoke a grant here.
     pub fn token(&self, bearer: &[u8], now: Wall) -> Result<&Grant, Denied> {
-        for token in self.tokens.iter().flatten() {
+        match self.token_slot(bearer, now) {
+            Ok((_, grant)) => Ok(grant),
+            Err(denied) => Err(denied),
+        }
+    }
+    pub(crate) fn token_slot(&self, bearer: &[u8], now: Wall) -> Result<(u32, &Grant), Denied> {
+        for slot in 0..self.tokens.len() {
+            let token = self.tokens.get(slot).expect("stored row").as_ref().expect("packed token");
             if token.secret.expose() == bearer {
-                return if now >= token.expires { Err(Denied::Expired) } else { Ok(&token.grant) };
+                return if now >= token.expires { Err(Denied::Expired) } else { Ok((slot, &token.grant)) };
             }
         }
         Err(Denied::Unknown)
     }
-
+    pub(crate) fn token_at(&self, slot: u32) -> Option<&Grant> {
+        Some(&self.tokens.get(slot)?.as_ref()?.grant)
+    }
+    pub(crate) fn revoke_slot(&mut self, slot: u32) -> bool {
+        if self.token_at(slot).is_none() {
+            return false;
+        }
+        self.remove_token(slot);
+        true
+    }
     /// `DELETE /installation/token`'s store: false when unknown.
     pub fn revoke(&mut self, bearer: &[u8]) -> bool {
-        for index in 0..self.tokens.len() {
-            let token = self.tokens.get(index).expect("stored row").as_ref().expect("packed token");
+        for slot in 0..self.tokens.len() {
+            let token = self.tokens.get(slot).expect("stored row").as_ref().expect("packed token");
             if token.secret.expose() == bearer {
-                self.remove_token(index);
-                return true;
+                return self.revoke_slot(slot);
             }
         }
         false

@@ -17,6 +17,12 @@ use skein_fake_forge_domain::{
 };
 use skein_lib::{List, ReplyTo, Wall};
 
+/// A resolved credential, valid while the owner completes this request.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Bearer {
+    Installation { slot: u32, installation: u64 },
+    Person { index: u32, user: u64 },
+}
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Access {
     Person(u64),
@@ -48,22 +54,44 @@ impl Service {
         let Some(installation) = self.installations.get(grant.installation) else { return false };
         row.owner_id == installation.account && self.installations.reaches(grant, repository)
     }
-    pub(crate) fn access(&self, bearer: &[u8], now: Wall) -> Result<Access, Response> {
-        for (secret, user) in &self.tokens {
+    pub(crate) fn resolve(&self, bearer: &[u8], now: Wall) -> Result<Bearer, Response> {
+        for (index, (secret, user)) in self.tokens.iter().enumerate() {
             if secret.expose() == bearer {
-                return Ok(Access::Person(*user));
+                return Ok(Bearer::Person { index: u32::try_from(index).expect("bounded token table"), user: *user });
             }
         }
-        let Ok(grant) = self.installations.token(bearer, now) else {
+        let Ok((slot, grant)) = self.installations.token_slot(bearer, now) else {
             return Err(answers::unauthorized(&self.limits));
         };
-        let Some(installation) = self.installations.get(grant.installation) else {
-            return Err(answers::unauthorized(&self.limits));
-        };
-        if installation.suspended {
-            return Err(answers::refusal(403, answers::SUSPENDED, &self.limits));
+        Ok(Bearer::Installation { slot, installation: grant.installation })
+    }
+    pub(crate) fn access(&self, bearer: Bearer) -> Result<Access, Response> {
+        match bearer {
+            Bearer::Person { index, user } => {
+                let Some((_, stored)) = self.tokens.get(index) else {
+                    return Err(answers::unauthorized(&self.limits));
+                };
+                if *stored != user {
+                    return Err(answers::unauthorized(&self.limits));
+                }
+                Ok(Access::Person(user))
+            }
+            Bearer::Installation { slot, installation } => {
+                let Some(grant) = self.installations.token_at(slot) else {
+                    return Err(answers::unauthorized(&self.limits));
+                };
+                if grant.installation != installation {
+                    return Err(answers::unauthorized(&self.limits));
+                }
+                let Some(installed) = self.installations.get(installation) else {
+                    return Err(answers::unauthorized(&self.limits));
+                };
+                if installed.suspended {
+                    return Err(answers::refusal(403, answers::SUSPENDED, &self.limits));
+                }
+                Ok(Access::Installation { user: self.bot, grant: *grant })
+            }
         }
-        Ok(Access::Installation { user: self.bot, grant: *grant })
     }
 }
 pub(crate) fn empty() -> Response {
@@ -73,6 +101,7 @@ pub(crate) fn empty() -> Response {
         link: None,
         location: None,
         etag: None,
+        rate: None,
         body: Box::new([]),
     }
 }
@@ -112,7 +141,7 @@ pub(crate) fn edit_reach(
         return Outcome::Reply(answers::failed());
     };
     Outcome::Call(
-        Pending { kind: PendingKind::EditReach { installation, repository, add } },
+        Pending { rate: None, kind: PendingKind::EditReach { installation, repository, add } },
         fake::Event::Call { reply_to, user, repository: path, op: Op::Read(Read::Permission { user }) },
     )
 }

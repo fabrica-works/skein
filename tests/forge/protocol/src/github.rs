@@ -335,6 +335,12 @@ impl Github {
         let response = loop {
             outcome = match outcome {
                 Outcome::Reply(response) => break response,
+                Outcome::Admit(admission) => self.service.admit(
+                    admission,
+                    &mut self.domain,
+                    &Env { now: self.fake_env.now, wall: env.wall, limits: self.fake_env.limits },
+                    ReplyTo::new(Token::new(77)),
+                ),
                 Outcome::Call(pending, event) => self.continue_call(pending, event),
             };
         };
@@ -355,6 +361,14 @@ impl Github {
             name: Box::from(b"Content-Type".as_slice()),
             value: Box::from(b"application/json".as_slice()),
         }];
+        if let Some(rate) = response.rate {
+            let mut fields = skein_lib::List::with_capacity(6);
+            skein_fake_forge_github::rates::headers(rate, response.status == 403, &mut fields);
+            headers.extend(fields.into_boxed());
+        }
+        if let Some(etag) = response.etag {
+            headers.push(skein_http::Header { name: Box::from(b"ETag".as_slice()), value: etag });
+        }
         if let Some(link) = response.link {
             headers.push(skein_http::Header { name: Box::from(b"Link".as_slice()), value: link });
         }
@@ -381,7 +395,7 @@ impl Github {
     }
     fn domain_call(&mut self, event: fake::Event) -> Result<raw::Answer, raw::Error> {
         let mut out = Queue::with_capacity(fake::MAX_OUT);
-        fake::step(&mut self.domain, &self.fake_env, event, &mut out);
+        fake::step_admitted(&mut self.domain, &self.fake_env, event, &mut out);
         for _ in 0..64 {
             if !out.is_empty() {
                 break;

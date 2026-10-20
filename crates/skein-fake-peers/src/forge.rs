@@ -346,7 +346,12 @@ impl Peer {
             snapshot: self.recording.then(|| (repository.clone(), op.clone())),
         });
         let Forge { domain, pending, .. } = forge;
-        domain::step(domain, env, domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op }, pending);
+        let event = domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op };
+        if self.service.is_github() {
+            domain::step_admitted(domain, env, event, pending);
+        } else {
+            domain::step(domain, env, event, pending);
+        }
     }
 
     fn take_endpoint(&mut self, forge: &mut Forge) {
@@ -360,6 +365,34 @@ impl Peer {
         assert!(previous.is_err() || previous.expect("admitted endpoint").is_none());
     }
 
+    fn serve_event(
+        &mut self,
+        forge: &mut Forge,
+        domain_env: &Env<domain::Config>,
+        connection: &mut Connection,
+        event: protocol::Event,
+    ) {
+        let env = Env { now: domain_env.now, wall: domain_env.wall, limits: self.protocol };
+        match event {
+            protocol::Event::Domain(event) => {
+                self.dispatch(forge, domain_env, connection.owner, event);
+            }
+            protocol::Event::Rate { key, limit, window } => {
+                let result = domain::rate(&mut forge.domain, domain_env, key, limit, window);
+                protocol::admitted(
+                    &mut connection.server,
+                    &mut self.service,
+                    &env,
+                    result,
+                    &mut connection.above,
+                    &mut connection.below,
+                );
+                self.capture(connection);
+            }
+            protocol::Event::Close => connection.closing = true,
+            protocol::Event::Closed => {}
+        }
+    }
     fn progress(&mut self, now: Time, wall: Wall) {
         let env = Env { now, wall, limits: self.protocol };
         // Moving the Rc, rather than borrowing through self, keeps the one pass borrow explicit.
@@ -401,13 +434,7 @@ impl Peer {
             if forge.pending.room() >= domain::MAX_OUT
                 && let Some(event) = connection.above.pop()
             {
-                match event {
-                    protocol::Event::Domain(event) => {
-                        self.dispatch(&mut forge, &domain_env, connection.owner, event);
-                    }
-                    protocol::Event::Close => connection.closing = true,
-                    protocol::Event::Closed => {}
-                }
+                self.serve_event(&mut forge, &domain_env, &mut connection, event);
             }
             if connection.plain.room() >= 3 {
                 if let Some(down) = connection.below.pop() {

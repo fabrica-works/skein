@@ -29,6 +29,7 @@ fn configured(config: crate::Config) -> (f::Harness, u64) {
 fn blob(h: &mut f::Harness, target: &[u8], range: bool, now: Wall) -> Response {
     let outcome = h.service.blob(Method::Get, target, false, range, now, ReplyTo::new(Token::new(77)));
     match outcome {
+        Outcome::Admit(_) => panic!("blob fetches need no token admission"),
         Outcome::Reply(response) => response,
         Outcome::Call(pending, event) => {
             let result = h.drive(event);

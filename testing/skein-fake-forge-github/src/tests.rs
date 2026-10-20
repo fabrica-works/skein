@@ -64,3 +64,5 @@ mod auth;
 
 mod byte_faults;
 mod deliveries;
+
+mod rates;

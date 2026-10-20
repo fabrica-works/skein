@@ -118,6 +118,7 @@ pub(crate) fn response(status: u16, body: &Body<'_>, limits: &Limits) -> Respons
     }
     match finish(out) {
         Some(body) => Response {
+            rate: None,
             etag: None,
             content_type: crate::service::ContentType::Json,
             status,
@@ -140,6 +141,7 @@ pub(crate) fn unauthorized(limits: &Limits) -> Response {
 pub(crate) fn failed() -> Response {
     // new requires room for this terminal even when another encoder refuses.
     Response {
+        rate: None,
         etag: None,
         content_type: crate::service::ContentType::Json,
         status: 500,
@@ -195,5 +197,18 @@ impl Page {
             response.link = Some(link);
         }
         response
+    }
+}
+
+/// An empty response with no media bytes or provider headers.
+pub(crate) fn empty(status: u16) -> Response {
+    Response {
+        location: None,
+        rate: None,
+        etag: None,
+        status,
+        content_type: crate::service::ContentType::Json,
+        link: None,
+        body: Box::new([]),
     }
 }

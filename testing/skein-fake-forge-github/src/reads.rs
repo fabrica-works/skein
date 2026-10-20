@@ -263,7 +263,7 @@ pub(crate) fn call(
         ),
     };
     Outcome::Call(
-        service::Pending { kind: service::PendingKind::Read(kind) },
+        service::Pending { rate: None, kind: service::PendingKind::Read(kind) },
         fake::Event::Call { reply_to, user: grant.user(), repository, op },
     )
 }
@@ -372,6 +372,7 @@ pub(crate) fn finish(
                 return answers::failed();
             }
             Response {
+                rate: None,
                 etag: None,
                 content_type: service::ContentType::Octets,
                 status: 200,

@@ -802,13 +802,23 @@ below are tracked in STATUS.md.
   - as a ruleset, with its id and the App's `current_user_can_bypass`;
   - as classic protection, otherwise `404` "Branch not protected";
   - or both.
-- **Rates.** Every answer on a token carries `x-ratelimit-*` from the
+- **Rates (built).** Every answer on a token carries `x-ratelimit-*` from the
   domain's window: `rate_limit`, what remains of it, and its end. The
-  App's own routes carry none. A call refused for the rate (`limited`)
+  App JWT calls carry none. A call refused for the rate (`limited`)
   is `403` with `x-ratelimit-remaining: 0`. A crowded one is `403` "You
   have exceeded a secondary rate limit" with `Retry-After`. A request
   with an `If-None-Match` that matches the answer's `ETag` is `304`, and
-  not counted.
+  not counted. GitHub's `Config` sets the quota and window. Admission
+  charges the domain once per authenticated request, including local table
+  reads; continuations keep the snapshot and skip further rate charges.
+  Installation and domain-user windows have distinct keys in the same bounded
+  table. Person tokens charge their user's window; installation tokens charge
+  their installation's. Admission resolves a token once to its bounded store
+  slot or person-table index and carries no credential bytes. Revocation removes
+  the admitted slot only after a successful charge; rate refusal leaves it in
+  place. Tokens on App routes are charged before their credential-class refusal.
+  The primary message "API rate limit exceeded" is inferred and
+  unrecorded; `texts.rs` marks it. Both rate refusals supply `Retry-After`.
 - **Faults** are section 4's, at the bytes, with GitHub's statuses. Built:
   `Config::faults` uses the Forgejo face's `Faults` type. Reset closes before
   reading the next request, including on reuse. Drop and server-error draws

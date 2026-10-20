@@ -91,6 +91,7 @@ fn github_fake_repository_reads_outside_reach_are_404() {
             h.now,
             ReplyTo::new(Token::new(77)),
         );
+        let outcome = admitted(&mut h, outcome);
         let Outcome::Reply(response) = outcome else {
             panic!("outside reach never calls domain");
         };
@@ -156,6 +157,10 @@ fn pending(h: &mut Harness, target: &[u8], token: &[u8]) -> Pending {
         h.now,
         ReplyTo::new(Token::new(77)),
     );
+    let outcome = match outcome {
+        Outcome::Admit(admission) => h.service.admit(admission, &mut h.domain, &h.env, ReplyTo::new(Token::new(77))),
+        other @ (Outcome::Call(..) | Outcome::Reply(_)) => other,
+    };
     let Outcome::Call(pending, fake::Event::Call { reply_to, user, repository, op }) = outcome else {
         panic!("repository calls domain");
     };
@@ -224,6 +229,7 @@ fn github_fake_read_continuations_reject_wrong_answers() {
             h.now,
             ReplyTo::new(Token::new(77)),
         );
+        let outcome = admitted(&mut h, outcome);
         let Outcome::Call(pending, _) = outcome else {
             panic!("read calls domain");
         };
@@ -244,4 +250,11 @@ fn github_fake_table_row_missing_from_domain_is_404() {
     let response = h.ask(Method::Get, b"/repositories/6", Some(token.expose()), b"");
     refusal(&h, &response, 404, b"Not Found");
     assert_eq!(h.calls, 1, "table row is checked against domain at call time");
+}
+
+fn admitted(h: &mut Harness, outcome: Outcome) -> Outcome {
+    match outcome {
+        Outcome::Admit(admission) => h.service.admit(admission, &mut h.domain, &h.env, ReplyTo::new(Token::new(77))),
+        other @ (Outcome::Call(..) | Outcome::Reply(_)) => other,
+    }
 }

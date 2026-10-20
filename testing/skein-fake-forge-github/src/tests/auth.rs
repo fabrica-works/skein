@@ -367,6 +367,12 @@ fn matrix_request(h: &mut f::Harness, method: Method, target: &[u8], body: &[u8]
             h.now,
             ReplyTo::new(Token::new(77)),
         );
+        let outcome = match outcome {
+            Outcome::Admit(admission) => {
+                h.service.admit(admission, &mut h.domain, &h.env, ReplyTo::new(Token::new(77)))
+            }
+            Outcome::Call(_, _) | Outcome::Reply(_) => outcome,
+        };
         let expected = expected(class, credential, target);
         if let Some(status) = expected {
             let Outcome::Reply(response) = outcome else {
@@ -388,6 +394,7 @@ fn matrix_request(h: &mut f::Harness, method: Method, target: &[u8], body: &[u8]
             }
         } else {
             match outcome {
+                Outcome::Admit(_) => panic!("one admission per request"),
                 Outcome::Call(_, fake::Event::Call { user, .. }) => {
                     assert_eq!(user, if credential == Credential::Person { 31 } else { f::BOT });
                 }

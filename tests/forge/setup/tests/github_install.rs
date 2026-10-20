@@ -101,13 +101,15 @@ fn a_reused_or_wrong_install_state_sends_nothing() {
     closed(&mut previous);
     let (mut reused, reused_state) = installed();
     accept(&mut reused, 2, &reused_state, INSTALLATION);
-    for (mut world, state, at) in [
+    for (mut world, state, at) in vec![
         (world(&[]), b"00000000000000000000000000000000".as_slice().into(), Duration::ZERO),
         (convert, convert_state, Duration::ZERO),
         (expired, expired_state, life),
         (world(&[]), restart_state, Duration::ZERO),
         (reused, reused_state, Duration::ZERO),
-    ] {
+    ]
+    .into_boxed_slice()
+    {
         let reads = world.reads().len();
         let sends = world.connects().len();
         accept(&mut world, 3, &state, INSTALLATION);

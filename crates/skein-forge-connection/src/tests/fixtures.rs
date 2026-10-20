@@ -444,6 +444,9 @@ impl Harness {
                     events.push(skein_io::Event::Stream { owner, up }).expect("fixture events fit");
                 }
                 moved |= peer.wire.trace.len() != trace;
+                // The trace signals progress; retaining it would charge the
+                // scripted peer's transcript to component heap measurements.
+                peer.wire.trace.clear();
             }
             moved |= !events.is_empty();
             for event in events.into_boxed() {

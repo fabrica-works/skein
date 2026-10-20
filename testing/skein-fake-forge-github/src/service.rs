@@ -2,7 +2,7 @@
 use crate::{
     answers::{self, Body, Page},
     app::{self, App},
-    auth::Access,
+    auth::{Access, Bearer},
     installations::{self, Grant, Installations, Kind, Mint, Scope},
     manifest::Manifest,
     pages::{self, Answer, Page as BrowserPage},
@@ -57,6 +57,9 @@ pub enum Shown {
 #[derive(Debug)]
 pub struct Config {
     pub deliveries: crate::delivery::Config,
+    /// Requests per token identity per forge-clock window.
+    pub rate_quota: u32,
+    pub rate_window: skein_lib::Duration,
     /// Origin used by pagination links; a socket host sets its bound origin before serving.
     pub base: Box<[u8]>,
     /// Blob origin; a peer replaces it with its bound second listener.
@@ -169,6 +172,7 @@ impl ContentType {
 }
 /// An encoded document, with no HTTP framing. Debug redacts minted tokens.
 pub struct Response {
+    pub rate: Option<crate::rates::Heads>,
     pub etag: Option<Box<[u8]>>,
     /// GitHub status.
     pub status: u16,
@@ -184,6 +188,7 @@ pub struct Response {
 impl core::fmt::Debug for Response {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Response")
+            .field("rate", &self.rate)
             .field("etag", &self.etag)
             .field("status", &self.status)
             .field("content_type", &self.content_type)
@@ -198,6 +203,8 @@ impl core::fmt::Debug for Response {
 pub enum Outcome {
     /// No domain call was needed.
     Reply(Response),
+    /// Authenticated token request awaiting one domain-window admission.
+    Admit(crate::rates::Admission),
     /// Caller owns the continuation and routes the event's reply to finish.
     Call(Pending, fake::Event),
 }
@@ -207,6 +214,7 @@ pub enum Outcome {
 #[derive(Debug)]
 pub struct Pending {
     pub(crate) kind: PendingKind,
+    pub(crate) rate: Option<crate::rates::Heads>,
 }
 #[derive(Debug)]
 pub(crate) enum PendingKind {
@@ -218,6 +226,8 @@ pub(crate) enum PendingKind {
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
 pub struct Service {
+    pub(crate) rate_quota: u32,
+    pub(crate) rate_window: skein_lib::Duration,
     pub(crate) deliveries: crate::delivery::Store,
     pub(crate) key_revoked: bool,
     pub(crate) posts: skein_lib::Queue<crate::delivery::Post>,
@@ -243,13 +253,14 @@ pub struct Service {
 }
 impl Service {
     /// Validates the tables and limits before creating bounded stores.
-    #[expect(clippy::too_many_lines, reason = "admission checks every bounded scenario table before allocation")]
     pub fn new(config: Config, limits: &Limits, seed: u64) -> Result<Self, Problem> {
         if worst_case(limits, &config).is_none() {
             return Err(Problem::Limits);
         }
         let string = usize::try_from(limits.github.string_bytes).or(Err(Problem::Limits))?;
         if !valid_faults(config.faults)
+            || config.rate_quota == 0
+            || config.rate_window == skein_lib::Duration::ZERO
             || config.ruleset_id == 0
             || !valid_origin(&config.base, limits.github.target_bytes)
             || !crate::logs::origin_fits(&config.blob, limits)
@@ -295,6 +306,8 @@ impl Service {
                 limits.blob_records,
                 seed,
             ),
+            rate_quota: config.rate_quota,
+            rate_window: config.rate_window,
             deliveries: crate::delivery::Store::new(config.deliveries, limits.deliveries, seed),
             key_revoked: false,
             posts: skein_lib::Queue::with_capacity(post_capacity),
@@ -390,13 +403,15 @@ impl Service {
     }
 
     /// Checks User-Agent, version, route, credential, installation state/reach,
-    /// then the body. Every refusal precedes a domain call.
+    /// then the body. Every refusal precedes a domain call. The caller completes
+    /// admission and all continuations before serving another request, so the
+    /// resolved bearer slots remain valid through dispatch.
     pub fn request(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
         self.poll(now);
         let outcome = self.request_inner(request, now, reply_to);
         self.local_links(outcome)
     }
-    fn request_inner(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
+    fn request_inner(&mut self, request: &Request<'_>, now: Wall, _reply_to: ReplyTo) -> Outcome {
         let limits = &self.limits;
         if !request.agent {
             return Outcome::Reply(answers::refusal(403, b"User agent required", limits));
@@ -430,43 +445,73 @@ impl Service {
         match route {
             routes::Route::Conversion(_) | routes::Route::BotUser(_) => Outcome::Reply(answers::failed()),
             routes::Route::App(route) => {
+                if let Ok(bearer) = self.resolve(bearer, now) {
+                    return Outcome::Admit(crate::rates::Admission::new(
+                        crate::rates::Route::App,
+                        bearer,
+                        request,
+                        now,
+                        self.limits.body,
+                    ));
+                }
                 if self.key_revoked || app::check(bearer, &self.app, now).is_err() {
                     return Outcome::Reply(answers::unauthorized(limits));
                 }
                 Outcome::Reply(self.app_route(route, request, now))
             }
             routes::Route::Token(route) => {
-                let access = match self.access(bearer, now) {
-                    Ok(access) => access,
+                let bearer = match self.resolve(bearer, now) {
+                    Ok(bearer) => bearer,
                     Err(response) => return Outcome::Reply(response),
                 };
-                match route {
-                    routes::Token::Reachable(page) => crate::auth::reachable(self, page, access, request),
-                    routes::Token::Identity => Outcome::Reply(match access {
-                        Access::Person(user) => reads::user(self, user, self.body_fits(request.body)),
-                        Access::Installation { .. } => answers::refusal(403, crate::texts::INTEGRATION, limits),
-                    }),
-                    routes::Token::Revoke => Outcome::Reply(match access {
-                        Access::Person(_) => answers::unauthorized(limits),
-                        Access::Installation { .. } => {
-                            self.installations.revoke(bearer);
-                            crate::auth::empty()
-                        }
-                    }),
-                    routes::Token::EditReach { installation, repository, add } => {
-                        crate::auth::edit_reach(self, access, installation, repository, add, reply_to)
-                    }
-                    routes::Token::User(id) => Outcome::Reply(if access.contents() {
-                        answers::refusal(403, crate::texts::INTEGRATION, limits)
-                    } else {
-                        reads::user(self, id, self.body_fits(request.body))
-                    }),
-                    routes::Token::Graphql => self.graphql(request, &access, reply_to),
-                    routes::Token::Write(route) => writes::call(self, route, &access, request.body, reply_to),
-                    routes::Token::Read(read) => {
-                        reads::call(self, read, &access, request.target, self.body_fits(request.body), now, reply_to)
-                    }
+                Outcome::Admit(crate::rates::Admission::new(
+                    crate::rates::Route::Token(route),
+                    bearer,
+                    request,
+                    now,
+                    self.limits.body,
+                ))
+            }
+        }
+    }
+    pub(crate) fn token_route(
+        &mut self,
+        route: routes::Token,
+        now: Wall,
+        bearer: Bearer,
+        request: &Request<'_>,
+        reply_to: ReplyTo,
+    ) -> Outcome {
+        let access = match self.access(bearer) {
+            Ok(access) => access,
+            Err(response) => return Outcome::Reply(response),
+        };
+        let limits = &self.limits;
+        match route {
+            routes::Token::Reachable(page) => crate::auth::reachable(self, page, access, request),
+            routes::Token::Identity => Outcome::Reply(match access {
+                Access::Person(user) => reads::user(self, user, self.body_fits(request.body)),
+                Access::Installation { .. } => answers::refusal(403, crate::texts::INTEGRATION, limits),
+            }),
+            routes::Token::Revoke => Outcome::Reply(match bearer {
+                Bearer::Person { .. } => answers::unauthorized(limits),
+                Bearer::Installation { slot, .. } => {
+                    self.installations.revoke_slot(slot);
+                    crate::auth::empty()
                 }
+            }),
+            routes::Token::EditReach { installation, repository, add } => {
+                crate::auth::edit_reach(self, access, installation, repository, add, reply_to)
+            }
+            routes::Token::User(id) => Outcome::Reply(if access.contents() {
+                answers::refusal(403, crate::texts::INTEGRATION, limits)
+            } else {
+                reads::user(self, id, self.body_fits(request.body))
+            }),
+            routes::Token::Graphql => self.graphql(request, &access, reply_to),
+            routes::Token::Write(route) => writes::call(self, route, &access, request.body, reply_to),
+            routes::Token::Read(read) => {
+                reads::call(self, read, &access, request.target, self.body_fits(request.body), now, reply_to)
             }
         }
     }
@@ -503,7 +548,8 @@ impl Service {
     }
 
     /// Continues the request after a domain reply. The caller must finish all
-    /// its calls before handling another request, so checks and writes agree.
+    /// its admission and calls before handling another request, so handles, checks
+    /// and writes agree.
     /// The domain reply returns the right supplied for the preceding call.
     pub fn finish(
         &mut self,
@@ -512,6 +558,7 @@ impl Service {
         reply_to: ReplyTo,
         domain: &fake::Domain,
     ) -> Outcome {
+        let rate = pending.rate;
         let outcome = match pending.kind {
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
@@ -520,7 +567,7 @@ impl Service {
                 Outcome::Reply(crate::auth::finish_reach(self, installation, repository, add, result))
             }
         };
-        self.local_links(outcome)
+        crate::rates::attach(self.local_links(outcome), rate)
     }
     /// A host supplies its bound local origin before it accepts requests.
     pub fn set_origin(&mut self, base: Box<[u8]>) -> Result<(), Problem> {
@@ -530,10 +577,10 @@ impl Service {
         self.base = base;
         Ok(())
     }
-    fn local_links(&self, outcome: Outcome) -> Outcome {
+    pub(crate) fn local_links(&self, outcome: Outcome) -> Outcome {
         let mut response = match outcome {
             Outcome::Reply(response) => response,
-            call @ Outcome::Call(_, _) => return call,
+            call @ (Outcome::Call(_, _) | Outcome::Admit(_)) => return call,
         };
         if let Some(link) = response.link.take() {
             // The dialect renders its pinned public origin. The fake's Config
@@ -595,6 +642,7 @@ impl Service {
             routes::App::Uninstall(id) => {
                 if self.installations.remove(id) {
                     Response {
+                        rate: None,
                         etag: None,
                         content_type: ContentType::Json,
                         status: 204,
@@ -761,7 +809,9 @@ pub(crate) fn joined(first: &[u8], last: &[u8]) -> Option<Box<[u8]>> {
 /// including domain payloads moved into a continuation.
 #[must_use]
 pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
-    if github::limits::check(&limits.github).is_err()
+    if config.rate_quota == 0
+        || config.rate_window == skein_lib::Duration::ZERO
+        || github::limits::check(&limits.github).is_err()
         || limits.page == 0
         || limits.page > github::pin::PAGE_CAP
         || limits.page > limits.github.inner
@@ -785,7 +835,10 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
             )?,
         )?
         .checked_add(List::<github::log::Row>::worst_case(limits.github.inner.min(100))?)?
-        .checked_add(u64::from(limits.github.inner.min(100)).checked_mul(128)?)?
+        .checked_add(
+            u64::from(limits.github.inner.min(100))
+                .checked_mul(u64::from(limits.deliveries.payload_bytes).checked_add(128)?)?,
+        )?
         .checked_add(crate::delivery::worst_case(&config.deliveries, limits.deliveries, limits.github.string_bytes)?)?
         .checked_add(u64::from(limits.github.target_bytes))?
         .checked_add(pages::worst_case(limits)?)?

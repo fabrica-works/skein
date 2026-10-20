@@ -28,6 +28,7 @@ enum State {
 #[derive(Debug)]
 pub enum Event {
     Domain(domain::Event),
+    Rate { key: domain::RateKey, limit: u32, window: skein_lib::Duration },
     Close,
     Closed,
 }
@@ -43,6 +44,7 @@ pub struct Server {
     head: Option<http::Call>,
     body: Intake,
     pending: Option<Pending>,
+    admission: Option<crate::rates::Admission>,
     reply: Option<Box<[u8]>>,
     offset: usize,
 }
@@ -60,6 +62,7 @@ impl Server {
             head: None,
             body: Intake::with_capacity(limits.body),
             pending: None,
+            admission: None,
             reply: None,
             offset: 0,
         })
@@ -94,20 +97,21 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     http::worst_case(&limits.http)?
         .checked_add(Queue::<http::Event>::worst_case(4)?)?
         .checked_add(Queue::<http::Request>::worst_case(4)?)?
-        // One Respond owns at most ETag, Link, Location and Content-Type descriptors.
-        .checked_add(List::<Header>::worst_case(4)?)?
+        // One Respond owns rate fields, a validator, Link, Location and media.
+        .checked_add(List::<Header>::worst_case(10)?)?
         // A call moves from events into call; its redacted clone lives in head.
         // One exchange at a time and take_head before reuse allow two field lists
         // and two copies of their target/name/value bytes, each within http.head.
         .checked_add(List::<Header>::worst_case(limits.http.headers)?.checked_mul(2)?)?
         .checked_add(u64::from(limits.http.head).checked_mul(2)?)?
         .checked_add(Intake::worst_case(limits.body)?)?
-        // dispatch's extracted body and writes::Stage::ReviewAuthor.body can
-        // coexist. No other continuation retains a body; service counts decoding.
+        // dispatch's extracted body and the authenticated admission copy, or
+        // writes::Stage::ReviewAuthor.body, coexist; service counts decoding.
         .checked_add(u64::from(limits.body).checked_mul(2)?)?
         // One read continuation's target (Checks, Reviews, Collaborators,
         // PullFiles, Issues, Comments, Branches) or Branch's decoded name.
-        .checked_add(u64::from(limits.github.target_bytes))?
+        .checked_add(u64::from(limits.github.target_bytes).checked_mul(2)?)?
+        .checked_add(1)?
         // writes::Pending.repository plus writes::Stage::OpenPull's head and base.
         // Service validates the repository's full URL within string_bytes, so
         // its owner/name path fits one. Read::Repository's Row has two strings.
@@ -115,10 +119,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         // Server.reply and Respond.headers' Link (API) or Location (page/log).
         // The response head encoded by HTTP is in http::worst_case above.
         .checked_add(u64::from(limits.response).checked_mul(2)?)?
-        // Link (4), Content-Type (12), application/octet-stream (24): header
-        // names and media values; Location (8) plus text/html (9) fits too.
-        // ETag adds four name bytes and at most 128 value bytes.
-        .checked_add(172)?
+        // Bounded decimal rate values, their field names, validator framing,
+        // Link, Location and the longest media name/value fit this allowance.
+        .checked_add(512)?
         // One outstanding body demand: one queued/local Body(Bytes) delivery.
         .checked_add(u64::from(limits.http.read))?
         // One reply room grant: one copied chunk in requests' Reply(Send).
@@ -188,16 +191,39 @@ pub fn down(
     // A request's reads and write continuations finish before its answer is lost.
     // Drawing here keeps a merge's preliminary reads from losing its write.
     let outcome = match outcome {
-        call @ Outcome::Call(_, _) => call,
+        call @ (Outcome::Call(_, _) | Outcome::Admit(_)) => call,
         Outcome::Reply(reply) => {
             if service.rng.chance(service.faults.drop) {
                 close(server, service, env, above, below);
                 return;
             }
-            Outcome::Reply(if service.rng.chance(service.faults.server_error) { answers::failed() } else { reply })
+            Outcome::Reply(if service.rng.chance(service.faults.server_error) {
+                let mut failed = answers::failed();
+                failed.rate = reply.rate;
+                failed
+            } else {
+                reply
+            })
         }
     };
-    answer(server, &env.limits, outcome, above);
+    answer(server, service, &env.limits, outcome, above);
+    resume(server, service, env, above, below);
+}
+/// Returns the one domain-window admission for this connection.
+pub fn admitted(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    result: Result<domain::Rate, domain::RateDenied>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state != State::Waiting {
+        return;
+    }
+    let Some(admission) = server.admission.take() else { return };
+    let outcome = service.admitted(admission, result, ReplyTo::new(server.owner));
+    answer(server, service, &env.limits, outcome, above);
     resume(server, service, env, above, below);
 }
 pub fn resume(
@@ -235,6 +261,7 @@ pub fn close(
         return;
     }
     server.pending = None;
+    server.admission = None;
     server.call = None;
     server.reply = None;
     server.body.clear();
@@ -362,7 +389,7 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
             env.wall,
             ReplyTo::new(server.owner),
         );
-        answer(server, &env.limits, outcome, above);
+        answer(server, service, &env.limits, outcome, above);
         return;
     }
     let method = match call.method {
@@ -400,7 +427,15 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
         respond(
             server,
             &env.limits,
-            Response { etag: None, status: page.status, link: None, location: None, body: page.body, content_type },
+            Response {
+                rate: None,
+                etag: None,
+                status: page.status,
+                link: None,
+                location: None,
+                body: page.body,
+                content_type,
+            },
             page.location,
         );
     } else {
@@ -417,11 +452,17 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
             env.wall,
             ReplyTo::new(server.owner),
         );
-        answer(server, &env.limits, outcome, above);
+        answer(server, service, &env.limits, outcome, above);
     }
 }
-fn answer(server: &mut Server, limits: &Limits, outcome: Outcome, above: &mut Queue<Event>) {
+fn answer(server: &mut Server, service: &Service, limits: &Limits, outcome: Outcome, above: &mut Queue<Event>) {
     match outcome {
+        Outcome::Admit(admission) => {
+            let key = admission.key();
+            server.admission = Some(admission);
+            server.state = State::Waiting;
+            above.push(Event::Rate { key, limit: service.rate_quota(), window: service.rate_window() });
+        }
         Outcome::Reply(reply) => respond(server, limits, reply, None),
         Outcome::Call(pending, event) => {
             server.pending = Some(pending);
@@ -444,7 +485,10 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
         reply = answers::failed();
         location = None;
     }
-    let mut headers = List::with_capacity(4);
+    let mut headers = List::with_capacity(10);
+    if let Some(rate) = reply.rate {
+        crate::rates::headers(rate, reply.status == 403, &mut headers);
+    }
     if let Some(etag) = reply.etag {
         headers.push(Header { name: bytes::copy_of(b"ETag"), value: etag }).expect("etag slot");
     }

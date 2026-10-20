@@ -57,6 +57,8 @@ pub fn config() -> fake::Config {
         accounts.push(Account { login: login.into(), id, organization }).expect("bounded fixture");
     }
     fake::Config {
+        rate_quota: 5000,
+        rate_window: Duration::from_secs(3600),
         deliveries: fake::delivery::Config::standard(),
         base: Box::from(b"http://127.0.0.1:3000".as_slice()),
         blob: Box::from(b"http://127.0.0.1:3001".as_slice()),

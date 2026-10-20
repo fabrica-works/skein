@@ -89,6 +89,8 @@ fn config() -> fake::Config {
         accounts.push(Account { login: f::boxed(login), id, organization }).expect("account row fits");
     }
     fake::Config {
+        rate_quota: 5000,
+        rate_window: skein_lib::Duration::from_secs(3600),
         deliveries: fake::delivery::Config::standard(),
         base: f::boxed(b"http://127.0.0.1:1"),
         blob: f::boxed(b"http://logs.example.test"),
@@ -697,8 +699,7 @@ fn commit_id(number: u64) -> api::Commit {
     id[..8].copy_from_slice(&number.to_be_bytes());
     id
 }
-#[test]
-fn github_peer_runs_the_dialects_job_log_redirect_plan_through_the_blob_face() {
+fn failed_job() -> (World, Secret, api::JobAttempt) {
     let mut world = World::with_checks(
         f::SEED,
         da::Checks {
@@ -720,7 +721,11 @@ fn github_peer_runs_the_dialects_job_log_redirect_plan_through_the_blob_face() {
     else {
         panic!("checks answer")
     };
-    let attempt = checks[0].job.expect("failed CI attempt");
+    (world, token, checks[0].job.expect("failed CI attempt"))
+}
+#[test]
+fn github_peer_runs_the_dialects_job_log_redirect_plan_through_the_blob_face() {
+    let (mut world, token, attempt) = failed_job();
     let expected =
         b"set up ci\nfailing check ci 0\nfailing check ci 1\nfailing check ci 2\nfailing check ci 3\njob ci failed\n";
     for max_bytes in [4096, 8] {
@@ -736,5 +741,34 @@ fn github_peer_runs_the_dialects_job_log_redirect_plan_through_the_blob_face() {
         assert!(!record.authorization);
         assert!(record.range);
     }
+    world.settle();
+}
+
+#[test]
+fn github_peer_charges_the_log_redirect_once_and_leaves_blob_fetches_free() {
+    fn used(reply: &Reply) -> u32 {
+        std::str::from_utf8(reply.header(b"X-RateLimit-Used").expect("rate usage"))
+            .expect("decimal ASCII")
+            .parse()
+            .expect("rate count")
+    }
+    let (mut world, token, attempt) = failed_job();
+    let before = world.fetch(Method::Get, b"/repos/org/repo", b"", Some(&token));
+    assert_eq!(before.status, 200);
+    let target = format!("/repos/org/repo/actions/jobs/{}/logs", attempt.job);
+    let redirect = world.fetch(Method::Get, target.as_bytes(), b"", Some(&token));
+    assert_eq!(redirect.status, 302);
+    assert_eq!(used(&redirect), used(&before) + 1, "one admission for the log redirect");
+    let location = github::redirect::parse(redirect.header(b"Location").expect("log location"), 1024, 1024)
+        .expect("signed blob redirect");
+    let blob = world.fetch_blob(&location.target);
+    assert_eq!(blob.status, 200);
+    assert!(!blob.body.is_empty());
+    assert!(blob.header(b"X-RateLimit-Used").is_none());
+    let record = world.github.blob_records().expect("GitHub records").iter().last().expect("blob request");
+    assert!(!record.authorization);
+    let after = world.fetch(Method::Get, b"/repos/org/repo", b"", Some(&token));
+    assert_eq!(after.status, 200);
+    assert_eq!(used(&after), used(&redirect) + 1, "blob fetch consumes no token quota");
     world.settle();
 }

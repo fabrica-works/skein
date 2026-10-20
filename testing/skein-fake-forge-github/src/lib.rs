@@ -14,6 +14,7 @@ pub mod keys;
 pub mod logs;
 pub mod manifest;
 pub mod pages;
+pub mod rates;
 mod reads;
 mod routes;
 pub mod server;

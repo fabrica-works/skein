@@ -69,7 +69,8 @@ mod wiki;
 mod tests;
 
 pub use boundary::{Event, Request};
-pub use domain::{Config, Domain, MAX_OUT, Metadata, Room, Skew, Tally, fire, step, time};
+pub use domain::{Config, Domain, MAX_OUT, Metadata, Room, Skew, Tally, fire, step, step_admitted, time};
+pub use faults::{Rate, RateDenied, RateKey, rate};
 pub use git::{Object, Tree};
 pub use limits::{Limits, worst_case};
 pub use observe::{Branches, Observation, Operation};

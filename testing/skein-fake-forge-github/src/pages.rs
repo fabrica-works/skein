@@ -295,6 +295,7 @@ pub(crate) fn convert(service: &mut Service, code: &[u8], body: &[u8], now: Wall
     };
     record.used = true;
     Response {
+        rate: None,
         etag: None,
         content_type: crate::service::ContentType::Json,
         status: 201,

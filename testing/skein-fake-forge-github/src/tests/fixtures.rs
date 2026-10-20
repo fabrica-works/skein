@@ -46,6 +46,8 @@ pub fn config() -> Config {
         accounts.push(Account { login: boxed(login), id, organization }).expect("fixture accounts");
     }
     Config {
+        rate_quota: 5000,
+        rate_window: Duration::from_secs(3600),
         deliveries: crate::delivery::Config::standard(),
         base: boxed(b"http://127.0.0.1:3000"),
         blob: boxed(b"http://logs.example.test"),
@@ -225,6 +227,9 @@ impl Harness {
         for _call in 0..8_u32 {
             outcome = match outcome {
                 Outcome::Reply(response) => return response,
+                Outcome::Admit(admission) => {
+                    self.service.admit(admission, &mut self.domain, &self.env, ReplyTo::new(Token::new(77)))
+                }
                 Outcome::Call(pending, event) => {
                     self.calls = self.calls.checked_add(1).expect("fixture calls");
                     let result = self.drive(event);
@@ -274,7 +279,7 @@ impl Harness {
     }
     pub fn drive(&mut self, event: fake::Event) -> Result<a::Answer, a::Error> {
         let mut out = Queue::with_capacity(fake::MAX_OUT);
-        fake::step(&mut self.domain, &self.env, event, &mut out);
+        fake::step_admitted(&mut self.domain, &self.env, event, &mut out);
         let mut reply = None;
         for _tick in 0..16_u32 {
             while let Some(request) = out.pop() {
@@ -477,6 +482,7 @@ pub fn page_refusal(h: &Harness, answer: crate::pages::Answer, status: u16, mess
     refusal(
         h,
         &Response {
+            rate: None,
             etag: None,
             content_type: service::ContentType::Json,
             status: answer.status,

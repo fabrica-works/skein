@@ -100,7 +100,7 @@ impl Service {
             return Outcome::Reply(answers::failed());
         };
         Outcome::Call(
-            Pending { kind: PendingKind::Blob },
+            Pending { rate: None, kind: PendingKind::Blob },
             domain::Event::Call {
                 reply_to,
                 user: self.bot,
@@ -204,6 +204,7 @@ fn verify(key: &Secret, target: &[u8], now: Wall) -> Option<(u32, u64, u32)> {
 }
 pub(crate) fn empty(status: u16) -> Response {
     Response {
+        rate: None,
         etag: None,
         status,
         content_type: ContentType::Plaintext,

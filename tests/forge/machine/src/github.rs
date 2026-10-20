@@ -60,10 +60,6 @@ impl Fake {
         let has_logs = logs.is_some();
         let LogScenario { third_origin, blob_redirect } =
             logs.unwrap_or(LogScenario { third_origin: None, blob_redirect: None });
-        let mut accounts = List::with_capacity(2);
-        for (login, id, organization) in [(b"acme".as_slice(), 22, true), (b"alice".as_slice(), 31, false)] {
-            accounts.push(Account { login: Box::from(login), id, organization }).expect("fixture accounts");
-        }
         let permissions = if complete {
             github::setup::PERMISSIONS
                 .iter()
@@ -80,6 +76,8 @@ impl Fake {
         };
         let config = Config {
             deliveries: skein_fake_forge_github::delivery::Config::standard(),
+            rate_quota: 5000,
+            rate_window: Duration::from_secs(3600),
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(BLOB_ORIGIN),
             third_origin: third_origin.map(Box::from),
@@ -103,7 +101,7 @@ impl Fake {
             bot: 9,
             hook: Box::from(hook),
             repositories: fixture_repositories(),
-            accounts,
+            accounts: fixture_accounts(),
             person: Box::from(b"alice".as_slice()),
         };
         let limits = Limits {
@@ -206,6 +204,16 @@ impl Fake {
         let response = loop {
             outcome = match outcome {
                 Outcome::Reply(response) => break response,
+                Outcome::Admit(admission) => self.service.admit(
+                    admission,
+                    &mut self.domain,
+                    &Env {
+                        now: Time::from_nanos(wall.as_nanos().saturating_sub(WALL_BASE.as_nanos())),
+                        wall,
+                        limits: self.config,
+                    },
+                    ReplyTo::new(Token::new(77)),
+                ),
                 Outcome::Call(pending, event) => {
                     let result = domain_reply(&mut self.domain, &self.config, wall, event);
                     self.service.finish(pending, result, ReplyTo::new(Token::new(77)), &self.domain)
@@ -222,6 +230,21 @@ impl Fake {
         if let Some(location) = response.location {
             bytes.extend_from_slice(b"Location: ");
             bytes.extend_from_slice(&location);
+            bytes.extend_from_slice(b"\r\n");
+        }
+        if let Some(rate) = response.rate {
+            let mut headers = List::with_capacity(6);
+            skein_fake_forge_github::rates::headers(rate, response.status == 403, &mut headers);
+            for header in &headers {
+                bytes.extend_from_slice(&header.name);
+                bytes.extend_from_slice(b": ");
+                bytes.extend_from_slice(&header.value);
+                bytes.extend_from_slice(b"\r\n");
+            }
+        }
+        if let Some(etag) = response.etag {
+            bytes.extend_from_slice(b"ETag: ");
+            bytes.extend_from_slice(&etag);
             bytes.extend_from_slice(b"\r\n");
         }
         if let Some(link) = response.link {
@@ -261,6 +284,14 @@ impl Fake {
     pub fn manifest(&self, state: &[u8]) -> Option<&Manifest> {
         self.service.manifest(state)
     }
+}
+
+fn fixture_accounts() -> List<Account> {
+    let mut accounts = List::with_capacity(2);
+    for (login, id, organization) in [(b"acme".as_slice(), 22, true), (b"alice".as_slice(), 31, false)] {
+        accounts.push(Account { login: Box::from(login), id, organization }).expect("fixture accounts");
+    }
+    accounts
 }
 
 fn fixture_repositories() -> List<Row> {
@@ -460,7 +491,7 @@ fn domain_reply(
 ) -> Result<a::Answer, a::Error> {
     let env = Env { now: Time::from_nanos(wall.as_nanos()), wall, limits: *config };
     let mut out = Queue::with_capacity(fake::MAX_OUT);
-    fake::step(domain, &env, event, &mut out);
+    fake::step_admitted(domain, &env, event, &mut out);
     // The queue's and CI's timers due by now fire before the call's own.
     for _ in 0..FIRES {
         if !out.is_empty() {

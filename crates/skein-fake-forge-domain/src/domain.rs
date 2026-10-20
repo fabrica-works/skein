@@ -183,7 +183,7 @@ pub struct Domain {
     pub(crate) calls: Slab<Call>,
     pub(crate) deliveries: Slab<Delivery>,
     /// Each calling user's rate window.
-    pub(crate) windows: Map<u64, Window>,
+    pub(crate) windows: Map<faults::RateKey, Window>,
     pub(crate) timers: Deadlines<Alarm>,
     pub(crate) observations: Observations,
     pub(crate) rng: Rng,
@@ -459,7 +459,20 @@ impl Domain {
 pub fn step(domain: &mut Domain, env: &Env<Config>, event: Event, out: &mut Queue<Request>) {
     domain.clock = clock(env);
     match event {
-        Event::Call { reply_to, user, repository, op } => call(domain, env, reply_to, user, &repository, op, out),
+        Event::Call { reply_to, user, repository, op } => {
+            call(domain, env, reply_to, user, &repository, op, false, out);
+        }
+    }
+}
+
+/// Executes a continuation whose protocol request already paid its rate.
+/// Fault draws, latency, permissions and observations match `step`.
+pub fn step_admitted(domain: &mut Domain, env: &Env<Config>, event: Event, out: &mut Queue<Request>) {
+    domain.clock = clock(env);
+    match event {
+        Event::Call { reply_to, user, repository, op } => {
+            call(domain, env, reply_to, user, &repository, op, true, out);
+        }
     }
 }
 
@@ -479,6 +492,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Config>, out: &mut Queue<Request>) {
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "one call carries its reply right, actor, operation and admission state")]
 fn call(
     domain: &mut Domain,
     env: &Env<Config>,
@@ -486,6 +500,7 @@ fn call(
     user: u64,
     repository: &[u8],
     op: Op,
+    admitted: bool,
     out: &mut Queue<Request>,
 ) {
     if domain.calls.is_full() {
@@ -530,7 +545,8 @@ fn call(
         },
         Op::Read(_) | Op::Git(_) => true,
     };
-    let (result, landing) = match faults::admit(domain, env, user) {
+    let admission = if admitted { faults::available(domain, env) } else { faults::admit(domain, env, user) };
+    let (result, landing) = match admission {
         Err(error) => (Err(error), None),
         Ok(()) if can_land && observe::subject(&op).is_some() && faults::lands_late(domain, env) => {
             (Err(Error::Timeout), Some(Landing { user, repository: copy_of(repository), op }))

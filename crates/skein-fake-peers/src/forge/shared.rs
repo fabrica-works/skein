@@ -66,7 +66,8 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
         .checked_add(Queue::<skein_lib::stream::Up>::worst_case(limits.queue)?)?
         .checked_add(u64::from(limits.queue).checked_mul(payload.checked_add(u64::from(limits.plaintext))?)?)?;
     let layer_bound = match protocol {
-        protocol::Limits::Forgejo(_) => protocol_bound,
+        protocol::Limits::Forgejo(_) => protocol_bound
+            .checked_add(Queue::<skein_fake_forge_protocol::Event>::worst_case(skein_fake_forge_protocol::MAX_UP)?)?,
         // The GitHub layer envelope includes one connection. Each additional
         // hosted connection retains its own HTTP buffers and continuation.
         protocol::Limits::Github(github) => protocol_bound

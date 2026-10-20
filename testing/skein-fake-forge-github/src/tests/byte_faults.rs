@@ -36,6 +36,10 @@ fn exchange(faults: Faults, seed: u64) -> (f::Harness, Box<[u8]>, u32) {
         drop(server.take_head());
         if let Some(event) = above.pop() {
             match event {
+                server::Event::Rate { key, limit, window } => {
+                    let result = fake::rate(&mut h.domain, &h.env, key, limit, window);
+                    server::admitted(&mut server, &mut h.service, &env, result, &mut above, &mut below);
+                }
                 server::Event::Domain(event) => {
                     h.calls = h.calls.checked_add(1).unwrap();
                     let result = h.drive(event);
@@ -105,7 +109,10 @@ fn github_fake_byte_faults_reset_drop_and_server_error() {
             assert_eq!(read, 0, "reset closes before a read demand");
         }
         match status {
-            Some(prefix) => assert!(output.starts_with(prefix)),
+            Some(prefix) => {
+                assert!(output.starts_with(prefix));
+                assert!(skein_lib::bytes::find(&output, b"X-RateLimit-Used: 1\r\n").is_some());
+            }
             None => assert!(output.is_empty(), "no reply bytes after reset or drop"),
         }
         let (replayed, replay, replay_read) = exchange(faults, 23);

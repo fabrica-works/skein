@@ -1,5 +1,10 @@
 //! The two HTTP faces use the same connection lifecycle and shared-forge host.
-pub(super) use forgejo::Event;
+pub(super) enum Event {
+    Domain(domain::Event),
+    Rate { key: domain::RateKey, limit: u32, window: skein_lib::Duration },
+    Close,
+    Closed,
+}
 use skein_fake_forge_domain as domain;
 use skein_fake_forge_github as github;
 use skein_fake_forge_protocol as forgejo;
@@ -35,6 +40,10 @@ impl Limits {
         }
     }
 }
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the peer owns one inline service; each dialect budgets its stores' heap"
+)]
 pub(super) enum Service {
     Forgejo(forgejo::Service),
     Github(github::Service),
@@ -142,7 +151,11 @@ macro_rules! entry {
     ($name:ident => $forgejo:ident, $github:ident $(; $domain:ident : $domain_ty:ty)? $(, $arg:ident : $ty:ty)*) => {
         pub(super) fn $name(server: &mut Server, service: &mut Service, $($domain: $domain_ty,)? env: &Env<Limits>, $($arg: $ty,)* above: &mut Queue<Event>, below: &mut Queue<Down>) {
             match (server, service, &env.limits) {
-                (Server::Forgejo(server), Service::Forgejo(service), Limits::Forgejo(limits)) => forgejo::$forgejo(server, service, $($domain,)? &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* above, below),
+                (Server::Forgejo(server), Service::Forgejo(service), Limits::Forgejo(limits)) => {
+                    let mut events=Queue::with_capacity(forgejo::MAX_UP);
+                    forgejo::$forgejo(server, service, $($domain,)? &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* &mut events, below);
+                    translate_forgejo(&mut events,above);
+                },
                 (Server::Github(server), Service::Github(service), Limits::Github(limits)) => {
                     let mut events = Queue::with_capacity(github::MAX_UP);
                     github::$github(server, service, &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* &mut events, below);
@@ -172,7 +185,16 @@ pub(super) fn down(
 ) {
     match (server, service, &env.limits) {
         (Server::Forgejo(server), Service::Forgejo(service), Limits::Forgejo(limits)) => {
-            forgejo::down(server, service, &Env { now: env.now, wall: env.wall, limits: *limits }, reply, above, below);
+            let mut events = Queue::with_capacity(forgejo::MAX_UP);
+            forgejo::down(
+                server,
+                service,
+                &Env { now: env.now, wall: env.wall, limits: *limits },
+                reply,
+                &mut events,
+                below,
+            );
+            translate_forgejo(&mut events, above);
         }
         (Server::Github(server), Service::Github(service), Limits::Github(limits)) => {
             let mut events = Queue::with_capacity(github::MAX_UP);
@@ -197,8 +219,42 @@ fn translate(events: &mut Queue<github::Event>, above: &mut Queue<Event>) {
     while let Some(event) = events.pop() {
         above.push(match event {
             github::Event::Domain(event) => Event::Domain(event),
+            github::Event::Rate { key, limit, window } => Event::Rate { key, limit, window },
             github::Event::Close => Event::Close,
             github::Event::Closed => Event::Closed,
         });
     }
+}
+
+fn translate_forgejo(events: &mut Queue<forgejo::Event>, above: &mut Queue<Event>) {
+    while let Some(event) = events.pop() {
+        above.push(match event {
+            forgejo::Event::Domain(event) => Event::Domain(event),
+            forgejo::Event::Close => Event::Close,
+            forgejo::Event::Closed => Event::Closed,
+        });
+    }
+}
+pub(super) fn admitted(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    result: Result<domain::Rate, domain::RateDenied>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    let (Server::Github(server), Service::Github(service), Limits::Github(limits)) = (server, service, env.limits)
+    else {
+        unreachable!("GitHub admission")
+    };
+    let mut events = Queue::with_capacity(github::MAX_UP);
+    github::server::admitted(
+        server,
+        service,
+        &Env { now: env.now, wall: env.wall, limits },
+        result,
+        &mut events,
+        below,
+    );
+    translate(&mut events, above);
 }

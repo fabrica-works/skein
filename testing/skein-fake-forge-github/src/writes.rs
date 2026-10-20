@@ -219,7 +219,7 @@ fn dispatch(pending: Pending, op: Op, reply_to: ReplyTo) -> Outcome {
     let repository = pending.repository.clone();
     let user = pending.user;
     Outcome::Call(
-        crate::service::Pending { kind: crate::service::PendingKind::Write(pending) },
+        crate::service::Pending { rate: None, kind: crate::service::PendingKind::Write(pending) },
         fake::Event::Call { reply_to, user, repository, op },
     )
 }
@@ -390,14 +390,7 @@ pub(crate) fn finish(
             let a::Answer::Done = answer else {
                 return Outcome::Reply(answers::failed());
             };
-            Response {
-                etag: None,
-                content_type: crate::service::ContentType::Json,
-                status: 204,
-                link: None,
-                location: None,
-                body: Box::from([]),
-            }
+            answers::empty(204)
         }
         Stage::Status => {
             let a::Answer::Done = answer else {

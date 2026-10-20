@@ -68,3 +68,5 @@ connection's local identity at the terminal. Unrelated replies stay pending.
 The listening event supplies GitHub's pagination origin, including the bound
 port. GitHub hooks stay pending for their owner; its blob origin and delivery
 push are separate work (fake-forge.md, sections 5 and 10.5).
+
+Token requests pay one shared-domain rate admission before their continuations.

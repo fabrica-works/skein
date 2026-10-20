@@ -223,6 +223,7 @@ impl Store {
                 if validator == Some(etag.as_ref()) {
                     return Response {
                         location: None,
+                        rate: None,
                         status: 304,
                         content_type: ContentType::Json,
                         link: None,
@@ -275,6 +276,7 @@ impl Store {
         };
         Response {
             location: None,
+            rate: None,
             status: 200,
             content_type: ContentType::Json,
             link,
@@ -295,6 +297,7 @@ impl Store {
                 return match answers::finish(out) {
                     Some(body) => Response {
                         location: None,
+                        rate: None,
                         status: 200,
                         content_type: ContentType::Json,
                         link: None,
@@ -413,7 +416,7 @@ pub(crate) fn valid(config: &Config, limits: Limits, string: u32) -> bool {
     if config.log_entries == 0
         || config.log_entries > limits.entries
         || limits.payload_bytes < 1024
-        || config.payload_size > limits.payload_bytes
+        || u64::from(config.payload_size).saturating_mul(6).saturating_add(1024) > u64::from(limits.payload_bytes)
         || config.log_min > config.log_max
         || config.log_keep <= config.log_max
     {
@@ -441,7 +444,10 @@ pub(crate) fn worst_case(config: &Config, limits: Limits, string: u32) -> Option
         return None;
     }
     List::<Option<Entry>>::worst_case(config.log_entries)?
-        .checked_add(u64::from(config.log_entries).checked_mul(u64::from(limits.payload_bytes).checked_add(128)?)?)?
+        .checked_add(
+            u64::from(config.log_entries)
+                .checked_mul(u64::from(limits.payload_bytes).checked_mul(2)?.checked_add(128)?)?,
+        )?
         .checked_add(u64::from(limits.payload_bytes).checked_mul(3)?)?
         .checked_add(u64::from(string).checked_mul(2)?)
 }
@@ -559,7 +565,7 @@ mod tests {
         let mut config = Config::standard();
         config.log_entries = 3;
         config.payload_size = 6000;
-        let limits = Limits { entries: 3, payload_bytes: 8192 };
+        let limits = Limits { entries: 3, payload_bytes: 49152 };
         let bound = worst_case(&config, limits, 256).unwrap();
         let mut store = Store::new(config, limits, 7);
         let secret = Secret::new(bytes::copy_of(b"invented-hook-secret"));

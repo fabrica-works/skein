@@ -61,6 +61,8 @@ pub(crate) fn service(seed: u64, key: &'static [u8]) -> Service {
     let mut service = Service::new(
         Config {
             deliveries: skein_fake_forge_github::delivery::Config::standard(),
+            rate_quota: 5000,
+            rate_window: skein_lib::Duration::from_secs(3600),
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(b"http://logs.example.test".as_slice()),
             third_origin: None,
