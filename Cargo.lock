@@ -103,6 +103,7 @@ version = "0.0.0"
 dependencies = [
  "skein-forge",
  "skein-forge-client",
+ "skein-forge-conformance",
  "skein-forge-connection",
  "skein-io",
  "skein-json",
@@ -775,6 +776,14 @@ dependencies = [
  "skein-forge-client",
  "skein-lib",
  "skein-world",
+]
+
+[[package]]
+name = "skein-forge-conformance"
+version = "0.0.0"
+dependencies = [
+ "skein-json",
+ "skein-lib",
 ]
 
 [[package]]

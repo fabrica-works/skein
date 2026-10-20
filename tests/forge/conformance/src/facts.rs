@@ -4,41 +4,14 @@ use crate::{
     Result, failure,
     fixture::{Fixture, R, encode},
 };
+pub use skein_forge_conformance::facts::{Fact, Outcome, add};
 use skein_throwaway_forgejo::{Forgejo, Outgoing, Settings};
 use std::{fs, path::Path, time::Duration};
-#[derive(Debug, PartialEq, Eq)]
-pub enum Outcome {
-    Holds,
-    Observed(String),
-    Fails(String),
-    Unchecked(String),
-}
-#[derive(Debug)]
-pub struct Fact {
-    pub name: &'static str,
-    pub outcome: Outcome,
-}
-impl Fact {
-    #[must_use]
-    pub fn line(&self) -> String {
-        match &self.outcome {
-            Outcome::Holds => format!("holds {}\n", self.name),
-            Outcome::Observed(seen) => {
-                format!("holds {}\n# {}: {}\n", self.name, self.name, seen.replace(['\r', '\n'], " "))
-            }
-            Outcome::Fails(why) => format!("fails {}: {}\n", self.name, why.replace(['\r', '\n'], " ")),
-            Outcome::Unchecked(why) => format!("unchecked {}: {}\n", self.name, why.replace(['\r', '\n'], " ")),
-        }
-    }
-}
 /// # Errors
 /// Returns a file write failure.
 pub fn write(out: &Path, facts: &[Fact]) -> Result<()> {
     fs::write(out.join("facts.txt"), facts.iter().map(Fact::line).collect::<String>())?;
     Ok(())
-}
-pub fn add(facts: &mut Vec<Fact>, name: &'static str, holds: bool, seen: &str) {
-    facts.push(Fact { name, outcome: if holds { Outcome::Holds } else { Outcome::Fails(seen.into()) } });
 }
 const DIAGNOSTIC_BYTES: usize = 4096;
 pub(crate) fn diagnostic(body: &[u8]) -> String {

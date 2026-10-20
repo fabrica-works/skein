@@ -8,6 +8,7 @@ members = [
     "tests/forge/machine",
     "tests/forge/protocol",
     "tests/forge/conformance",
+    "testing/skein-forge-conformance",
     "crates/*",
     "examples/ui/view",
     "examples/ui/shell-web",
@@ -73,6 +74,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-forge-conformance = { path = "testing/skein-forge-conformance" }
 skein-forge-machine-world = { path = "tests/forge/machine" }
 skein-forge-client-world = { path = "tests/forge/client" }
 skein-forge-connection = { path = "crates/skein-forge-connection" }
