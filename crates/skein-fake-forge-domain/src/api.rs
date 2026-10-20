@@ -589,6 +589,10 @@ pub struct Comment {
 /// branch while it is open), whether and how it merged, its reviews oldest
 /// first, and the latest status of each context on its head.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "a pull snapshot carries independent queue, checking and merge facts"
+)]
 pub struct Pull {
     pub number: u64,
     pub state: State,
