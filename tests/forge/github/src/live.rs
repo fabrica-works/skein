@@ -60,6 +60,17 @@ fn file(dir: &Path, name: &str, bound: u64) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 impl Fixtures {
+    pub fn guard_fixtures(&self) -> GuardFixtures {
+        GuardFixtures {
+            installations: self.installations.iter().map(|installation| installation.id).collect(),
+            repositories: self
+                .installations
+                .iter()
+                .flat_map(|installation| installation.repositories.iter().cloned())
+                .chain(std::iter::once(self.spare.clone()))
+                .collect(),
+        }
+    }
     pub fn load(dir: &Path) -> Result<Self> {
         let meta = fs::symlink_metadata(dir)?;
         if !meta.file_type().is_dir() || meta.permissions().mode() & 0o7777 != 0o700 {
@@ -211,46 +222,118 @@ fn pem_key(pem: &[u8]) -> Result<Vec<u8>> {
     }
     Ok(out)
 }
+/// The fixture names and installation ids admitted by the live boundary, without credentials.
+pub struct GuardFixtures {
+    installations: Vec<u64>,
+    repositories: Vec<String>,
+}
+fn digits(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+fn repository_target(fixtures: &GuardFixtures, method: Method, tail: &str) -> bool {
+    let mut segments = tail.split('/');
+    let Some(owner) = segments.next().filter(|owner| safe_name(owner)) else { return false };
+    let Some(name) = segments.next().filter(|name| safe_repository(name)) else { return false };
+    let repository = format!("{owner}/{name}");
+    if !fixtures.repositories.contains(&repository) {
+        return false;
+    }
+    match segments.next() {
+        None => method == Method::Get,
+        Some(segment) => {
+            !segment.is_empty()
+                && segment != "."
+                && segment != ".."
+                && segments.all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+        }
+    }
+}
+fn installation_target(fixtures: &GuardFixtures, method: Method, tail: &str) -> bool {
+    if method != Method::Put && method != Method::Delete {
+        return false;
+    }
+    let Some((installation, repository)) = tail.split_once("/repositories/") else { return false };
+    digits(installation)
+        && installation.parse::<u64>().is_ok_and(|id| fixtures.installations.contains(&id))
+        && digits(repository)
+}
+fn graphql_body(body: &[u8]) -> bool {
+    use skein_forge::github::document::{ENQUEUE, PULL, VIEWER};
+    Json::parse(body).is_ok_and(|json| {
+        json.root().get("query").str().is_some_and(|query| [VIEWER, PULL, ENQUEUE].contains(&query.as_bytes()))
+    })
+}
 /// # Errors
-/// Rejects every App mutation before invoking the supplied connector.
-pub fn guard(method: Method, target: &str) -> Result<()> {
-    let path = target.split('?').next().ok_or("invalid target")?;
+/// Refuses requests outside the fixture boundary, naming only their method and path.
+pub fn guard(fixtures: &GuardFixtures, method: Method, target: &str, body: &[u8]) -> Result<()> {
+    let path = target.split_once('?').map_or(target, |(path, _)| path);
+    let allowed = !target.bytes().any(|byte| byte <= 32 || byte == 127 || b"#\\".contains(&byte))
+        && allowed_target(fixtures, method, path, body);
+    if allowed {
+        return Ok(());
+    }
+    let method = match method {
+        Method::Get => "GET",
+        Method::Post => "POST",
+        Method::Put => "PUT",
+        Method::Patch => "PATCH",
+        Method::Delete => "DELETE",
+    };
+    Err(format!("live target refuses {method} {path} before the connector").into())
+}
+fn allowed_target(fixtures: &GuardFixtures, method: Method, path: &str, body: &[u8]) -> bool {
     let mint = method == Method::Post
         && path
             .strip_prefix("/app/installations/")
             .and_then(|tail| tail.strip_suffix("/access_tokens"))
-            .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()));
+            .is_some_and(digits);
     let read = method == Method::Get && (path == "/app" || path.starts_with("/app/"));
     if mint || read {
-        return Ok(());
+        return true;
     }
-    if path.starts_with("/app")
-        || path.starts_with("/settings/")
-        || path.contains("/settings/apps")
-        || !(path.starts_with("/repos/")
-            || path.starts_with("/repositories/")
-            || path.starts_with("/users/")
-            || path.starts_with("/user")
-            || path == "/graphql"
-            || path == "/installation/token"
-            || path.starts_with("/installation/repositories"))
+    if path.starts_with("/app") || path.starts_with("/settings/") || path.contains("/settings/apps") {
+        return false;
+    }
+    if let Some(tail) = path.strip_prefix("/repos/") {
+        return repository_target(fixtures, method, tail);
+    }
+    if let Some(tail) = path.strip_prefix("/user/installations/")
+        && installation_target(fixtures, method, tail)
     {
-        return Err("live target refuses App changes before the connector".into());
+        return true;
     }
-    Ok(())
+    if path == "/graphql" {
+        return method == Method::Post && graphql_body(body);
+    }
+    if path == "/installation/token" {
+        return method == Method::Delete;
+    }
+    method == Method::Get
+        && (path == "/user"
+            || path.starts_with("/user/")
+            || path.starts_with("/users/")
+            || path.starts_with("/repositories/")
+            || path == "/installation/repositories")
 }
 /// # Errors
 /// Enforces the live boundary before a connector can write any byte.
-pub fn guarded<T>(method: Method, target: &str, connector: impl FnOnce() -> Result<T>) -> Result<T> {
-    guard(method, target)?;
+pub fn guarded(
+    fixtures: &GuardFixtures,
+    method: Method,
+    target: &str,
+    body: &[u8],
+    connector: fn() -> Result<()>,
+) -> Result<()> {
+    guard(fixtures, method, target, body)?;
     connector()
 }
 
 pub(crate) struct Connector {
     tls: skein_tls::Config,
+    fixtures: GuardFixtures,
 }
 impl Connector {
-    pub fn new() -> Result<Self> {
+    pub fn new(fixtures: &Fixtures) -> Result<Self> {
         let roots = skein_shell::read_trust_roots(
             &skein_shell::Trust::Machine { ssl_cert_file: None },
             &skein_shell::RootBounds { bundle_bytes: 4_194_304, certificates: 1024, certificate_bytes: 65536 },
@@ -258,7 +341,7 @@ impl Connector {
         .map_err(|_| "cannot read machine trust roots")?;
         let (tls, _) =
             skein_tls::Config::from_der(&roots.certificates, &[b"http/1.1"]).map_err(|_| "cannot configure TLS")?;
-        Ok(Self { tls })
+        Ok(Self { tls, fixtures: fixtures.guard_fixtures() })
     }
     #[expect(clippy::too_many_lines, reason = "one TLS step loop owns the socket and both stream directions")]
     pub fn exchange(&self, request: &Request) -> Result<(Vec<u8>, Response)> {
@@ -279,7 +362,7 @@ impl Connector {
             }
             (host.to_owned(), format!("/{tail}"))
         } else {
-            guard(request.method, &request.target)?;
+            guard(&self.fixtures, request.method, &request.target, &request.body)?;
             ("api.github.com".into(), request.target.clone())
         };
         let mut outgoing = request.clone();

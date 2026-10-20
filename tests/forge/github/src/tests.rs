@@ -6,7 +6,10 @@ use crate::{
     live::Fixtures,
     runner::{Runner, Target},
 };
-use skein_forge::{api, github::request::Method};
+use skein_forge::{
+    api,
+    github::{document as github_document, request::Method},
+};
 use skein_forge_conformance::{
     facts::Outcome,
     write::{self, SecretKind, Secrets},
@@ -187,6 +190,7 @@ fn github_conformance_live_refuses_a_loose_directory_or_file() {
 }
 #[test]
 fn github_conformance_live_refuses_the_apps_changes_before_any_byte() {
+    let fixtures = World::fixtures().expect("invented fixtures").guard_fixtures();
     for (method, path) in [
         (Method::Delete, "/app/installations/123"),
         (Method::Patch, "/app/hook/config"),
@@ -198,7 +202,7 @@ fn github_conformance_live_refuses_the_apps_changes_before_any_byte() {
         (Method::Post, "/apps/example-app/installations/new"),
     ] {
         assert!(
-            live::guarded(method, path, || -> Result<()> {
+            live::guarded(&fixtures, method, path, b"", || -> Result<()> {
                 panic!("connector called for App mutation");
             })
             .is_err()
@@ -210,8 +214,149 @@ fn github_conformance_live_refuses_the_apps_changes_before_any_byte() {
         (Method::Post, "/app/installations/123/access_tokens"),
         (Method::Delete, "/installation/token"),
     ] {
-        assert!(live::guarded(method, path, || Ok(())).is_ok());
+        assert!(live::guarded(&fixtures, method, path, b"", || Ok(())).is_ok());
     }
+}
+#[test]
+fn github_conformance_live_refuses_targets_outside_the_fixtures() {
+    let dir = Temp::new("guard-fixtures");
+    private_fixture(&dir.0);
+    let fixtures = Fixtures::load(&dir.0).expect("invented private fixtures").guard_fixtures();
+    let delete =
+        br#"{"query":"mutation { deleteRepository(input: {repositoryId: \"invented\"}) { clientMutationId } }"}"#
+            .as_slice();
+    let mixed = br#"{"query":"mutation { enqueuePullRequest(input: {pullRequestId: \"invented\"}) { clientMutationId } deleteRepository(input: {repositoryId: \"invented\"}) { clientMutationId } }"}"#.as_slice();
+    for (method, verb, target, body) in [
+        (Method::Post, "POST", "/repos/acme/other/pulls", b"".as_slice()),
+        (Method::Get, "GET", "/repos/acme/other", b""),
+        (Method::Get, "GET", "/repos/other/widgets/pulls", b""),
+        (Method::Get, "GET", "/repos/Acme/widgets", b""),
+        (Method::Get, "GET", "/repos/acme/Widgets", b""),
+        (Method::Delete, "DELETE", "/repos/acme/widgets", b""),
+        (Method::Patch, "PATCH", "/repos/acme/widgets?ignored=1", b""),
+        (Method::Post, "POST", "/repos/acme/spare", b""),
+        (Method::Put, "PUT", "/repos/globex/gadgets", b""),
+        (Method::Delete, "DELETE", "/repos/acme/widgets/", b""),
+        (Method::Post, "POST", "/user/repos", b""),
+        (Method::Patch, "PATCH", "/user", b""),
+        (Method::Put, "PUT", "/user/installations/999/repositories/1", b""),
+        (Method::Delete, "DELETE", "/user/installations/999/repositories/1", b""),
+        (Method::Post, "POST", "/user/installations/1/repositories/1", b""),
+        (Method::Put, "PUT", "/user/installations/1/repositories/not-digits", b""),
+        (Method::Put, "PUT", "/user/installations/1/repositories/1/extra", b""),
+        (Method::Put, "PUT", "/user/installations/1/repositories/", b""),
+        (Method::Put, "PUT", "/user/installations//repositories/1", b""),
+        (Method::Put, "PUT", "/user/installations/18446744073709551616/repositories/1", b""),
+        (Method::Delete, "DELETE", "/users/acme", b""),
+        (Method::Patch, "PATCH", "/repositories/2", b""),
+        (Method::Post, "POST", "/graphql", delete),
+        (Method::Post, "POST", "/graphql", mixed),
+        (Method::Get, "GET", "/graphql", br#"{"query":"query { viewer { login databaseId } }"}"#),
+        (Method::Post, "POST", "/graphql", br#"{"query":"subscription { viewer { login } }"}"#),
+        (Method::Post, "POST", "/graphql", br#"{"query":"query { viewer { login } }"}"#),
+        (Method::Post, "POST", "/graphql", br#"{"query":"query { viewer { login databaseId } } "}"#),
+        (Method::Post, "POST", "/graphql", b"{}"),
+        (Method::Post, "POST", "/graphql", br#"{"query":42}"#),
+        (Method::Post, "POST", "/graphql", b"invalid JSON"),
+        (Method::Get, "GET", "/repos/acme/widgets%2F..", b""),
+        (Method::Get, "GET", "/repos/ac%6de/widgets", b""),
+        (Method::Get, "GET", "/repos/acme%2Fother/widgets", b""),
+        (Method::Get, "GET", "/repos//widgets", b""),
+        (Method::Get, "GET", "/repos/acme/", b""),
+        (Method::Get, "GET", "/repos/./widgets", b""),
+        (Method::Get, "GET", "/repos/../widgets", b""),
+        (Method::Get, "GET", "/repos/acme/.", b""),
+        (Method::Get, "GET", "/repos/acme/..", b""),
+        (Method::Get, "GET", "/repos/acme/widgets/../other", b""),
+        (Method::Get, "GET", "/repos/acme/widgets#ignored", b""),
+        (Method::Get, "GET", "/repos/acme/widgets\\other", b""),
+        (Method::Get, "GET", "/repos/acme", b""),
+        (Method::Get, "GET", "/user-other", b""),
+        (Method::Get, "GET", "/installation/token", b""),
+        (Method::Post, "POST", "/installation/repositories", b""),
+        (Method::Get, "GET", "/installation/repositories-other", b""),
+    ] {
+        let error = live::guarded(&fixtures, method, target, body, || {
+            panic!("connector called for a refused target");
+        })
+        .expect_err("target must be refused before the connector");
+        let path = target.split('?').next().expect("path");
+        assert_eq!(error.to_string(), format!("live target refuses {verb} {path} before the connector"));
+    }
+}
+#[test]
+fn github_conformance_live_allows_fixture_requests() {
+    let fixtures = World::fixtures().expect("invented fixtures").guard_fixtures();
+    for (method, path) in [
+        (Method::Get, "/repos/acme/widgets?per_page=1"),
+        (Method::Get, "/repos/globex/gadgets"),
+        (Method::Get, "/repos/acme/spare"),
+        (Method::Post, "/repos/acme/widgets/pulls"),
+        (Method::Patch, "/repos/globex/gadgets/issues/1"),
+        (Method::Delete, "/repos/acme/spare/git/refs/heads/conformance-owned"),
+        (Method::Get, "/repos/acme/widgets/branches/conformance%2Fslash"),
+        (Method::Get, "/user"),
+        (Method::Get, "/user/31"),
+        (Method::Get, "/users/acme"),
+        (Method::Get, "/repositories/2"),
+        (Method::Put, "/user/installations/1/repositories/6"),
+        (Method::Delete, "/user/installations/2/repositories/4?ignored=1"),
+        (Method::Get, "/installation/repositories?per_page=100&page=1"),
+    ] {
+        assert!(live::guarded(&fixtures, method, path, b"", || Ok(())).is_ok(), "{method:?} {path}");
+    }
+    for document in [github_document::VIEWER, github_document::PULL, github_document::ENQUEUE] {
+        let document = std::str::from_utf8(document).expect("constant GraphQL document");
+        let body = skein_forge_conformance::json::object(&[("query", &document)]).expect("GraphQL body");
+        assert!(live::guarded(&fixtures, Method::Post, "/graphql", &body, || Ok(())).is_ok());
+    }
+}
+#[test]
+fn github_conformance_fake_requests_replay_through_the_live_guard() {
+    let out = Temp::new("guard-replay");
+    let mut r = runner(&out.0);
+    let fixtures = r.fixtures.guard_fixtures();
+    r.start().expect("start fake run");
+    let run = cases::run(&mut r);
+    r.complete(run).expect("complete fake run and cleanup");
+    assert_eq!(r.replay.len(), r.requests);
+    let mut allowed = 0;
+    let mut refused = 0;
+    let mut blobs = 0;
+    let mut documents = BTreeSet::new();
+    for (phase, request) in &r.replay {
+        if request.blob {
+            blobs += 1;
+            continue;
+        }
+        if *phase == "setup-lifecycle" {
+            if request.method != Method::Get {
+                assert!(
+                    live::guarded(&fixtures, request.method, &request.target, &request.body, || {
+                        panic!("connector called for fake-only setup mutation");
+                    })
+                    .is_err()
+                );
+                refused += 1;
+            }
+            continue;
+        }
+        live::guarded(&fixtures, request.method, &request.target, &request.body, || Ok(()))
+            .expect("a case's request was refused by the live guard");
+        allowed += 1;
+        if request.target == "/graphql" {
+            let body = skein_forge_conformance::json::Json::parse(&request.body).expect("GraphQL body");
+            documents.insert(body.root().get("query").str().expect("query document").as_bytes().to_vec());
+        }
+    }
+    assert!(allowed > 100);
+    assert_eq!(refused, 5, "bootstrap manifest, conversion, hook change and two removals");
+    assert!(blobs > 0, "blob redirects keep their separate boundary");
+    assert_eq!(
+        documents,
+        [github_document::VIEWER, github_document::PULL, github_document::ENQUEUE].map(<[u8]>::to_vec).into()
+    );
+    shutdown(&mut r);
 }
 #[test]
 fn github_conformance_names_a_token_expiring_within_30_days() {

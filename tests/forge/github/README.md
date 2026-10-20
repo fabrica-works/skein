@@ -34,9 +34,15 @@ workflow fails on `FAIL` in the commit message. All names come from these files.
 The version must equal the dialect's API pin. Tokens expiring within thirty
 days are named in the facts' provenance.
 
-Live refuses App mutations before invoking its connector, including manifest
-conversion, installation removal and hook changes. Its requests and redirected
-blob reads are bounded, TLS verified, and blob reads carry no authorization.
+Live limits repository requests to the exact fixture repository names and
+allows only GET on a repository itself. User and numeric repository routes
+are read only, except installation repository grants and removals for fixture
+installation ids. GraphQL accepts only POST with the dialect's exact VIEWER,
+PULL and ENQUEUE documents; enqueuePullRequest is its only mutation field.
+App mutations, including manifest conversion, installation removal and hook
+changes, are refused before the connector. Refusals name only method and path.
+Its requests and redirected blob reads are bounded, TLS verified, and blob
+reads carry no authorization.
 The run reserves requests for cleanup and stops within 400 requests.
 
 Every repository change and token mint is written to `made.txt` before its
@@ -60,7 +66,8 @@ the webhook secret before their signatures and payloads enter masked transcripts
 
 The focused tests run every named fact on the fake, check the design's name
 list, masking and leak refusal, fixture permissions, the pre-connector App
-boundary, request exhaustion, token expiry, interrupted cleanup and revocation
-on failed cases. Required signatures remain unchecked because the fake has no
+and fixture boundary, replay of the fake's requests through the guard, request
+exhaustion, token expiry, interrupted cleanup and revocation on failed cases.
+Required signatures remain unchecked because the fake has no
 signature enforcement. Live alone leaves the two manifest/hook facts unchecked
 because it changes nothing of the App.

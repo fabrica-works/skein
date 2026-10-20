@@ -903,6 +903,10 @@ pub(crate) fn setup_lifecycle(r: &mut Runner<'_>) -> Result<()> {
         r.provenance.push("# unchecked strays, uninstall, hook-address-set: live App is read only".into());
         return r.flush();
     }
+    #[cfg(test)]
+    {
+        r.phase = "setup-lifecycle";
+    }
     let list = r.app(Method::Get, "/app/installations?per_page=100&page=1", b"")?;
     if list.status != 200 || list.json()?.root().items().len() != 2 {
         return Err("fake stray installations absent".into());

@@ -35,6 +35,10 @@ pub(crate) struct Token {
     value: String,
 }
 pub(crate) struct Runner<'a> {
+    #[cfg(test)]
+    pub replay: Vec<(&'static str, Request)>,
+    #[cfg(test)]
+    pub phase: &'static str,
     pub target: Target,
     pub fixtures: Fixtures,
     pub secrets: Secrets,
@@ -77,6 +81,10 @@ impl<'a> Runner<'a> {
     fn with_journal(target: Target, fixtures: Fixtures, out: &'a Path, journal: Journal) -> Self {
         let secrets = fixtures.secrets();
         Self {
+            #[cfg(test)]
+            replay: vec![],
+            #[cfg(test)]
+            phase: "cases",
             target,
             fixtures,
             secrets,
@@ -133,6 +141,12 @@ impl<'a> Runner<'a> {
             return Err("conformance request budget exhausted".into());
         }
         self.requests += 1;
+        #[cfg(test)]
+        {
+            let mut replay = Request::new(request.method, &request.target, None, &request.body);
+            replay.blob = request.blob;
+            self.replay.push((self.phase, replay));
+        }
         let (wire, response) = match &mut self.target {
             Target::Fake(w) => w.exchange(request)?,
             Target::Live(c) => c.exchange(request)?,
@@ -265,6 +279,10 @@ impl<'a> Runner<'a> {
         Ok(())
     }
     fn bootstrap(&mut self) -> Result<()> {
+        #[cfg(test)]
+        {
+            self.phase = "setup-lifecycle";
+        }
         let manifest=br#"{"name":"example-app","url":"https://example-app.invalid/","redirect_url":"http://127.0.0.1/callback","setup_url":"http://127.0.0.1/setup","public":true,"hook_attributes":{"url":"https://example-app.invalid/","active":false},"default_permissions":{"contents":"write","issues":"write","pull_requests":"write","checks":"read","statuses":"write","administration":"write","actions":"read","metadata":"read"},"default_events":["push","pull_request","issues","issue_comment","pull_request_review","check_run","merge_group"]}"#;
         let form = format!("manifest={}", percent(manifest));
         let r = self.raw(Method::Post, "/settings/apps/new?state=example-state", "", form.as_bytes())?;
@@ -286,6 +304,10 @@ impl<'a> Runner<'a> {
             if r.status != 200 && r.status != 302 {
                 return Err("bootstrap installation refused".into());
             }
+        }
+        #[cfg(test)]
+        {
+            self.phase = "cases";
         }
         Ok(())
     }
@@ -849,7 +871,7 @@ pub fn run_fake(out: &Path) -> Result<Report> {
 /// Refuses insecure fixtures, disallowed mutations, leaks and budget excess.
 pub fn run_live(dir: &Path, out: &Path) -> Result<Report> {
     let fixtures = Fixtures::load(dir)?;
-    let connector = Connector::new()?;
+    let connector = Connector::new(&fixtures)?;
     execute(Runner::new(Target::Live(connector), fixtures, out)?)
 }
 fn execute(mut runner: Runner<'_>) -> Result<Report> {
@@ -897,7 +919,7 @@ pub fn clean(out: &Path, live: Option<&Path>) -> Result<()> {
         let saved = fs::read_to_string(out.join("fixture-path.txt"))?;
         Fixtures::load(Path::new(&saved))?
     };
-    let target = Target::Live(Connector::new()?);
+    let target = Target::Live(Connector::new(&fixtures)?);
     let mut r = Runner::resume(target, fixtures, out)?;
     let result = r.finish();
     cleanup_report(out, &r.leftover_mints, &r.secrets)?;
