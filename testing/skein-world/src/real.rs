@@ -17,10 +17,11 @@ use alloc::format;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 
+use crate::ring::Ring;
 use skein_heap::Span;
 use skein_io::kernel::{Complete, Done, Error, Exit, Fd, Op, ServiceSignal, Signal, Spawn, Submit};
 use skein_lib::{Duration, Queue, Time, Token};
-use skein_shell::{Clock, Config, Kernel, Now, Wait};
+use skein_shell::{Clock, Now, Wait};
 
 use crate::Host;
 use crate::heap::Heap;
@@ -254,7 +255,9 @@ impl<P: Host, R: Referee<P>> World<P, R> {
             .checked_add(hosted.checked_mul(2).expect("cleanup operations fit"))
             .and_then(|sum| sum.checked_add(1))
             .expect("world operations fit");
-        let ring = Ring::new(operations, limits);
+        let ring = Ring::new(operations, limits).unwrap_or_else(|error| {
+            crate::fail(&format!("io_uring is not usable here, so the real loop cannot run: {error}"))
+        });
         let ids: Vec<usize> = (0..self.procs.len()).collect();
         let processes = self
             .inherited
@@ -825,122 +828,6 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
             process.cleanup = process.cleanup.checked_add(1).expect("cleanup operations fit");
             self.ring.submits.push(Submit { op, kind });
         }
-    }
-}
-
-/// One host's original operation identity, including a cancel's target.
-struct Binding {
-    host: usize,
-    local: Token,
-    cancel: Option<Token>,
-}
-
-/// The shared kernel and the bindings kept until records return to their host.
-struct Ring {
-    kernel: Kernel,
-    next: u64,
-    limits: Vec<u32>,
-    counts: Vec<u32>,
-    bindings: BTreeMap<Token, Binding>,
-    tokens: BTreeMap<(usize, Token), Token>,
-    ready: Vec<VecDeque<Complete>>,
-    submits: Queue<Submit>,
-    arrived: Queue<Complete>,
-}
-
-impl Ring {
-    fn new(operations: u32, limits: Vec<u32>) -> Self {
-        let kernel = match Kernel::open(Config { operations }) {
-            Ok(kernel) => kernel,
-            Err(error) => crate::fail(&format!("io_uring is not usable here, so the real loop cannot run: {error}")),
-        };
-        Self {
-            kernel,
-            next: 0,
-            counts: vec![0; limits.len()],
-            ready: (0..limits.len()).map(|_| VecDeque::new()).collect(),
-            limits,
-            bindings: BTreeMap::new(),
-            tokens: BTreeMap::new(),
-            submits: Queue::with_capacity(operations),
-            arrived: Queue::with_capacity(operations),
-        }
-    }
-
-    fn complete(&mut self, mut complete: Complete) -> (usize, Complete) {
-        let binding = self.bindings.remove(&complete.op).expect("a world token has its binding");
-        self.tokens.remove(&(binding.host, binding.local)).expect("a local token has its binding");
-        complete.op = binding.local;
-        if let Some(target) = binding.cancel {
-            complete.kind = Op::Cancel { target };
-        }
-        (binding.host, complete)
-    }
-
-    fn deliver(&mut self, host: usize, out: &mut Queue<Complete>) {
-        while out.room() > 0 {
-            let Some(complete) = self.ready.get_mut(host).expect("a queue per host").pop_front() else { break };
-            let count = self.counts.get_mut(host).expect("a count per host");
-            *count = count.checked_sub(1).expect("a returned operation was in flight");
-            out.push(complete);
-        }
-    }
-
-    fn register(&mut self, host: usize, mut record: Submit) -> Submit {
-        assert!(
-            self.counts.get(host).expect("a count per host") < self.limits.get(host).expect("a limit per host"),
-            "host {host} exceeds its own operation limit"
-        );
-        assert!(
-            !self.tokens.contains_key(&(host, record.op))
-                && !self.ready.get(host).expect("a queue per host").iter().any(|complete| complete.op == record.op),
-            "a host never reuses a token in flight"
-        );
-        let token = self.fresh();
-        let local = record.op;
-        let cancel = if let Op::Cancel { target } = &mut record.kind {
-            let original = *target;
-            *target = self.tokens.get(&(host, original)).copied().unwrap_or(Token::new(0));
-            Some(original)
-        } else {
-            None
-        };
-        self.tokens.insert((host, local), token);
-        self.bindings.insert(token, Binding { host, local, cancel });
-        let count = self.counts.get_mut(host).expect("a count per host");
-        *count = count.checked_add(1).expect("within the host limit");
-        record.op = token;
-        record
-    }
-
-    fn fresh(&mut self) -> Token {
-        self.next = self.next.checked_add(1).expect("world tokens do not wrap");
-        Token::new(self.next)
-    }
-
-    fn admit(&mut self, limit: u32) -> usize {
-        let host = self.limits.len();
-        self.limits.push(limit);
-        self.counts.push(0);
-        self.ready.push(VecDeque::new());
-        host
-    }
-
-    fn count(&self, host: usize) -> u32 {
-        *self.counts.get(host).expect("a count per host")
-    }
-
-    fn enter(&mut self, wait: Wait) {
-        self.kernel.submit(&mut self.submits, wait);
-        assert!(self.submits.is_empty(), "the ring is provisioned for every host and cleanup");
-    }
-
-    fn has_ready(&self) -> bool {
-        self.ready.iter().any(|ready| !ready.is_empty())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.kernel.in_flight() == 0 && !self.has_ready()
     }
 }
 

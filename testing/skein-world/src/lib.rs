@@ -42,6 +42,7 @@ mod heap;
 mod program;
 pub mod real;
 mod referee;
+pub mod ring;
 pub mod stream;
 mod tree;
 mod world;
