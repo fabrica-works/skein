@@ -1056,7 +1056,10 @@ masking and refusal of leaked secrets are section 7's.
   marking an object done. When a killed run retained only an intention,
   cleanup follows every issues-list page, and reads pull details when
   matching head and base. An unfound object remains pending. An item is
-  marked done only after a read shows it closed. Minted tokens
+  marked done only after a read shows it closed. Cleanup mints a journaled
+  installation token for the repository's lookups, close, and read-back;
+  branch deletion uses the person's token. The cleanup tokens are revoked
+  after restoration, including when restoration fails. Minted tokens
   stay in memory and are revoked on every controlled exit; after an
   externally killed process, cleanup reports each unacknowledged mint's
   installation and one-hour expiry in `facts.txt`, without recovering
