@@ -23,7 +23,7 @@ pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> 
     }
     let (path, query) = split(target, b'?');
     let query = Query::read(query)?;
-    let request = if let Some(request) = app::route(method, path, query.page()) {
+    let request = if let Some(request) = app::route(method, path, query.page(), query.size()) {
         request
     } else if method != Method::Get {
         return None;

@@ -175,7 +175,7 @@ fn github_fake_reachable_pages() {
         let token = bearer(h.mint(id, false).token.expose());
         for (index, expected) in targets.iter().enumerate() {
             let page = u32::try_from(index).expect("fixture page").checked_add(1).expect("page");
-            let request = skein_forge::github::request::Request::Reachable { page };
+            let request = skein_forge::github::request::Request::Reachable { page, per_page: 100 };
             let encoded = skein_forge::github::request::encode(&request, &h.limits.github).expect("target");
             let response = h.ask(Method::Get, &encoded.target, Some(token.expose()), b"");
             let total = if id == 1 { br#""total_count":2"#.as_slice() } else { br#""total_count":3"# };

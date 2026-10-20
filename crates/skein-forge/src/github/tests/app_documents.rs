@@ -51,8 +51,8 @@ fn requests() -> [RequestCase; 14] {
             body: Some(br#"{"permissions":{"contents":"write"}}"#),
         },
         RequestCase {
-            request: Request::Reachable { page: 2 },
-            target: b"/installation/repositories?per_page=100&page=2",
+            request: Request::Reachable { page: 2, per_page: 20 },
+            target: b"/installation/repositories?per_page=20&page=2",
             method: Method::Get,
             auth: Auth::Installation,
             body: None,

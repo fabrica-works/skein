@@ -373,6 +373,7 @@ impl Service {
         }
         page.link(answers::response(200, &Body::Installations(rows.as_slice()), &self.limits), target, &self.limits)
     }
+    // The fake pages by its own limits.page, independent of the request's size.
     fn reachable(&self, number: u32, grant: &Grant, target: &[u8]) -> Response {
         let mut total = 0_u64;
         for (id, _) in &self.repositories {

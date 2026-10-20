@@ -6,6 +6,7 @@ pub mod failure;
 pub mod plan;
 mod reading;
 pub mod reads;
+pub mod start;
 pub mod tables;
 
 #[cfg(test)]

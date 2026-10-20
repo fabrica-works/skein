@@ -31,7 +31,7 @@ pub enum Request {
     Installations { page: u32 },
     Installation { id: u64 },
     Mint { installation: u64, scope: Scope },
-    Reachable { page: u32 },
+    Reachable { page: u32, per_page: u32 },
     Viewer,
     App,
     HookConfig,
@@ -605,9 +605,12 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.number(*installation);
             out.put(b"/access_tokens");
         }
-        Request::Reachable { page } => {
+        Request::Reachable { page, per_page } => {
+            if !(1..=super::pin::PAGE_CAP).contains(per_page) {
+                return Err(Refusal::Text);
+            }
             out.put(b"/installation/repositories");
-            out.page(*page, super::pin::PAGE_CAP, false);
+            out.page(*page, *per_page, false);
         }
         Request::Viewer => out.put(b"/graphql"),
         Request::App => out.put(b"/app"),

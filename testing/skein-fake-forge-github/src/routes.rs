@@ -44,7 +44,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::Installation { id } => Route::App(App::Installation(id)),
         Request::Mint { installation, .. } => Route::App(App::Mint(installation)),
         Request::Uninstall { id } => Route::App(App::Uninstall(id)),
-        Request::Reachable { page } if page > 0 => Route::Token(Token::Reachable(page)),
+        Request::Reachable { page, .. } if page > 0 => Route::Token(Token::Reachable(page)),
         Request::Repository { id } => Route::Token(Token::Read(reads::Read::Repository(id))),
         Request::Locate { owner, name } => Route::Token(Token::Read(reads::Read::Locate { owner, name })),
         Request::Branch { owner, name, branch } => {

@@ -13,13 +13,15 @@ use skein_lib::{
     stream::{Down, Up},
 };
 
-pub(super) fn route(method: Method, path: &[u8], page: Option<u32>) -> Option<Request> {
+pub(super) fn route(method: Method, path: &[u8], page: Option<u32>, size: Option<u32>) -> Option<Request> {
     match (method, path) {
         (Method::Get, b"/app") => return Some(Request::App),
         (Method::Get, b"/app/hook/config") => return Some(Request::HookConfig),
         (Method::Patch, b"/app/hook/config") => return Some(Request::SetHook { url: Box::from([]) }),
         (Method::Get, b"/app/installations") => return Some(Request::Installations { page: page? }),
-        (Method::Get, b"/installation/repositories") => return Some(Request::Reachable { page: page? }),
+        (Method::Get, b"/installation/repositories") => {
+            return Some(Request::Reachable { page: page?, per_page: size? });
+        }
         (Method::Get | Method::Post | Method::Put | Method::Patch | Method::Delete, _) => {}
     }
     if let Some(tail) = path.strip_prefix(b"/app/installations/") {
