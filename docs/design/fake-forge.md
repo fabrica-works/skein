@@ -628,7 +628,9 @@ the fake.
   ids are 19 digits, so `u64` is held exactly.
 - **What is not modelled:** GitHub Apps other than the one App and
   `github-actions`; forks; organizations' members and teams; signed
-  commits; workflows; any secondary limit beyond `crowded`.
+  commits; workflows; any secondary limit beyond `crowded`; a review's
+  inline comments, which the domain does not store: a pull's review
+  comments read as an empty list.
 
 ### 10.5 The peer and its tests
 
