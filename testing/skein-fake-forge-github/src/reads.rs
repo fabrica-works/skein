@@ -377,10 +377,14 @@ fn queue_merge(answer: Answer, head: api::Commit, limits: &Limits) -> Response {
     if commit(pull.commit) != head {
         return answers::refusal(409, skein_forge::github::failure::MERGE_STALE, limits);
     }
-    let Some(prefix) = service::joined(skein_forge::github::failure::RULES, b"\n") else {
+    // Recorded shape: each line, the heading first, ends in a blank line.
+    let Some(prefix) = service::joined(skein_forge::github::failure::RULES, b"\n\n") else {
         return answers::failed();
     };
     let Some(message) = service::joined(&prefix, skein_forge::github::failure::QUEUE) else {
+        return answers::failed();
+    };
+    let Some(message) = service::joined(&message, b"\n\n") else {
         return answers::failed();
     };
     answers::refusal(405, &message, limits)

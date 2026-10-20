@@ -43,7 +43,7 @@ fn merge(number: u64, head: u64) -> Request {
 fn direct_merge_of_a_queue_branch_answers_the_two_rule_lines_without_merging() {
     let (mut h, number, head, token) = scenario(true);
     let response = ask(&mut h, &token, &merge(number, head));
-    let message = f::parts(&[failure::RULES, b"\n", failure::QUEUE]);
+    let message = f::parts(&[failure::RULES, b"\n\n", failure::QUEUE, b"\n\n"]);
     f::refusal(&h, &response, 405, &message);
     assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
     let a::Answer::Pull(pull) = h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap()
