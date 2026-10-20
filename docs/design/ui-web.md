@@ -979,10 +979,11 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
       naming it, and the harness kills it. Its standard error's tail is
       written on a failure, as the binary's is;
   - **keeps a value for the test:** the value, or an attribute the test
-    names, of an element its target finds, a hidden one among them, as
-    it stands at the step, under a name the test gives. A target that
-    finds no element, or an element without that attribute, fails the
-    step. The run hands back what each person kept, by name, with each
+    names, of the first element a CSS selector the test gives finds in
+    the person's page, as it stands at the step, under a name the test
+    gives. A selector, not a target, since a hidden field holds no role
+    a person finds it by. A selector that finds no element, or an
+    element without that attribute, fails the step. The run hands back what each person kept, by name, with each
     link a command's step opened, so that the test reads a peer's state
     by what the story saw;
   - **awaits trouble** with given words, which the person's pages then
