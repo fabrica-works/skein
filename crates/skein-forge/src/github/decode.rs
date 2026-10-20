@@ -8,6 +8,7 @@ use alloc::boxed::Box;
 use skein_json::{Token, tokenizer};
 use skein_lib::List;
 mod app;
+pub(crate) mod delivery;
 mod walk;
 use walk::{Move, Node, Walk};
 /// The result of one event, with its next demand returned beside it.
@@ -123,6 +124,7 @@ impl Decoder {
                 | Node::Error
                 | Node::Errors,
             ) => {}
+            Move::PayloadScalar(..) | Move::PayloadEnd | Move::BodyLong(_) => unreachable!("document walker root"),
             Move::Done => {
                 self.terminal = true;
                 let document = match self.kind {

@@ -1,5 +1,6 @@
 mod app;
 mod app_documents;
+mod delivery;
 use super::{
     credential,
     decode::Malformed,

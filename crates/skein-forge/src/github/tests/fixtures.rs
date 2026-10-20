@@ -142,3 +142,46 @@ pub fn requests() -> [TargetCase; 25] {
         TargetCase { label:"user",request:Request::User { id:9_007_199_254_740_993 },target:b"/user/9007199254740993",raw:false },
     ]
 }
+
+/// Exercises the streaming delivery entry points independently of the whole-body driver.
+pub fn delivery_decode(
+    event: &[u8],
+    body: &[u8],
+    chunk: u32,
+    limits: &Limits,
+) -> Result<super::super::Delivery, Malformed> {
+    use super::super::delivery;
+    let mut limits = *limits;
+    limits.json.chunk = chunk;
+    let Some(mut decoder) = delivery::decoder(event, &limits) else {
+        return Ok(delivery::Delivery::Other);
+    };
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };
+    let mut tokenizer = tokenizer::Tokenizer::new(&limits.json);
+    let mut above = Queue::with_capacity(1);
+    let mut below = Queue::with_capacity(1);
+    let mut intake =
+        Intake::with_capacity(u32::try_from(body.len()).unwrap().max(tokenizer::largest_demand(&limits.json)));
+    intake.append(body).unwrap();
+    tokenizer::down(&mut tokenizer, &env, delivery::first(&decoder), &mut above, &mut below);
+    for _ in 0..body.len().saturating_mul(8).saturating_add(64) {
+        if let Some(event) = above.pop() {
+            match delivery::step(&mut decoder, &limits, &event) {
+                delivery::Step::Demand(demand) => tokenizer::down(&mut tokenizer, &env, demand, &mut above, &mut below),
+                delivery::Step::Done(value) => return Ok(value),
+                delivery::Step::Malformed(error) => return Err(error),
+            }
+        } else {
+            let read = match below.pop().expect("tokenizer demand") {
+                Down::Demand { read, room: 0 } => read,
+                Down::Demand { .. } | Down::Send(_) | Down::Finish => panic!("JSON only demands input"),
+            };
+            let event = match intake.meet(read) {
+                Some(bytes) => Up::Bytes(bytes),
+                None => Up::End,
+            };
+            tokenizer::up(&mut tokenizer, &env, event, &mut above, &mut below);
+        }
+    }
+    panic!("delivery did not settle within input's step bound")
+}

@@ -9,10 +9,12 @@ use alloc::boxed::Box;
 use skein_json::writer::{self, Encoder};
 use skein_lib::{Decimal, List, Overflow, Writer};
 mod app;
+mod delivery;
 pub use app::{
     app, bot_user, conversion, graphql, graphql_refusal, hook, hook_url, installation, installations, mint_scope,
     minted, reachable, viewer,
 };
+pub use delivery::{Sent, encode};
 /// Reads a request target into the request whose canonical spelling it carries.
 #[must_use]
 pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> {

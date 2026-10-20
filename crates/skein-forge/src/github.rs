@@ -1,6 +1,8 @@
 //! GitHub's documents at its pin (forge-github.md).
 pub mod credential;
 pub mod decode;
+pub mod delivery;
+pub use delivery::Delivery;
 pub mod document;
 pub use document::Reachable;
 pub mod failure;

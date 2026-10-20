@@ -1,4 +1,5 @@
 //! GitHub's bounded field walker, independent of Forgejo's tables.
+use super::super::delivery::{Ci, Event as Hook};
 use super::super::{
     document,
     limits::{DEPTH, Limits},
@@ -39,15 +40,35 @@ pub(super) enum Node {
     Errors,
     ErrorEntry,
 }
+/// Payload roles share the walker without extending the document-only Node vocabulary.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Payload {
+    Root(Hook),
+    Repository,
+    Item,
+    Number,
+    Body,
+    Head,
+    Sender,
+    Installation,
+    InstallationId,
+    Account,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Role {
+    Document(Node),
+    Payload(Payload),
+}
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Read {
     Text,
     Body,
+    DeliveryBody,
     Secret,
     Presence,
     Number,
     Boolean,
-    Container(Node),
+    Container(Role),
 }
 #[derive(Clone, Copy, Debug)]
 struct Field {
@@ -61,13 +82,13 @@ const fn field(key: &'static [u8], read: Read) -> Field {
 const fn optional(key: &'static [u8], read: Read) -> Field {
     Field { key, read, required: false }
 }
-fn fields(node: Node) -> &'static [Field] {
+fn document_fields(node: Node) -> &'static [Field] {
     match node {
         Node::Installation => {
             const {
                 &[
                     field(b"id", Read::Number),
-                    field(b"account", Read::Container(Node::InstallationAccount)),
+                    field(b"account", Read::Container(Role::Document(Node::InstallationAccount))),
                     field(b"created_at", Read::Text),
                     optional(b"suspended_at", Read::Presence),
                 ]
@@ -77,12 +98,14 @@ fn fields(node: Node) -> &'static [Field] {
             const { &[field(b"login", Read::Text), field(b"id", Read::Number), field(b"type", Read::Text)] }
         }
         Node::Minted => const { &[field(b"token", Read::Secret), field(b"expires_at", Read::Text)] },
-        Node::ReachableEnvelope => const { &[field(b"repositories", Read::Container(Node::ReachableRows))] },
+        Node::ReachableEnvelope => {
+            const { &[field(b"repositories", Read::Container(Role::Document(Node::ReachableRows)))] }
+        }
         Node::Reachable => {
             const {
                 &[
                     field(b"id", Read::Number),
-                    field(b"owner", Read::Container(Node::AppOwner)),
+                    field(b"owner", Read::Container(Role::Document(Node::AppOwner))),
                     field(b"name", Read::Text),
                     field(b"private", Read::Boolean),
                 ]
@@ -92,12 +115,12 @@ fn fields(node: Node) -> &'static [Field] {
         Node::ViewerEnvelope => {
             const {
                 &[
-                    optional(b"data", Read::Container(Node::ViewerData)),
-                    optional(b"errors", Read::Container(Node::GraphqlErrors)),
+                    optional(b"data", Read::Container(Role::Document(Node::ViewerData))),
+                    optional(b"errors", Read::Container(Role::Document(Node::GraphqlErrors))),
                 ]
             }
         }
-        Node::ViewerData => const { &[optional(b"viewer", Read::Container(Node::Viewer))] },
+        Node::ViewerData => const { &[optional(b"viewer", Read::Container(Role::Document(Node::Viewer)))] },
         Node::Viewer => const { &[field(b"databaseId", Read::Number), field(b"login", Read::Text)] },
         Node::GraphqlError => const { &[field(b"type", Read::Text), field(b"message", Read::Text)] },
         Node::App => const { &[field(b"id", Read::Number), field(b"slug", Read::Text)] },
@@ -107,7 +130,7 @@ fn fields(node: Node) -> &'static [Field] {
                 &[
                     field(b"id", Read::Number),
                     field(b"slug", Read::Text),
-                    field(b"owner", Read::Container(Node::AppOwner)),
+                    field(b"owner", Read::Container(Role::Document(Node::AppOwner))),
                     field(b"pem", Read::Secret),
                     field(b"webhook_secret", Read::Secret),
                 ]
@@ -118,7 +141,7 @@ fn fields(node: Node) -> &'static [Field] {
             const {
                 &[
                     field(b"id", Read::Number),
-                    field(b"owner", Read::Container(Node::Owner)),
+                    field(b"owner", Read::Container(Role::Document(Node::Owner))),
                     field(b"name", Read::Text),
                     field(b"default_branch", Read::Text),
                     field(b"html_url", Read::Text),
@@ -129,14 +152,16 @@ fn fields(node: Node) -> &'static [Field] {
             }
         }
         Node::Owner => const { &[field(b"login", Read::Text), field(b"id", Read::Number), field(b"type", Read::Text)] },
-        Node::Branch => const { &[field(b"name", Read::Text), field(b"commit", Read::Container(Node::Commit))] },
+        Node::Branch => {
+            const { &[field(b"name", Read::Text), field(b"commit", Read::Container(Role::Document(Node::Commit)))] }
+        }
         Node::Commit => const { &[field(b"sha", Read::Text)] },
         Node::BranchName => const { &[field(b"name", Read::Text)] },
         Node::Error => {
             const {
                 &[
                     field(b"message", Read::Body),
-                    Field { key: b"errors", read: Read::Container(Node::Errors), required: false },
+                    Field { key: b"errors", read: Read::Container(Role::Document(Node::Errors)), required: false },
                 ]
             }
         }
@@ -144,13 +169,17 @@ fn fields(node: Node) -> &'static [Field] {
         Node::InstallationRows | Node::ReachableRows | Node::GraphqlErrors | Node::BranchRows | Node::Errors => &[],
     }
 }
-fn element(node: Node) -> Option<Node> {
+fn element(role: Role) -> Option<Role> {
+    let node = match role {
+        Role::Document(node) => node,
+        Role::Payload(_) => return None,
+    };
     match node {
-        Node::InstallationRows => Some(Node::Installation),
-        Node::ReachableRows => Some(Node::Reachable),
-        Node::GraphqlErrors => Some(Node::GraphqlError),
-        Node::BranchRows => Some(Node::BranchName),
-        Node::Errors => Some(Node::ErrorEntry),
+        Node::InstallationRows => Some(Role::Document(Node::Installation)),
+        Node::ReachableRows => Some(Role::Document(Node::Reachable)),
+        Node::GraphqlErrors => Some(Role::Document(Node::GraphqlError)),
+        Node::BranchRows => Some(Role::Document(Node::BranchName)),
+        Node::Errors => Some(Role::Document(Node::ErrorEntry)),
         Node::Installation
         | Node::InstallationAccount
         | Node::Minted
@@ -176,13 +205,13 @@ fn element(node: Node) -> Option<Node> {
 }
 #[derive(Debug)]
 struct Frame {
-    node: Node,
+    node: Role,
     touched: u32,
     seen: u32,
 }
 #[derive(Debug)]
 enum Want {
-    Start(Node),
+    Start(Role),
     Key,
     Value(Field, u32),
     Element,
@@ -196,6 +225,9 @@ pub(super) enum Move {
     Demand(Request),
     Scalar(Node, &'static [u8], Token),
     End(Node),
+    PayloadScalar(Payload, &'static [u8], Token),
+    PayloadEnd,
+    BodyLong(u64),
     Done,
 }
 /// A fixed-depth walker retaining field masks and no document tree.
@@ -222,7 +254,14 @@ impl Walk {
             document::Kind::BranchRows => Node::BranchRows,
             document::Kind::Error => Node::Error,
         };
-        Self { open: Stack::with_capacity(DEPTH), want: Want::Start(node), limits: *limits }
+        Self::root(Role::Document(node), limits)
+    }
+    /// A delivery has its own root but uses the same field masks and depth bound.
+    pub(super) fn delivery(event: Hook, limits: &Limits) -> Self {
+        Self::root(Role::Payload(Payload::Root(event)), limits)
+    }
+    fn root(role: Role, limits: &Limits) -> Self {
+        Self { open: Stack::with_capacity(DEPTH), want: Want::Start(role), limits: *limits }
     }
     pub(super) fn step(&mut self, event: Event) -> Result<Move, Malformed> {
         if let Event::Failed(error) = event {
@@ -238,7 +277,7 @@ impl Walk {
                     self.end()
                 } else {
                     let frame = self.open.top_mut().expect("array");
-                    if frame.node == Node::GraphqlErrors && frame.seen != 0 {
+                    if frame.node == Role::Document(Node::GraphqlErrors) && frame.seen != 0 {
                         return self.unknown(&event, 0);
                     }
                     frame.seen = 1;
@@ -257,7 +296,7 @@ impl Walk {
             Want::Terminal => Err(Malformed::Shape { field: b"" }),
         }
     }
-    fn start(&mut self, node: Node, event: &Event) -> Result<Move, Malformed> {
+    fn start(&mut self, node: Role, event: &Event) -> Result<Move, Malformed> {
         let array = element(node).is_some();
         if event != &Event::Token(if array { Token::ArrayStart } else { Token::ObjectStart }) {
             return Err(Malformed::Shape { field: b"" });
@@ -284,6 +323,7 @@ impl Walk {
                         return Ok(Move::Demand(match field.read {
                             Read::Text | Read::Secret => Request::Text(self.limits.string_bytes),
                             Read::Body => Request::Text(self.limits.body_bytes.min(self.limits.string_bytes)),
+                            Read::DeliveryBody => Request::Text(self.limits.body_bytes),
                             Read::Presence => Request::Text(0),
                             Read::Number | Read::Boolean | Read::Container(_) => Request::Next,
                         }));
@@ -321,14 +361,18 @@ impl Walk {
             Read::Container(child) => return self.start(child, &event),
             Read::Presence => {
                 self.unknown(&event, 0)?;
-                return Ok(Move::Scalar(node, field.key, Token::True));
+                return Ok(scalar(node, field.key, Token::True));
             }
-            Read::Text | Read::Secret | Read::Body | Read::Number | Read::Boolean => {}
+            Read::Text | Read::Secret | Read::Body | Read::DeliveryBody | Read::Number | Read::Boolean => {}
         }
         let wrong = Malformed::Shape { field: field.key };
         let token = match event {
             Event::Token(token) => token,
-            Event::Long(_) => {
+            Event::Long(length) => {
+                if field.read == Read::DeliveryBody {
+                    self.want = Want::Key;
+                    return Ok(Move::BodyLong(length));
+                }
                 return Err(if field.read == Read::Secret {
                     Malformed::Bound { field: field.key }
                 } else {
@@ -338,8 +382,10 @@ impl Walk {
             Event::Skipped(_) | Event::Done | Event::Failed(_) | Event::Closed => return Err(wrong),
         };
         let valid = match (&field.read, &token) {
-            (Read::Text | Read::Secret | Read::Body, Token::String(text)) => {
-                if text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize") {
+            (Read::Text | Read::Secret | Read::Body | Read::DeliveryBody, Token::String(text)) => {
+                if field.read != Read::DeliveryBody
+                    && text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize")
+                {
                     return Err(if field.read == Read::Secret {
                         Malformed::Bound { field: field.key }
                     } else {
@@ -360,6 +406,7 @@ impl Walk {
                 | Read::Secret
                 | Read::Presence
                 | Read::Body
+                | Read::DeliveryBody
                 | Read::Number
                 | Read::Boolean
                 | Read::Container(_),
@@ -379,7 +426,7 @@ impl Walk {
             return Err(wrong);
         }
         self.want = Want::Key;
-        Ok(Move::Scalar(node, field.key, token))
+        Ok(scalar(node, field.key, token))
     }
     fn unknown(&mut self, event: &Event, depth: u32) -> Result<Move, Malformed> {
         let depth = match event {
@@ -432,6 +479,113 @@ impl Walk {
                 }
             }
         };
-        Ok(Move::End(frame.node))
+        Ok(match frame.node {
+            Role::Document(node) => Move::End(node),
+            Role::Payload(_) => Move::PayloadEnd,
+        })
+    }
+}
+
+fn scalar(role: Role, key: &'static [u8], token: Token) -> Move {
+    match role {
+        Role::Document(node) => Move::Scalar(node, key, token),
+        Role::Payload(node) => Move::PayloadScalar(node, key, token),
+    }
+}
+fn fields(role: Role) -> &'static [Field] {
+    match role {
+        Role::Document(node) => document_fields(node),
+        Role::Payload(node) => payload_fields(node),
+    }
+}
+const fn child(key: &'static [u8], node: Payload) -> Field {
+    field(key, Read::Container(Role::Payload(node)))
+}
+/// The common action/object/repository shape used by item and CI events.
+const fn action_fields(key: &'static [u8], node: Payload) -> [Field; 3] {
+    [field(b"action", Read::Text), child(key, node), child(b"repository", Payload::Repository)]
+}
+fn payload_fields(node: Payload) -> &'static [Field] {
+    match node {
+        Payload::Root(Hook::Issue) => const { &action_fields(b"issue", Payload::Item) },
+        Payload::Root(Hook::Comment) => {
+            const {
+                &[
+                    field(b"action", Read::Text),
+                    child(b"issue", Payload::Number),
+                    child(b"comment", Payload::Body),
+                    child(b"repository", Payload::Repository),
+                ]
+            }
+        }
+        Payload::Root(Hook::Pull) => {
+            const {
+                &[
+                    field(b"action", Read::Text),
+                    field(b"number", Read::Number),
+                    optional(b"reason", Read::Text),
+                    child(b"repository", Payload::Repository),
+                ]
+            }
+        }
+        Payload::Root(Hook::Review) => {
+            const {
+                &[
+                    field(b"action", Read::Text),
+                    child(b"pull_request", Payload::Number),
+                    child(b"review", Payload::Body),
+                    child(b"repository", Payload::Repository),
+                ]
+            }
+        }
+        Payload::Root(Hook::Remark) => const { &action_fields(b"pull_request", Payload::Number) },
+        Payload::Root(Hook::Push) => {
+            const {
+                &[
+                    field(b"ref", Read::Text),
+                    field(b"after", Read::Text),
+                    field(b"deleted", Read::Boolean),
+                    child(b"repository", Payload::Repository),
+                    child(b"sender", Payload::Sender),
+                ]
+            }
+        }
+        Payload::Root(Hook::Ref(_)) => {
+            const { &[field(b"ref", Read::Text), field(b"ref_type", Read::Text), child(b"repository", Payload::Repository)] }
+        }
+        Payload::Root(Hook::Ci(event)) => ci_fields(event),
+        Payload::Root(Hook::Installation | Hook::Repositories) => {
+            const { &[field(b"action", Read::Text), child(b"installation", Payload::Installation)] }
+        }
+        Payload::Root(Hook::Target) => {
+            const {
+                &[
+                    field(b"action", Read::Text),
+                    child(b"installation", Payload::InstallationId),
+                    child(b"account", Payload::Account),
+                ]
+            }
+        }
+        Payload::Repository | Payload::Sender | Payload::InstallationId => const { &[field(b"id", Read::Number)] },
+        Payload::Item => const { &[field(b"number", Read::Number), optional(b"body", Read::DeliveryBody)] },
+        Payload::Number => const { &[field(b"number", Read::Number)] },
+        Payload::Body => const { &[optional(b"body", Read::DeliveryBody)] },
+        Payload::Head => const { &[field(b"head_sha", Read::Text)] },
+        // Target puts the account beside the installation, the other two events inside it.
+        Payload::Installation => const { &[field(b"id", Read::Number), child(b"account", Payload::Account)] },
+        Payload::Account => const { &[field(b"id", Read::Number), field(b"login", Read::Text)] },
+    }
+}
+
+fn ci_fields(event: Ci) -> &'static [Field] {
+    match event {
+        Ci::CheckRun => const { &action_fields(b"check_run", Payload::Head) },
+        Ci::CheckSuite => const { &action_fields(b"check_suite", Payload::Head) },
+        Ci::WorkflowJob => const { &action_fields(b"workflow_job", Payload::Head) },
+        Ci::WorkflowRun => const { &action_fields(b"workflow_run", Payload::Head) },
+        Ci::ChecksRequested | Ci::Destroyed => const { &action_fields(b"merge_group", Payload::Head) },
+        Ci::Status => {
+            const { &[field(b"sha", Read::Text), field(b"state", Read::Text), child(b"repository", Payload::Repository)] }
+        }
     }
 }
