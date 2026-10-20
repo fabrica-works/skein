@@ -548,6 +548,11 @@ accepted set; then:
    /app/installations/{id}`; a `404` is as good). A younger one may be
    waiting for its person's `Accept`.
 
+The setup host's rows-only replies make an empty page the installation
+listing's terminal marker; even a short nonempty page is followed.
+`pages` counts that terminal response. Discovery completes before the
+accepted set is pruned or any stray is uninstalled.
+
 A second run with nothing changed writes nothing.
 
 ### 5.7 States, one-time

@@ -9,6 +9,7 @@ pub(crate) mod github_fixtures;
 mod github_given;
 mod github_hook;
 mod github_install;
+mod github_installations;
 mod github_manifest;
 mod github_picker;
 mod github_send;
