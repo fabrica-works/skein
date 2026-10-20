@@ -1,6 +1,6 @@
 # LLM connections
 
-Provisional, 2026-10-07; revised 2026-10-19. `skein-llm-connection` runs
+Provisional, 2026-10-07; revised 2026-10-20. `skein-llm-connection` runs
 LLM calls end to end for the protocol layer that owns it. For each call it:
 
 - connects through io;
@@ -312,7 +312,9 @@ client's evidence: unsent, possibly sent, or a response received.
   (testing-strategy.md, section 3); configurations do not.
 - **Each call reserves** at admission its measured request and the
   receiving bound its endpoint's limits derive (llm.md, section 4.2), and
-  releases them at its terminal. A call whose reservation does not fit
+  releases them at its terminal. On a gzip route the measured request
+  counts the compressed copy's room beside the rendered body, and the
+  two stay within the request bound (llm.md, section 4.8). A call whose reservation does not fit
   what is left waits (4.1); one larger than the whole pool is refused.
   The prompt it was started with is the owner's until the client prepares
   the request from it.

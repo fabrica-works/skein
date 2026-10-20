@@ -158,7 +158,10 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
         endpoint,
         usize::try_from(credential.value).expect("u32 fits usize"),
         account_bytes,
-        content_length(limits.request, compressed(endpoint, limits.request, limits)?),
+        // A compressed body's length stays below the request bound and a
+        // body sent as rendered within it, so the bound fixes the digits.
+        endpoint.encoding,
+        u64::from(limits.request),
         Some(Scheme::Bearer),
         &fields,
     )?;
@@ -317,13 +320,14 @@ pub struct Client {
 /// One admitted request's wire lengths, before its encoded body exists.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Measured {
-    /// Encoded HTTP request head bytes; on a gzip endpoint, the most its
+    /// Encoded HTTP request head bytes; for a compressed body, the most its
     /// head takes, with the compressed body's bound as `Content-Length`.
     pub head: u32,
     /// Encoded JSON request body bytes.
     pub body: u32,
     /// The room the compressed copy of the body takes on a gzip endpoint,
-    /// held beside the rendered body while it is compressed; zero otherwise.
+    /// held beside the rendered body while it is compressed; zero when the
+    /// body is sent as rendered.
     pub compressed: u32,
 }
 
@@ -342,8 +346,15 @@ pub fn measure(
         }
         Provider::Anthropic => anthropic::measure_request(prompt, limits.declared_output_tokens, &limits.native())?,
     };
-    let compressed = compressed(endpoint, body, limits)?;
-    let head = measure_headers(endpoint, credential, prompt.affinity, limits, content_length(body, compressed))?;
+    let compressed = compressed(endpoint, body, limits);
+    let head = measure_headers(
+        endpoint,
+        credential,
+        prompt.affinity,
+        limits,
+        coding(compressed),
+        content_length(body, compressed),
+    )?;
     Ok(Measured { head, body, compressed })
 }
 
@@ -357,25 +368,34 @@ pub fn reservation(measured: Measured, limits: &Limits) -> Option<u64> {
 }
 
 /// The pool must hold one request at its endpoint's largest declared bounds.
-/// The limits name no endpoint, so the compressed copy's room is counted
-/// as a gzip endpoint takes it, whatever the endpoint's encoding: for an
-/// identity endpoint an over-count, and conservative, since the pool then
-/// still holds any one call's reservation.
+/// A gzip endpoint compresses a body only while the body and its compressed
+/// copy's room together stay within `request` (llm.md, section 4.8), so no
+/// call's body and room pass `request`, whatever the endpoint's encoding.
 #[must_use]
 pub fn largest_reservation(limits: &Limits) -> Option<u64> {
-    let compressed = u32::try_from(skein_http::gzip::bound(usize::try_from(limits.request).ok()?)?).ok()?;
-    reservation(Measured { head: limits.http.request, body: limits.request, compressed }, limits)
+    reservation(Measured { head: limits.http.request, body: limits.request, compressed: 0 }, limits)
 }
 
-/// The room the endpoint's compressed copy of a body takes beside it.
-fn compressed(endpoint: &Endpoint, body: u32, limits: &Limits) -> Result<u32, Error> {
-    match endpoint.encoding {
-        Encoding::Identity => Ok(0),
+/// The room the endpoint's compressed copy of a body takes beside it: on a
+/// gzip endpoint the body's bound while the two fit within `request`, and
+/// zero otherwise, when the body is sent as rendered (llm.md, section 4.8).
+fn compressed(endpoint: &Endpoint, body: u32, limits: &Limits) -> u32 {
+    let room = match endpoint.encoding {
+        Encoding::Identity => return 0,
         Encoding::Gzip => match skein_http::gzip::bound(usize::try_from(body).expect("u32 fits usize")) {
-            Some(bound) => u32::try_from(bound).or(Err(Error::limit(crate::Cap::Request, limits.request))),
-            None => Err(Error::limit(crate::Cap::Request, limits.request)),
+            Some(room) => u64::try_from(room).expect("usize fits u64"),
+            None => return 0,
         },
+    };
+    match u64::from(body).checked_add(room) {
+        Some(both) if both <= u64::from(limits.request) => u32::try_from(room).expect("within a u32 bound"),
+        Some(_) | None => 0,
     }
+}
+
+/// The coding a body measured so is sent with.
+fn coding(compressed: u32) -> Encoding {
+    if compressed == 0 { Encoding::Identity } else { Encoding::Gzip }
 }
 
 /// The most the `Content-Length` of a body measured so can say.
@@ -437,12 +457,13 @@ impl Client {
                 anthropic::measure_request(&input.prompt, limits.declared_output_tokens, &limits.native())?
             }
         };
-        let compressed = compressed(&input.endpoint, length, limits)?;
+        let compressed = compressed(&input.endpoint, length, limits);
         let head = measure_headers(
             &input.endpoint,
             input.credential.as_ref(),
             affinity,
             limits,
+            coding(compressed),
             content_length(length, compressed),
         )?;
         let measured = Measured { head, body: length, compressed };
@@ -456,7 +477,7 @@ impl Client {
         };
         // The compressed copy takes the room its bound reserved beside the
         // rendered body, which is dropped once it is compressed.
-        let (body, end) = match input.endpoint.encoding {
+        let (body, end) = match coding(compressed) {
             Encoding::Identity => {
                 let end = rendered.len();
                 (rendered, end)
@@ -473,6 +494,7 @@ impl Client {
             input.credential.as_ref(),
             affinity,
             limits,
+            coding(compressed),
             u64::try_from(end).expect("a body length fits u64"),
         )?;
         let call = http::Call {
@@ -1542,6 +1564,7 @@ fn measure_headers(
     credential: Option<&Credential>,
     affinity: Option<crate::Affinity>,
     limits: &Limits,
+    coding: Encoding,
     content_length: u64,
 ) -> Result<u32, Error> {
     if let Some(credential) = credential
@@ -1573,9 +1596,9 @@ fn measure_headers(
         None => None,
     };
     let fields = provider_headers(endpoint, scheme, account_id, rendered.as_ref());
-    let total = head_length(endpoint, value_bytes, account_id.len(), content_length, scheme, &fields)?;
+    let total = head_length(endpoint, value_bytes, account_id.len(), coding, content_length, scheme, &fields)?;
     let mut fixed_count = if credential.is_some() { 5_usize } else { 4_usize };
-    if endpoint.encoding == Encoding::Gzip {
+    if coding == Encoding::Gzip {
         fixed_count =
             fixed_count.checked_add(1).ok_or(Error::limit(crate::Cap::ResponseFields, limits.http.headers))?;
     }
@@ -1606,9 +1629,10 @@ fn headers(
     credential: Option<&Credential>,
     affinity: Option<crate::Affinity>,
     limits: &Limits,
+    coding: Encoding,
     content_length: u64,
 ) -> Result<Box<[Header]>, Error> {
-    measure_headers(endpoint, credential, affinity, limits, content_length)?;
+    measure_headers(endpoint, credential, affinity, limits, coding, content_length)?;
     let rendered = match affinity {
         Some(affinity) => Some(crate::affinity::rendered(affinity)),
         None => None,
@@ -1629,7 +1653,7 @@ fn headers(
             .push(Header { name: bytes::copy_of(name), value: bytes::copy_of(value) })
             .expect("fixed headers fit the checked cap");
     }
-    if endpoint.encoding == Encoding::Gzip {
+    if coding == Encoding::Gzip {
         headers
             .push(Header { name: bytes::copy_of(b"Content-Encoding"), value: bytes::copy_of(b"gzip") })
             .expect("the coding field fits the checked cap");
@@ -1669,6 +1693,7 @@ fn head_length(
     endpoint: &Endpoint,
     value_bytes: usize,
     account_bytes: usize,
+    coding: Encoding,
     content_length: u64,
     scheme: Option<Scheme>,
     fields: &[Option<(&[u8], &[u8])>],
@@ -1699,7 +1724,7 @@ fn head_length(
         total = total.checked_add(4).ok_or(Error::Invalid)?;
     }
     // Exact wire length: the measured body fixes the Content-Length digits,
-    // or on a gzip endpoint its bound fixes their most.
+    // or for a compressed body its bound fixes their most.
     // Check it before allocating any request head or credential copy.
     for fixed in [
         b"POST ".as_slice(),
@@ -1713,7 +1738,7 @@ fn head_length(
     ] {
         total = total.checked_add(fixed.len()).ok_or(Error::Invalid)?;
     }
-    if endpoint.encoding == Encoding::Gzip {
+    if coding == Encoding::Gzip {
         total = total.checked_add(b"Content-Encoding: gzip\r\n".len()).ok_or(Error::Invalid)?;
     }
     let credential_field = match (endpoint.provider, scheme) {

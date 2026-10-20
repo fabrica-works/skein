@@ -71,7 +71,10 @@ impl World {
     }
 
     fn started_with(call: Call) -> World {
-        let limits = limits();
+        World::started_within(call, limits())
+    }
+
+    fn started_within(call: Call, limits: Limits) -> World {
         let client = Client::prepare(call, &limits).expect("the call is admitted");
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut world = World {
@@ -237,6 +240,37 @@ fn a_codex_request_sends_its_rendered_body_gzip_encoded_with_its_length() {
     assert_eq!(world.client.request_bytes(), u64::try_from(world.sent.len()).unwrap());
     let digits = |length: usize| length.to_string().len();
     assert_eq!(wide(measured.head), head.len() - digits(body.len()) + digits(room.len()), "measured at the bound");
+}
+
+#[test]
+fn a_codex_body_compresses_only_while_it_and_its_room_fit_the_request_bound() {
+    let rendered = translate::encode_request(Provider::OpenAiCodex, &call().prompt, &limits().native()).unwrap();
+    let rendered = u32::try_from(rendered.len()).unwrap();
+    // A body within one stored block takes 10 header, 5 block and 8 trailer
+    // bytes beside its own in its bound: 2 × rendered + 23 holds both.
+    let both = 2 * rendered + 23;
+    for (request, gzip) in [(both, true), (both - 1, false)] {
+        let mut bounds = limits();
+        bounds.request = request;
+        let world = World::started_within(call(), bounds);
+        let (head, body) = split(&world.sent);
+        assert_eq!(head.contains("\r\nContent-Encoding: gzip\r\n"), gzip, "{request}: {head}");
+        assert_eq!(content_length(head), body.len());
+        let measured = world.client.measured();
+        assert_eq!(measured.compressed, if gzip { rendered + 23 } else { 0 }, "{request}");
+        if !gzip {
+            let as_rendered = translate::encode_request(Provider::OpenAiCodex, &call().prompt, &bounds.native());
+            assert_eq!(body, &*as_rendered.unwrap(), "a body past the bound's room is sent as rendered");
+            assert_eq!(usize::try_from(measured.head).unwrap(), head.len());
+        }
+        assert_eq!(world.client.request_bytes(), u64::try_from(world.sent.len()).unwrap());
+        // The call stays within the largest reservation and its head within
+        // the largest head the endpoint's bounds measure.
+        assert!(reservation(measured, &bounds).unwrap() <= largest_reservation(&bounds).unwrap());
+        assert!(u64::from(measured.body) + u64::from(measured.compressed) <= u64::from(request));
+        let largest_head = request_head(&Endpoint::codex(), &CredentialLimits { value: 6, account_id: 7 }, &bounds);
+        assert!(measured.head <= largest_head.unwrap(), "{request}");
+    }
 }
 
 #[test]

@@ -807,6 +807,13 @@ bounds still hold.
   3.1) and sends the compressed bytes with their length. Every bound
   stays on the body as rendered; the compressed body is never larger
   than its worst case, which the encoder states from the rendered length.
+  The compressed copy needs room at that worst case beside the rendered
+  body while it is made, so the client compresses a body only while the
+  two together stay within the request bound; a larger body, past about
+  half the bound, is sent as rendered. One call then never holds more
+  than a body at the bound, whatever its endpoint's coding, and the
+  largest call's reservation is the same on every route (llm-connection.md,
+  section 7).
   `Endpoint::codex()` compresses: its endpoint takes gzip and zstd, and a
   request of a long conversation shrinks several times, and so does
   its upload time on a slow uplink. `Endpoint::openai()` does not,

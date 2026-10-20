@@ -96,9 +96,7 @@ fn request_payload_limits_belong_to_the_reservation_not_fixed_client_state() {
     larger.http.request += 99;
     larger.request += 1234;
     assert_eq!(client::worst_case(&larger).unwrap(), fixed);
-    // 99 head and 1234 body bytes, and the compressed copy's room, counted
-    // for every endpoint, grows by the body's 1234 too (gzip::bound).
-    let room = |body: u32| u64::try_from(skein_http::gzip::bound(usize::try_from(body).unwrap()).unwrap()).unwrap();
-    assert_eq!(room(larger.request) - room(bounds.request), 1234);
-    assert_eq!(client::largest_reservation(&larger).unwrap() - largest, 2567);
+    // 99 head and 1234 body bytes: a compressed body and its room together
+    // stay within the request bound, so the room adds nothing (llm.md, 4.8).
+    assert_eq!(client::largest_reservation(&larger).unwrap() - largest, 1333);
 }
