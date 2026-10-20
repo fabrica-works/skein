@@ -1,6 +1,6 @@
 use super::respond;
 use crate::api::{Error, Failure, Finish, Line, Part, Piece, Query, Report, Script, Turn};
-use crate::tests::{CONFIG, query, says, script, user};
+use crate::tests::{CONFIG, played, query, says, script, user};
 use alloc::boxed::Box;
 use skein_lib::bytes::copy_of;
 use skein_lib::{Duration, Rng};
@@ -27,7 +27,7 @@ fn reply(query: &Query, scripts: &[Script]) -> Result<(crate::api::Answer, Optio
         &mut Rng::new(1),
         &mut 0,
         &CONFIG,
-        scripts,
+        &played(scripts),
         &crate::api::Menu { arguments: Box::new([]), invalid: Box::new([]) },
         query,
     ) {

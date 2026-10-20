@@ -79,6 +79,18 @@ fn make_scripted_with_limits(
         api::Menu { arguments: Box::new([]), invalid: Box::new([]) },
     )
     .expect("configured script domain");
+    make_domain_with_limits(endpoint, credential, address, transport, domain, limits)
+}
+
+fn make_domain_with_limits(
+    endpoint: Endpoint,
+    credential: Credential,
+    address: SocketAddr,
+    transport: Transport,
+    domain: domain::Domain,
+    limits: Limits,
+) -> Result<llm::Peer, skein_fake_peers::Error> {
+    let machine_limits = skein_llm_world::fake::config();
     llm::Peer::new(
         address,
         transport,
@@ -275,20 +287,26 @@ fn accept_refuses_a_list_the_route_cannot_serve() {
     }
 }
 
-#[test]
-fn accept_refuses_a_key_at_an_anthropic_reset_lines_index() {
-    let scripts = Box::new([api::Script {
+const FUTURE_CREDENTIAL: u32 = 1; // Peer::new accepts index 0; accept adds index 1.
+
+fn anthropic_reset_script() -> api::Script {
+    api::Script {
         cue: b"hi".as_slice().into(),
         turns: Box::new([api::Turn {
             lines: Box::new([api::Line::Fail {
                 error: api::Error::Exhausted { retry_after: Some(Duration::from_secs(1)) },
                 report: api::Report::none(),
-                credentials: Box::new([1]),
+                credentials: Box::new([FUTURE_CREDENTIAL]),
             }]),
             finish: api::Finish::Stop,
             tokens: 0,
         }]),
-    }]);
+    }
+}
+
+#[test]
+fn accept_refuses_a_key_at_an_anthropic_reset_lines_index() {
+    let scripts = Box::new([anthropic_reset_script()]);
     let mut peer = make_scripted(
         Endpoint::anthropic(),
         bearer(),
@@ -298,6 +316,33 @@ fn accept_refuses_a_key_at_an_anthropic_reset_lines_index() {
     )
     .unwrap();
     assert_eq!(peer.accept(key()), Err(skein_fake_peers::Error::Limits));
+}
+
+#[test]
+fn played_failures_validate_future_credentials_in_every_group() {
+    let script = anthropic_reset_script();
+    let rows = [
+        ("cued", api::Scripts { cued: Box::new([script.clone()]), asked: Box::new([]), otherwise: Box::new([]) }),
+        ("asked", api::Scripts { cued: Box::new([]), asked: Box::new([script.clone()]), otherwise: Box::new([]) }),
+        ("otherwise", api::Scripts { cued: Box::new([]), asked: Box::new([]), otherwise: script.turns }),
+    ];
+    for (label, scripts) in rows {
+        let config = skein_llm_world::fake::config();
+        let domain =
+            domain::Domain::played(&config, 23, scripts, api::Menu { arguments: Box::new([]), invalid: Box::new([]) })
+                .expect("played script domain");
+        let mut peer = make_domain_with_limits(
+            Endpoint::anthropic(),
+            bearer(),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            Transport::Plaintext,
+            domain,
+            limits(),
+        )
+        .expect("future credential indices are admitted");
+        assert_eq!(peer.accept(key()), Err(skein_fake_peers::Error::Limits), "{label}");
+        assert_eq!(peer.accept(bearer()), Ok(FUTURE_CREDENTIAL), "{label}");
+    }
 }
 
 fn send_request(peer: &mut llm::Peer, endpoint: &Endpoint, fields: &[u8], body: &[u8]) -> Vec<u8> {

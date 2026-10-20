@@ -5,9 +5,9 @@
 use alloc::boxed::Box;
 use core::mem;
 
-use skein_lib::{Deadlines, Duration, Env, Id, Queue, ReplyTo, Rng, Set, Slab, Time, Token};
+use skein_lib::{Deadlines, Duration, Env, Id, List, Queue, ReplyTo, Rng, Set, Slab, Time, Token};
 
-use crate::api::{Answer, Error, Failure, Query, Script, Usage};
+use crate::api::{Answer, Error, Failure, Query, Script, Scripts, Usage};
 use crate::{cache, limits, pieces, respond};
 
 /// The most requests an entry point emits per call.
@@ -182,9 +182,65 @@ pub struct Domain {
     /// The conversations it plays from a script.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-    scripts: Box<[Script]>,
+    played: Played,
     menu: crate::api::Menu,
     cache: cache::Cache,
+}
+
+/// Retained scripts in Place order: cued, asked, then otherwise when present.
+#[derive(Debug)]
+pub(crate) struct Played {
+    pub scripts: Box<[Script]>,
+    pub cued: usize,
+    pub asked: usize,
+}
+
+impl Played {
+    pub(crate) fn new(config: &Config, scripts: Scripts, menu: &crate::api::Menu) -> Result<Self, Error> {
+        let Scripts { cued, asked, otherwise } = scripts;
+        let otherwise = Script { cue: Box::new([]), turns: otherwise };
+        let fallback = if otherwise.turns.is_empty() { &[][..] } else { core::slice::from_ref(&otherwise) };
+        let mut held = Some(0_u64);
+        for group in [&*cued, &*asked, fallback] {
+            if !pieces::valid(group) {
+                return Err(Error::InvalidRequest);
+            }
+            held = match limits::scripts(group) {
+                Some(bytes) => match held {
+                    Some(total) => total.checked_add(bytes),
+                    None => None,
+                },
+                None => None,
+            };
+        }
+        held = match limits::menu(menu) {
+            Some(bytes) => match held {
+                Some(total) => total.checked_add(bytes),
+                None => None,
+            },
+            None => None,
+        };
+        if !limits::fits(held, config.script_bytes) {
+            return Err(Error::ContextTooLong);
+        }
+        let cued_count = cued.len();
+        let asked_count = asked.len();
+        let scripts = if asked.is_empty() && fallback.is_empty() {
+            cued
+        } else {
+            let count = cued_count.checked_add(asked_count).expect("admitted script count");
+            let count = count.checked_add(fallback.len()).expect("admitted script count");
+            let mut flat = List::with_capacity(u32::try_from(count).expect("admitted script bytes"));
+            for script in cued.into_iter().chain(asked) {
+                flat.push(script).expect("room for admitted scripts");
+            }
+            if !otherwise.turns.is_empty() {
+                flat.push(otherwise).expect("room for fallback script");
+            }
+            flat.into_boxed()
+        };
+        Ok(Played { scripts, cued: cued_count, asked: asked_count })
+    }
 }
 
 /// A call being answered.
@@ -245,26 +301,22 @@ impl Domain {
         scripts: Box<[Script]>,
         menu: crate::api::Menu,
     ) -> Result<Domain, Error> {
-        if !pieces::valid(&scripts) {
-            return Err(Error::InvalidRequest);
-        }
-        let held = match limits::scripts(&scripts) {
-            Some(scripts) => match limits::menu(&menu) {
-                Some(menu) => scripts.checked_add(menu),
-                None => None,
-            },
-            None => None,
-        };
-        if !limits::fits(held, config.script_bytes) {
-            return Err(Error::ContextTooLong);
-        }
+        Self::played(config, seed, Scripts { cued: scripts, asked: Box::new([]), otherwise: Box::new([]) }, menu)
+    }
+
+    /// Admits system-cued scripts, request-cued scripts and fallback turns,
+    /// together with the random menu under one byte cap.
+    ///
+    /// Contract: docs/design/fake-llm.md, section 2.4.
+    pub fn played(config: &Config, seed: u64, scripts: Scripts, menu: crate::api::Menu) -> Result<Domain, Error> {
+        let played = Played::new(config, scripts, &menu)?;
         Ok(Domain {
             calls: Slab::with_capacity(config.calls),
             held: Set::with_capacity(config.calls),
             timers: Deadlines::with_capacity(config.calls),
             rng: Rng::new(seed),
             minted: 0,
-            scripts,
+            played,
             menu,
             cache: cache::Cache::new(config.cache_entries, config.cache_lifetime),
         })
@@ -273,7 +325,7 @@ impl Domain {
     /// The admitted scripts, borrowed by the peer for route validation.
     #[must_use]
     pub fn scripts(&self) -> &[Script] {
-        &self.scripts
+        &self.played.scripts
     }
 
     /// Calls present, answered ones included until they are reclaimed.
@@ -332,7 +384,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Config>, out: &mut Queue<Request>) {
     let state = mem::replace(&mut call.state, State::Closed);
     call.state = match state {
         State::Thinking { reply_to, result } => answer(reply_to, result, out),
-        State::Streaming(stream) => pieces::fire(stream, &domain.scripts, out),
+        State::Streaming(stream) => pieces::fire(stream, &domain.played.scripts, out),
         State::Held(_) => unreachable!("a held call has no timer"),
         State::Closed => unreachable!("a closed call has no timer"),
     };
@@ -365,7 +417,7 @@ fn call(
     let mut result = if !cache::valid(query) {
         Err(Error::InvalidRequest.into())
     } else if limits::fits(limits::query(query), config.query_bytes) {
-        match respond::respond(&mut domain.rng, &mut domain.minted, config, &domain.scripts, &domain.menu, query) {
+        match respond::respond(&mut domain.rng, &mut domain.minted, config, &domain.played, &domain.menu, query) {
             Ok((answer, position)) if limits::fits(limits::answer(&answer), config.answer_bytes) => {
                 place = position;
                 Ok(answer)
@@ -424,7 +476,7 @@ fn release(domain: &mut Domain, env: &Env<Config>, name: &[u8]) {
     for _ in 0..domain.held.len() {
         let mut found = None;
         for id in &domain.held {
-            if pieces::held_at(&domain.calls.get(*id).expect("held call lives").state, &domain.scripts, name) {
+            if pieces::held_at(&domain.calls.get(*id).expect("held call lives").state, &domain.played.scripts, name) {
                 found = Some(*id);
                 break;
             }

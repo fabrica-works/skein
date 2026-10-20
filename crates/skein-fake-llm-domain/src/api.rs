@@ -307,20 +307,34 @@ pub enum Error {
     InvalidRequest,
 }
 
-/// A conversation the fake plays from a script rather than at random: one
-/// whose system text holds `cue`.
+/// Scripts cued by the system text, by the person's latest request, and
+/// the turns that answer when neither cues one, in that order.
 ///
-/// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
+/// All scripts and the menu share `Config::script_bytes`.
+/// Contract: docs/design/fake-llm.md, section 2.4.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Scripts {
+    /// System-cued scripts; turns count every assistant message.
+    pub cued: Box<[Script]>,
+    /// Request-cued scripts; turns count assistant messages after the last
+    /// user message holding text, so each new request starts again.
+    pub asked: Box<[Script]>,
+    /// Turns played when neither cue matches, counted as an asked script's.
+    /// Empty turns leave the answer to chance.
+    pub otherwise: Box<[Turn]>,
+}
+
+/// A conversation the fake plays from a cue in the system text or the
+/// person's latest request, as its place in `Scripts` says.
+///
+/// Contract: docs/design/fake-llm.md, section 2.4; programming-model.md, section 4.4.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Script {
-    /// Script-selection bytes matched at the earliest position in system text.
-    ///
-    /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
+    /// Selection bytes: the earliest position wins, then the first listed.
+    /// A request's cue does not span two text parts.
     pub cue: Box<[u8]>,
-    /// The answers, in order: the first answers a conversation with no
-    /// assistant message yet, the next one with one, and so on.
-    ///
-    /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
+    /// Answers in order, counting assistant messages from the system's or
+    /// request's start; past the last turn the answer is "done".
     pub turns: Box<[Turn]>,
 }
 

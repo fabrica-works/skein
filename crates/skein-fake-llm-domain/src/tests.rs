@@ -100,6 +100,9 @@ impl Playback {
     }
     fn from_turn(config: Config, turn: Turn, query: Query) -> Self {
         let domain = Domain::scripted(&config, 1, Box::new([script(b"@main", Box::new([turn]))]));
+        Self::from_domain(config, domain, query)
+    }
+    fn from_domain(config: Config, domain: Domain, query: Query) -> Self {
         let mut playback = Self {
             domain,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config },
@@ -288,4 +291,144 @@ fn a_failing_line_after_pieces_ends_the_walk_with_its_failure() {
     assert_eq!(play.fire(3), None);
     play.release(b"h");
     assert_eq!(play.fire(4), Some(Request::Reply { to: ReplyTo::new(CALL), result: Err(failure) }));
+}
+
+/// System-only playback for response fixtures.
+pub(crate) fn played(scripts: &[Script]) -> crate::domain::Played {
+    crate::domain::Played { scripts: scripts.into(), cued: scripts.len(), asked: 0 }
+}
+
+pub(crate) fn empty_menu() -> crate::api::Menu {
+    crate::api::Menu { arguments: Box::new([]), invalid: Box::new([]) }
+}
+
+#[test]
+fn played_groups_and_menu_share_one_byte_cap() {
+    use crate::api::{Error, Menu, Scripts};
+    // Three Script/Turn/Line wrappers, cues and replies, plus the menu box/body.
+    const CAP: usize = 3 * (size_of::<Script>() + size_of::<Turn>() + size_of::<Line>())
+        + b"system".len()
+        + b"ask".len()
+        + b"cued".len()
+        + b"asked".len()
+        + b"otherwise".len()
+        + size_of::<Box<[u8]>>()
+        + b"{}".len();
+    for (cap, expected) in [(CAP, None), (CAP - 1, Some(Error::ContextTooLong))] {
+        let scripts = Scripts {
+            cued: Box::new([script(b"system", Box::new([says(b"cued")]))]),
+            asked: Box::new([script(b"ask", Box::new([says(b"asked")]))]),
+            otherwise: Box::new([says(b"otherwise")]),
+        };
+        let menu = Menu { arguments: Box::new([copy_of(b"{}")]), invalid: Box::new([]) };
+        let config = Config { script_bytes: u32::try_from(cap).expect("fixture cap fits"), ..CONFIG };
+        assert_eq!(Domain::played(&config, 1, scripts, menu).err(), expected, "cap {cap}");
+    }
+}
+
+#[test]
+fn played_refuses_bad_asked_and_fallback_turns() {
+    use crate::api::{Error, Report, Scripts};
+    let broken_pieces = pieces_turn(Box::new([piece(b"", None)]));
+    let broken_failure = Turn {
+        lines: Box::new([
+            Line::Fail { error: Error::Refused, report: Report::none(), credentials: Box::new([]) },
+            Line::Text { text: copy_of(b"after") },
+        ]),
+        ..says(b"")
+    };
+    for (label, turn) in [("pieces", broken_pieces), ("failure", broken_failure)] {
+        let rows = [
+            (
+                "asked",
+                Scripts {
+                    cued: Box::new([]),
+                    asked: Box::new([script(b"ask", Box::new([turn.clone()]))]),
+                    otherwise: Box::new([]),
+                },
+            ),
+            ("otherwise", Scripts { cued: Box::new([]), asked: Box::new([]), otherwise: Box::new([turn]) }),
+        ];
+        for (group, scripts) in rows {
+            assert_eq!(
+                Domain::played(&CONFIG, 1, scripts, empty_menu()).err(),
+                Some(Error::InvalidRequest),
+                "{label} {group}"
+            );
+        }
+    }
+}
+
+#[test]
+fn configured_and_system_only_played_answer_the_same_queries() {
+    use crate::api::Scripts;
+    // Initial request plus an assistant and user message for each of four rounds.
+    const HISTORY_MESSAGES: u32 = 9;
+    let scripts = Box::new([script(b"@main", Box::new([says(b"first"), says(b"second")]))]);
+    let configured = Domain::configured(&CONFIG, 1, scripts.clone(), empty_menu()).expect("configured scripts");
+    let played = Domain::played(
+        &CONFIG,
+        1,
+        Scripts { cued: scripts, asked: Box::new([]), otherwise: Box::new([]) },
+        empty_menu(),
+    )
+    .expect("played scripts");
+    assert_eq!(configured.scripts(), played.scripts());
+    let first = request();
+    let mut left = Playback::from_domain(CONFIG, configured, first.clone());
+    let mut right = Playback::from_domain(CONFIG, played, first);
+    let mut history = skein_lib::List::with_capacity(HISTORY_MESSAGES);
+    history.push(user(Box::new([Part::Text { text: copy_of(b"hi") }]))).expect("room for initial request");
+    // The two turns, past their end, and a system cue miss.
+    for system in [b"@main".as_slice(), b"@main", b"@main", b"missing"] {
+        let a = left.fire(0);
+        let b = right.fire(0);
+        assert_eq!(a, b, "system {system:?}");
+        let Some(Request::Reply { result: Ok(answer), .. }) = a else { panic!("a whole answer") };
+        history.push(Message { role: Role::Assistant, parts: answer.parts }).expect("room for answer");
+        history.push(user(Box::new([Part::Text { text: copy_of(b"next") }]))).expect("room for next request");
+        let mut next = query(history.to_boxed());
+        next.system = copy_of(system);
+        left.domain.reclaim();
+        right.domain.reclaim();
+        left.call(CALL, next.clone());
+        right.call(CALL, next);
+    }
+    assert_eq!(left.fire(0), right.fire(0), "random answers use the same RNG state");
+}
+
+#[test]
+fn asked_and_fallback_holds_release_at_their_flat_places() {
+    use crate::api::Scripts;
+    use crate::domain::Played;
+    use crate::pieces::Place;
+    let held_turn = pieces_turn(Box::new([piece(b"Hel", None), piece(b"lo", Some(b"h"))]));
+    let scripts = Scripts {
+        cued: Box::new([script(b"system", Box::new([says(b"cued")])), script(b"other", Box::new([]))]),
+        asked: Box::new([script(b"ask", Box::new([held_turn.clone()]))]),
+        otherwise: Box::new([held_turn]),
+    };
+    // Two cued scripts, then the asked script, then the fallback.
+    for (text, script_index) in [(b"ask".as_slice(), 2), (b"new".as_slice(), 3)] {
+        let query = query(Box::new([user(Box::new([Part::Text { text: copy_of(text) }]))]));
+        let held = Played::new(&STREAM_CONFIG, scripts.clone(), &empty_menu()).expect("held scripts");
+        let response =
+            crate::respond::respond(&mut skein_lib::Rng::new(1), &mut 0, &STREAM_CONFIG, &held, &empty_menu(), &query)
+                .expect("scripted pieces");
+        assert_eq!(response.1, Some(Place { script: script_index, turn: 0 }));
+        let domain = Domain::played(&STREAM_CONFIG, 1, scripts.clone(), empty_menu()).expect("played domain");
+        assert_eq!(domain.scripts(), held.scripts.as_ref());
+        let mut play = Playback::from_domain(STREAM_CONFIG, domain, query);
+        let Some(Request::Piece { text, .. }) = play.fire(1) else { panic!("first piece") };
+        assert_eq!(text.as_ref(), b"Hel");
+        let Some(Request::Hold { call, .. }) = play.fire(2) else { panic!("held piece") };
+        assert_eq!(call, CALL);
+        assert_eq!(play.domain.next_deadline(), None);
+        assert_eq!(play.fire(3), None);
+        play.release(b"unrelated");
+        assert_eq!(play.domain.next_deadline(), None);
+        play.release(b"h");
+        let Some(Request::Reply { result: Ok(answer), .. }) = play.fire(4) else { panic!("released reply") };
+        assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"Hello") }]);
+    }
 }
