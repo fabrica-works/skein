@@ -764,8 +764,8 @@ It is the sum of:
   said origins, each a host bounded by `target_bytes` (the dialect
   bounds Location, including the host), both at `log_origins`; and its
   puller, its validator and cursor at the dialect's bounds, a guid, the
-  page of log rows and its handoff, the delivery's decoder and
-  payload-first replay at `delivery_bytes`, and the hint it holds.
+  page of log rows and its handoff, the delivery's streaming decoder
+  and its row's bounded event word, and the hint it holds.
 
 A long thread or a large payload costs time, not memory. The owner
 counts its io's worst case once.

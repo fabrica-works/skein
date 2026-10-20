@@ -128,6 +128,7 @@ pub struct Harness {
     pub installation_events: Option<List<Event>>,
     pub facts: Option<List<Event>>,
     pub hints: List<crate::hooks::Hinted>,
+    pub component_heap: Option<super::github_files::CallHeap>,
     pub connected_count: u32,
     pub closed: bool,
 }
@@ -169,6 +170,7 @@ impl Harness {
             installation_events: if github { Some(List::with_capacity(256)) } else { None },
             facts: if github { Some(List::with_capacity(32)) } else { None },
             hints: List::with_capacity(32),
+            component_heap: None,
             connected_count: 0,
             closed: false,
         };
@@ -183,13 +185,19 @@ impl Harness {
         self.component.forgejo_tables().keep_repository(repository, row);
     }
     pub fn send(&mut self, request: crate::Request) {
+        let span = self.start_component();
         self.component.down(&self.env, request, &mut self.up, &mut self.io);
+        self.count_component(span);
     }
     pub fn run(&mut self, span: Duration) {
         self.env.now = self.env.now.saturating_add(span);
+        let span = self.start_component();
         self.component.fire(&self.env, &mut self.up, &mut self.io);
+        self.count_component(span);
         self.drain();
+        let span = self.start_component();
         self.component.reclaim();
+        self.count_component(span);
         for _ in 0..self.up.len() {
             match self.up.pop().expect("queued event") {
                 Event::Connected { .. } => {
@@ -247,8 +255,28 @@ impl Harness {
         }
         owners
     }
+    #[expect(clippy::manual_map, reason = "the workspace uses exhaustive matches instead of closures")]
+    fn start_component(&self) -> Option<skein_heap::Span> {
+        match self.component_heap {
+            Some(_) => Some(skein_heap::Span::start()),
+            None => None,
+        }
+    }
+    fn count_component(&mut self, span: Option<skein_heap::Span>) {
+        if let Some(span) = span {
+            self.component_heap.as_mut().expect("component metering").count(span.end());
+        }
+    }
     fn event(&mut self, event: skein_io::Event) {
+        if let Some(heap) = &mut self.component_heap
+            && let skein_io::Event::Stream { up: skein_lib::stream::Up::Bytes(bytes), .. } = &event
+        {
+            // Incoming bytes become the component's at this boundary.
+            heap.held = heap.held.checked_add(i64::try_from(bytes.len()).expect("input bytes")).expect("held input");
+        }
+        let span = self.start_component();
         self.component.up(&self.env, event, &mut self.up, &mut self.io);
+        self.count_component(span);
     }
     pub fn connected(&mut self, forge: u16) {
         let owner = self.newest(forge);

@@ -9,7 +9,6 @@ use skein_json::{
     Token,
     tokenizer::{Event, Request},
 };
-use skein_lib::List;
 
 #[derive(Debug)]
 pub(super) struct State {
@@ -19,23 +18,11 @@ pub(super) struct State {
     depth: u32,
     payload: Option<Box<delivery::Decoder>>,
     decoded: Option<crate::github::Delivery>,
-    buffered: List<Event>,
-    buffering: bool,
     limits: Limits,
 }
 impl State {
     pub(super) fn new(limits: &Limits) -> Self {
-        Self {
-            row: row(),
-            event: None,
-            header: None,
-            depth: 0,
-            payload: None,
-            decoded: None,
-            buffered: List::with_capacity(0),
-            buffering: false,
-            limits: *limits,
-        }
+        Self { row: row(), event: None, header: None, depth: 0, payload: None, decoded: None, limits: *limits }
     }
     pub(super) fn active(&self) -> bool {
         self.depth != 0
@@ -43,27 +30,13 @@ impl State {
     pub(super) fn start(&mut self, token: Token) -> Result<Request, Malformed> {
         // forge-github.md, 9.3: "trusted by its channel". The re-encoded
         // payload is decoded without checking an HMAC signature.
-        let event = match (&self.header, &self.event) {
-            (Some(event), Some(_) | None) | (None, Some(event)) => Some(event.as_ref()),
-            (None, None) => None,
-        };
-        match event {
-            Some(event) => {
-                self.payload = match delivery::decoder(event, &self.limits) {
-                    Some(decoder) => Some(Box::new(decoder)),
-                    None => {
-                        self.decoded = Some(crate::github::Delivery::Other);
-                        None
-                    }
-                };
-            }
+        self.payload = match delivery::decoder(&self.row.event, &self.limits) {
+            Some(decoder) => Some(Box::new(decoder)),
             None => {
-                // JSON members may arrive in any order. Only a payload preceding
-                // both event fields needs a bounded replay; ordinary reads stream.
-                self.buffering = true;
-                self.buffered = List::with_capacity(self.limits.json.length);
+                self.decoded = Some(crate::github::Delivery::Other);
+                None
             }
-        }
+        };
         self.depth = 1;
         self.feed(Event::Token(token))
     }
@@ -100,14 +73,10 @@ impl State {
                 delivery::Step::Done(_) => Err(Malformed::Shape { field: b"payload" }),
             };
         }
-        if self.buffering {
-            if self.buffered.push(event).is_err() {
-                return Err(Malformed::Bound { field: b"payload" });
-            }
-            Ok(Request::Text(self.limits.body_bytes.max(self.limits.string_bytes)))
-        } else {
-            Ok(Request::Text(0))
-        }
+        Ok(Request::Text(0))
+    }
+    pub(super) fn expected(&mut self, event: Box<[u8]>) {
+        self.row.event = event;
     }
     pub(super) fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match token {
@@ -162,57 +131,13 @@ impl State {
     }
     fn delivery(&mut self) -> Result<crate::github::Delivery, Malformed> {
         let event = self.event.as_ref().ok_or(Malformed::Missing { field: b"event" })?;
+        if event != &self.row.event {
+            return Err(Malformed::Value { field: b"event" });
+        }
         if self.header.as_ref() != Some(event) {
             return Err(Malformed::Value { field: b"X-GitHub-Event" });
         }
-        if let Some(decoded) = self.decoded.take() {
-            return Ok(decoded);
-        }
-        let Some(mut decoder) = delivery::decoder(event, &self.limits) else {
-            return Ok(crate::github::Delivery::Other);
-        };
-        let mut demand = Request::Next;
-        let buffered = core::mem::replace(&mut self.buffered, List::with_capacity(0)).into_boxed();
-        for event in buffered {
-            let event = retained(event, demand)?;
-            demand = match decoder.step(event) {
-                delivery::Step::Demand(demand) => demand,
-                delivery::Step::Malformed(error) => return Err(error),
-                delivery::Step::Done(_) => return Err(Malformed::Shape { field: b"payload" }),
-            };
-        }
-        finish(&mut decoder)
-    }
-}
-fn retained(event: Event, demand: Request) -> Result<Event, Malformed> {
-    match demand {
-        Request::Text(max) => match event {
-            Event::Token(Token::String(text)) => {
-                if text.len() > usize::try_from(max).expect("u32 fits usize") {
-                    Ok(Event::Long(u64::try_from(text.len()).expect("bounded payload")))
-                } else {
-                    Ok(Event::Token(Token::String(text)))
-                }
-            }
-            Event::Token(
-                Token::ObjectStart
-                | Token::ObjectEnd
-                | Token::ArrayStart
-                | Token::ArrayEnd
-                | Token::Key(_)
-                | Token::Number(_)
-                | Token::True
-                | Token::False
-                | Token::Null,
-            )
-            | Event::Long(_)
-            | Event::Skipped(_)
-            | Event::Done
-            | Event::Failed(_)
-            | Event::Closed => Ok(event),
-        },
-        Request::Next => Ok(event),
-        Request::Skip | Request::Close => Err(Malformed::Shape { field: b"payload" }),
+        self.decoded.take().ok_or(Malformed::Missing { field: b"payload" })
     }
 }
 fn finish(decoder: &mut delivery::Decoder) -> Result<crate::github::Delivery, Malformed> {

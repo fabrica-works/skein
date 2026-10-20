@@ -593,7 +593,7 @@ pub fn hook_documents(l: &Limits) -> documents::Limits {
     docs.json.length = l.hook_body_bytes;
     docs
 }
-fn decoder_heap(l: &Limits, forges: Forges) -> Option<u64> {
+pub(crate) fn decoder_heap(l: &Limits, forges: Forges) -> Option<u64> {
     let forgejo = if forges.forgejo > 0 { size_of::<skein_forge::forgejo::client::Decoder>() } else { 0 };
     let github = if forges.github > 0 { size_of::<skein_forge::github::decode::Decoder>() } else { 0 };
     let fixed_decoder = forgejo.max(github);
@@ -641,7 +641,6 @@ pub(crate) fn log_page_bytes(l: &Limits) -> Option<u32> {
 /// Puller-owned rows and the whole-delivery decoder can coexist with a held hint.
 pub(crate) fn puller_heap(l: &Limits) -> Option<u64> {
     use skein_forge::github;
-    use skein_lib::List;
     u64::from(log_page_bytes(l)?)
         .checked_mul(2)? // Plan/page handoff and header copies.
         .checked_add(u64::try_from(api::VALIDATOR_BYTES).ok()?.checked_mul(4)?)?
@@ -649,9 +648,8 @@ pub(crate) fn puller_heap(l: &Limits) -> Option<u64> {
         .checked_add(u64::try_from(size_of::<github::plans::start::LogDelivery>()).ok()?)?
         .checked_add(u64::try_from(size_of::<github::delivery::Decoder>()).ok()?)?
         .checked_add(decoder_heap(l, Forges { forgejo: 0, github: 1 })?)?
-        // Payload-first JSON is replayed by the dialect at json.length's bound.
-        .checked_add(List::<tokenizer::Event>::worst_case(l.delivery_bytes)?)?
-        .checked_add(u64::from(l.delivery_bytes))?
+        // The selected row's event is owned by the request and its decoder.
+        .checked_add(u64::from(l.string_bytes).checked_mul(2)?)?
         .checked_add(u64::try_from(size_of::<api::Hint>()).ok()?)?
         .checked_add(u64::from(l.string_bytes).checked_add(u64::from(l.body_bytes))?)
 }

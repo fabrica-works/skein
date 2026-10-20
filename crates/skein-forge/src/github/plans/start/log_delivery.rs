@@ -1,23 +1,26 @@
 //! One trusted delivery, through the pushed-payload decoder (forge-github.md, 9.3).
 use super::{Event, State, Step, api, document, plan};
 use crate::github::{log::Logged, plans::Heard, request::Request};
+use alloc::boxed::Box;
 
 /// The payload is bounded by the answer bound in `bounds`; a caller matching
 /// the pushed body limit sets the answer bound to it plus the log row's envelope.
 #[derive(Debug)]
 pub struct LogDelivery {
     id: u64,
+    event: Box<[u8]>,
     state: State,
 }
 impl LogDelivery {
+    /// Takes the id and bounded event word from the listed row.
     #[must_use]
-    pub fn new(id: u64) -> Self {
-        Self { id, state: State::new() }
+    pub fn new(id: u64, event: Box<[u8]>) -> Self {
+        Self { id, event, state: State::new() }
     }
     pub fn begin(&mut self, _bounds: plan::Bounds) -> Result<Step<Logged>, api::Error> {
         self.state.admission()?;
         self.state.sending();
-        Ok(Step::send(Request::LogDelivery { id: self.id }))
+        Ok(Step::send(Request::LogDelivery { id: self.id, event: core::mem::replace(&mut self.event, Box::from([])) }))
     }
     pub fn pending(&mut self) -> Option<plan::Exchange> {
         self.state.request.take()

@@ -56,6 +56,7 @@ pub struct Decoder {
     result: u64,
 }
 /// Starts a decoder; its first tokenizer demand is Next.
+/// Whole-delivery reads use `log_delivery_decoder` with their listed event.
 #[must_use]
 pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
     Decoder {
@@ -93,6 +94,13 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         terminal: false,
         result: 0,
     }
+}
+/// Starts a whole-delivery read using its listed row's bounded event word.
+#[must_use]
+pub fn log_delivery_decoder(event: &[u8], limits: &Limits) -> Decoder {
+    let mut result = decoder(Kind::LogDelivery, limits);
+    result.log.expected(skein_lib::bytes::copy_of(event));
+    result
 }
 /// Starts a comparison decoder that requires only the merge base.
 #[must_use]

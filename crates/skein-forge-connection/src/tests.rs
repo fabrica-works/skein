@@ -329,18 +329,18 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 const FIXTURE_HEAP: u64 = 2_815_387;
 
 // Complete GitHub fixture: the same common limits and owned bytes. Its
-// decoder's fixed size is 2400, including the 96-byte GraphQL pull builder,
+// decoder's fixed size is 2360, including the 96-byte GraphQL pull builder,
 // App builder state, the enqueue error's two type/message boxes, and the
-// 304-byte log row/wrapper builder and 96-byte protection builder.
+// 264-byte log row/wrapper builder and 96-byte protection builder.
 // Both builders are inline in three connection and four hook decoders.
 // Job metadata retains a 24-byte optional failed step alongside its 24-byte
 // current step builder, in each decoder: 7*48 = 336 bytes.
 // App builder/document overlap needs max(3*128 + 2*48 + 2*16,
 // 4*128 + 2*24 + 2*16) = 592 per inner entry; its permissions and event
 // lists coexist. Decoder = 32*128 + 8*592 + 2*1042 + 16*128 + 4096
-// + 2400 = 19_460. Each connection also holds a 120-byte boxed exchange
+// + 2360 = 19_420. Each connection also holds a 120-byte boxed exchange
 // retaining request, raw retention and comparison. Three connections are
-// 768_371 each; four hooks are 4*121730 + 4832 = 491_752.
+// 768_331 each; four hooks are 4*121690 + 4832 = 491_592.
 // Installation storage = 2136 (live Row tree, Row 176) + 2*552 (metadata)
 // + 2*552 (accepted accounts) + 464 (missing accounts) + 3*200 (id sets)
 // + 2*3*8 (id lists) + 2*100*48 (installation pages) + 2*100*128
@@ -371,16 +371,16 @@ const FIXTURE_HEAP: u64 = 2_815_387;
 // coexist, so each call pays 2*24 = 48 bytes. Call payload = 210_370.
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
-// Total = 3*768371 + index 288 + slab 3*1408 + 491752 + 138608
-// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_904_940 before the puller.
+// Total = 3*768331 + index 288 + slab 3*1408 + 491592 + 138608
+// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_904_660 before the puller.
 // Puller: page = 8*(104+2*128)+2*128 = 3136; two page/header
 // handoffs = 6272, kept validator/cursor copies = 4*128 = 512.
-// LogPage/LogDelivery boxes = 400+304; pushed decoder = 272;
-// common decoder share = 19460; payload-first replay = 65536*24 slots
-// + 65536 bytes; held hint/text/body = 88+128+1042.
-// Puller payload = 1_666_878; its inline state grows GitHub 504 -> 776.
-// Checked total: 3_904_940 + 272 + 1_666_878 = 5_572_090.
-const GITHUB_FIXTURE_HEAP: u64 = 5_572_090;
+// LogPage/LogDelivery boxes = 400+320; pushed decoder = 272;
+// common decoder share = 19420; row event copies = 2*128;
+// held hint/text/body = 88+128+1042.
+// Puller payload = 28_710; its inline state grows GitHub 504 -> 776.
+// Checked total: 3_904_660 + 272 + 28_710 = 3_933_642.
+const GITHUB_FIXTURE_HEAP: u64 = 3_933_642;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 552 + drive-list pair 16 + 3*512 operation copies + 65536 held
@@ -423,15 +423,12 @@ fn a_forgejo_forge_pays_no_github_share() {
 
 #[test]
 fn a_github_forge_pays_its_app_share() {
-    assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2400);
+    assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2360);
     assert_eq!(size_of::<skein_forge::github::plans::reads::Plan>(), 1496);
     assert_eq!(limits::github_call_heap(&fixtures::limits(), &fixtures::shared()), Some(210_370));
     assert_eq!(size_of::<crate::installations::GitHub>(), 776);
-    assert_eq!(limits::puller_heap(&fixtures::limits()), Some(1_666_878));
-    assert_eq!(
-        3_904_940_u64.checked_add(272).expect("inline puller").checked_add(1_666_878),
-        Some(GITHUB_FIXTURE_HEAP)
-    );
+    assert_eq!(limits::puller_heap(&fixtures::limits()), Some(28_710));
+    assert_eq!(3_904_660_u64.checked_add(272).expect("inline puller").checked_add(28_710), Some(GITHUB_FIXTURE_HEAP));
     let settings = fixtures::github_settings();
     assert_eq!(limits::Forges::of(&settings), Some(GITHUB));
     assert_eq!(

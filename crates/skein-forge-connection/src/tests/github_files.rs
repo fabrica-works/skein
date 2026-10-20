@@ -262,7 +262,8 @@ fn measure_files_page(comparison: bool) {
 
 // Sum only component/harness spans. Each next step starts with the retained
 // growth of the preceding steps; fake allocations between them are excluded.
-pub(super) struct CallHeap {
+#[derive(Debug)]
+pub struct CallHeap {
     pub(super) peak: i64,
     pub(super) held: i64,
 }

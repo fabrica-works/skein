@@ -56,7 +56,7 @@ fn page(rows: &[Box<[u8]>], fields: &[u8]) -> Box<[u8]> {
     f::response_with_fields(200, &out.finish(), fields)
 }
 fn delivery(event: &[u8], payload: &[u8]) -> Box<[u8]> {
-    // Payload first exercises the dialect's bounded replay as well as its streaming path.
+    // The row's event starts the streaming decoder before the envelope's event fields.
     f::ok(&joined(&[
         b"{\"request\":{\"payload\":",
         payload,
@@ -458,14 +458,19 @@ fn puller_holding_a_hint_fits_its_counting_allocator_ledger() {
     );
     next_poll(&mut h);
     h.answer(f::FORGE, &page);
-    // The page and delivery request are already retained. Charge the full page
-    // bound, then measure the whole delivery and its held hint; script history
-    // before this exchange belongs to the harness.
-    let mut heap =
-        CallHeap { peak: 0, held: i64::from(crate::limits::log_page_bytes(&h.env.limits).expect("page ledger")) };
-    let span = skein_heap::Span::start();
+    // Price the existing page, decoder and request before measuring only
+    // component calls. The wire's fragment trace belongs to the harness.
+    let held = u64::from(crate::limits::log_page_bytes(&h.env.limits).expect("page ledger"))
+        .checked_add(crate::limits::decoder_heap(&h.env.limits, super::GITHUB).expect("decoder ledger"))
+        .unwrap()
+        .checked_add(u64::try_from(size_of::<skein_forge::github::plans::start::LogDelivery>()).unwrap())
+        .unwrap()
+        .checked_add(u64::try_from(size_of::<skein_forge::github::plans::plan::Exchange>()).unwrap())
+        .unwrap()
+        .checked_add(u64::from(h.env.limits.string_bytes))
+        .unwrap();
+    h.component_heap = Some(CallHeap { peak: 0, held: i64::try_from(held).unwrap() });
     h.answer(f::FORGE, &response);
-    heap.count(span.end());
     let hinted = match h.up.pop().expect("hint") {
         Event::Hint(hint) => hint,
         Event::Answered(_)
@@ -477,10 +482,9 @@ fn puller_holding_a_hint_fits_its_counting_allocator_ledger() {
         | Event::Stopped { .. }
         | Event::Closed => unreachable!("hint"),
     };
-    let span = skein_heap::Span::start();
     h.send(Request::RefusedHint(hinted));
     h.run(Duration::ZERO);
-    heap.count(span.end());
+    let heap = h.component_heap.take().expect("component meter");
     match h.component.test_github().puller.state {
         State::Holding { hint: Some(_), offer: false } => {}
         State::Resting | State::Reading | State::Delivery { .. } | State::Holding { .. } => {
@@ -492,7 +496,7 @@ fn puller_holding_a_hint_fits_its_counting_allocator_ledger() {
     assert!(u64::try_from(heap.peak).expect("positive peak") <= bound, "{} > {bound}", heap.peak);
     assert!(
         u64::try_from(heap.peak).expect("positive peak")
-            >= List::<skein_json::tokenizer::Event>::worst_case(h.env.limits.delivery_bytes).expect("replay slots")
+            < List::<skein_json::tokenizer::Event>::worst_case(h.env.limits.delivery_bytes).expect("event buffer size")
     );
     println!("puller holding hint: peak {} <= puller heap {bound}", heap.peak);
 }
@@ -548,4 +552,27 @@ fn unseen_whole_delivery_failure_skips_it_and_reads_the_next_row() {
     assert_eq!(kept(&h), Some(expected(3)));
     assert_eq!(requests(&h, b"GET /app/hook/deliveries/3 "), 0);
     assert_eq!(requests(&h, b"GET /app/hook/deliveries/2 "), 1);
+}
+
+#[test]
+fn a_delivery_disagreeing_with_its_row_hints_nothing_and_the_next_row_hints() {
+    let mut h = baseline(f::limits());
+    next_poll(&mut h);
+    h.answer(f::FORGE, &page(&[row(3, b"issues", false), row(2, b"issues", false), row(1, b"issues", false)], NEW_TAG));
+    h.answer(f::FORGE, &delivery(b"issue_comment", ISSUE));
+    hints(&mut h);
+    assert!(h.hints.is_empty());
+    h.connected(f::FORGE);
+    assert_eq!(requests(&h, b"GET /app/hook/deliveries/2 "), 1);
+    h.answer(f::FORGE, &delivery(b"issues", ISSUE));
+    hints(&mut h);
+    assert_eq!(h.hints.len(), 1);
+    assert_eq!(kept(&h), Some(expected(3)));
+}
+
+#[test]
+fn puller_heap_does_not_grow_with_the_delivery_byte_bound() {
+    let small = Limits { delivery_bytes: 64 * 1024, ..f::limits() };
+    let large = Limits { delivery_bytes: 1024 * 1024, ..small };
+    assert_eq!(crate::limits::puller_heap(&small), crate::limits::puller_heap(&large));
 }

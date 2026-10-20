@@ -542,9 +542,12 @@ subscribing; the others are temper's draft section 5's, and no more.
 - **The first page is conditional:** sent with the last page's
   `Validator` as `If-None-Match`, a `304` says nothing new, at no cost.
 - **One delivery whole:** `GET /app/hook/deliveries/<id>`, on the JSON
-  Web Token: its `event`, `request.headers` (`X-GitHub-Event`,
-  `X-GitHub-Delivery`) and `request.payload`, decoded as a pushed body
-  is (9.2); its `response` skipped.
+  Web Token. The plan carries the listed row's bounded event word and
+  starts the payload decoder from it, whatever the JSON member order.
+  Its `event` and `request.headers.X-GitHub-Event` must both be present
+  and equal the row's event, or the read is malformed. The decoder reads
+  `request.headers` (`X-GitHub-Event`, `X-GitHub-Delivery`) and
+  `request.payload` as a pushed body is (9.2); its `response` is skipped.
 - **Trusted by its channel,** not its signature: the payload comes back
   re-encoded, so no HMAC is checked; the read is the App's own, over
   TLS, on its token.

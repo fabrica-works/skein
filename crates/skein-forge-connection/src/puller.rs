@@ -95,7 +95,11 @@ impl Puller {
                 )))
             }
             State::Delivery { id } => Some(super::component::OwnPlan::GitHubLogDelivery(Box::new(
-                skein_forge::github::plans::start::LogDelivery::new(id),
+                skein_forge::github::plans::start::LogDelivery::new(id, {
+                    let poll = self.poll.as_ref().expect("active poll");
+                    let at = poll.row.checked_sub(1).expect("selected row");
+                    poll.rows.get(at).expect("selected row").event.clone()
+                }),
             ))),
             State::Resting | State::Holding { .. } => None,
         }

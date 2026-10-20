@@ -170,7 +170,7 @@ fn log_requests_use_the_jwt_and_only_next_pages_have_a_cursor() {
             assert_eq!(fields[2], (b"If-None-Match".as_slice(), validator.as_bytes()));
         }
     }
-    let mut plan = LogDelivery::new(u64::MAX);
+    let mut plan = LogDelivery::new(u64::MAX, copy_of(b"issues"));
     let Step::Send(exchange) = plan.begin(bounds()).unwrap() else { panic!("request") };
     assert_eq!(crate::github::decode::kind(&exchange.request), Some(Kind::LogDelivery));
     let encoded = request::encode(&exchange.request, &limits()).unwrap();
@@ -202,6 +202,16 @@ fn log_conditional_304_is_unchanged_and_distinct_from_an_empty_page() {
         panic!("empty page")
     };
     assert!(empty.rows.is_empty());
+}
+fn logged(
+    event: &[u8],
+    input: &[u8],
+    chunk: u32,
+    limits: &crate::github::limits::Limits,
+) -> (skein_lib::List<Row>, Result<Document, Malformed>) {
+    let mut plan = LogDelivery::new(1, copy_of(event));
+    let Step::Send(exchange) = plan.begin(bounds()).unwrap() else { panic!("delivery request") };
+    super::fixtures::decode_with(exchange.decoder(limits).unwrap(), input, chunk, limits)
 }
 fn wrapped(payload: &[u8], payload_first: bool, event: &[u8]) -> Box<[u8]> {
     let mut out = Writer::new(4096);
@@ -236,10 +246,13 @@ fn logged_delivery_reuses_the_pushed_decoder_and_skips_response_in_any_member_or
     for payload_first in [false, true] {
         let input = wrapped(ISSUE, payload_first, b"issues");
         for chunk in [1, 7, 4096] {
-            assert_eq!(decode(Kind::LogDelivery, &input, chunk, &limits()).1, Ok(Document::Delivery(expected.clone())));
+            assert_eq!(logged(b"issues", &input, chunk, &limits()).1, Ok(Document::Delivery(expected.clone())));
         }
-        let mut plan = LogDelivery::new(1);
-        assert_eq!(plan.begin(bounds()).unwrap(), Step::send(Request::LogDelivery { id: 1 }));
+        let mut plan = LogDelivery::new(1, copy_of(b"issues"));
+        assert_eq!(
+            plan.begin(bounds()).unwrap(),
+            Step::send(Request::LogDelivery { id: 1, event: copy_of(b"issues") })
+        );
         assert_eq!(plan.heard(Heard::Head { status: 200, head: Head::new() }, bounds()).unwrap(), None);
         assert_eq!(
             plan.heard(Heard::Done(Body::Document(Document::Delivery(expected.clone()))), bounds()).unwrap(),
@@ -252,16 +265,16 @@ fn logged_delivery_checks_event_agreement_and_payload_bound() {
     for first in [false, true] {
         let input = wrapped(ISSUE, first, b"push");
         assert_eq!(
-            crate::github::plans::failure::malformed(decode(Kind::LogDelivery, &input, 1, &limits()).1.unwrap_err()),
+            crate::github::plans::failure::malformed(logged(b"issues", &input, 1, &limits()).1.unwrap_err()),
             api::Error::InvalidAnswer
         );
     }
     let input = wrapped(ISSUE, false, b"issues");
     let mut small = limits();
     small.json.length = u32::try_from(input.len()).unwrap() - 1;
-    let error = decode(Kind::LogDelivery, &input, 1, &small).1.unwrap_err();
+    let error = logged(b"issues", &input, 1, &small).1.unwrap_err();
     assert_eq!(crate::github::plans::failure::malformed(error), api::Error::TooLarge);
-    let mut plan = LogDelivery::new(1);
+    let mut plan = LogDelivery::new(1, copy_of(b"issues"));
     plan.begin(bounds()).unwrap();
     plan.heard(Heard::Head { status: 200, head: Head::new() }, bounds()).unwrap();
     assert_eq!(
@@ -273,7 +286,7 @@ fn logged_delivery_checks_event_agreement_and_payload_bound() {
 fn logged_unhinted_event_is_other() {
     let input = br#"{"event":"ping","request":{"headers":{"X-GitHub-Event":"ping","X-GitHub-Delivery":"01234567-89ab-cdef-0123-456789abcdef"},"payload":{"ignored":[null]}},"response":null}"#;
     assert_eq!(
-        decode(Kind::LogDelivery, input, 1, &limits()).1,
+        logged(b"ping", input, 1, &limits()).1,
         Ok(Document::Delivery(Logged { event: copy_of(b"ping"), delivery: Delivery::Other }))
     );
 }
@@ -302,7 +315,7 @@ fn log_reads_keep_app_failure_mapping_and_reject_calls_after_the_terminal() {
             Some(Step::Done(Err(error)))
         );
         assert_eq!(page.heard(Heard::Done(Body::Empty), bounds()), Err(api::Error::InvalidAnswer));
-        let mut delivery = LogDelivery::new(1);
+        let mut delivery = LogDelivery::new(1, copy_of(b"issues"));
         delivery.begin(bounds()).unwrap();
         assert_eq!(
             delivery.heard(Heard::Head { status, head: Head::new() }, bounds()).unwrap(),
@@ -346,4 +359,47 @@ fn log_row_kind_uses_the_pushed_event_table() {
 fn log_row_rejects_a_guid_that_is_not_uuid_text() {
     let input = br#"[{"id":1,"guid":"bad","event":"ping","action":null,"installation_id":null,"repository_id":null,"status_code":200,"delivered_at":"2026-10-20T08:00:00Z","redelivery":false}]"#;
     assert_eq!(page(Ask::First { validator: None }, head(None), input), Err(api::Error::InvalidAnswer));
+}
+
+#[test]
+fn github_log_delivery_streams_a_payload_before_its_event_fields() {
+    let input = wrapped(ISSUE, true, b"issues");
+    for chunk in [1, 7, u32::try_from(input.len()).unwrap()] {
+        let (_, result) = logged(b"issues", &input, chunk, &limits());
+        assert_eq!(
+            result,
+            Ok(Document::Delivery(Logged {
+                event: copy_of(b"issues"),
+                delivery: crate::github::delivery::decode(b"issues", ISSUE, &limits()).unwrap(),
+            }))
+        );
+    }
+}
+
+#[test]
+fn github_log_delivery_refuses_an_event_other_than_its_rows() {
+    for (event, header, error) in [
+        (
+            b"\"event\":\"push\",".as_slice(),
+            b"\"X-GitHub-Event\":\"push\",".as_slice(),
+            Malformed::Value { field: b"event" },
+        ),
+        (b"\"event\":\"push\",", b"\"X-GitHub-Event\":\"issues\",", Malformed::Value { field: b"event" }),
+        (b"\"event\":\"issues\",", b"\"X-GitHub-Event\":\"push\",", Malformed::Value { field: b"X-GitHub-Event" }),
+        (b"", b"\"X-GitHub-Event\":\"issues\",", Malformed::Missing { field: b"event" }),
+        (b"\"event\":\"issues\",", b"", Malformed::Missing { field: b"X-GitHub-Event" }),
+    ] {
+        let mut out = Writer::new(4096);
+        out.put(b"{").unwrap();
+        out.put(event).unwrap();
+        out.put(b"\"request\":{\"payload\":").unwrap();
+        out.put(ISSUE).unwrap();
+        out.put(b",\"headers\":{").unwrap();
+        out.put(header).unwrap();
+        out.put(b"\"X-GitHub-Delivery\":\"01234567-89ab-cdef-0123-456789abcdef\"}}}").unwrap();
+        let input = super::fixtures::bytes(out);
+        for chunk in [1, 7, u32::try_from(input.len()).unwrap()] {
+            assert_eq!(logged(b"issues", &input, chunk, &limits()).1, Err(error));
+        }
+    }
 }

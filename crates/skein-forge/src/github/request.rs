@@ -29,7 +29,7 @@ pub enum Accept {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Request {
     LogPage { ask: super::log::Ask, per_page: u32 },
-    LogDelivery { id: u64 },
+    LogDelivery { id: u64, event: Box<[u8]> },
     Installations { page: u32 },
     Installation { id: u64 },
     Mint { installation: u64, scope: Scope },
@@ -886,7 +886,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
                 }
             }
         }
-        Request::LogDelivery { id } => {
+        Request::LogDelivery { id, .. } => {
             out.put(b"/app/hook/deliveries/");
             out.number(*id);
         }
@@ -974,6 +974,7 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
+        Request::LogDelivery { event, .. } => bounded(event, limits.string_bytes)?,
         Request::Enqueue { id, .. } => bounded(id, limits.string_bytes)?,
         Request::PullGraphql { owner, name, number } => {
             bounded(owner, limits.string_bytes)?;
@@ -1022,7 +1023,6 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
         | Request::DeleteBranch { .. }
         | Request::Raw { .. }
         | Request::LogPage { .. }
-        | Request::LogDelivery { .. }
         | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Mint { .. }

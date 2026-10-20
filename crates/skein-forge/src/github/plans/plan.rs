@@ -106,6 +106,9 @@ impl Exchange {
     #[must_use]
     pub fn decoder(&self, limits: &crate::github::limits::Limits) -> Option<crate::github::decode::Decoder> {
         let kind = crate::github::decode::kind(&self.request)?;
+        if let request::Request::LogDelivery { event, .. } = &self.request {
+            return Some(crate::github::decode::log_delivery_decoder(event, limits));
+        }
         if kind == crate::github::document::Kind::Compare && self.comparison == Comparison::MergeBase {
             Some(crate::github::decode::merge_base_decoder(limits))
         } else {
