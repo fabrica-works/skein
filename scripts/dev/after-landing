@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Run a repository's after-landing tier on a commit land has just pushed
+# (owners.md, 4.5): the tests too slow for its gate, which would otherwise
+# break unseen on main.
+#
+#   after-landing GIT_COMMON_DIR COMMIT BRANCH
+#
+# land starts it in the background after each code landing of a repository
+# whose landed tree has scripts/after-landing.sh. It checks the commit out
+# in a detached worktree kept for the repository (tmp/after-landing/REPO,
+# with its own target, one run at a time), runs the script through
+# `heavy --gate`, and when that fails or heavy refuses it, writes one line
+# to the director's inbox, tmp/director/inbox/after-landing.md, naming the
+# repository, the commit, its branch and subject, and the log.
+set -euo pipefail
+
+kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# The workspace, as land finds it.
+workspace() {
+    local skein
+    skein=$(cd "$kit/../.." && pwd)
+    if [[ $(basename "$skein") == skein ]]; then dirname "$skein"; else echo "$HOME/src/rust"; fi
+}
+root=${DEV_ROOT:-$(workspace)}
+tmp=${DEV_TMP:-$root/tmp}
+
+(($# == 3)) || { echo "usage: after-landing GIT_COMMON_DIR COMMIT BRANCH" >&2; exit 2; }
+common=$1 commit=$2 branch=$3
+repo=$(basename "$(dirname "$common")")
+dir=$tmp/after-landing
+wt=$dir/$repo
+mkdir -p "$dir" "$tmp/director/inbox"
+log=$dir/$repo-$(git --git-dir="$common" rev-parse --short "$commit").log
+subject=$(git --git-dir="$common" log -1 --format=%s "$commit")
+
+report() {
+    printf '%s after-landing: %s %s (%s, "%s") %s; log %s\n' \
+        "$(date -u +%Y-%m-%dT%H:%MZ)" "$repo" "${commit:0:10}" "$branch" "$subject" "$1" "$log" \
+        >>"$tmp/director/inbox/after-landing.md"
+}
+
+# One run at a time per repository: they share the worktree and its target.
+exec 7>"$dir/$repo.lock"
+flock 7
+{
+    if [[ -d $wt ]]; then
+        git -C "$wt" checkout --quiet --detach "$commit"
+    else
+        git --git-dir="$common" worktree add --quiet --detach "$wt" "$commit"
+    fi
+} >"$log" 2>&1 || { report "could not be checked out"; exit 1; }
+
+status=0
+(cd "$wt" && HEAVY_LABEL="after-landing $repo" "$kit/heavy" --gate -- scripts/after-landing.sh) >>"$log" 2>&1 ||
+    status=$?
+((status == 0)) || report "failed (exit $status)"
+exit "$status"

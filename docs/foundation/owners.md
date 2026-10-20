@@ -228,6 +228,15 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
   runs' landings: keep a new test well inside its budget (half of it
   is a good mark), and make a slow one cheaper rather than raise the
   budget.
+- **After landing.** A tier too slow for a repository's gate runs
+  after each of its code landings instead: when the landed tree has
+  `scripts/after-landing.sh`, `land` starts `after-landing` in the
+  background, which runs it on the landed commit through `heavy
+  --gate`, in a worktree kept for the repository under
+  `tmp/after-landing/`. A failure adds one line to
+  `tmp/director/inbox/after-landing.md`, naming the repository, the
+  commit, its branch and subject, and the log; the director sends it to
+  the owner whose landing broke the tier.
 - **The disk floor.** Below the machine's floor, 40 GB unless
   `tmp/machine.env` says otherwise, no new implementer starts, and
   finished targets are cleared. A target grows to about 21 GB. `heavy`

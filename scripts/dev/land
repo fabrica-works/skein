@@ -21,6 +21,10 @@
 # not read as trailers, and code that adds a word the active plan's Pulse
 # forbids or a test whose name its `test-names:` pattern matches.
 #
+# After a code landing, a repository's scripts/after-landing.sh, the tests
+# too slow for its gate, runs on the landed commit in the background
+# (after-landing).
+#
 # --docs   Markdown only, and a plan's metrics.tsv: check that, and skip
 #          the gate.
 # --local  No remote: land on the local main under a lock (LAND_LOCK, or
@@ -343,6 +347,13 @@ Name each test for its one behaviour, and split one that checks two (testing-str
     esac
     break
 done
+
+# A repository's tier too slow for its gate runs after its landing, in the
+# background (after-landing; owners.md, 4.5).
+if ((!docs && !local)) && [[ -x scripts/after-landing.sh ]]; then
+    setsid "$kit/after-landing" "$common" "$commit" "$branch" </dev/null >/dev/null 2>&1 &
+    echo "land: queued scripts/after-landing.sh on $commit; a failure goes to $tmp/director/inbox/after-landing.md" >&2
+fi
 
 cat <<EOF
 land: landed $repo $branch on $where
