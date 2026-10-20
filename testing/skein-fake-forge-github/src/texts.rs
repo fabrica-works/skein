@@ -35,15 +35,15 @@ pub(crate) const REF_MISSING: &[u8] = b"Reference does not exist";
 // no unmet rule visible; unrecorded shape (fake-forge.md, 10.4).
 pub(crate) const RULES_FALLBACK: &[u8] = b"Repository rule violations found\n\n";
 
-// recorded; other counts inferred (owner's rule-texts.md, 2026-10-20).
+// o/github live 2026-10-20, with one approval; other counts inferred.
 pub(crate) const APPROVAL_START: &[u8] = b"At least ";
-// recorded; other counts inferred (owner's rule-texts.md, 2026-10-20).
+// o/github live 2026-10-20, with one approval; other counts inferred.
 pub(crate) const APPROVAL_END: &[u8] = b" approving review is required by reviewers with write access.";
-// recorded 2026-10-20 (owner's rule-texts.md).
+// o/github live 2026-10-20.
 pub(crate) const CHECK_START: &[u8] = b"Required status check \"";
-// recorded 2026-10-20 (owner's rule-texts.md).
+// o/github live 2026-10-20.
 pub(crate) const CHECK_EXPECTED: &[u8] = b"\" is expected.";
-// recorded 2026-10-20 (owner's rule-texts.md).
+// o/github live 2026-10-20.
 pub(crate) const CHECK_PROGRESS: &[u8] = b"\" is in progress.";
-// recorded for Actions; inferred: commit status failure unrecorded (rule-texts.md).
+// o/github live 2026-10-20, for an Actions check; a commit status's is inferred.
 pub(crate) const CHECK_FAILING: &[u8] = b"\" is failing.";
