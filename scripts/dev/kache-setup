@@ -84,10 +84,13 @@ fi
 config=$HOME/.config/kache/config.toml
 mkdir -p "${config%/*}"
 [[ ! -f $config || -f $config.before-$version ]] || cp "$config" "$config.before-$version"
+# A machine that keeps its cache elsewhere, on a larger disk, keeps it there.
+local=$(sed -n 's/^local_store *= *"\(.*\)"$/\1/p' "$config" 2>/dev/null | head -n1)
 cat >"$config.new" <<TOML
 # Written by skein's scripts/dev/kache-setup.
 [cache]
-local_max_size = "${cap}GiB"
+${local:+local_store = \"$local\"
+}local_max_size = "${cap}GiB"
 cache_executables = true
 auto_recover_min_free_bytes = $((floor * 1024 * 1024 * 1024))
 TOML
@@ -115,6 +118,10 @@ systemctl --user enable --quiet kache.service
 
 if [[ $installed != "kache $version" ]]; then
     "$bin" clean --cache --yes
+    # An older kache's blobs that targets still link to outlive the clean,
+    # named by no entry, and so by no collection: the store goes whole.
+    # The targets keep their own links.
+    rm -rf "${local:-${XDG_CACHE_HOME:-$HOME/.cache}/kache}/store"
 fi
 systemctl --user start kache.service
 # The older kache's collection timer, if the machine has one, stays as a
