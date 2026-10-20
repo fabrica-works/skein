@@ -126,22 +126,17 @@ fn github_fake_merge_method_refusal_uses_the_requested_method() {
 }
 #[test]
 fn github_fake_merge_approval_rule_has_recorded_shape_and_configured_count() {
-    for count in [1, 2] {
+    for (count, message) in [
+        (1, b"Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n".as_slice()),
+        (2, b"Repository rule violations found\n\nAt least 2 approving reviews are required by reviewers with write access.\n\n"),
+        (3, b"Repository rule violations found\n\nAt least 3 approving reviews are required by reviewers with write access.\n\n"),
+    ] {
         let mut h = protected(count, &[]);
         let (number, head) = r::pull(&mut h);
         let token = r::token(&mut h);
         assert_eq!(w::write(&mut h, &token, write(number, head)), Err(api::Error::Protected));
         let response = w::ask(&mut h, &token, &request(number, head, Method::Squash));
-        let digit = if count == 1 { b"1" } else { b"2" };
-        let message = f::parts(&[
-            crate::texts::RULES,
-            b"\n\n",
-            crate::texts::APPROVAL_START,
-            digit,
-            crate::texts::APPROVAL_END,
-            b"\n\n",
-        ]);
-        f::refusal(&h, &response, 405, &message);
+        f::refusal(&h, &response, 405, message);
         assert!(
             skein_lib::bytes::find(&response.body, b"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request")
                 .is_some()

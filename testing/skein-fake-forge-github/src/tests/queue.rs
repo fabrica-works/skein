@@ -47,11 +47,43 @@ fn merge(number: u64, head: u64) -> Request {
     }
 }
 #[test]
-fn direct_merge_of_a_queue_branch_answers_the_two_rule_lines_without_merging() {
+fn direct_merge_of_a_queue_branch_lists_the_queue_and_unmet_check_without_merging() {
     let (mut h, number, head, token) = scenario(true);
     let response = ask(&mut h, &token, &merge(number, head));
-    let message = f::parts(&[crate::texts::RULES, b"\n\n", crate::texts::QUEUE, b"\n\n"]);
-    f::refusal(&h, &response, 405, &message);
+    let message = b"Repository rule violations found\n\nChanges must be made through the merge queue\n\nRequired status check \"required\" is expected.\n\n";
+    f::refusal(&h, &response, 405, message);
+    assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
+    let a::Answer::Pull(pull) = h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap()
+    else {
+        panic!("pull")
+    };
+    assert_eq!(pull.state, a::State::Open);
+    assert_eq!(pull.merged, None);
+}
+#[test]
+fn direct_queue_merge_lists_the_missing_approval_then_only_the_queue_after_approval() {
+    let mut h = protected(true, 1, Box::from([]));
+    let (number, head) = r::pull(&mut h);
+    let token = r::token(&mut h);
+    let response = ask(&mut h, &token, &merge(number, head));
+    f::refusal(
+        &h,
+        &response,
+        405,
+        b"Repository rule violations found\n\nChanges must be made through the merge queue\n\nAt least 1 approving review is required by reviewers with write access.\n\n",
+    );
+    r::call_as(
+        &mut h,
+        f::BOT,
+        a::Op::Write(a::Write::Review { number, verdict: Some(a::Verdict::Approve), body: f::boxed(b"approved") }),
+    );
+    let response = ask(&mut h, &token, &merge(number, head));
+    f::refusal(
+        &h,
+        &response,
+        405,
+        b"Repository rule violations found\n\nChanges must be made through the merge queue\n\n",
+    );
     assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
     let a::Answer::Pull(pull) = h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap()
     else {
@@ -78,8 +110,8 @@ fn ordinary_base_merges_by_rest_beside_a_queue_base() {
         panic!("ordinary pull")
     };
     let response = ask(&mut h, &token, &merge(queued, head));
-    let message = f::parts(&[crate::texts::RULES, b"\n\n", crate::texts::QUEUE, b"\n\n"]);
-    f::refusal(&h, &response, 405, &message);
+    let message = b"Repository rule violations found\n\nChanges must be made through the merge queue\n\nRequired status check \"required\" is expected.\n\n";
+    f::refusal(&h, &response, 405, message);
     let skein_forge::api::Answer::Merged(sha) =
         drive_merge(&mut h, &token, direct, head, Admission::Answer, DIRECT).unwrap()
     else {
@@ -103,13 +135,13 @@ fn stale_head_is_refused_before_a_queue_requirement() {
 }
 
 #[test]
-fn queue_refusal_takes_precedence_over_approval_and_check_rules() {
+fn queue_refusal_lists_approval_then_unmet_check_rules() {
     let mut h = protected(true, 1, Box::from([f::boxed(b"required")]));
     let (number, head) = r::pull(&mut h);
     let token = r::token(&mut h);
     let response = ask(&mut h, &token, &merge(number, head));
-    let message = f::parts(&[crate::texts::RULES, b"\n\n", crate::texts::QUEUE, b"\n\n"]);
-    f::refusal(&h, &response, 405, &message);
+    let message = b"Repository rule violations found\n\nChanges must be made through the merge queue\n\nAt least 1 approving review is required by reviewers with write access.\n\nRequired status check \"required\" is expected.\n\n";
+    f::refusal(&h, &response, 405, message);
     assert_eq!(
         drive_merge(&mut h, &token, number, head, Admission::Answer, QUEUED),
         Err(skein_forge::api::Error::Refused)
@@ -370,24 +402,38 @@ fn failed_group_leaves_pull_plan_open_with_ci_failure() {
 }
 
 #[test]
-fn unapproved_enqueue_answers_the_unrecorded_graphql_text_without_an_entry() {
-    let mut h = protected(true, 1, Box::from([]));
-    let (number, head) = r::pull(&mut h);
-    let token = r::token(&mut h);
-    let request = Request::Enqueue {
-        id: f::parts(&[b"PR_2_", skein_lib::Decimal::of(number).as_bytes()]),
-        head: r::object(head),
-    };
-    let response = ask(&mut h, &token, &request);
-    assert_eq!(response.status, 200);
-    let (rows, document) = h.decode(github::document::Kind::Enqueue, &response);
-    assert_eq!(rows.len(), 0);
-    assert_eq!(
-        document,
-        github::document::Document::Graphql(github::document::GraphqlRefusal {
-            kind: f::boxed(b"UNPROCESSABLE"),
-            message: f::boxed(crate::texts::ENQUEUE_APPROVALS),
-        })
-    );
-    assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
+fn unapproved_enqueue_answers_the_recorded_graphql_text_without_an_entry() {
+    for (count, message) in [
+        (1, b"Pull request At least 1 approving review is required by reviewers with write access.".as_slice()),
+        (2, b"Pull request At least 2 approving reviews are required by reviewers with write access."),
+    ] {
+        let mut h = protected(true, count, Box::from([]));
+        let (number, head) = r::pull(&mut h);
+        let token = r::token(&mut h);
+        let request = Request::Enqueue {
+            id: f::parts(&[b"PR_2_", skein_lib::Decimal::of(number).as_bytes()]),
+            head: r::object(head),
+        };
+        let response = ask(&mut h, &token, &request);
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.body.as_ref(),
+            f::parts(&[
+                br#"{"data":{"enqueuePullRequest":null},"errors":[{"type":"UNPROCESSABLE","path":["enqueuePullRequest"],"message":""#,
+                message,
+                br#""}]}"#,
+            ])
+            .as_ref(),
+        );
+        let (rows, document) = h.decode(github::document::Kind::Enqueue, &response);
+        assert_eq!(rows.len(), 0);
+        assert_eq!(
+            document,
+            github::document::Document::Graphql(github::document::GraphqlRefusal {
+                kind: f::boxed(b"UNPROCESSABLE"),
+                message: f::boxed(message),
+            })
+        );
+        assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
+    }
 }

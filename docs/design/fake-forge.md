@@ -738,10 +738,28 @@ only what GitHub has and Forgejo lacks (10.2).
   drawn `settle_min..=settle_max` after a push to the head or the base.
   A merge then decides as the domain does:
   - a stale head is `409`;
-  - a merge refused for its checks or its approvals is `405` with the
-    rule's lines;
-  - a branch that queues refuses a direct merge with the queue's
-    message, and takes `enqueue`.
+  - a merge refused for its checks or its approvals is `405` with
+    `Repository rule violations found\n\n`, then the unmet approval
+    sentence, then the unmet context lines, each followed by `\n\n`;
+  - the approval sentence is `At least 1 approving review is required
+    by reviewers with write access.` for 1, and `At least 2 approving
+    reviews are required by reviewers with write access.` for 2.
+    The singular is recorded in o/github live 2026-10-20, and the plural
+    for 2 in live session 1917; counts of 3 and up use the plural by
+    inference;
+  - a branch that queues refuses a direct merge with `405`, the same
+    header, then `Changes must be made through the merge queue\n\n`,
+    then the unmet approval and context lines in the same order.
+    Live session 1917 records the queue line followed by the approval
+    line. Context lines after the queue line are inferred: neither
+    shape was recorded with checks, and the session lists every
+    violated rule. With no unmet rules, only the queue line follows
+    the header;
+  - an enqueue refused for approvals answers HTTP `200`, with
+    `data.enqueuePullRequest` null and one `UNPROCESSABLE` error.
+    Its message is `Pull request ` followed by the approval sentence,
+    without trailing blank lines, and nothing is queued. Live session
+    1917 records this for 1; other counts use the shared sentence.
 
   The layer's `pull` document answers `mergeQueueEntry` and
   `mergeCommit` from the domain. The REST pull of a pull request merged
@@ -815,8 +833,9 @@ the fake.
   `404`, and other GraphQL documents are `errors`.
 - **Plaintext, on loopback,** at three origins: `api`, which also
   serves `web`'s routes, `blob`, and an optional third one.
-- **Messages** are the conformance's recorded texts, one per refusal of
-  forge-github.md, section 7. The layer makes no other.
+- **Messages** follow the conformance's recorded texts for the refusals of
+  forge-github.md, section 7, and live session 1917. Section 10.1 marks
+  the inferred approval counts and queue context lines.
 - **Merges** follow the domain: squashes, whatever the method asked,
   and a queue's group is built from the entry ahead, not batched.
 - **Ids** are the domain's numbers, small and sequential. Deliveries'

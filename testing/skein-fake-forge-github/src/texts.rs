@@ -8,7 +8,9 @@ pub(crate) const MERGE_STALE: &[u8] = b"Head branch was modified. Review and try
 pub(crate) const NOT_MERGEABLE: &[u8] = b"Pull Request is not mergeable";
 // ruleset-approval-405.
 pub(crate) const RULES: &[u8] = b"Repository rule violations found";
-// queue-direct-merge-405.
+// queue-direct-merge-405; live session 1917 records the queue line before
+// the approval line. Context lines after it are inferred: neither shape was
+// recorded with checks; live session 1917 lists every violated rule.
 pub(crate) const QUEUE: &[u8] = b"Changes must be made through the merge queue";
 // repository-allows-shown; from `Squash merges are not allowed on this repository.`
 // in github/tests/writes/merge.rs; the fake supplies the requested method.
@@ -35,10 +37,13 @@ pub(crate) const REF_MISSING: &[u8] = b"Reference does not exist";
 // no unmet rule visible; unrecorded shape (fake-forge.md, 10.4).
 pub(crate) const RULES_FALLBACK: &[u8] = b"Repository rule violations found\n\n";
 
-// o/github live 2026-10-20, with one approval; other counts inferred.
+// o/github live 2026-10-20 records 1; live session 1917 records 2.
+// Counts of 3 and up are inferred.
 pub(crate) const APPROVAL_START: &[u8] = b"At least ";
-// o/github live 2026-10-20, with one approval; other counts inferred.
-pub(crate) const APPROVAL_END: &[u8] = b" approving review is required by reviewers with write access.";
+// o/github live 2026-10-20 records the singular for 1.
+pub(crate) const APPROVAL_SINGULAR: &[u8] = b" approving review is required by reviewers with write access.";
+// live session 1917 records the plural for 2; counts of 3 and up are inferred.
+pub(crate) const APPROVAL_PLURAL: &[u8] = b" approving reviews are required by reviewers with write access.";
 // o/github live 2026-10-20.
 pub(crate) const CHECK_START: &[u8] = b"Required status check \"";
 // o/github live 2026-10-20.
@@ -54,8 +59,14 @@ pub(crate) const CI_FAILURE: &[u8] = b"CI_FAILURE";
 pub(crate) const MERGE_CONFLICT: &[u8] = b"MERGE_CONFLICT";
 // classic-protection-404-under-rulesets.
 pub(crate) const BRANCH_NOT_PROTECTED: &[u8] = b"Branch not protected";
-// unrecorded: o/github will record it.
-pub(crate) const ENQUEUE_APPROVALS: &[u8] = b"unrecorded: o/github will record it";
 // Unrecorded: HTTP admission refusals before GitHub route decoding.
 pub(crate) const PAYLOAD_TOO_LARGE: &[u8] = b"Payload Too Large";
 pub(crate) const METHOD_NOT_ALLOWED: &[u8] = b"Method Not Allowed";
+// live session 1917, followed by the approval sentence without blank lines.
+pub(crate) const ENQUEUE_APPROVAL_PREFIX: &[u8] = b"Pull request ";
+
+pub(crate) fn approval(out: &mut skein_lib::Writer, count: u32) -> Option<()> {
+    out.put(APPROVAL_START).ok()?;
+    out.put(skein_lib::Decimal::of(u64::from(count)).as_bytes()).ok()?;
+    out.put(if count == 1 { APPROVAL_SINGULAR } else { APPROVAL_PLURAL }).ok()
+}

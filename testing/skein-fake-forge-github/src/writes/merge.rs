@@ -9,15 +9,15 @@ use crate::{
 use alloc::boxed::Box;
 use skein_fake_forge_domain::{self as fake, api as a};
 use skein_forge::{api, github::plans::tables::Method};
-use skein_lib::{Decimal, ReplyTo, Writer};
+use skein_lib::{ReplyTo, Writer};
 
 #[derive(Debug)]
 pub(super) enum Stage {
     Settings { number: u64, head: api::Commit, method: Method },
     Head { number: u64, head: api::Commit },
     Merge { number: u64 },
-    Pull { number: u64 },
-    Author(Box<a::Pull>),
+    Pull { number: u64, queue: bool },
+    Author { pull: Box<a::Pull>, queue: bool },
 }
 fn call(service: &Service, repository: Box<[u8]>, stage: Stage, op: a::Op, reply_to: ReplyTo) -> Outcome {
     dispatch(service, Pending { repository, stage: WriteStage::Merge(stage) }, op, reply_to)
@@ -66,7 +66,7 @@ pub(super) fn finish(
                 return Outcome::Reply(answers::refusal(409, texts::MERGE_STALE, limits));
             }
             if pull.queue_required {
-                return Outcome::Reply(queue(limits));
+                return queue(service, repository, number, reply_to);
             }
             // fake-forge.md, 10.4: the domain squashes every allowed method.
             call(
@@ -83,23 +83,23 @@ pub(super) fn finish(
             };
             Outcome::Reply(answers::response(200, &Body::Merged(&reads::commit(commit)), limits))
         }
-        Stage::Pull { number } => {
+        Stage::Pull { number, queue } => {
             let a::Answer::Pull(pull) = answer else {
                 return Outcome::Reply(fallback(limits));
             };
             call(
                 service,
                 repository,
-                Stage::Author(Box::new(pull)),
+                Stage::Author { pull: Box::new(pull), queue },
                 a::Op::Read(a::Read::Item { number, after: 0 }),
                 reply_to,
             )
         }
-        Stage::Author(pull) => {
+        Stage::Author { pull, queue } => {
             let a::Answer::Item { item, .. } = answer else {
                 return Outcome::Reply(fallback(limits));
             };
-            Outcome::Reply(rules(domain.inspect_protection(&repository, &pull.base), &pull, item.author, limits))
+            Outcome::Reply(rules(domain.inspect_protection(&repository, &pull.base), &pull, item.author, queue, limits))
         }
     }
 }
@@ -107,9 +107,15 @@ fn refused(service: &Service, repository: Box<[u8]>, stage: Stage, error: a::Err
     let limits = &service.limits;
     match stage {
         Stage::Merge { number } if error == a::Error::Protected => {
-            return call(service, repository, Stage::Pull { number }, a::Op::Read(a::Read::Pull { number }), reply_to);
+            return call(
+                service,
+                repository,
+                Stage::Pull { number, queue: false },
+                a::Op::Read(a::Read::Pull { number }),
+                reply_to,
+            );
         }
-        Stage::Pull { .. } | Stage::Author(_) => return Outcome::Reply(fallback(limits)),
+        Stage::Pull { .. } | Stage::Author { .. } => return Outcome::Reply(fallback(limits)),
         Stage::Merge { .. } | Stage::Settings { .. } | Stage::Head { .. } => {}
     }
     let response = match error {
@@ -162,12 +168,6 @@ fn check(pull: &a::Pull, context: &[u8]) -> Option<a::Check> {
     }
     None
 }
-fn approval(out: &mut Writer, count: u32) -> Option<()> {
-    out.put(texts::APPROVAL_START).ok()?;
-    out.put(Decimal::of(u64::from(count)).as_bytes()).ok()?;
-    out.put(texts::APPROVAL_END).ok()?;
-    out.put(b"\n\n").ok()
-}
 fn context(out: &mut Writer, name: &[u8], state: Option<a::Check>) -> Option<()> {
     let suffix = match state {
         None => texts::CHECK_EXPECTED,
@@ -180,13 +180,18 @@ fn context(out: &mut Writer, name: &[u8], state: Option<a::Check>) -> Option<()>
     out.put(suffix).ok()?;
     out.put(b"\n\n").ok()
 }
-fn message(protection: &a::Protection, pull: &a::Pull, author: u64, capacity: usize) -> Option<Box<[u8]>> {
+fn message(protection: &a::Protection, pull: &a::Pull, author: u64, queue: bool, capacity: usize) -> Option<Box<[u8]>> {
     let mut out = Writer::new(capacity);
     out.put(texts::RULES).ok()?;
     out.put(b"\n\n").ok()?;
+    if queue {
+        out.put(texts::QUEUE).ok()?;
+        out.put(b"\n\n").ok()?;
+    }
     let missing_approvals = approvals(pull, author, protection) < protection.approvals;
     if missing_approvals {
-        approval(&mut out, protection.approvals)?;
+        texts::approval(&mut out, protection.approvals)?;
+        out.put(b"\n\n").ok()?;
     }
     let mut missing_context = false;
     for name in &protection.contexts {
@@ -196,19 +201,19 @@ fn message(protection: &a::Protection, pull: &a::Pull, author: u64, capacity: us
             context(&mut out, name, state)?;
         }
     }
-    if !missing_approvals && !missing_context {
+    if !queue && !missing_approvals && !missing_context {
         return None;
     }
     answers::finish(out)
 }
-fn rules(protection: Option<&a::Protection>, pull: &a::Pull, author: u64, limits: &Limits) -> Response {
+fn rules(protection: Option<&a::Protection>, pull: &a::Pull, author: u64, queue: bool, limits: &Limits) -> Response {
     let Some(protection) = protection else {
         return fallback(limits);
     };
     let Ok(capacity) = usize::try_from(limits.response) else {
         return answers::failed();
     };
-    let Some(message) = message(protection, pull, author, capacity) else {
+    let Some(message) = message(protection, pull, author, queue, capacity) else {
         return fallback(limits);
     };
     answers::response(405, &Body::Rules(&message), limits)
@@ -217,18 +222,6 @@ fn fallback(limits: &Limits) -> Response {
     answers::response(405, &Body::Rules(texts::RULES_FALLBACK), limits)
 }
 
-fn queue(limits: &Limits) -> Response {
-    let Ok(capacity) = usize::try_from(limits.response) else {
-        return answers::failed();
-    };
-    let mut out = Writer::new(capacity);
-    for line in [texts::RULES, texts::QUEUE] {
-        if out.put(line).is_err() || out.put(b"\n\n").is_err() {
-            return answers::failed();
-        }
-    }
-    let Some(message) = answers::finish(out) else {
-        return answers::failed();
-    };
-    answers::response(405, &Body::Rules(&message), limits)
+fn queue(service: &Service, repository: Box<[u8]>, number: u64, reply_to: ReplyTo) -> Outcome {
+    call(service, repository, Stage::Pull { number, queue: true }, a::Op::Read(a::Read::Pull { number }), reply_to)
 }

@@ -53,7 +53,7 @@ pub(crate) enum Pending {
     Job { repository: Box<[u8]> },
     Protection { repository: Box<[u8]>, query: protection::Read },
     Repository(Row),
-    Enqueue,
+    Enqueue { repository: Box<[u8]> },
     PullGraphql { repository: u32, number: u64 },
     Reviews { page: u32, size: u32, target: Box<[u8]> },
     ReviewComments(u64),
@@ -180,9 +180,13 @@ pub(crate) fn call(
         ),
         Read::Enqueue { number, head, .. } => {
             let Some(head) = count(&head) else {
-                return Outcome::Reply(enqueue_finish(Err(Error::Stale), &service.limits));
+                return Outcome::Reply(answers::response(
+                    200,
+                    &Body::GraphqlRefusal(b"UNPROCESSABLE", crate::texts::ENQUEUE_STALE),
+                    &service.limits,
+                ));
             };
-            (Pending::Enqueue, Op::Write(a::Write::Enqueue { number, head }))
+            (Pending::Enqueue { repository: repository.clone() }, Op::Write(a::Write::Enqueue { number, head }))
         }
         Read::PullGraphql { number, .. } => {
             (Pending::PullGraphql { repository: row.id, number }, Op::Read(a::Read::Pull { number }))
@@ -296,7 +300,7 @@ pub(crate) fn finish(
 ) -> Response {
     let limits = &service.limits;
     let result = match &pending {
-        Pending::Enqueue => return enqueue_finish(result, limits),
+        Pending::Enqueue { repository } => return enqueue_finish(result, repository, limits, domain),
         Pending::PullsFor { .. } => match result {
             Err(Error::Missing(a::What::Item | a::What::Pull)) => {
                 return answers::response(200, &Body::Pulls(&[]), limits);
@@ -337,7 +341,7 @@ pub(crate) fn finish(
             };
             protection::finish(service, domain, &repository, query)
         }
-        Pending::Enqueue => enqueue_finish(Ok(answer), limits),
+        Pending::Enqueue { repository } => enqueue_finish(Ok(answer), &repository, limits, domain),
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
         Pending::ReviewComments(review) => reviews::comments(answer, review, limits),
@@ -424,7 +428,12 @@ fn refused(error: Error, limits: &Limits) -> Response {
     }
 }
 
-fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {
+fn enqueue_finish(
+    result: Result<Answer, Error>,
+    repository: &[u8],
+    limits: &Limits,
+    domain: &fake::Domain,
+) -> Response {
     let entry = match result {
         Ok(answer) => {
             let Answer::Pull(pull) = answer else {
@@ -434,11 +443,22 @@ fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {
         }
         Err(Error::AlreadyQueued(entry)) => Some(entry),
         Err(Error::Protected) => {
-            return answers::response(
-                200,
-                &Body::GraphqlRefusal(b"UNPROCESSABLE", crate::texts::ENQUEUE_APPROVALS),
-                limits,
-            );
+            let Some(protection) = domain.inspect_repository_protection(repository) else {
+                return answers::failed();
+            };
+            let Ok(capacity) = usize::try_from(limits.response) else {
+                return answers::failed();
+            };
+            let mut out = skein_lib::Writer::new(capacity);
+            if out.put(crate::texts::ENQUEUE_APPROVAL_PREFIX).is_err()
+                || crate::texts::approval(&mut out, protection.approvals).is_none()
+            {
+                return answers::failed();
+            }
+            let Some(message) = answers::finish(out) else {
+                return answers::failed();
+            };
+            return answers::response(200, &Body::EnqueueApproval(&message), limits);
         }
         Err(Error::Stale) => {
             return answers::response(
