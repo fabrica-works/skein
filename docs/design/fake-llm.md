@@ -254,6 +254,14 @@ a simulated world and the real loop host it as they host a service
 model, makes it keep no records (`without_records()`, fake-forge.md,
 section 5).
 
+**The test root is exported,** so that a client in another process can
+trust a TLS peer: `skein_fake_peers::transport::ROOT`, the DER bytes of
+the root that signs the fixed chain the peers present, whose leaf names
+`skein.test` and `127.0.0.1`. The owner writes it to a file the client
+is given (temper's lab form, `tls.root`); the client trusts that root
+alone, and reaches the peer as `https://127.0.0.1:<port>`. A test root
+vouches for nothing outside a test: its key is in the tree.
+
 ### 3.1 Request heads, affinity and echoes
 
 - **The peer records each request's head:** its fields, names and values,

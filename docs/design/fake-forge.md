@@ -287,8 +287,9 @@ domain, and holds no clock of its own.
   returns it whole when that connection has gone. Its `Limits` sit beside
   the domain's, and `new` refuses limits whose `worst_case` is none.
 - **The scenario's tables** (`Config`): the hooks' `Endpoint { forge, host,
-  secret }`, `host` being the loopback `ip:port` the forge peer connects to
-  and sends as `Host` (section 5); `base`, an `http://` origin; `tokens`,
+  secret }`, if any, `host` being the loopback `ip:port` the forge peer
+  connects to and sends as `Host` (section 5), and with none the setup's
+  hooks route them (below); `base`, an `http://` origin; `tokens`,
   secrets to user numbers; `users`, numbers to logins; each repository's
   `id`, full name and protected branch; `max_response_items`,
   `default_paging_num` and `faults`.
@@ -331,8 +332,29 @@ domain, and holds no clock of its own.
   whatever its verdict (the hint is the same), `push` of a branch, `delete` of
   a branch, and `workflow_job_success` and `workflow_job_failure`; never
   `pull_request_rejected`, `pull_request_comment`, `create`, a tag's events,
-  or a job cancelled or skipped. Deliveries go to the configured endpoint
-  only; a hook made through the setup routes is stored and routes nothing.
+  or a job cancelled or skipped.
+- **Deliveries follow the setup's hooks** when the scenario names no
+  endpoint, as Forgejo's follow the hooks its API made, such as the one
+  an application's reconcile makes on each repository it adopts
+  (forge-setup.md, section 4.5). `Service::deliveries(&hook, &limits)`
+  renders a domain hook once for each hook the setup store keeps on its
+  repository that takes it, in id order, each with the loopback address
+  to post it to: its target is the hook's URL's path, its `Host` the
+  URL's authority, its signature by the hook's own secret, and its
+  address that authority's.
+  - A hook takes a delivery when its events include any event subscribed
+    of the delivery's row in forge.md's table (section 7). The fake does
+    not tell an issue's assignment from its edit, so a hook subscribed to
+    `issue_assign` alone takes every `issues` delivery: a stated
+    over-approximation, which a client that subscribes as forge.md does
+    never meets.
+  - A hook takes none that is inactive, whose secret is empty, or whose
+    URL is not `http://` with a loopback IP literal, a port and a path.
+    So a fake never posts beyond its machine, nor unsigned. An
+    organization's hook takes none (section 9).
+  - A configured endpoint wins: with one, `deliveries` yields the
+    endpoint's alone, and `Service::delivery` stays, the endpoint's
+    rendering, for the worlds that pin an address.
 - **The git route** is private, for a fake of a service's git that runs
   in another process (section 3); Forgejo has none like it. A request is
   `POST /.fake/git/<call>` with a JSON body, and its answer is JSON, one
@@ -439,13 +461,21 @@ peers host theirs. The real loop hosts the same one.
   reclaims the domain and the service; `next_deadline` is the earlier of
   io's and the domain's.
 - **It writes the deliveries.** A hook the domain releases is rendered
-  (section 4) and delivered over loopback to the endpoint's `host`, the
-  address it connects to and the request's `Host` alike, as a Forgejo posts
-  to its hook's URL. An owner whose listener binds port 0 sets the endpoint
-  in the forge it shares once that listener listens, its address known
-  after io's listening event as the peer's own is, not at its bind, before
-  a hook it means to have written is due. Until then, and for a `host` that
-  is no loopback `ip:port`, there is no address. Delivery is best effort:
+  (section 4) and delivered over loopback, once for each address its
+  rendering names: the endpoint's `host`, or each setup hook's URL's
+  authority, the address it connects to and the request's `Host` alike,
+  as a Forgejo posts to its hook's URL. Each is a delivery of its own,
+  with its own outcome and record. An owner whose listener binds port 0
+  sets the endpoint in the forge it shares, or makes its hook through the
+  setup routes, as an application in another process does, once that
+  listener listens, its address known after io's listening event as the
+  peer's own is, not at its bind, before a hook it means to have written
+  is due. Until then, and for a `host` that is no loopback `ip:port`,
+  there is no address; a setup hook that takes none (section 4) is no
+  delivery. The deliveries in flight are bounded by the connections, and
+  the peer's `worst_case` sizes each by the longest it can be: the
+  endpoint's, or a setup hook's whose URL and secret are the longest the
+  setup routes decode. Delivery is best effort:
   one that cannot be written (no address, no room, the connection refused
   or reset) is dropped and observed, never resent. A hook due before the
   owner's listener listens is such a drop, and one due once the owner has
@@ -546,8 +576,13 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
 - **Step tests** sit in each crate. The domain's cover each call's decision,
   listings, merges, protection, CI and hooks. The protocol layer's cover
   routes, errors, faults, the tally, the setup routes and deliveries, each
-  decoded by `skein-forge`, with a signature that holds for its body only,
-  and the git route: each call's statuses, a credential's login, the
+  decoded by `skein-forge`, with a signature that holds for its body only;
+  deliveries that follow the setup's hooks: one for each hook that takes
+  it, in id order, each with its own URL's target and `Host` and its own
+  secret's signature, the events' filter by row, the hooks that take none
+  (inactive, an empty secret, an `https` URL, a name, no port, an address
+  off loopback, an organization's), and an endpoint that wins; and the git
+  route: each call's statuses, a credential's login, the
   store's calls beside the domain's faults, and `objects` at its bound.
   The observations' lines: every variant, error and checkpoint
   round-trips through `encode` and `decode`, a name that is not UTF-8
@@ -560,7 +595,8 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
   under the counting allocator (testing.md, section 6).
 - **Replay and the peer:** a seed replays the names, replies, observations
   and deliveries. The peer's tests run a client over loopback against the
-  protocol layer, with deliveries written, late, lost and refused, and a
+  protocol layer, with deliveries written, late, lost and refused, a
+  repository's two setup hooks each written to its own listener, and a
   forge shared with a second fake.
 - **The throwaway and the conformance:** tests of masking, facts, `app.ini`
   and refused versions and scratches need no binary and run in the focused
@@ -578,9 +614,10 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
 - **The GitHub layer's speculative merges.** A queue's group is built
   from the entry ahead, one at a time (10.2); github.com batches groups.
   Default: one at a time, until a story needs batches.
-- **Deliveries** go to the configured endpoint, not to the organization hook
-  that reconcile makes. Whether they follow that hook is open. Default: they
-  do not, so a world that wants the hook's route configures its endpoint.
+- **An organization's hooks** are stored and route nothing: reconcile
+  makes a repository's (forge-setup.md, section 4.5), which deliveries
+  follow (section 4). Default: they stay so until a story needs an
+  organization's.
 - **The conformance against the fake.** Forgejo's conformance does not run
   against its protocol layer; that layer's step tests hold its quirks.
   GitHub's runs against its layer (section 11). Default: Forgejo's stays
