@@ -12,7 +12,7 @@
 # every other group, waits for their running tasks, runs, and resumes them.
 # HEAVY_SETTLE bounds the wait for load below the core count (120 seconds,
 # 0 skips it).
-# The task runs from the current directory with the caller's environment.
+# The task inherits the caller's environment except credential-shaped names.
 # Its whole output goes to a log file; heavy prints the last lines and the
 # log's path. The gate lane takes only a committed tree: from a git
 # worktree with changes, it refuses before queueing, rather than after a
@@ -188,8 +188,16 @@ else
     task=("$kit/heavy" --exclusive -- "$@")
 fi
 
+# Queue records expose their environment to clients, so omit credentials.
+queue_env=(env)
+while IFS= read -r name; do
+    case ${name^^} in
+        CLAUDE_CODE_*|*TOKEN*|*SECRET*|*PASSWORD*|*PASSWD*|*API_KEY*|*CREDENTIAL*) queue_env+=(-u "$name") ;;
+    esac
+done < <(compgen -e)
+
 token=$(date +%s%N)-$$
-id=$(pueue add --print-task-id --group "$lane" --working-directory "$PWD" \
+id=$("${queue_env[@]}" pueue add --print-task-id --group "$lane" --working-directory "$PWD" \
     --label "${HEAVY_LABEL:-$(basename "$PWD")}" --escape -- "$kit/heavy" --task "$token" -- "${task[@]}")
 echo "heavy: queued task $id in the $lane lane" >&2
 # The task owns its row even if this client is killed while waiting.

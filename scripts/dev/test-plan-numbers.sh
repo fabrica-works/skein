@@ -18,12 +18,23 @@ heavy_row() {
 }
 heavy_capture failure sh -c 'exit 3' &
 failure_pid=$!
-HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" sleep 0.5 >"$t/client.log" 2>&1 &
+FOO_TOKEN=fake CLAUDE_CODE_CONTEXT=fake FOO_SECRET=fake FOO_PASSWORD=fake FOO_PASSWD=fake \
+    FOO_API_KEY=fake FOO_CREDENTIAL=fake lower_token=fake SKEIN_TEST_CHROMIUM=fixture-browser \
+    KACHE_FIXTURE=fixture-cache RUSTC_WRAPPER=fixture-wrapper \
+    HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" sleep 0.5 >"$t/client.log" 2>&1 &
 client_pid=$!
 running_client() {
     pueue status --json | jq -er '.tasks[] | select((.status | has("Running")) and (.command | contains("sleep 0.5"))) | .id'
 }
 task_id=$(poll_until 50 running_client)
+queued_env=$(pueue status --json | jq -c --arg id "$task_id" '.tasks[$id].envs')
+expect "queued credentials are absent" "$(jq -r '
+    type == "object" and
+    ([keys[] | ascii_upcase | select(test("^CLAUDE_CODE_|TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|CREDENTIAL"))] | length == 0)
+    ' <<<"$queued_env")" true
+expect "queued build settings survive" "$(jq -r '
+    .SKEIN_TEST_CHROMIUM == "fixture-browser" and .KACHE_FIXTURE == "fixture-cache" and
+    .RUSTC_WRAPPER == "fixture-wrapper"' <<<"$queued_env")" true
 kill "$client_pid"
 wait "$client_pid" 2>/dev/null || true
 heavy_capture gate --gate true &
