@@ -404,6 +404,11 @@ bound, revisions, markers and malformed answers; and GitHub's:
   after it, which GitHub refuses.
 - **`github::jwt::token(input, signature: &[u8; 256]) -> Secret`**: the
   input, a `.`, and the signature's base64url.
+- **`github::jwt::JWT_BYTES`,** 512, bounds a token's length: the
+  header's 36 bytes, the claims' at most 96 (two times of 11 digits, an
+  id of 20), the signature's 342 and the two dots, with room. The
+  component bounds a request's head by it (forge-connection.md,
+  section 7).
 - **The component signs** (`skein_tls::sign_rs256`, the App's 2048-bit
   key), and chooses the times: `issued` a minute before its clock, and
   `expires` ten minutes after `issued` (forge-connection.md, section 5).
@@ -423,7 +428,8 @@ bound, revisions, markers and malformed answers; and GitHub's:
 
 - **`GET /app/installations?per_page=100&page=<n>`,** on the JSON Web
   Token, every page: each row's `id`, `account.login`, `account.id`,
-  and `suspended_at` not null as suspended.
+  `account.type` (`User` or `Organization`), `created_at`, and
+  `suspended_at` not null as suspended.
 - **An installation's repositories:** `GET
   /installation/repositories?per_page=100&page=<n>`, on that
   installation's token, every page: each `id`, `owner.id`,
@@ -569,8 +575,15 @@ Pure functions and decoders; forge-setup.md's plans run them.
   `webhook_secret` as `Secret`s; the OAuth client's id and secret are
   skipped.
 - **The bot user:** `GET /users/<slug>%5Bbot%5D`, no credential: `id`.
-- **The App's own reads,** on the JSON Web Token: `GET /app` for
-  `permissions` and `events`; `GET /app/hook/config` for `url`.
+- **The App's own reads,** on the JSON Web Token:
+  - `GET /app` for `id`, `slug`, `permissions` and `events`: reading
+    `id` and `slug` back proves a conversion's key, and checks a pasted
+    App, which the plan takes for another App when they differ
+    (forge-setup.md, section 5);
+  - `GET /app/hook/config` for `url`;
+  - `GET /app/installations/<id>`, one installation's row as 8.3's,
+    which the plan's accept reads; strays are found from 8.3's
+    listing, by `created_at`.
 - **The App's writes,** on the JSON Web Token: `PATCH /app/hook/config`
   `{url}` (`200`); `DELETE /app/installations/<id>` (`204`).
 - **The key** is the conversion's PEM; the setup's host converts it to
@@ -604,7 +617,7 @@ temper's draft section 11.
 - **The log:** `log-lists-failed-deliveries`, `log-cursor-in-link`,
   `log-ids-19-digits`, `log-delivery-whole`,
   `log-installation-events-unscoped` (P7);
-  `installation-target-in-log`.
+  `installation-target-in-log` (an App not subscribed to it).
 - **Rules and the queue:** `approve-own-422`, `ruleset-approval-405`,
   `bypass-always-merges` (P8); `queue-direct-merge-405`,
   `enqueue-stale-unprocessable`, `queue-merged-no-merge-commit-sha`,
@@ -619,7 +632,11 @@ temper's draft section 11.
   `pulls-422-no-commits`, `pulls-422-exists`, `refs-422-exists`,
   `refs-delete-missing-422`, `update-conflict-422`,
   `merge-closed-405-not-mergeable`, `compare-files-capped-300`,
-  `comment-updated-at-on-edit`.
+  `comment-updated-at-on-edit`; for setup and the component
+  (forge-setup.md and forge-connection.md cite them):
+  `manifest-hook-invalid-host-accepted` (an App hook at
+  `https://<name>.invalid/`), `inactive-hook-visible`, `job-log-host-per-owner` (whether the log's
+  redirect host differs across the two owners' repositories).
 
 A fact's texts (each refusal's message) are the conformance's
 transcripts, and the decoders' tests take them (section 14).

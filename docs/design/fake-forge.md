@@ -456,8 +456,10 @@ only what GitHub has and Forgejo lacks (10.2).
     accessible by integration";
   - an expired token is `401`.
 
-  `DELETE /installation/token` revokes a token. The App's
-  `DELETE /app/installations/<id>` removes an installation.
+  `GET /app/installations` lists them and `GET /app/installations/<id>`
+  reads one, each row with its account's type and its creation time on
+  the forge's clock. `DELETE /installation/token` revokes a token. The
+  App's `DELETE /app/installations/<id>` removes an installation.
 - **The browser's pages, as plain HTTP** (seams S4), at the `web`
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and
