@@ -1,0 +1,31 @@
+[package]
+name = "skein-forge-client-world"
+description = "Forge client against the independent fake forge and a durable parent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+skein-forge.workspace = true
+skein-world.workspace = true
+skein-lib.workspace = true
+skein-forge-client.workspace = true
+skein-fake-forge-domain.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+elided_lifetimes_in_paths = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_panics_doc = "allow"
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"
+unwrap_used = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"

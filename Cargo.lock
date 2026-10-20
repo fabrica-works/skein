@@ -695,6 +695,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-forge-client-world"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-forge-domain",
+ "skein-forge",
+ "skein-forge-client",
+ "skein-lib",
+ "skein-world",
+]
+
+[[package]]
 name = "skein-forge-connection"
 version = "0.0.0"
 dependencies = [

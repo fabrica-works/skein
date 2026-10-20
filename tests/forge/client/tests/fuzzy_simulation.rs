@@ -1,0 +1,75 @@
+use skein_forge::api;
+use skein_forge_client::{Condition, Effect, Entry};
+use skein_forge_client_world::{REPO, Settings, World};
+#[test]
+fn seeded_faults_restarts_and_keyed_effects() {
+    let mut unavailable = 0;
+    let mut timeouts = 0;
+    let mut landings = 0;
+    let mut limited = 0;
+    for seed in 0..128 {
+        let mut world = World::new(Settings::random(seed));
+        for entry in 1..=4 {
+            world.make(Entry {
+                number: entry,
+                task: 7,
+                repository: REPO,
+                effect: Effect {
+                    write: api::Write::CreateIssue {
+                        key: Box::new([1, 0, 3, b'k', b'i', b't', u8::try_from(entry).expect("world entry bound")]),
+                        title: Box::from(&b"goal"[..]),
+                        body: Box::from(&b"plan"[..]),
+                    },
+                    condition: Condition::None,
+                },
+                start: None,
+                attempt: None,
+                failures: 0,
+            });
+        }
+        world.run_for(2);
+        world.restart();
+        world.run_for(40);
+        world.finish();
+        let stats = world.stats();
+        assert_eq!(stats.calls, stats.terminals);
+        unavailable += stats.unavailable;
+        timeouts += stats.timeouts;
+        landings += stats.late_landings;
+        limited += stats.limited;
+    }
+    assert!(unavailable > 0 && timeouts > 0 && landings > 0 && limited > 0, "every configured fault actually fell");
+}
+
+#[test]
+fn unrecoverable_branch_creation_survives_cuts_before_and_after_its_late_copy() {
+    for seed in 0..64 {
+        let mut world = World::new(Settings::calm(seed));
+        let head = world.branch(b"main").expect("fixture main");
+        world.land_writes_late(skein_lib::Duration::from_secs(5));
+        world.make(Entry {
+            number: 1,
+            task: 7,
+            repository: REPO,
+            effect: Effect {
+                write: api::Write::CreateBranch {
+                    branch: Box::from(&b"kit/7"[..]),
+                    commit: skein_forge_client_world::translate::commit(head),
+                },
+                condition: Condition::None,
+            },
+            start: None,
+            attempt: None,
+            failures: 0,
+        });
+        world.run_for(1);
+        world.calm();
+        world.run_for(seed % 23);
+        world.restart();
+        world.run_for(30);
+        assert_eq!(world.branch(b"kit/7"), Some(head), "seed {seed}");
+        assert_eq!(world.stats().late_landings, 1, "seed {seed}");
+        assert_eq!(world.stats().writes, 1, "seed {seed}");
+        world.finish();
+    }
+}

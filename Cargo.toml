@@ -3,6 +3,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "tests/forge/client",
     "crates/*",
     "examples/ui/view",
     "examples/ui/shell-web",
@@ -64,6 +65,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-forge-client-world = { path = "tests/forge/client" }
 skein-forge-connection = { path = "crates/skein-forge-connection" }
 skein-throwaway-forgejo = { path = "testing/skein-throwaway-forgejo" }
 skein-fake-person-browser = { path = "testing/skein-fake-person-browser" }
