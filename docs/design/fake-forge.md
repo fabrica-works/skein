@@ -131,21 +131,33 @@ Chances are per mille, in `Config`, and drawn from the domain's seed.
   observation or a checkpoint, as one object and a newline, and
   `decode` reads one back exactly. For example:
 
-      {"observation":"moved","repository":"temper/widget","branch":"landing","from":3,"to":4,"by":2}
+      {"observation":"moved","repository":"temper/widget","branch":"landing","from":3,"to":4,"by":2,"forward":true}
       {"observations_lost":0}
 
+  - **Lines come in drain order,** the order `pop_observation` gave them,
+    which is the order the forge made them.
   - **The object's first member** is `observation`, the variant's name in
     lower case, as `moved` or `wiki`, and the rest are its fields by their
     names, in their order.
+  - **A moved line also says `forward`,** which the writer computes as it
+    drains, from `Domain::is_ancestor`: whether `to` descends from `from`,
+    or, for a branch made again (`from` null), from the `at` of that
+    branch's last deleted line; `null` if there is neither. The writer
+    keeps each deleted branch's `at` until the branch is made again, as
+    many as the domain's `Limits::branches` per repository, forgetting the
+    oldest past it (a branch made again whose deletion it forgot has
+    `null`). It is the only member not in the observation itself, since a
+    reader in another process has no domain to ask.
   - **A checkpoint,** `{"observations_lost":N}`, is the count lost so
-    far, 0 included. A writer ends each flush with one, and flushes in
-    each pass that observed or lost anything and once at its stop: a
-    file is whole up to its last checkpoint, and what follows it is a
-    flush still being written. A stopped writer's last line is a
-    checkpoint, so a file that does not end with one is not known to be
-    whole. temper's writer sends nothing of a pass before its flush is
-    written (temper's `protocol/setup.md`, 8.4), so a reader that has
-    seen a reply, or what a reply caused, finds what it observed.
+    far, 0 included: cumulative, one at each flush. A writer ends each
+    flush with one, and flushes in each pass that observed or lost
+    anything and once at its stop: a file is whole up to its last
+    checkpoint, and what follows it is a flush still being written. A
+    stopped writer's last line is a checkpoint, so a stream that does not
+    end with one is truncated, and a judge reading it rules Undecided.
+    temper's writer sends nothing of a pass before its flush is written
+    (temper's `protocol/setup.md`, 8.4), so a reader that has seen a
+    reply, or what a reply caused, finds what it observed.
   - **A number,** a commit, a user, an item, an id, a revision or a
     position, is a JSON integer, exact to `u64`. An absent value is
     `null`, a list is an array, and an opened pull request's `branches`
@@ -494,7 +506,9 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
   The observations' lines: every variant, error and checkpoint
   round-trips through `encode` and `decode`, a name that is not UTF-8
   has none, and a line with a member unknown, repeated or missing is
-  refused by its name.
+  refused by its name; `forward` for a fast-forward, a move that is not
+  one, a branch made again after its deletion, one made for the first
+  time, and one whose deletion the writer forgot.
 - **Memory:** a forge filled to its limits, and a long merge history walked
   through both parents, stay within `worst_case`, in binaries of their own
   under the counting allocator (testing.md, section 6).
