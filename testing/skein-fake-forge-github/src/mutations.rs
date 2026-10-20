@@ -11,6 +11,8 @@ use skein_forge::github::request::Method;
 use skein_json::Token;
 use skein_lib::{List, ReplyTo, bytes};
 
+const PULL_REQUEST_FIELDS: u32 = 1 | 2 | 4 | 8 | 16;
+
 #[derive(Debug)]
 pub(crate) enum Route {
     CreateRules { repository: Box<[u8]> },
@@ -297,7 +299,7 @@ fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32, missing: &mut boo
         }
         match (kind?.as_ref(), parameters) {
             (b"pull_request", Some(Parameter::Approvals(count, fields))) => {
-                if fields != 31 {
+                if fields != PULL_REQUEST_FIELDS {
                     *missing = true;
                     return None;
                 }

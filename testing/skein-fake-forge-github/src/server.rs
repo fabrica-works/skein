@@ -111,7 +111,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Intake::worst_case(limits.body)?)?
         // A conditional repository read retains its admission and a quoted digest.
         .checked_add(u64::try_from(size_of::<crate::rates::Admission>()).ok()?)?
-        .checked_add(66)?
+        .checked_add(u64::try_from(crate::reads::REPOSITORY_ETAG_BYTES).ok()?)?
         // dispatch's extracted body and the authenticated admission copy, or
         // writes::Stage::ReviewAuthor.body, coexist; service counts decoding.
         .checked_add(u64::from(limits.body).checked_mul(2)?)?

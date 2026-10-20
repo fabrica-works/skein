@@ -23,6 +23,9 @@ pub(crate) mod protection;
 mod pulls;
 mod reviews;
 
+// Two quotes around the hexadecimal SHA-256 of the repository document.
+pub(crate) const REPOSITORY_ETAG_BYTES: usize = 66;
+
 #[derive(Debug)]
 pub(crate) enum Read {
     Checks { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, page: u32, per_page: u32, runs: bool },
@@ -588,7 +591,7 @@ fn repository(row: Row, answer: Answer, limits: &Limits) -> Response {
         rebase: settings.rebase,
     };
     let mut response = answers::response(200, &Body::Repository(&document), limits);
-    let mut tag = skein_lib::Writer::new(66);
+    let mut tag = skein_lib::Writer::new(REPOSITORY_ETAG_BYTES);
     tag.put(b"\"").expect("tag");
     for byte in skein_lib::sha256::digest(&response.body) {
         for nibble in [byte / 16, byte % 16] {

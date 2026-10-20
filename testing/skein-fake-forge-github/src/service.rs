@@ -471,7 +471,7 @@ impl Service {
                 };
                 if let routes::Token::Read(reads::Read::Locate { .. } | reads::Read::Repository(_)) = &route
                     && let Some(validator) = request.validator
-                    && validator.len() == 66
+                    && validator.len() == reads::REPOSITORY_ETAG_BYTES
                 {
                     let admission = crate::rates::Admission::new(
                         crate::rates::Route::Token(route),
