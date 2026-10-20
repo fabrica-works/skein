@@ -211,6 +211,7 @@ pub struct Branches {
 /// Which write or git call was refused.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Operation {
+    SetProtection,
     CreateIssue,
     EditItem,
     SetDependencies,
@@ -246,6 +247,7 @@ pub(crate) fn subject(op: &Op) -> Option<(Operation, Option<u64>, Option<u64>)> 
     let subject = match op {
         Op::Read(_) => return None,
         Op::Write(write) => match write {
+            Write::SetProtection { .. } => (Operation::SetProtection, None, None),
             Write::CreateIssue { .. } => (Operation::CreateIssue, None, None),
             Write::EditItem { number, .. } => (Operation::EditItem, Some(*number), None),
             Write::SetDependencies { number, .. } => (Operation::SetDependencies, Some(*number), None),

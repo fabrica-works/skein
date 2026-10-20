@@ -743,6 +743,7 @@ fn observation(tokens: &List<Token>, root: &Object, variant: &[u8], limits: &Lim
 fn operation(value: &[u8]) -> Option<Operation> {
     Some(match value {
         b"create_issue" => Operation::CreateIssue,
+        b"set_protection" => Operation::SetProtection,
         b"edit_item" => Operation::EditItem,
         b"set_dependencies" => Operation::SetDependencies,
         b"comment" => Operation::Comment,

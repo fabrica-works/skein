@@ -518,7 +518,8 @@ fn call(
                     && crate::store::fits(repository, env.limits.limits.name_bytes).is_ok()
             }
             Write::Update { .. } => crate::store::fits(repository, env.limits.limits.name_bytes).is_ok(),
-            Write::CreateIssue { .. }
+            Write::SetProtection { .. }
+            | Write::CreateIssue { .. }
             | Write::Comment { .. }
             | Write::EditItem { .. }
             | Write::SetDependencies { .. }
@@ -624,6 +625,18 @@ fn execute(domain: &mut Domain, env: &Env<Config>, user: u64, repository: &[u8],
             reads::read(domain, &env.limits, id, &read)
         }
         Op::Write(write) => match write {
+            Write::SetProtection { protection } => {
+                let limits = &env.limits.limits;
+                let repository = domain.repositories.get_mut(id).expect("a named repository");
+                repository.require(user, Permission::Admin)?;
+                if let Some(rule) = &protection {
+                    crate::store::fits(&rule.branch, limits.name_bytes)?;
+                    crate::store::fit_names(&rule.contexts, limits.contexts, limits)?;
+                    crate::store::fit_numbers(&rule.bypassing_users, limits.bypassing_users)?;
+                }
+                repository.protection = protection;
+                Ok(Answer::Done)
+            }
             Write::CreateIssue { title, body, labels } => issues::create(domain, env, id, user, title, body, labels),
             Write::EditItem { number, title, body } => issues::revise(domain, env, id, user, number, title, body),
             Write::SetDependencies { number, dependencies } => {

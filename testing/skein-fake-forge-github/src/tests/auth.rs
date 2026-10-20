@@ -487,9 +487,11 @@ fn github_fake_all_repositories_stays_within_the_installations_account() {
 #[test]
 fn github_fake_installation_repository_removal_refusals_preserve_reach() {
     use crate::installations::Reach;
-    for (reach, status, still_reachable, all) in
-        [(Reach::All, 422_u16, true, true), (f::listed(&[2]), 422, true, false), (f::listed(&[2, 4]), 204, false, false)]
-    {
+    for (reach, status, still_reachable, all) in [
+        (Reach::All, 422_u16, true, true),
+        (f::listed(&[2]), 422, true, false),
+        (f::listed(&[2, 4]), 204, false, false),
+    ] {
         let mut h = harness();
         assert!(h.service.installations_mut().set_reach(1, reach));
         let token = person(true);

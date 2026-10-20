@@ -715,6 +715,17 @@ below are tracked in STATUS.md.
   listed repository, is `422` "Validation Failed" without changing reach.
   These two refusal texts are docs-derived and unchecked live. `PUT` on
   an all-repositories installation is `204` without changing reach.
+- **Ruleset mutations.** A person's `POST /repos/<o>/<n>/rulesets`
+  replaces the domain's repository protection, requiring admin permission;
+  `DELETE /repos/<o>/<n>/rulesets/<id>` removes it. The subset is strict:
+  `name`, branch `target`, active `enforcement`, a single
+  `conditions.ref_name.include`, `bypass_actors`, and approvals, required
+  status checks and merge queue rules. Unknown and duplicate fields are
+  `422` "Validation Failed". The request shape is inferred from the docs.
+  Creation answers `201` with the configured ruleset id and the existing
+  server encoder's bypass field; only the id is recorded, other fields are
+  inferred. Deletion's empty `204` is recorded. Installation tokens receive
+  an inferred `403` "Resource not accessible by integration".
 - **The browser's pages, as plain HTTP** (seams S4), at the `web`
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and

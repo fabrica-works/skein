@@ -188,6 +188,11 @@ pub enum Read {
 /// The writes, each answered by [`Answer::Done`] unless it says otherwise.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Write {
+    /// Replaces the repository's branch protection. Requires admin permission.
+    /// The rule and its arrays must fit the repository's configured bounds.
+    SetProtection {
+        protection: Option<Protection>,
+    },
     /// Opens an issue titled, carrying `labels`, which are defined. Answered
     /// by [`Answer::Created`] with its number. The labels of a user who may
     /// not label are dropped.

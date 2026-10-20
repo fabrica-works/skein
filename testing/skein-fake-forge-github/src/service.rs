@@ -218,6 +218,7 @@ pub struct Pending {
 }
 #[derive(Debug)]
 pub(crate) enum PendingKind {
+    Mutation(crate::mutations::Mutation),
     Read(reads::Pending),
     Write(writes::Pending),
     Blob,
@@ -488,6 +489,7 @@ impl Service {
         };
         let limits = &self.limits;
         match route {
+            routes::Token::Mutation(route) => crate::mutations::call(self, route, access, request.body, reply_to),
             routes::Token::Reachable(page) => crate::auth::reachable(self, page, access, request),
             routes::Token::Identity => Outcome::Reply(match access {
                 Access::Person(user) => reads::user(self, user, self.body_fits(request.body)),
@@ -560,6 +562,7 @@ impl Service {
     ) -> Outcome {
         let rate = pending.rate;
         let outcome = match pending.kind {
+            PendingKind::Mutation(pending) => Outcome::Reply(crate::mutations::finish(self, pending, result, domain)),
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
             PendingKind::Blob => Outcome::Reply(crate::logs::finish(result, &self.limits)),

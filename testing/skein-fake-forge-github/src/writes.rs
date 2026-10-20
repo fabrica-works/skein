@@ -510,6 +510,9 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
         | Stage::Reviewed
         | Stage::Reviewers(_) => {}
     }
+    refused_mutation(error, limits)
+}
+pub(crate) fn refused_mutation(error: a::Error, limits: &Limits) -> Response {
     match error {
         a::Error::Missing(_) | a::Error::Forbidden => answers::missing(limits),
         a::Error::Unavailable => answers::refusal(503, b"Server Error", limits),

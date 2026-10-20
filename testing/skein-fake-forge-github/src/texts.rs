@@ -81,3 +81,6 @@ pub(crate) const REMOVE_ALL_REPOSITORIES: &[u8] = b"Validation Failed";
 // Docs-derived installation-repository-removal-refusals; unchecked live.
 // DELETE is refused when it would remove the installation's last repository.
 pub(crate) const REMOVE_LAST_REPOSITORY: &[u8] = b"Validation Failed";
+
+// Inferred from GitHub docs, unrecorded on an installation token.
+pub(crate) const RULESET_INTEGRATION: &[u8] = b"Resource not accessible by integration";

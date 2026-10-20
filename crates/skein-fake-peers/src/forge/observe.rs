@@ -198,6 +198,7 @@ impl Heap for api::Read {
 impl Heap for api::Write {
     fn heap(&self) -> Option<u64> {
         match self {
+            Self::SetProtection { protection } => protection.heap(),
             Self::CreateIssue { title, body, labels } => sum(&[title.heap(), body.heap(), labels.heap()]),
             Self::Comment { body, .. } | Self::EditComment { body, .. } | Self::Review { body, .. } => body.heap(),
             Self::EditItem { title, body, .. } => sum(&[title.heap(), body.heap()]),

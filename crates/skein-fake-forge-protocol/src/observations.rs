@@ -448,6 +448,7 @@ fn write_error(json: &mut Encoder, error: &a::Error) {
 fn operation(value: Operation) -> &'static [u8] {
     match value {
         Operation::CreateIssue => b"create_issue",
+        Operation::SetProtection => b"set_protection",
         Operation::EditItem => b"edit_item",
         Operation::SetDependencies => b"set_dependencies",
         Operation::Comment => b"comment",

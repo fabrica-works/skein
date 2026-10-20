@@ -288,7 +288,7 @@ fn validate(tokens: &List<Token>, limits: &Limits) -> Option<()> {
     }
     Some(())
 }
-fn tokenize(input: &[u8], limits: &Limits) -> Option<List<Token>> {
+pub(crate) fn tokenize(input: &[u8], limits: &Limits) -> Option<List<Token>> {
     let bound = u32::try_from(input.len()).ok()?;
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };
     let mut machine = tokenizer::Tokenizer::new(&limits.json);
