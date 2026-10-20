@@ -1,7 +1,8 @@
 # skein-fake-forge-github
 
 GitHub's protocol layer over `skein-fake-forge-domain`, at the dialect's
-pin. The contract is [fake-forge.md, section 10](../../docs/design/fake-forge.md#10-githubs-layer).
+pin. Other REST routes answer `404`; other GraphQL documents answer with
+`errors`. The contract is [fake-forge.md, section 10](../../docs/design/fake-forge.md#10-githubs-layer).
 
 A shared `Service` owns App authentication, installations, browser pages,
 repository routes and the blob request record. Each bounded `Server`
@@ -36,3 +37,32 @@ the presence of Authorization and Range. `Service::blob_records` and the
 peer's corresponding accessor expose them. Blob record and response Debug output hides signed paths
 and credentials. `worst_case` counts records, paths, origins, the signing
 key and target scratch; per-connection buffers use the API's envelope.
+
+`Config::tokens` maps invented person secrets to account user numbers. Their
+repository reads, reviews and writes use that person's domain permissions and
+identity. App routes require the App's JWT. Installation tokens act as the
+configured bot, reach only their installation's account and repository
+selection, and expire after an hour on the forge's clock. Contents-only tokens
+are refused before domain dispatch beyond contents, including GraphQL.
+`GET /user` answers a person and refuses installation tokens with `403`;
+`DELETE /installation/token` revokes the presented token with `204`.
+Person-authenticated installation repository edits require domain admin access.
+
+`Config::faults` reuses `skein_fake_forge_protocol::Faults`. Reset closes before
+the next request is read. Drop loses the final domain answer; server-error
+replaces it with `500`. Writes remain applied in both cases. The scenario seed
+and clock make faults, expiry and generated identities replayable.
+
+`Limits` bounds retained stores, HTTP buffers, document decoding and responses.
+`worst_case(&limits, &config)` includes the service and one HTTP connection;
+the hosted peer prices its additional connections and shared domain. Dedicated
+counting-allocator tests live in `tests/fake-forge/tests/github_memory.rs` and
+`tests/fake-peers/tests/github_memory.rs`. They fill the layer's stores while
+every domain repository holds a queued pull; the peer test also holds both
+connections and measures each iteration. Route and credential matrices,
+revocation, byte faults, browser flows and signed logs have focused tests.
+
+The layer displays `Config::required_signatures`. Git pushes go directly to
+the domain, whose `Rejected` is the only push refusal. A GitHub `GH013` adapter
+and its unrecorded P10 text are deferred. Delivery logs, rates and conditional
+requests are described separately in the design and are not implemented here.

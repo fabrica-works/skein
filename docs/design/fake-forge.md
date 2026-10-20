@@ -641,8 +641,10 @@ answered as GitHub answers. GitHub's quirks live here. The domain gains
 only what GitHub has and Forgejo lacks (10.2).
 
 Built here are the checks and job reads, signed job-log redirects, the
-peer's blob listener and its redirect scenarios, and drawn mergeability
-settle deadlines. The remaining contracts below are tracked in STATUS.md.
+peer's blob listener and its redirect scenarios, drawn mergeability settle
+deadlines, person credentials and installation scopes/revocation, byte faults,
+and the service and hosted-peer allocator binaries. The remaining contracts
+below are tracked in STATUS.md.
 
 ### 10.1 What it serves
 
@@ -669,7 +671,9 @@ settle deadlines. The remaining contracts below are tracked in STATUS.md.
 
   The App's routes on another kind are `401`. `GET /user` on an
   installation's token is `403`. Tokens stay in the layer, as in
-  section 4.
+  section 4. Person tokens, `GET /user` and the installation-token refusal
+  are built. Each person secret names a configured account's domain user;
+  repository permissions and write authorship follow that user.
 - **The App** is held in the layer's store: id, slug, owner, key,
   webhook secret, permissions, events and the hook's URL. Its bot is a
   domain user, `<slug>[bot]`, who acts on the domain. `GET /app`, `GET`
@@ -696,6 +700,13 @@ settle deadlines. The remaining contracts below are tracked in STATUS.md.
   reads one, each row with its account's type and its creation time on
   the forge's clock. `DELETE /installation/token` revokes a token. The
   App's `DELETE /app/installations/<id>` removes an installation.
+  Revocation and the scope matrix are built: every routed REST request and
+  GraphQL document is checked against full, contents-only, expired, revoked,
+  person and JWT credentials. Contents-only GraphQL refusals use `errors`.
+  An installation's all-repositories selection stays within its account.
+  A person's `PUT` or `DELETE /user/installations/<id>/repositories/<repo>`
+  checks that user's domain admin permission and answers `204` when it changes
+  the selection. The repository must belong to the installation's account.
 - **The browser's pages, as plain HTTP** (seams S4), at the `web`
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and
@@ -797,7 +808,11 @@ settle deadlines. The remaining contracts below are tracked in STATUS.md.
   have exceeded a secondary rate limit" with `Retry-After`. A request
   with an `If-None-Match` that matches the answer's `ETag` is `304`, and
   not counted.
-- **Faults** are section 4's, at the bytes, with GitHub's statuses.
+- **Faults** are section 4's, at the bytes, with GitHub's statuses. Built:
+  `Config::faults` uses the Forgejo face's `Faults` type. Reset closes before
+  reading the next request, including on reuse. Drop and server-error draws
+  follow the final domain continuation, so an applied write survives the
+  lost answer or `500`. A seed replays the draws.
 
 ### 10.2 What the domain gains
 
@@ -808,6 +823,9 @@ These are small, and they land after forge-kit's steps on the fakes:
   approvals. The domain does not sign, so it keeps no signatures rule:
   the layer shows `required_signatures` from its `Config` and refuses a
   push as `GH013` when the scenario asks for it.
+  The push refusal is not built: GitHub-world pushes reach the domain directly,
+  with no GitHub layer between them; the text waits for P10, and the domain's
+  `Rejected` stays the only push refusal.
 - **The merge queue.** `Write::Enqueue { number, head }` refuses a moved
   head, as a merge does. An entry's group commit is the squash of its
   head onto the base's tip, or onto the entry ahead of it. That commit
@@ -851,7 +869,9 @@ These are contracts: a story that leans past one of them is wrong, not
 the fake.
 
 - **Only the dialect's routes and documents** are served. Others are
-  `404`, and other GraphQL documents are `errors`.
+  `404`, and other GraphQL documents are `errors`. Built, including bodyless
+  `HEAD` refusals and `OPTIONS`; representative unknown routes and documents
+  have a table test.
 - **Plaintext, on loopback,** at three origins: `api`, which also
   serves `web`'s routes, `blob`, and an optional third one.
 - **Messages** follow the conformance's recorded texts for the refusals of
@@ -877,7 +897,13 @@ the fake.
   through to landing and to ejection, the log's paging and its `304`,
   and a delivery decoded by `skein_forge::github` alike pushed and
   logged.
-- **Memory** is checked as section 8 says, with the stores full.
+- **Memory** is checked as section 8 says, with the stores full. Built in
+  dedicated `github_memory` binaries under `tests/fake-forge` and
+  `tests/fake-peers`: installation rows and listed reach, minted and person
+  tokens, App grants and events, manifest states and blob records are full,
+  with a queued pull in every domain repository. The hosted test fills both
+  connection slots and checks each owner iteration against `Host::worst_case`;
+  its measured heap also includes the simulator and client.
   The API/browser and blob listeners share the peer's connection limit
   and io buffers; admission reserves two listener sockets. Each accepted
   connection uses the same bounded HTTP envelope. `worst_case` also
