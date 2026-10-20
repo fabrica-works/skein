@@ -281,6 +281,9 @@ pub enum Event {
         /// its rate does not count them (forge-client.md, 6). Zero until a
         /// call's read takes a validator.
         free: u32,
+        /// What the forge reports it has left on this answer, per installation
+        /// on GitHub (forge-client.md, 6). None when it reports nothing.
+        rate: Option<skein_forge::api::Rate>,
         result: Result<Answer, Error>,
     },
 }

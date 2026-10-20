@@ -98,7 +98,21 @@ impl Harness {
         free: u32,
         result: Result<Answer, Error>,
     ) -> Box<[Request]> {
-        self.step(Event::Answered { call: sent.call, cost, free, result })
+        self.step(Event::Answered { call: sent.call, cost, free, rate: None, result })
+    }
+    pub(in crate::tests) fn answer_rate(
+        &mut self,
+        sent: &Sent,
+        cost: u32,
+        rate: api::Rate,
+        result: Result<Answer, Error>,
+    ) -> Box<[Request]> {
+        self.step(Event::Answered { call: sent.call, cost, free: 0, rate: Some(rate), result })
+    }
+    pub(in crate::tests) fn rate(&self, remaining: u32, reset_secs: u64) -> api::Rate {
+        let reset_at =
+            Wall::from_nanos(self.env.wall.as_nanos().saturating_add(reset_secs.saturating_mul(1_000_000_000)));
+        api::Rate { limit: 5000, remaining, reset_at }
     }
     pub(in crate::tests) fn fire(&mut self) {
         let mut out = Queue::with_capacity(CALL_ROOM);

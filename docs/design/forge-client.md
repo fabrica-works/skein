@@ -243,7 +243,10 @@ live resources) and `Slow` (the periodic backstop).
   `reset_at`, turned into the client's own time once, at the answer:
   `env.now` plus `reset_at` less `env.wall`, at most `window` on
   (programming-model.md, section 9). On GitHub each installation reports
-  its own window, and the budget takes the least (section 11).
+  its own window, and the budget takes the least (section 11). A refund
+  never lifts the window above what the forge last reported it has left.
+  The last unit of a window the forge capped holds every class until the
+  forge's own reset when the answer gave one, not the window's own end.
 - **The reserve.** While a `Keep` or `Slow` call waits, `Fresh` and
   `Write` take at most `rate - reserve` of a window; with none waiting,
   all of it. Once that share is spent and a keeping read is due, a new

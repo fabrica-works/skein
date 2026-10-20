@@ -109,7 +109,7 @@ impl Harness {
         self.send().expect("call ready")
     }
     pub(in crate::tests) fn answer(&mut self, sent: Sent, answer: Answer) {
-        self.event(Event::Answered { call: sent.call, cost: 1, free: 0, result: Ok(answer) });
+        self.event(Event::Answered { call: sent.call, cost: 1, free: 0, rate: None, result: Ok(answer) });
     }
     pub(in crate::tests) fn clock(&mut self) {
         let sent = self.one();

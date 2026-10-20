@@ -66,7 +66,7 @@ fn a_merge_answered_queued_is_kept_and_reported() {
     crate::step(
         &mut h.domain,
         &h.env,
-        Event::Answered { call: sent.call, cost: 1, free: 0, result: Ok(Answer::Queued) },
+        Event::Answered { call: sent.call, cost: 1, free: 0, rate: None, result: Ok(Answer::Queued) },
         &mut out,
     );
     assert_eq!(out.len(), 2);

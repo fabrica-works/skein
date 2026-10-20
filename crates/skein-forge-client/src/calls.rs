@@ -8,8 +8,8 @@
 //! until reset without completing the logical read twice.
 use crate::domain::{Alarm, Domain};
 use crate::{Fact, Limits, Priority, Request, bounds};
-use skein_forge::api::{Answer, Error, Op, Repository};
-use skein_lib::{Env, Id, Map, Queue, Slab, Time, Token};
+use skein_forge::api::{self, Answer, Error, Op, Repository};
+use skein_lib::{Duration, Env, Id, Map, Queue, Slab, Time, Token, Wall};
 
 #[derive(Debug)]
 pub(crate) struct Call {
@@ -49,6 +49,8 @@ pub(crate) struct Calls {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct Budget {
     left: u32,
+    ceiling: u32,
+    capped: Option<Time>,
     ends: Time,
     first: u32,
     spent: bool,
@@ -64,7 +66,15 @@ impl Calls {
             write: Queue::with_capacity(l.pending),
             keep: Queue::with_capacity(l.pending),
             slow: Queue::with_capacity(l.pending),
-            budget: Budget { left: 0, ends: Time::ZERO, first: 0, spent: false, reset: None },
+            budget: Budget {
+                left: 0,
+                ceiling: l.rate,
+                capped: None,
+                ends: Time::ZERO,
+                first: 0,
+                spent: false,
+                reset: None,
+            },
         }
     }
     pub(crate) fn is_full(&self) -> bool {
@@ -190,30 +200,37 @@ pub(crate) fn background_owed(c: &Calls, env: &Env<Limits>) -> bool {
     let first = if env.now >= c.budget.ends { 0 } else { c.budget.first };
     env.limits.reserve > 0 && first >= env.limits.rate.saturating_sub(env.limits.reserve)
 }
-fn spend(d: &mut Domain, env: &Env<Limits>, priority: Priority) {
+/// Start a window with the client's allowance and no forge cap.
+fn roll(d: &mut Domain, env: &Env<Limits>) {
     let b = &mut d.calls.budget;
-    if env.now >= b.ends {
-        b.left = env.limits.rate;
-        b.ends = env.now.saturating_add(env.limits.window);
-        b.first = 0;
+    b.left = env.limits.rate;
+    b.ceiling = env.limits.rate;
+    b.capped = None;
+    b.ends = env.now.saturating_add(env.limits.window);
+    b.first = 0;
+    b.spent = false;
+    d.alarms.cancel(Alarm::Window);
+}
+fn spend(d: &mut Domain, env: &Env<Limits>, priority: Priority) {
+    if env.now >= d.calls.budget.ends {
+        roll(d, env);
     }
+    let b = &mut d.calls.budget;
     match priority {
         Priority::Fresh | Priority::Write => b.first = b.first.saturating_add(1),
         Priority::Keep | Priority::Slow => {}
     }
+    let before = b.left;
     b.left = b.left.saturating_sub(1);
-    if b.left == 0 {
-        b.spent = true;
-        let until = b.ends;
-        d.alarms.arm(Alarm::Window, until).expect("two budget alarms fit");
-        d.fact(Fact::Spent { until });
+    if before > 0 && b.left == 0 {
+        exhausted(d, env);
     }
 }
 fn settle(d: &mut Domain, env: &Env<Limits>, priority: Priority, window: Time, cost: u32) {
     let b = &mut d.calls.budget;
     if cost == 0 {
         if window == b.ends && env.now < b.ends {
-            b.left = b.left.saturating_add(1).min(env.limits.rate);
+            b.left = b.left.saturating_add(1).min(b.ceiling);
             match priority {
                 Priority::Fresh | Priority::Write => b.first = b.first.saturating_sub(1),
                 Priority::Keep | Priority::Slow => {}
@@ -230,22 +247,59 @@ fn settle(d: &mut Domain, env: &Env<Limits>, priority: Priority, window: Time, c
         return;
     }
     if env.now >= b.ends {
-        b.left = env.limits.rate;
-        b.ends = env.now.saturating_add(env.limits.window);
-        b.first = 0;
-        b.spent = false;
-        d.alarms.cancel(Alarm::Window);
+        roll(d, env);
     }
+    let b = &mut d.calls.budget;
     match priority {
         Priority::Fresh | Priority::Write => b.first = b.first.saturating_add(extra),
         Priority::Keep | Priority::Slow => {}
     }
+    let before = b.left;
     b.left = b.left.saturating_sub(extra);
-    if b.left == 0 && !b.spent {
-        b.spent = true;
-        let until = b.ends;
-        d.alarms.arm(Alarm::Window, until).expect("two budget alarms fit");
-        d.fact(Fact::Spent { until });
+    if before > 0 && b.left == 0 {
+        exhausted(d, env);
+    }
+}
+/// `left` has just reached 0 (forge-client.md, 6). A window the forge
+/// capped is out when the forge's is; one it did not, when the
+/// client's own ends.
+fn exhausted(d: &mut Domain, env: &Env<Limits>) {
+    if let Some(reset) = d.calls.budget.capped
+        && reset > env.now
+    {
+        limited(d, env, reset);
+        return;
+    }
+    d.calls.budget.spent = true;
+    let until = d.calls.budget.ends;
+    d.alarms.arm(Alarm::Window, until).expect("two budget alarms fit");
+    d.fact(Fact::Spent { until });
+}
+/// Turn the forge's wall reset into the client's own time once, at the answer.
+fn forge_reset(env: &Env<Limits>, reset_at: Wall) -> Option<Time> {
+    let wait = Duration::from_nanos(reset_at.as_nanos().saturating_sub(env.wall.as_nanos()));
+    if wait == Duration::ZERO { None } else { Some(env.now.saturating_add(wait.min(env.limits.window))) }
+}
+/// The forge's window (forge-client.md, 6): its `remaining` below what the
+/// window has left becomes what it has left, and at 0 all four classes are
+/// held until its reset.
+fn forge_window(d: &mut Domain, env: &Env<Limits>, rate: api::Rate) {
+    if env.now >= d.calls.budget.ends {
+        roll(d, env);
+    }
+    if rate.remaining == 0 {
+        if let Some(reset) = forge_reset(env, rate.reset_at) {
+            limited(d, env, reset);
+        }
+        return;
+    }
+    let b = &mut d.calls.budget;
+    if rate.remaining < b.ceiling {
+        b.ceiling = rate.remaining;
+        b.capped = forge_reset(env, rate.reset_at);
+    }
+    if rate.remaining < b.left {
+        b.left = rate.remaining;
     }
 }
 pub(crate) fn window(d: &mut Domain, env: &Env<Limits>) {
@@ -256,13 +310,25 @@ pub(crate) fn reset(d: &mut Domain, env: &Env<Limits>) {
     let at = d.calls.budget.reset.expect("reset is armed while refused");
     assert!(env.now >= at, "reset expires at its deadline");
     d.calls.budget.reset = None;
+    let b = &mut d.calls.budget;
+    if let Some(at) = b.capped
+        && env.now >= at
+    {
+        b.capped = None;
+        b.ceiling = env.limits.rate;
+        if !b.spent {
+            b.ends = env.now;
+        }
+    }
 }
+#[expect(clippy::too_many_arguments, reason = "the answer carries cost, free and rate beside its call and result")]
 pub(crate) fn answered(
     d: &mut Domain,
     env: &Env<Limits>,
     token: Token,
     cost: u32,
     free: u32,
+    rate: Option<api::Rate>,
     result: Result<Answer, Error>,
     out: &mut Queue<Request>,
 ) {
@@ -276,6 +342,9 @@ pub(crate) fn answered(
     let priority = call.priority;
     let window = call.window;
     settle(d, env, priority, window, cost.saturating_sub(free));
+    if let Some(rate) = rate {
+        forge_window(d, env, rate);
+    }
     let result = match result {
         Ok(answer) => {
             let op = &d.calls.slab.get(id).expect("the terminal call remains").op;
@@ -363,7 +432,7 @@ fn wait_read(d: &mut Domain, env: &Env<Limits>, id: Id<Call>) -> bool {
         }
     }
     let jitter = d.rng.below(delay.as_nanos());
-    let delay = delay.saturating_add(skein_lib::Duration::from_nanos(jitter)).min(env.limits.backoff_max);
+    let delay = delay.saturating_add(Duration::from_nanos(jitter)).min(env.limits.backoff_max);
     call.state = State::Waiting;
     d.alarms.arm(Alarm::ReadRetry(id), env.now.saturating_add(delay)).expect("one retry alarm per call fits");
     true

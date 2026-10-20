@@ -475,7 +475,7 @@ impl World {
             self.stats.terminals = self.stats.terminals.saturating_add(1);
             self.to_client.push(Delivery {
                 generation: self.generation,
-                event: Event::Answered { call, cost: 1, free: 0, result: Ok(api::Answer::Queued) },
+                event: Event::Answered { call, cost: 1, free: 0, rate: None, result: Ok(api::Answer::Queued) },
             });
             return;
         }
@@ -519,7 +519,7 @@ impl World {
                     self.stats.terminals = self.stats.terminals.saturating_add(1);
                     self.to_client.push(Delivery {
                         generation: pending.generation,
-                        event: Event::Answered { call: pending.client, cost: 1, free: 0, result },
+                        event: Event::Answered { call: pending.client, cost: 1, free: 0, rate: None, result },
                     });
                 }
                 forge::Request::Hook { .. } => {}

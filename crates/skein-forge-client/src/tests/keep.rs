@@ -234,6 +234,7 @@ fn a_rate_refused_terminal_after_departure_never_requeues_the_removed_resource()
         call: read.call,
         cost: 1,
         free: 0,
+        rate: None,
         result: Err(Error::RateLimited { after: skein_lib::Duration::from_secs(1) }),
     });
     h.fire(101);
