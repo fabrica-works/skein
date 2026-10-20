@@ -231,6 +231,7 @@ pub fn fake_config() -> skein_fake_forge_domain::Config {
         limits: skein_fake_forge_domain::Limits {
             repositories: 1,
             users: 3,
+            bypassing_users: 4,
             labels: 2,
             items: 64,
             comments: 32,

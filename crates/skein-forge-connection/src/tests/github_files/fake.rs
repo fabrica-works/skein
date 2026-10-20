@@ -238,6 +238,7 @@ fn config() -> domain::Config {
         limits: domain::Limits {
             repositories: 2,
             users: 3,
+            bypassing_users: 4,
             labels: 1,
             items: 1,
             comments: 1,

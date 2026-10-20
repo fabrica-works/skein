@@ -349,6 +349,14 @@ impl Domain {
         if protection.branch.as_ref() == branch { Some(protection) } else { None }
     }
 
+    /// The repository's one protection rule, for a layer describing a ruleset
+    /// after authorizing the repository read through the domain.
+    #[must_use]
+    pub fn inspect_repository_protection(&self, repository: &[u8]) -> Option<&crate::api::Protection> {
+        let id = self.names.get(repository)?;
+        self.repositories.get(*id).expect("live repository name").protection.as_ref()
+    }
+
     /// Metadata for the protocol's provider-specific repository document.
     pub fn metadata(&self, repository: &[u8]) -> Result<Metadata, Error> {
         let Some(&id) = self.names.get(repository) else {

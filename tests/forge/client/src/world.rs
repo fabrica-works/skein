@@ -741,6 +741,7 @@ fn config(faults: bool) -> Config {
         limits: forge::Limits {
             repositories: 1,
             users: 3,
+            bypassing_users: 4,
             labels: 2,
             items: 64,
             comments: 32,

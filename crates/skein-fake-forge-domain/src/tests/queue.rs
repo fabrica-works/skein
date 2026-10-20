@@ -39,6 +39,9 @@ fn a_queue_rule_refuses_direct_merges_only_on_its_base() {
     for (queue, branch, blocked) in [(true, MAIN, true), (false, MAIN, false), (true, b"release", false)] {
         let mut setup = setup();
         setup.protection = Some(Protection {
+            linear: false,
+            code_owners: false,
+            bypassing_users: Box::from([]),
             queue,
             branch: copy_of(branch),
             contexts: names(&[]),
@@ -80,6 +83,9 @@ fn queue_harness(silent: bool) -> Harness {
     configured.checks.cue = Some(Cue { path: copy_of(b"ci"), green: copy_of(b"green") });
     configured.checks.silent = if silent { 1000 } else { 0 };
     configured.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: true,
         branch: copy_of(MAIN),
         contexts: names(&[b"ci"]),

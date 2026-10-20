@@ -468,6 +468,7 @@ pub fn fake_config() -> fake::Config {
         limits: fake::Limits {
             repositories: 1,
             users: 3,
+            bypassing_users: 4,
             labels: 2,
             items: 64,
             comments: 32,

@@ -13,7 +13,16 @@ fn protected(queue: bool, approvals: u32, contexts: Box<[Box<[u8]>]>) -> f::Harn
         f::limits(),
         f::config(),
         config,
-        Some(a::Protection { queue, branch: f::boxed(b"trunk"), contexts, approvals, dismiss_stale: false }),
+        Some(a::Protection {
+            linear: false,
+            code_owners: false,
+            bypassing_users: Box::from([]),
+            queue,
+            branch: f::boxed(b"trunk"),
+            contexts,
+            approvals,
+            dismiss_stale: false,
+        }),
     );
     fake::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);
     h
@@ -103,8 +112,9 @@ fn queue_refusal_takes_precedence_over_approval_and_check_rules() {
     f::refusal(&h, &response, 405, &message);
     assert_eq!(
         drive_merge(&mut h, &token, number, head, Admission::Answer, QUEUED),
-        Ok(skein_forge::api::Answer::Queued)
+        Err(skein_forge::api::Error::Refused)
     );
+    assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
 }
 
 // REST returns the sha directly; queue admission adds the node query and mutation.

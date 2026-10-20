@@ -14,7 +14,7 @@ use skein_lib::{Duration, Env};
 use crate::api::{Error, File, Permission, Setup, What};
 use crate::domain::{Config, Domain};
 use crate::git::{self, Object};
-use crate::store::{Repository, fit_names, fits};
+use crate::store::{Repository, fit_names, fit_numbers, fits};
 
 /// Adds the repository `setup` describes, its default branch at a first
 /// commit of its tree, and returns that commit.
@@ -37,6 +37,7 @@ pub fn repository(domain: &mut Domain, config: &Config, setup: Setup) -> u64 {
         fits(&cue.green, limits.content_bytes).expect("content within the limits");
     }
     if let Some(protection) = &protection {
+        fit_numbers(&protection.bypassing_users, limits.bypassing_users).expect("bypassing users within the limits");
         fits(&protection.branch, limits.name_bytes).expect("a branch name within the limits");
         fit_names(&protection.contexts, limits.contexts, limits).expect("contexts within the limits");
     }

@@ -19,6 +19,7 @@ static HEAP: heap::Counting = heap::Counting;
 const LIMITS: Limits = Limits {
     repositories: 2,
     users: 4,
+    bypassing_users: 4,
     labels: 2,
     items: 4,
     comments: 2,
@@ -127,6 +128,9 @@ fn setup(index: u64) -> Setup {
             cue: Some(Cue { path: name(b'p', 0), green: text(LIMITS.content_bytes, b'g') }),
         },
         protection: Some(Protection {
+            linear: true,
+            code_owners: true,
+            bypassing_users: Box::from([101, 102, 103, 104]),
             queue: false,
             branch: name(b'z', 0),
             contexts: names(b'c', LIMITS.contexts),
@@ -530,6 +534,9 @@ fn counted_group_branches_and_queue_landings_stay_within_memory_bound() {
     configured.checks.latency_max = Duration::from_secs(2);
     configured.checks.reruns = 0;
     configured.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: true,
         branch: Box::from(*b"main"),
         contexts: names(b'c', LIMITS.contexts),

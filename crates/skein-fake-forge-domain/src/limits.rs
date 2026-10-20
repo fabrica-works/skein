@@ -28,6 +28,8 @@ pub struct Limits {
     /// Users with a permission on a repository, and users calling within a
     /// rate window.
     pub users: u32,
+    /// Bypassing users in the repository's one protection rule.
+    pub bypassing_users: u32,
     /// Labels defined in a repository.
     pub labels: u32,
     /// Items in a repository; comments on an item, and items it depends on.
@@ -149,7 +151,9 @@ fn repository(limits: &Limits) -> Option<u64> {
         .checked_mul(5)?
         .checked_add(names(limits.contexts, limits)?.checked_mul(2)?)?
         .checked_add(times(limits.contexts, u64::try_from(size_of::<Failing>()).ok()?)?)?
-        .checked_add(u64::from(limits.content_bytes))?;
+        .checked_add(u64::from(limits.content_bytes))?
+        // One boxed list of domain user numbers belongs to the protection.
+        .checked_add(times(limits.bypassing_users, u64::try_from(size_of::<u64>()).ok()?)?)?;
     let permissions = Map::<u64, Permission>::worst_case(limits.users)?;
     let labels = Set::<Box<[u8]>>::worst_case(limits.labels)?.checked_add(times(limits.labels, name)?)?;
     let items = Map::<u64, Item>::worst_case(limits.items)?
@@ -250,7 +254,9 @@ fn answer(limits: &Limits) -> Option<u64> {
         .ok()?
         .checked_add(times(3, u64::try_from(size_of::<Step>()).ok()?)?)?
         .checked_add(name.checked_mul(7)?.checked_add(117)?)?;
-    let protection = name.checked_add(names(limits.contexts, limits)?)?;
+    // Inspection clones the bypass list as well as branch and contexts.
+    let protection =
+        name.checked_add(names(limits.contexts, limits)?)?.checked_add(times(limits.bypassing_users, number)?)?;
     let collaborators = times(limits.users, u64::try_from(size_of::<Collaborator>()).ok()?)?;
     Some(
         items

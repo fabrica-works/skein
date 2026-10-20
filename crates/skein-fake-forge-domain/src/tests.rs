@@ -3,6 +3,7 @@
 mod actions;
 mod locate;
 mod next;
+mod protection;
 mod queue;
 
 use alloc::boxed::Box;
@@ -21,6 +22,7 @@ use crate::{
 const LIMITS: Limits = Limits {
     repositories: 2,
     users: 8,
+    bypassing_users: 4,
     labels: 3,
     items: 6,
     comments: 4,
@@ -989,6 +991,9 @@ fn a_working_tree_commits_into_the_one_store() {
 fn a_branch_is_deleted_unless_it_is_the_default_or_protected() {
     let mut setup = setup();
     setup.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: copy_of(b"release"),
         contexts: names(&[]),
@@ -1040,6 +1045,9 @@ fn deleting_a_branch_closes_the_pull_requests_from_or_into_it() {
 fn a_protected_branch_is_not_created() {
     let mut setup = setup();
     setup.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: copy_of(b"release"),
         contexts: names(&[]),
@@ -1178,6 +1186,9 @@ fn a_merge_of_what_the_base_has_already_is_refused() {
 fn protection_wants_green_ci_and_approvals_of_the_exact_head_where_stale_ones_are_dismissed() {
     let mut setup = setup();
     setup.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: copy_of(MAIN),
         contexts: names(&[b"ci"]),
@@ -1213,6 +1224,9 @@ fn protection_wants_green_ci_and_approvals_of_the_exact_head_where_stale_ones_ar
 fn protection_counts_official_approvals_of_any_head_by_default() {
     let mut setup = setup();
     setup.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: copy_of(MAIN),
         contexts: names(&[]),
@@ -1316,6 +1330,9 @@ fn ci_runs_a_context_again_after_it_settled_once() {
 fn a_pending_review_is_hidden_until_it_is_submitted_and_keeps_its_place() {
     let mut setup = setup();
     setup.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: copy_of(MAIN),
         contexts: Box::new([]),
@@ -1798,6 +1815,9 @@ fn webhooks_name_the_branch_and_commit_a_push_or_status_is_about() {
 fn refused_writes_and_rejected_pushes_are_observed() {
     let mut setup = setup();
     setup.protection = Some(Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: copy_of(MAIN),
         contexts: names(&[b"ci"]),

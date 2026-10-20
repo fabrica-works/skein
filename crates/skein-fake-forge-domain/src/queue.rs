@@ -108,6 +108,15 @@ pub(crate) fn enqueue(
             return Err(Error::AlreadyQueued(*entry));
         }
     }
+    if let Some(protection) = &repository.protection
+        && protection.branch == pull.base
+        // Inferred: a user's merge bypass also admits it without approvals;
+        // group checks run after admission on the queue's commit.
+        && !protection.bypassing_users.contains(&by)
+        && !pulls::approved(item, pull, protection)
+    {
+        return Err(Error::Protected);
+    }
     let entry = QueueEntry { number, head, position: repository.queue.len().checked_add(1).ok_or(Error::Full)? };
     if repository.queue.room() == 0 {
         return Err(Error::Full);

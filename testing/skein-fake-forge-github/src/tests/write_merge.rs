@@ -28,6 +28,9 @@ fn protected(approvals: u32, contexts: &[&[u8]]) -> f::Harness {
         names.push(f::boxed(name)).unwrap();
     }
     let protection = a::Protection {
+        linear: false,
+        code_owners: false,
+        bypassing_users: Box::from([]),
         queue: false,
         branch: f::boxed(b"trunk"),
         contexts: names.into_boxed(),

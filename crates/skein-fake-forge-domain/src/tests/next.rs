@@ -124,6 +124,9 @@ fn comparisons_ignore_paging_and_refuse_incomplete_data_explicitly() {
 fn adoption_metadata_and_protection_permission_match_the_probe() {
     let mut configured = setup();
     let protection = Protection {
+        linear: true,
+        code_owners: true,
+        bypassing_users: Box::from([ENGINE]),
         queue: false,
         branch: copy_of(MAIN),
         contexts: names(&[b"ci"]),
@@ -238,6 +241,9 @@ fn comparisons_carry_the_shared_base_of_divergent_and_unrelated_histories() {
 fn inspection_reads_protection_without_client_authorization_or_calls() {
     let mut configured = setup();
     let protection = Protection {
+        linear: true,
+        code_owners: true,
+        bypassing_users: Box::from([ENGINE]),
         queue: false,
         branch: copy_of(MAIN),
         contexts: names(&[b"ci"]),

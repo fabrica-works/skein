@@ -846,7 +846,13 @@ pub struct Cue {
 /// its exact head and `approvals` official approvals, its author aside: of
 /// that head if `dismiss_stale`, and of any head if not (Forgejo's default).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[expect(clippy::struct_excessive_bools, reason = "independent protection facts")]
 pub struct Protection {
+    /// Facts shown by the layers; no CODEOWNERS engine or linear-history enforcement.
+    pub linear: bool,
+    pub code_owners: bool,
+    /// Domain user numbers whose merges skip checks and approvals, bounded by `Limits::bypassing_users`.
+    pub bypassing_users: Box<[u64]>,
     /// Requires admission through the merge queue; false for ordinary protection.
     pub queue: bool,
     pub branch: Box<[u8]>,

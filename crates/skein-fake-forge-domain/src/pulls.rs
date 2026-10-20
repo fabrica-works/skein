@@ -310,7 +310,7 @@ pub(crate) fn merge(
     let Some(&onto) = repository.branches.get(&*pull.base) else {
         return Err(Error::Missing(What::Branch));
     };
-    if !allowed(repository, item, pull) {
+    if !allowed(repository, item, pull, user) {
         return Err(Error::Protected);
     }
     if git::is_ancestor(domain, head, onto) {
@@ -420,7 +420,7 @@ pub(crate) fn statuses(repository: &Repository, limits: &Limits, commit: u64) ->
 /// reviewed, its author aside, in their last review that was not a
 /// comment), of any head unless the protection dismisses stale ones, as
 /// Forgejo counts them.
-fn allowed(repository: &Repository, item: &Item, pull: &Pull) -> bool {
+fn allowed(repository: &Repository, item: &Item, pull: &Pull, user: u64) -> bool {
     let Some(protection) = &repository.protection else {
         return true;
     };
@@ -429,6 +429,9 @@ fn allowed(repository: &Repository, item: &Item, pull: &Pull) -> bool {
     }
     if protection.queue {
         return false;
+    }
+    if protection.bypassing_users.contains(&user) {
+        return true;
     }
     for context in &protection.contexts {
         let passed = match repository.statuses.get(&pull.commit) {
@@ -442,6 +445,11 @@ fn allowed(repository: &Repository, item: &Item, pull: &Pull) -> bool {
             return false;
         }
     }
+    approved(item, pull, protection)
+}
+
+/// Admission and direct merge count the same official, latest approvals.
+pub(crate) fn approved(item: &Item, pull: &Pull, protection: &crate::api::Protection) -> bool {
     let reviews = pull.reviews.as_slice();
     let mut approvals: u32 = 0;
     for (index, kept) in reviews.iter().enumerate() {
