@@ -223,15 +223,12 @@ impl Branches {
                 _ => unreachable!("branch text table"),
             },
             Value::Id(id) => self.branch.commit = id.expect("required branch commit"),
-            Value::Boolean(value) => {
-                if key == b"enable_status_check" {
-                    self.protection.enable_status_check = value;
-                } else if key == b"dismiss_stale_approvals" {
-                    self.protection.dismiss_stale_approvals = value;
-                } else {
-                    self.protection.require_signed_commits = value;
-                }
-            }
+            Value::Boolean(value) => match key {
+                b"enable_status_check" => self.protection.enable_status_check = value,
+                b"dismiss_stale_approvals" => self.protection.dismiss_stale_approvals = value,
+                b"require_signed_commits" => self.protection.require_signed_commits = value,
+                _ => unreachable!("branch boolean table"),
+            },
             Value::Time(_) | Value::Body(_) => unreachable!("branch scalar table"),
         }
         Ok(())
