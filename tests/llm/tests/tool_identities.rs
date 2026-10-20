@@ -84,9 +84,10 @@ fn continuation(block: Block, result_id: &[u8]) -> openai::Request {
     world.run();
     world.assert_once();
     assert_eq!(world.machine.waiting(), client::Waiting::Idle);
-    let at = world.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual HTTP request head") + 4;
-    let json = skein_llm::Json::from_bytes(&world.sent[at..], &(limits().native()).document())
-        .expect("actual request document");
+    let sent = skein_llm_world::identity(&world.sent);
+    let at = sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual HTTP request head") + 4;
+    let json =
+        skein_llm::Json::from_bytes(&sent[at..], &(limits().native()).document()).expect("actual request document");
     let request = openai::decode_request(&json, &limits().native()).expect("actual native continuation");
     world.request(client::Request::Close);
     world.settle();

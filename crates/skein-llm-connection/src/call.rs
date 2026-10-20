@@ -447,8 +447,7 @@ impl Connection {
                 if self.calling() || (self.phase == Phase::Idle || self.phase == Phase::Ready) {
                     match &down {
                         Down::Send(bytes) if !bytes.is_empty() && self.phase == Phase::Head => {
-                            let measured = self.llm.measured();
-                            self.deadlines.sent(env.now, measured_request_bytes(measured));
+                            self.deadlines.sent(env.now, self.llm.request_bytes());
                         }
                         Down::Send(_) | Down::Demand { .. } | Down::Finish => {}
                     }
@@ -515,19 +514,5 @@ impl Connection {
         }
         self.sync_activity(env.now);
         self.sync_deadlines(env);
-    }
-}
-
-fn measured_request_bytes(measured: llm::Measured) -> u64 {
-    u64::from(measured.head).checked_add(u64::from(measured.body)).expect("two u32 lengths fit u64")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_largest_head_and_body_have_an_exact_request_byte_measure() {
-        assert_eq!(measured_request_bytes(llm::Measured { head: u32::MAX, body: u32::MAX }), 8_589_934_590);
     }
 }

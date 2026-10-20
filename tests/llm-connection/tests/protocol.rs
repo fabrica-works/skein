@@ -363,8 +363,9 @@ fn per_call_reasoning_policy(endpoint_default: bool) {
         }
     }
     assert_eq!((started, completed, failed, dropped, connected, responded, closed), (3, 2, 1, 2, 1, 3, true));
+    let received = skein_llm_world::identity(&wire.received);
     for model in [b"model-0", b"model-1", b"model-2"] {
-        assert!(wire.received.windows(model.len()).any(|bytes| bytes == model));
+        assert!(received.windows(model.len()).any(|bytes| bytes == model));
     }
 }
 

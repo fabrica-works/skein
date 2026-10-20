@@ -11,7 +11,12 @@ fn wire_request_and_streamed_answer() {
         world.request(client::Request::Start);
         world.run();
         world.assert_once();
-        let sent = String::from_utf8(world.sent.clone()).unwrap();
+        // The Codex route sends its body gzip, its length the bytes sent.
+        let end = world.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").unwrap();
+        let wire = std::str::from_utf8(&world.sent[..end]).unwrap().to_ascii_lowercase();
+        assert!(wire.contains("\r\ncontent-encoding: gzip\r\n"), "{wire}");
+        assert!(wire.contains(&format!("\r\ncontent-length: {}", world.sent.len() - end - 4)), "{wire}");
+        let sent = String::from_utf8(skein_llm_world::identity(&world.sent)).unwrap();
         let (head, body) = sent.split_once("\r\n\r\n").unwrap();
         assert!(head.starts_with("POST /backend-api/codex/responses HTTP/1.1\r\n"));
         for header in [
@@ -394,7 +399,7 @@ fn completed_messages_replay_reasoning_message_ids_and_tool_ids_on_next_turn() {
     next.request(client::Request::Start);
     next.run();
     next.assert_once();
-    let wire = String::from_utf8(next.sent).unwrap();
+    let wire = String::from_utf8(skein_llm_world::identity(&next.sent)).unwrap();
     for value in [
         "\"encrypted_content\":\"exact-opaque\"",
         "\"id\":\"msg_1\"",
@@ -884,7 +889,7 @@ fn receiving_caps_admit_the_edge_and_refuse_one_over_by_name() {
 fn header_fields_and_sse_fields_keep_their_own_exact_bounds() {
     use skein_llm::Cap;
     let document = TERMINAL;
-    for (which, edge) in [(Cap::ResponseFields, 8), (Cap::Field, 7)] {
+    for (which, edge) in [(Cap::ResponseFields, 9), (Cap::Field, 7)] {
         for bound in [edge, edge - 1] {
             let mut bounds = limits();
             let wire = match which {
@@ -892,7 +897,7 @@ fn header_fields_and_sse_fields_keep_their_own_exact_bounds() {
                     bounds.http.headers = bound;
                     response(
                         200,
-                        "Content-Type: text/event-stream\r\nA: a\r\nB: b\r\nC: c\r\nD: d\r\nE: e\r\nF: f\r\n",
+                        "Content-Type: text/event-stream\r\nA: a\r\nB: b\r\nC: c\r\nD: d\r\nE: e\r\nF: f\r\nG: g\r\n",
                         &events(&[document]),
                         false,
                     )

@@ -17,8 +17,8 @@ fn standard_client_bound_excludes_per_item_replay_capacity() {
     let derived = Limits::derive(&declared).unwrap();
     // llm.md 4.2 adds 384 report bytes and the client holds a 16-byte request-id box.
     for (provider, parent, removed, fixed, receiving) in [
-        (Provider::OpenAiCodex, 106_615_660, 53_485_071, 53_130_589, 3_527_212),
-        (Provider::Anthropic, 106_613_284, 53_484_255, 53_129_029, 3_527_206),
+        (Provider::OpenAiCodex, 106_615_676, 53_485_071, 53_130_605, 3_527_212),
+        (Provider::Anthropic, 106_613_300, 53_484_255, 53_129_045, 3_527_206),
     ] {
         let mut bounds = derived.dialect(provider);
         bounds.http.request = 4096;

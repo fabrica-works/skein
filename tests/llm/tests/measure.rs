@@ -32,11 +32,30 @@ fn measured_head_and_body_equal_the_uploaded_wire() {
         }
         world.settle();
         let head = world.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").unwrap() + 4;
-        assert_eq!(u32::try_from(head).unwrap(), measured.head);
-        assert_eq!(u32::try_from(world.sent.len() - head).unwrap(), measured.body);
+        let sent = world.sent.len() - head;
+        let plain = skein_llm_world::identity(&world.sent);
+        let plain_head = plain.windows(4).position(|bytes| bytes == b"\r\n\r\n").unwrap() + 4;
+        assert_eq!(u32::try_from(plain.len() - plain_head).unwrap(), measured.body, "the rendered body");
+        if anthropic {
+            assert_eq!(u32::try_from(head).unwrap(), measured.head);
+            assert_eq!(u32::try_from(sent).unwrap(), measured.body);
+            assert_eq!(measured.compressed, 0);
+        } else {
+            // Codex sends gzip: the room for its compressed copy is the
+            // body's bound, and its head is measured with the bound's digits.
+            let bound = skein_http::gzip::bound(usize::try_from(measured.body).unwrap()).unwrap();
+            assert_eq!(usize::try_from(measured.compressed).unwrap(), bound);
+            assert!(sent <= bound);
+            let digits = |length: usize| length.to_string().len();
+            assert_eq!(usize::try_from(measured.head).unwrap(), head - digits(sent) + digits(bound));
+        }
+        assert_eq!(world.machine.request_bytes(), u64::try_from(world.sent.len()).unwrap());
         assert_eq!(
             client::reservation(measured, &bounds).unwrap(),
-            u64::from(measured.head) + u64::from(measured.body) + u64::from(bounds.receiving)
+            u64::from(measured.head)
+                + u64::from(measured.body)
+                + u64::from(measured.compressed)
+                + u64::from(bounds.receiving)
         );
     }
 }
@@ -77,5 +96,9 @@ fn request_payload_limits_belong_to_the_reservation_not_fixed_client_state() {
     larger.http.request += 99;
     larger.request += 1234;
     assert_eq!(client::worst_case(&larger).unwrap(), fixed);
-    assert_eq!(client::largest_reservation(&larger).unwrap() - largest, 1333);
+    // 99 head and 1234 body bytes, and the compressed copy's room, counted
+    // for every endpoint, grows by the body's 1234 too (gzip::bound).
+    let room = |body: u32| u64::try_from(skein_http::gzip::bound(usize::try_from(body).unwrap()).unwrap()).unwrap();
+    assert_eq!(room(larger.request) - room(bounds.request), 1234);
+    assert_eq!(client::largest_reservation(&larger).unwrap() - largest, 2567);
 }

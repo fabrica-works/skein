@@ -7,6 +7,8 @@ use crate::documents;
 
 mod credentials;
 mod failure;
+mod inflate;
+pub use inflate::inflate;
 pub(crate) mod public;
 pub use credentials::{MAX_CREDENTIALS, Presented, route};
 #[path = "pieces.rs"]
@@ -290,6 +292,10 @@ pub struct Server {
     writer_events: Queue<sse::Event>,
     requests: Queue<http::Request>,
     body: List<u8>,
+    // A gzip body's inflated bytes, swapped into `body` once read back.
+    inflated: List<u8>,
+    // Whether the request's body came with `Content-Encoding: gzip`.
+    gzip: bool,
     // Remaining announced body bytes; None for chunked framing.
     remaining_body: Option<u64>,
     call: Option<Id<Call>>,
@@ -315,7 +321,7 @@ impl Server {
         if worst_case(limits).is_none() {
             return Err(Error::Limits);
         }
-        let request = limits.documents.anthropic.request.max(limits.documents.openai.request);
+        let request = room(limits).ok_or(Error::Limits)?;
         Ok(Server {
             owner,
             state: State::New,
@@ -325,6 +331,8 @@ impl Server {
             writer_events: Queue::with_capacity(1),
             requests: Queue::with_capacity(REQUESTS),
             body: List::with_capacity(request),
+            inflated: List::with_capacity(request),
+            gzip: false,
             remaining_body: None,
             call: None,
             answer: None,
@@ -600,8 +608,16 @@ fn entrance(
     let mut fields = credentials::Fields::new();
     server.session = None;
     server.thread = None;
+    server.gzip = false;
     let mut content_type = 0_u32;
     for header in &call.headers {
+        // A body comes as it is or in gzip; any other coding, or two, is refused.
+        if header.is(b"content-encoding") {
+            if server.gzip || !header.value.eq_ignore_ascii_case(b"gzip") {
+                server.refused = Some(api::Error::InvalidRequest);
+            }
+            server.gzip = true;
+        }
         if server.route == skein_llm::Provider::OpenAi && public::reserved(&header.name) {
             server.refused = Some(api::Error::InvalidRequest);
         }
@@ -806,6 +822,17 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
         response_error(server, service, env, error.into());
         return;
     }
+    if server.gzip {
+        server.gzip = false;
+        let inflated = inflate(server.body.as_slice(), &mut server.inflated);
+        core::mem::swap(&mut server.body, &mut server.inflated);
+        server.inflated.clear();
+        if inflated.is_none() {
+            server.body.clear();
+            response_error(server, service, env, api::Error::InvalidRequest.into());
+            return;
+        }
+    }
     let query = documents::request_on(server.route, server.body.as_slice(), &env.limits.documents);
     if service.config.provider != documents::Provider::OpenAi || !service.config.echo.enabled() {
         server.body.clear();
@@ -991,6 +1018,14 @@ pub fn head_worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.http.head))
 }
 
+/// The room a request body takes: the larger document cap, or the gzip
+/// member a body at that cap can be sent as, which a stored block makes a
+/// few bytes larger.
+fn room(limits: &Limits) -> Option<u32> {
+    let request = limits.documents.anthropic.request.max(limits.documents.openai.request);
+    u32::try_from(skein_http::gzip::bound(usize::try_from(request).ok()?)?).ok()
+}
+
 /// Checked maximum owned bytes under limits, or `None` when counters or containers cannot be bounded.
 ///
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
@@ -1015,7 +1050,10 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(anthropic::worst_case(&limits.documents.anthropic)?)?
         // Configured echoes retain this raw request in the existing body List;
         // native codec worst_case above prices transient decoded metadata and entry scratch.
-        .checked_add(List::<u8>::worst_case(request)?)?
+        .checked_add(List::<u8>::worst_case(room(limits)?)?)?
+        // A gzip body inflates beside its member, into a second List; the two
+        // trade places, so each holds the larger room.
+        .checked_add(List::<u8>::worst_case(room(limits)?)?)?
         .checked_add(u64::from(limits.documents.openai.answer.max(limits.documents.anthropic.answer)).checked_mul(8)?)?
         .checked_add(Queue::<http::Event>::worst_case(EVENTS)?)?
         .checked_add(Queue::<http::Request>::worst_case(REQUESTS)?)?

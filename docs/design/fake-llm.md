@@ -226,6 +226,13 @@ a simulated world and the real loop host it as they host a service
   within the observation caps, beside the decoded query, so a world can
   assert what reached the wire: that every request of a conversation
   carries the same affinity, and that two conversations' threads differ.
+- **It reads a gzip body back with an inflater of its own.** A body sent
+  with `Content-Encoding: gzip` (the Codex route's, llm.md, section 4.8)
+  is inflated beside its member, in room the server holds from the start:
+  the gzip bound of the request cap, twice. The inflater is test code,
+  simple over fast, and shares nothing with the client's encoder. A body
+  in any other coding, under two codings, or a member that does not
+  inflate whole to its CRC and length is refused as invalid.
 - **It reads the dialect's cache instructions into the query.** The
   public route: `prompt_cache_key` must be the key in its rendered form,
   and a `session-id` or `thread-id` header is refused. The withdrawn Codex

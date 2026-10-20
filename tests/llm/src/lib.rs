@@ -347,6 +347,61 @@ pub fn fields_holding(sent: &[u8], value: &[u8]) -> Vec<String> {
         .collect()
 }
 
+/// The sent requests as they would read sent without a coding: each request
+/// whose head says `Content-Encoding: gzip` has its body inflated by the fake
+/// LLM's own inflater, that field dropped and its `Content-Length` restated.
+/// Bytes after the last whole request, and identity requests, stay as sent.
+#[must_use]
+pub fn identity(sent: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(sent.len());
+    let mut rest = sent;
+    while let Some(end) = rest.windows(4).position(|part| part == b"\r\n\r\n") {
+        let head = std::str::from_utf8(&rest[..end]).expect("a request head is ASCII");
+        let length = head
+            .split("\r\n")
+            .find_map(|line| line.split_once(':').filter(|(name, _)| name.eq_ignore_ascii_case("content-length")))
+            .map(|(_, value)| value.trim().parse::<usize>().expect("decimal Content-Length"));
+        let Some(length) = length.filter(|length| end + 4 + length <= rest.len()) else { break };
+        let body = &rest[end + 4..end + 4 + length];
+        let gzip = head.split("\r\n").any(|line| {
+            line.split_once(':').is_some_and(|(name, value)| {
+                name.eq_ignore_ascii_case("content-encoding") && value.trim().eq_ignore_ascii_case("gzip")
+            })
+        });
+        if gzip {
+            let inflated = inflated(body);
+            for line in head.split("\r\n") {
+                match line.split_once(':') {
+                    Some((name, _)) if name.eq_ignore_ascii_case("content-encoding") => continue,
+                    Some((name, _)) if name.eq_ignore_ascii_case("content-length") => {
+                        out.extend_from_slice(format!("{name}: {}", inflated.len()).as_bytes());
+                    }
+                    _ => out.extend_from_slice(line.as_bytes()),
+                }
+                out.extend_from_slice(b"\r\n");
+            }
+            out.extend_from_slice(b"\r\n");
+            out.extend_from_slice(&inflated);
+        } else {
+            out.extend_from_slice(&rest[..end + 4 + length]);
+        }
+        rest = &rest[end + 4 + length..];
+    }
+    out.extend_from_slice(rest);
+    out
+}
+
+/// One gzip member inflated by the fake LLM's inflater, which checks its CRC
+/// and length.
+#[must_use]
+pub fn inflated(member: &[u8]) -> Vec<u8> {
+    let size = member.len().checked_sub(4).map(|at| &member[at..]).expect("a gzip trailer");
+    let size = u32::from_le_bytes(size.try_into().expect("four bytes"));
+    let mut out = skein_lib::List::with_capacity(size);
+    skein_fake_llm_protocol::provider::inflate(member, &mut out).expect("a well-formed gzip member");
+    out.as_slice().to_vec()
+}
+
 /// Build a fixture field without repeating its owned wire representation.
 #[must_use]
 pub fn header(name: &[u8], value: &[u8]) -> Header {

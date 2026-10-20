@@ -66,8 +66,9 @@ fn observe(mut world: World, owner: Token, path: &[u8], usage: [Option<u64>; 4],
     world.request(client::Request::Start);
     world.run();
     world.assert_once();
-    assert!(request_evidence(&world.sent, path), "actual original request: {:?}", world.sent);
-    let mut changed = world.sent.clone();
+    let sent = skein_llm_world::identity(&world.sent);
+    assert!(request_evidence(&sent, path), "actual original request: {sent:?}");
+    let mut changed = sent.clone();
     changed[0] = b'X';
     assert!(!request_evidence(&changed, path));
     assert!(!request_evidence(b"POST / HTTP/1.1\r\n\r\n{}", path));

@@ -130,15 +130,16 @@ The owner names an endpoint by its index in that configuration.
 
   A pool at capacity is not among them: the call waits (4.1).
 - **Each terminal carries the call's measures,** whatever the terminal:
-  - the encoded request's bytes, as measured at admission, or none when
-    the call ended before its request was measured;
+  - the encoded request's bytes as sent, its head and its body as
+    encoded, compressed on a gzip route (llm.md, section 4.8), or none
+    when the call ended before its request was measured;
   - the time from the request sent to the response's first byte, or none
     before one arrived;
   - the largest gap between two of the response's events, the measure
     the idle deadline bounds.
 
-  They are observed where the component already observes them (the pool's
-  measure, the client's first response bytes, the deadlines' activity),
+  They are observed where the component already observes them (the client's
+  encoded request, its first response bytes, the deadlines' activity),
   never derived from deltas or from ciphertext timing. An unobserved
   measure is none, never zero.
 - **One terminal per call,** after which its token is the owner's again.

@@ -765,7 +765,11 @@ fn configured_codex_echoes_preserve_the_completion_past_the_previous_token_cliff
     assert_eq!(key_count(tokens, b"input_index"), 20);
     let edge = tokens.len();
     let request = skein_llm::Json::from_bytes(
-        &skein_http_world::reference::request(&echoed.requests, &skein_llm_world::fake::limits(&bounds).http).body,
+        &skein_http_world::reference::request(
+            &skein_llm_world::identity(&echoed.requests),
+            &skein_llm_world::fake::limits(&bounds).http,
+        )
+        .body,
         &bounds.native().request_document(),
     )
     .unwrap();
@@ -1099,7 +1103,7 @@ fn independent_peer_refuses_mismatched_affinity_and_malformed_thread_before_disp
     let mut world = Exchange::new(input(skein_llm::Provider::OpenAiCodex, 181), limits(), scripts());
     world.start();
     world.run();
-    let wire = String::from_utf8(world.requests).expect("valid bounded affinity control");
+    let wire = String::from_utf8(skein_llm_world::identity(&world.requests)).expect("valid bounded affinity control");
     let (accepted, response) = peer_native_request(wire.as_bytes(), skein_llm::Provider::OpenAiCodex);
     assert_eq!(
         accepted.expect("valid bounded affinity control").caching,
@@ -1117,6 +1121,60 @@ fn independent_peer_refuses_mismatched_affinity_and_malformed_thread_before_disp
         let (query, response) = peer_native_request(changed.as_bytes(), skein_llm::Provider::OpenAiCodex);
         assert!(query.is_none(), "invalid affinity never enters the neutral domain");
         assert!(response.starts_with(b"HTTP/1.1 403 "), "{:?}", String::from_utf8_lossy(&response));
+    }
+}
+
+/// Replaces the one `from` in `wire` with `to`.
+fn replaced(wire: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
+    let at = wire.windows(from.len()).position(|bytes| bytes == from).expect("control names actual bytes");
+    [&wire[..at], to, &wire[at + from.len()..]].concat()
+}
+
+#[test]
+fn a_codex_request_arrives_gzip_encoded_and_the_fake_answers_it() {
+    let mut world = Exchange::new(input(skein_llm::Provider::OpenAiCodex, 181), limits(), scripts());
+    world.start();
+    world.run();
+    let end = world.requests.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("one actual request head");
+    assert!(world.requests[..end].windows(24).any(|bytes| bytes == b"\r\nContent-Encoding: gzip"));
+    assert_eq!(world.requests[end + 4..end + 6], [0x1f, 0x8b], "the body is a gzip member");
+    assert!(world.responses.starts_with(b"HTTP/1.1 200 "), "{:?}", String::from_utf8_lossy(&world.responses));
+    assert!(world.seen.iter().any(|event| matches!(event, skein_llm::client::Event::Completed { .. })));
+    // The fake reads the member as the same query as the body as rendered.
+    let (inflated, response) = peer_native_request(&world.requests, skein_llm::Provider::OpenAiCodex);
+    assert!(response.is_empty());
+    let identity = skein_llm_world::identity(&world.requests);
+    let (rendered, _) = peer_native_request(&identity, skein_llm::Provider::OpenAiCodex);
+    assert_eq!(inflated.expect("the fake inflates a gzip body"), rendered.expect("the rendered body is a query"));
+}
+
+#[test]
+fn the_fake_refuses_a_body_in_any_coding_but_gzip_or_a_member_that_does_not_inflate() {
+    let mut world = Exchange::new(input(skein_llm::Provider::OpenAiCodex, 181), limits(), scripts());
+    world.start();
+    world.run();
+    let wire = world.requests;
+    let coding = b"Content-Encoding: gzip\r\n".as_slice();
+    // The member's last eight bytes are its CRC-32 and length: one bit off fails the check.
+    let mut corrupt = wire.clone();
+    let crc = corrupt.len() - 8;
+    corrupt[crc] ^= 1;
+    // The body as rendered under a gzip head is no member.
+    let rendered =
+        replaced(&skein_llm_world::identity(&wire), b"Content-Length: ", b"Content-Encoding: gzip\r\nContent-Length: ");
+    for changed in [
+        replaced(&wire, coding, b"Content-Encoding: br\r\n"),
+        replaced(&wire, coding, b"Content-Encoding: gzip, gzip\r\n"),
+        replaced(&wire, coding, b"Content-Encoding: gzip\r\nContent-Encoding: gzip\r\n"),
+        replaced(&wire, coding, b"Content-Encoding: identity\r\n"),
+        corrupt,
+        rendered,
+    ] {
+        let (query, response) = peer_native_request(&changed, skein_llm::Provider::OpenAiCodex);
+        assert!(query.is_none(), "a refused body never enters the neutral domain");
+        // The Codex route answers an invalid request as its route not supported.
+        assert!(response.starts_with(b"HTTP/1.1 403 "), "{:?}", String::from_utf8_lossy(&response));
+        assert!(response.ends_with(br#""code":"subscription_sharing_route_not_supported","message":"subscription_sharing_route_not_supported"}}"#));
     }
 }
 
@@ -1176,7 +1234,7 @@ fn growing_conversations_preserve_native_content_and_encode_twice_identically() 
                 pair.push(world.requests);
             }
             assert_eq!(pair[0], pair[1], "same conversation encodes identically");
-            let wire = String::from_utf8(pair.remove(0)).unwrap();
+            let wire = String::from_utf8(skein_llm_world::identity(&pair.remove(0))).unwrap();
             let body = wire.split_once("\r\n\r\n").unwrap().1.replace(marker, "");
             if let Some(previous) = previous_body {
                 let anchor = match dialect {

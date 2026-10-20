@@ -62,12 +62,17 @@ struct World {
     below: Queue<Down>,
     events: Vec<Event>,
     read: Read,
+    sent: Vec<u8>,
 }
 
 impl World {
     fn started() -> World {
+        World::started_with(call())
+    }
+
+    fn started_with(call: Call) -> World {
         let limits = limits();
-        let client = Client::prepare(call(), &limits).expect("the call is admitted");
+        let client = Client::prepare(call, &limits).expect("the call is admitted");
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         let mut world = World {
             client,
@@ -76,6 +81,7 @@ impl World {
             below: Queue::with_capacity(MAX_OUT.below),
             events: Vec::new(),
             read: Read::Nothing,
+            sent: Vec::new(),
         };
         world.down(Request::Start);
         world
@@ -98,7 +104,8 @@ impl World {
                         room = wanted > 0;
                         self.read = if room { Read::Nothing } else { read };
                     }
-                    Down::Send(_) | Down::Finish => {}
+                    Down::Send(bytes) => self.sent.extend_from_slice(&bytes),
+                    Down::Finish => {}
                 }
             }
             if !room || self.client.state == State::Closing || self.client.state == State::Closed {
@@ -200,4 +207,68 @@ fn a_malformed_status_line_is_still_a_protocol_failure() {
     let (failure, _, detail) = world.failure();
     assert_eq!(failure, Failure::Protocol);
     assert_eq!(detail, b"malformed HTTP response: status line");
+}
+
+/// The sent request's head, as text, and its body.
+fn split(sent: &[u8]) -> (&str, &[u8]) {
+    let at = bytes::find(sent, b"\r\n\r\n").expect("a whole head") + 4;
+    (core::str::from_utf8(&sent[..at]).expect("a text head"), &sent[at..])
+}
+
+fn content_length(head: &str) -> usize {
+    let line = head.lines().find_map(|line| line.strip_prefix("Content-Length: ")).expect("a Content-Length");
+    line.parse().expect("decimal digits")
+}
+
+#[test]
+fn a_codex_request_sends_its_rendered_body_gzip_encoded_with_its_length() {
+    let world = World::started();
+    let (head, body) = split(&world.sent);
+    let rendered = translate::encode_request(Provider::OpenAiCodex, &call().prompt, &limits().native()).unwrap();
+    let mut room = bytes::zeroed(skein_http::gzip::bound(rendered.len()).unwrap());
+    let end = skein_http::gzip::encode(&rendered, &mut room).unwrap();
+    assert!(head.contains("\r\nContent-Encoding: gzip\r\n"), "{head}");
+    assert_eq!(content_length(head), body.len());
+    assert_eq!(body, &room[..end], "the body is the encoder's member of the rendered body");
+    let measured = world.client.measured();
+    let wide = |value: u32| usize::try_from(value).unwrap();
+    assert_eq!(wide(measured.body), rendered.len());
+    assert_eq!(wide(measured.compressed), room.len());
+    assert_eq!(world.client.request_bytes(), u64::try_from(world.sent.len()).unwrap());
+    let digits = |length: usize| length.to_string().len();
+    assert_eq!(wide(measured.head), head.len() - digits(body.len()) + digits(room.len()), "measured at the bound");
+}
+
+#[test]
+fn an_openai_request_sends_its_rendered_body_as_it_is() {
+    let mut input = call();
+    input.endpoint = Endpoint::openai();
+    input.credential = Some(Credential::key(bytes::copy_of(b"key")));
+    let world = World::started_with(input);
+    let (head, body) = split(&world.sent);
+    let rendered = translate::encode_request(Provider::OpenAi, &call().prompt, &limits().native()).unwrap();
+    assert!(!head.to_ascii_lowercase().contains("content-encoding"), "{head}");
+    assert_eq!(content_length(head), body.len());
+    assert_eq!(body, &*rendered);
+    let measured = world.client.measured();
+    let wide = |value: u32| usize::try_from(value).unwrap();
+    assert_eq!((wide(measured.head), wide(measured.body), measured.compressed), (head.len(), body.len(), 0));
+    assert_eq!(world.client.request_bytes(), u64::try_from(world.sent.len()).unwrap());
+}
+
+#[test]
+fn the_largest_head_and_body_have_an_exact_request_byte_measure() {
+    let measured = Measured { head: u32::MAX, body: u32::MAX, compressed: 0 };
+    assert_eq!(sent_bytes(measured, u64::from(u32::MAX)), 8_589_934_590);
+    let gzip = Measured { head: u32::MAX, body: u32::MAX, compressed: u32::MAX };
+    assert_eq!(sent_bytes(gzip, 9), 4_294_967_295 - 10 + 1 + 9, "the sent length's digits replace the bound's");
+}
+
+#[test]
+fn a_caller_field_cannot_name_the_content_coding() {
+    let mut input = call();
+    let mut endpoint = Endpoint::codex();
+    endpoint.headers = Box::new([Header { name: bytes::copy_of(b"Content-Encoding"), value: bytes::copy_of(b"br") }]);
+    input.endpoint = endpoint;
+    assert!(Client::prepare(input, &limits()).is_err());
 }

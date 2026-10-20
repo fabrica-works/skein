@@ -17,10 +17,8 @@ fn input(provider: Provider, scheme: Scheme) -> Call {
     input
 }
 fn head_fields(sent: &[u8]) -> Vec<(&str, &str)> {
-    std::str::from_utf8(sent)
-        .expect("valid request fixture")
-        .split("\r\n\r\n")
-        .next()
+    let end = sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("valid request fixture");
+    std::str::from_utf8(&sent[..end])
         .expect("valid request fixture")
         .lines()
         .filter_map(|line| line.split_once(": "))

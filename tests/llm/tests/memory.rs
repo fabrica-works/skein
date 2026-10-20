@@ -238,8 +238,11 @@ fn large_schema_request_reasoning_and_answer_fit_the_same_bound() {
         "{:?}",
         world.seen
     );
-    let head = world.sent.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
-    assert!(world.sent.len() - head > 6000, "the request is close to its 8192-byte cap");
+    // The cap is on the body as rendered, which the Codex route sends gzip.
+    let sent = skein_llm_world::identity(&world.sent);
+    let head = sent.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+    assert!(sent.len() - head > 6000, "the request is close to its 8192-byte cap");
+    drop(sent);
     world.request(client::Request::Close);
     world.settle();
     drop(world);

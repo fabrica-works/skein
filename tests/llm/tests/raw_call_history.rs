@@ -101,9 +101,9 @@ fn next(block: Block, error: bool) -> Call {
 }
 
 fn native(world: &World) -> openai::Request {
-    let at = world.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual request head") + 4;
-    let document =
-        Json::from_bytes(&world.sent[at..], &world.env.limits.native().document()).expect("actual native request");
+    let sent = skein_llm_world::identity(&world.sent);
+    let at = sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual request head") + 4;
+    let document = Json::from_bytes(&sent[at..], &world.env.limits.native().document()).expect("actual native request");
     openai::decode_request(&document, &world.env.limits.native()).expect("raw argument string is representable")
 }
 
@@ -257,8 +257,14 @@ fn native_and_actual_client_request_bounds_charge_complete_escaped_history() {
     world.request(client::Request::Start);
     world.run();
     completed(&world, 71);
-    let at = world.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual native body") + 4;
-    let length = world.sent.len() - at;
+    // The request cap is on the body as rendered (llm.md, section 4.8), which
+    // the Codex route sends gzip: its length is read back in identity.
+    let rendered = |sent: &[u8]| {
+        let sent = skein_llm_world::identity(sent);
+        let at = sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("actual native body") + 4;
+        sent.len() - at
+    };
+    let length = rendered(&world.sent);
     close(&mut world);
     bounds = limits();
     bounds.request = u32::try_from(length).expect("small escaped request");
@@ -266,7 +272,7 @@ fn native_and_actual_client_request_bounds_charge_complete_escaped_history() {
     exact.request(client::Request::Start);
     exact.run();
     completed(&exact, 71);
-    assert_eq!(exact.sent.len() - at, length, "whole actual escaped body reaches receiving cap");
+    assert_eq!(rendered(&exact.sent), length, "whole actual escaped body reaches receiving cap");
     close(&mut exact);
     bounds.request -= 1;
     assert!(

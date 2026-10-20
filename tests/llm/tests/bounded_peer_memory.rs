@@ -182,7 +182,9 @@ fn assert_native_payloads(world: &Exchange, seen: &Seen, caps: &ObservationLimit
     };
     assert_eq!(text.len(), LARGE);
     assert!(text.iter().all(|byte| *byte == b'x'));
-    assert!(world.requests.windows(LARGE).any(|text| text.iter().all(|byte| *byte == b'x')));
+    assert!(
+        skein_llm_world::identity(&world.requests).windows(LARGE).any(|text| text.iter().all(|byte| *byte == b'x'))
+    );
     assert_reference_response(&world.responses, bounds);
     assert!(world.requests.len() <= usize::try_from(caps.request).expect("declared trace cap"));
     assert!(world.responses.len() <= 4096);

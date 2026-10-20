@@ -337,6 +337,16 @@ pub struct Endpoint {
     /// Additional caller identity/route headers. Reserved framing and credential
     /// headers are rejected rather than allowing duplicate or conflicting fields.
     pub headers: Box<[Header]>,
+    /// The content coding the client applies to the request body it sends.
+    pub encoding: Encoding,
+}
+/// The content coding of a request body on the wire.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Encoding {
+    /// The rendered body, sent as it is.
+    Identity,
+    /// The rendered body, compressed and sent with `Content-Encoding: gzip`.
+    Gzip,
 }
 impl Endpoint {
     /// `OpenAI` public Responses at `api.openai.com/v1/responses`.
@@ -347,6 +357,7 @@ impl Endpoint {
             authority: bytes::copy_of(b"api.openai.com"),
             target: bytes::copy_of(b"/v1/responses"),
             headers: Box::new([]),
+            encoding: Encoding::Identity,
         }
     }
     /// Anthropic Messages, authenticated with a key or a bearer.
@@ -357,6 +368,7 @@ impl Endpoint {
             authority: bytes::copy_of(b"api.anthropic.com"),
             target: bytes::copy_of(b"/v1/messages"),
             headers: Box::new([]),
+            encoding: Encoding::Identity,
         }
     }
     /// The withdrawn Codex route; removed by the second part of LLM accounts.
@@ -367,6 +379,7 @@ impl Endpoint {
             authority: bytes::copy_of(b"chatgpt.com"),
             target: bytes::copy_of(b"/backend-api/codex/responses"),
             headers: Box::new([]),
+            encoding: Encoding::Gzip,
         }
     }
 }
