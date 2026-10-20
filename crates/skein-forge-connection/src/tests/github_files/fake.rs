@@ -300,6 +300,14 @@ fn github_service(page: u32) -> service::Service {
         .push(service::Account { id: 22, login: Box::from(b"acme".as_slice()), organization: true })
         .expect("account");
     let limits = service::Limits {
+        http: skein_http::server::Limits {
+            head: 4096,
+            headers: 16,
+            body: u64::from(f::BODY_ROOM),
+            read: 1024,
+            response: 16384,
+            send: 1024,
+        },
         github: crate::limits::github_documents(&f::limits()),
         installations: installations::Limits { installations: 1, tokens: 2, listed: 1 },
         pages: pages::Limits { states: 1, manifest_bytes: 2048 },
@@ -309,6 +317,7 @@ fn github_service(page: u32) -> service::Service {
     };
     service::Service::new(
         service::Config {
+            base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),

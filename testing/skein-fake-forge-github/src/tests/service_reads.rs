@@ -134,7 +134,7 @@ fn github_fake_branches_page_with_link() {
             assert!(skein_lib::bytes::find(&link, b"rel=\"next\"").is_some(), "next relation");
             assert!(skein_lib::bytes::find(&link, b"rel=\"last\"").is_some(), "last relation");
             if target == b"/repos/acme/widgets/branches?per_page=1&page=1" {
-                assert_eq!(link.as_ref(), b"<https://api.github.com/repos/acme/widgets/branches?per_page=1&page=2>; rel=\"next\", <https://api.github.com/repos/acme/widgets/branches?per_page=1&page=3>; rel=\"last\"");
+                assert_eq!(link.as_ref(), b"<http://127.0.0.1:3000/repos/acme/widgets/branches?per_page=1&page=2>; rel=\"next\", <http://127.0.0.1:3000/repos/acme/widgets/branches?per_page=1&page=3>; rel=\"last\"");
             }
         }
     }

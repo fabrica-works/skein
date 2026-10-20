@@ -115,7 +115,7 @@ pub(crate) fn response(status: u16, body: &Body<'_>, limits: &Limits) -> Respons
         return failed();
     }
     match finish(out) {
-        Some(body) => Response { status, link: None, body },
+        Some(body) => Response { content_type: crate::service::ContentType::Json, status, link: None, body },
         None => failed(),
     }
 }
@@ -130,7 +130,12 @@ pub(crate) fn unauthorized(limits: &Limits) -> Response {
 }
 pub(crate) fn failed() -> Response {
     // new requires room for this terminal even when another encoder refuses.
-    Response { status: 500, link: None, body: bytes::copy_of(br#"{"message":"Server Error","errors":[]}"#) }
+    Response {
+        content_type: crate::service::ContentType::Json,
+        status: 500,
+        link: None,
+        body: bytes::copy_of(br#"{"message":"Server Error","errors":[]}"#),
+    }
 }
 
 #[derive(Debug)]

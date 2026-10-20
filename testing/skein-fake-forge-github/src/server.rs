@@ -1,0 +1,472 @@
+//! One bounded HTTP connection over GitHub's API and browser pages.
+use crate::{
+    answers, pages,
+    service::{Limits, Outcome, Pending, Problem, Request, Response, Service},
+};
+use alloc::boxed::Box;
+use skein_fake_forge_domain as domain;
+use skein_forge::github::request::Method;
+use skein_http::{Header, Method as HttpMethod, server as http};
+use skein_lib::{
+    Env, Intake, List, Queue, ReplyTo, Token, bytes,
+    stream::{Down, Read, Up},
+};
+
+pub const MAX_UP: u32 = 3;
+pub const MAX_DOWN: u32 = 18;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum State {
+    New,
+    Reading,
+    Receiving,
+    Body,
+    Waiting,
+    Streaming,
+    Closing,
+    Closed,
+}
+#[derive(Debug)]
+pub enum Event {
+    Domain(domain::Event),
+    Close,
+    Closed,
+}
+#[expect(missing_debug_implementations, reason = "HTTP heads and body intake can contain credentials")]
+pub struct Server {
+    owner: Token,
+    state: State,
+    http: http::Server,
+    events: Queue<http::Event>,
+    requests: Queue<http::Request>,
+    call: Option<http::Call>,
+    head: Option<http::Call>,
+    body: Intake,
+    pending: Option<Pending>,
+    reply: Option<Box<[u8]>>,
+    offset: usize,
+    head_request: bool,
+}
+impl Server {
+    pub fn new(owner: Token, limits: &Limits) -> Result<Self, Problem> {
+        worst_case(limits).ok_or(Problem::Limits)?;
+        Ok(Self {
+            owner,
+            state: State::New,
+            http: http::Server::new(&limits.http),
+            events: Queue::with_capacity(4),
+            requests: Queue::with_capacity(4),
+            call: None,
+            head: None,
+            body: Intake::with_capacity(limits.body),
+            pending: None,
+            reply: None,
+            offset: 0,
+            head_request: false,
+        })
+    }
+    /// Takes the head with every Authorization value removed.
+    pub fn take_head(&mut self) -> Option<http::Call> {
+        self.head.take()
+    }
+    #[must_use]
+    pub fn is_settled(&self) -> bool {
+        self.state == State::Reading
+    }
+    #[must_use]
+    pub fn has_work(&self) -> bool {
+        !self.events.is_empty() || !self.requests.is_empty()
+    }
+}
+/// One connection's queues, heads, intake, decoded continuation fields and responses.
+/// Domain answers moved into continuations remain in the host's domain-reply budget.
+#[must_use]
+pub fn worst_case(limits: &Limits) -> Option<u64> {
+    if limits.body == 0 || limits.response < 128 {
+        return None;
+    }
+    http::worst_case(&limits.http)?
+        .checked_add(Queue::<http::Event>::worst_case(4)?)?
+        .checked_add(Queue::<http::Request>::worst_case(4)?)?
+        .checked_add(List::<Header>::worst_case(3)?)?
+        .checked_add(List::<Box<[u8]>>::worst_case(limits.github.inner)?.checked_mul(2)?)?
+        .checked_add(List::<u64>::worst_case(limits.github.inner)?)?
+        .checked_add(List::<Header>::worst_case(limits.http.headers)?.checked_mul(6)?)?
+        .checked_add(u64::from(limits.http.head).checked_mul(6)?)?
+        .checked_add(Intake::worst_case(limits.body)?)?
+        // Continuations retain decoded write fields, repository paths and row metadata.
+        .checked_add(u64::from(limits.body).checked_mul(16)?)?
+        .checked_add(u64::from(limits.github.target_bytes).checked_mul(16)?)?
+        .checked_add(u64::from(limits.github.string_bytes).checked_mul(16)?)?
+        .checked_add(u64::from(limits.response).checked_mul(8)?)?
+        .checked_add(u64::from(limits.http.read).checked_mul(4)?)?
+        .checked_add(u64::from(limits.http.send).checked_mul(4)?)
+}
+pub fn start(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state != State::New {
+        return;
+    }
+    next(server);
+    resume(server, service, env, above, below);
+}
+pub fn up(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    event: Up,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    match server.state {
+        State::New | State::Closing | State::Closed => return,
+        State::Reading | State::Receiving | State::Body | State::Waiting | State::Streaming => {}
+    }
+    match &event {
+        Up::Bytes(_) => {
+            if server.state == State::Reading {
+                server.state = State::Receiving;
+            }
+        }
+        Up::Room | Up::End | Up::Failed(_) => {}
+    }
+    http::up(
+        &mut server.http,
+        &Env { now: env.now, wall: env.wall, limits: env.limits.http },
+        event,
+        &mut server.events,
+        below,
+    );
+    resume(server, service, env, above, below);
+}
+/// The host routes only this connection's reply and lends the shared domain for follow-up reads.
+pub fn down(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    reply: domain::Request,
+    domain: &domain::Domain,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    let (to, result) = match reply {
+        domain::Request::Reply { to, result } => (to, result),
+        domain::Request::Hook { .. } => return,
+    };
+    if to.into_token() != server.owner || server.state != State::Waiting {
+        return;
+    }
+    let Some(pending) = server.pending.take() else { return };
+    let outcome = service.finish(pending, result, ReplyTo::new(server.owner), domain);
+    answer(server, &env.limits, outcome, above);
+    resume(server, service, env, above, below);
+}
+pub fn resume(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    for _ in 0..8u32 {
+        if above.room() < 2 || below.room() < 2 {
+            break;
+        }
+        if let Some(event) = server.events.pop() {
+            event_up(server, service, env, event, above, below);
+            // The host records this entrance before another buffered head can arrive.
+            if server.head.is_some() {
+                break;
+            }
+        } else if let Some(request) = server.requests.pop() {
+            http_down(server, env, request, below);
+        } else {
+            break;
+        }
+    }
+}
+pub fn close(
+    server: &mut Server,
+    _service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state == State::Closing || server.state == State::Closed {
+        return;
+    }
+    server.pending = None;
+    server.call = None;
+    server.reply = None;
+    server.body.clear();
+    for _ in 0..server.events.capacity() {
+        drop(server.events.pop());
+    }
+    for _ in 0..server.requests.capacity() {
+        drop(server.requests.pop());
+    }
+    http_down(server, env, http::Request::Close, below);
+    server.state = State::Closing;
+    above.push(Event::Close);
+}
+pub fn closed(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state == State::Closed {
+        return;
+    }
+    close(server, service, env, above, below);
+    server.state = State::Closed;
+    above.push(Event::Closed);
+}
+fn next(server: &mut Server) {
+    server.state = State::Reading;
+    server.requests.push(http::Request::Next);
+}
+fn http_down(server: &mut Server, env: &Env<Limits>, request: http::Request, below: &mut Queue<Down>) {
+    http::down(
+        &mut server.http,
+        &Env { now: env.now, wall: env.wall, limits: env.limits.http },
+        request,
+        &mut server.events,
+        below,
+    );
+}
+fn demand(server: &mut Server, limits: &Limits) {
+    server.requests.push(http::Request::Body(Down::Demand { read: Read::Arrived { max: limits.http.read }, room: 0 }));
+}
+fn event_up(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    event: http::Event,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    match event {
+        http::Event::Call(call) => {
+            assert!(server.head.is_none(), "owner takes the captured head before reuse");
+            let mut snapshot = call.clone();
+            for header in &mut snapshot.headers {
+                if header.is(b"authorization") {
+                    header.value = Box::new([]);
+                }
+            }
+            server.head = Some(snapshot);
+            server.head_request = call.method == HttpMethod::Head;
+            server.call = Some(call);
+            server.body.clear();
+            server.state = State::Body;
+            demand(server, &env.limits);
+        }
+        http::Event::Body(Up::Bytes(chunk)) => {
+            if server.body.append(&chunk).is_err() {
+                server.requests.push(http::Request::Discard);
+                respond(server, &env.limits, answers::refusal(413, crate::texts::PAYLOAD_TOO_LARGE, &env.limits), None);
+            } else {
+                demand(server, &env.limits);
+            }
+        }
+        http::Event::Body(Up::End) => dispatch(server, service, env, above),
+        http::Event::Body(Up::Room) | http::Event::Closed => {}
+        http::Event::Reply(Up::Room) => {
+            let reply = server.reply.as_ref().expect("reply stream");
+            let end =
+                server.offset.saturating_add(usize::try_from(env.limits.http.send).expect("u32 fits")).min(reply.len());
+            let chunk = bytes::copy_of(reply.get(server.offset..end).expect("bounded chunk"));
+            server.offset = end;
+            server.requests.push(http::Request::Reply(Down::Send(chunk)));
+            if end == reply.len() {
+                server.reply = None;
+                server.requests.push(http::Request::Reply(Down::Finish));
+            } else {
+                reply_room(server, &env.limits);
+            }
+        }
+        http::Event::Body(Up::Failed(_))
+        | http::Event::Reply(Up::Bytes(_) | Up::End | Up::Failed(_))
+        | http::Event::Refused(_)
+        | http::Event::Failed(_)
+        | http::Event::Ended => close(server, service, env, above, below),
+        http::Event::Done(reuse) => {
+            server.call = None;
+            server.body.clear();
+            match reuse {
+                http::Reuse::Keep => next(server),
+                http::Reuse::Close => close(server, service, env, above, below),
+            }
+        }
+    }
+}
+fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above: &mut Queue<Event>) {
+    let call = server.call.take().expect("accepted head");
+    let method = match call.method {
+        HttpMethod::Get => Method::Get,
+        HttpMethod::Post => Method::Post,
+        HttpMethod::Put => Method::Put,
+        HttpMethod::Patch => Method::Patch,
+        HttpMethod::Delete => Method::Delete,
+        HttpMethod::Head | HttpMethod::Options => {
+            respond(server, &env.limits, answers::refusal(405, crate::texts::METHOD_NOT_ALLOWED, &env.limits), None);
+            return;
+        }
+    };
+    let body = if server.body.is_empty() {
+        Box::new([])
+    } else {
+        server.body.meet(Read::Fill(server.body.len())).expect("whole body")
+    };
+    if call.target.starts_with(b"/settings/")
+        || call.target.starts_with(b"/organizations/")
+        || call.target.starts_with(b"/apps/")
+    {
+        let page = service.page(&pages::Page { method, target: &call.target, body: &body }, env.wall);
+        let content_type = match page.media {
+            pages::Media::Html => crate::service::ContentType::Html,
+            pages::Media::None => crate::service::ContentType::Json,
+        };
+        respond(
+            server,
+            &env.limits,
+            Response { status: page.status, link: None, body: page.body, content_type },
+            page.location,
+        );
+    } else {
+        let outcome = service.request(
+            &Request {
+                method,
+                target: &call.target,
+                body: &body,
+                authorization: call.header(b"authorization"),
+                version: call.header(b"x-github-api-version"),
+                agent: call.header(b"user-agent").is_some(),
+            },
+            env.wall,
+            ReplyTo::new(server.owner),
+        );
+        answer(server, &env.limits, outcome, above);
+    }
+}
+fn answer(server: &mut Server, limits: &Limits, outcome: Outcome, above: &mut Queue<Event>) {
+    match outcome {
+        Outcome::Reply(reply) => respond(server, limits, reply, None),
+        Outcome::Call(pending, event) => {
+            server.pending = Some(pending);
+            server.state = State::Waiting;
+            above.push(Event::Domain(event));
+        }
+    }
+}
+fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut location: Option<Box<[u8]>>) {
+    let location_bytes = match &location {
+        Some(value) => value.len(),
+        None => 0,
+    };
+    if reply.body.len() > usize::try_from(limits.response).expect("u32 fits")
+        || location_bytes > usize::try_from(limits.response).expect("u32 fits")
+    {
+        reply = answers::failed();
+        location = None;
+    }
+    let mut headers = List::with_capacity(3);
+    if let Some(link) = reply.link {
+        headers.push(Header { name: bytes::copy_of(b"Link"), value: link }).expect("link slot");
+    }
+    if let Some(location) = location {
+        headers.push(Header { name: bytes::copy_of(b"Location"), value: location }).expect("location slot");
+    }
+    let length = u64::try_from(reply.body.len()).expect("bounded reply");
+    if length > 0 {
+        headers
+            .push(Header { name: bytes::copy_of(b"Content-Type"), value: bytes::copy_of(reply.content_type.bytes()) })
+            .expect("media slot");
+    }
+    server.state = State::Streaming;
+    server.offset = 0;
+    server.reply = if length > 0 { Some(reply.body) } else { None };
+    server.requests.push(http::Request::Respond(http::Response {
+        status: reply.status,
+        headers: headers.into_boxed(),
+        body: if reply.status == 204 { http::Body::None } else { http::Body::Length(length) },
+        close: false,
+    }));
+    if length > 0 && !server.head_request {
+        reply_room(server, limits);
+    } else if reply.status != 204 && !server.head_request {
+        server.requests.push(http::Request::Reply(Down::Finish));
+    }
+}
+fn reply_room(server: &mut Server, limits: &Limits) {
+    let remaining = server.reply.as_ref().expect("reply body").len().saturating_sub(server.offset);
+    server.requests.push(http::Request::Reply(Down::Demand {
+        read: Read::Nothing,
+        room: u32::try_from(remaining).unwrap_or(u32::MAX).min(limits.http.send),
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::fixtures;
+
+    // The body fixture has four bytes; the refusal fixture adds one.
+    const BODY_BOUND: u32 = 4;
+    fn intake(body: &[u8]) -> (u16, u32) {
+        let limits = Limits { body: BODY_BOUND, ..fixtures::limits() };
+        let mut server = Server::new(Token::new(1), &limits).expect("bounded HTTP server");
+        let mut service = Service::new(fixtures::config(), &limits, 1).expect("bounded service");
+        let env = Env { now: skein_lib::Time::ZERO, wall: skein_lib::Wall::EPOCH, limits };
+        let mut above = Queue::with_capacity(MAX_UP);
+        let mut below = Queue::with_capacity(MAX_DOWN);
+        let mut call = http::Call {
+            method: HttpMethod::Post,
+            version: skein_http::Version::Http11,
+            body: http::Body::Length(u64::from(BODY_BOUND)),
+            target: bytes::copy_of(b"/unknown"),
+            headers: Box::new([]),
+        };
+        call.headers = Box::new([
+            Header { name: bytes::copy_of(b"User-Agent"), value: bytes::copy_of(b"example-app") },
+            Header {
+                name: bytes::copy_of(b"X-GitHub-Api-Version"),
+                value: bytes::copy_of(skein_forge::github::pin::API_VERSION.as_bytes()),
+            },
+        ]);
+        event_up(&mut server, &mut service, &env, http::Event::Call(call), &mut above, &mut below);
+        drop(server.requests.pop());
+        event_up(
+            &mut server,
+            &mut service,
+            &env,
+            http::Event::Body(Up::Bytes(bytes::copy_of(body))),
+            &mut above,
+            &mut below,
+        );
+        if server.state == State::Body {
+            drop(server.requests.pop());
+            event_up(&mut server, &mut service, &env, http::Event::Body(Up::End), &mut above, &mut below);
+        } else {
+            drop(server.requests.pop());
+        }
+        let Some(http::Request::Respond(response)) = server.requests.pop() else { panic!("HTTP refusal") };
+        (response.status, server.body.len())
+    }
+    #[test]
+    fn github_http_intake_accepts_a_body_at_its_bound() {
+        assert_eq!(intake(b"body"), (404, 0));
+    }
+    #[test]
+    fn github_http_intake_refuses_one_byte_past_its_bound() {
+        let (status, retained) = intake(b"body!");
+        assert_eq!(status, 413);
+        assert!(retained <= BODY_BOUND);
+    }
+}

@@ -62,7 +62,7 @@ fn an_app_jwt_lists_installations_paged_with_a_link() {
     assert!(body.contains("\"id\":1,\"account\":"));
     assert!(body.contains("\"id\":2,\"account\":"));
     assert!(!body.contains("\"id\":3,\"account\":"));
-    assert!(head.contains("\r\nLink: <https://api.github.com/app/installations?per_page=100&page=2>; rel=\"next\""));
+    assert!(head.contains("\r\nLink: <http://127.0.0.1:3000/app/installations?per_page=100&page=2>; rel=\"next\""));
     let second =
         fake.serve(&request("GET", "/app/installations?per_page=100&page=2", Some(&jwt), true, true, b""), wall(1200));
     let (head, body) = response(&second, "HTTP/1.1 200 OK\r\n");

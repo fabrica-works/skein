@@ -86,7 +86,7 @@ fn github_fake_installations_list_pages() {
         }
         assert_eq!(response.link.is_some(), linked);
         if let Some(link) = response.link {
-            assert_eq!(link.as_ref(), b"<https://api.github.com/app/installations?per_page=100&page=2>; rel=\"next\", <https://api.github.com/app/installations?per_page=100&page=2>; rel=\"last\"");
+            assert_eq!(link.as_ref(), b"<http://127.0.0.1:3000/app/installations?per_page=100&page=2>; rel=\"next\", <http://127.0.0.1:3000/app/installations?per_page=100&page=2>; rel=\"last\"");
         }
     }
     let response = h.app(Method::Get, b"/app/installations/99", b"");

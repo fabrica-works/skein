@@ -10,7 +10,7 @@ use crate::{
 use alloc::boxed::Box;
 use skein_fake_forge_domain as fake;
 use skein_forge::github::{self, document as d, request, server};
-use skein_lib::{List, Map, ReplyTo, Wall, Writer};
+use skein_lib::{List, Map, Overflow, ReplyTo, Wall, Writer};
 
 /// GitHub's repository metadata absent from the shared domain.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -55,6 +55,8 @@ pub enum Shown {
 /// The scenario's GitHub-only tables, including the signed-in browser account.
 #[derive(Debug)]
 pub struct Config {
+    /// Origin used by pagination links; a socket host sets its bound origin before serving.
+    pub base: Box<[u8]>,
     /// App identity and test signing key.
     pub app: App,
     /// Grants at conversion and fields shown by GET /app.
@@ -80,6 +82,8 @@ pub struct Config {
 /// All retained tables and transient input/output are bounded here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Limits {
+    /// HTTP framing and per-connection input/output bounds.
+    pub http: skein_http::server::Limits,
     /// The dialect's document and target bounds; inner caps repository rows.
     pub github: github::limits::Limits,
     /// Installation, token and per-installation reach capacities.
@@ -127,10 +131,29 @@ impl core::fmt::Debug for Request<'_> {
             .finish()
     }
 }
+/// The finite media types served by the API and browser routes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContentType {
+    Json,
+    Octets,
+    Html,
+}
+impl ContentType {
+    #[must_use]
+    pub const fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::Json => b"application/json",
+            Self::Octets => b"application/octet-stream",
+            Self::Html => b"text/html",
+        }
+    }
+}
 /// An encoded document, with no HTTP framing. Debug redacts minted tokens.
 pub struct Response {
     /// GitHub status.
     pub status: u16,
+    /// Media type of this route's body.
+    pub content_type: ContentType,
     /// Optional absolute next and last links.
     pub link: Option<Box<[u8]>>,
     /// JSON document, raw file bytes, or empty on 204.
@@ -140,6 +163,7 @@ impl core::fmt::Debug for Response {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Response")
             .field("status", &self.status)
+            .field("content_type", &self.content_type)
             .field("link", &self.link)
             .field("body_bytes", &self.body.len())
             .finish()
@@ -168,6 +192,7 @@ pub(crate) enum PendingKind {
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
 pub struct Service {
+    pub(crate) base: Box<[u8]>,
     pub(crate) app: App,
     pub(crate) app_facts: AppFacts,
     pub(crate) bot: u64,
@@ -191,6 +216,7 @@ impl Service {
         }
         let string = usize::try_from(limits.github.string_bytes).or(Err(Problem::Limits))?;
         if config.ruleset_id == 0
+            || !valid_origin(&config.base, limits.github.target_bytes)
             || config.bot == 0
             || config.bot == config.app.id
             || config.app.id == 0
@@ -267,6 +293,7 @@ impl Service {
             }
         }
         Ok(Self {
+            base: config.base,
             app: config.app,
             app_facts: config.app_facts,
             bot: config.bot,
@@ -309,6 +336,10 @@ impl Service {
     /// Checks User-Agent, version, route, credential, installation state/reach,
     /// then the body. Every refusal precedes a domain call.
     pub fn request(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
+        let outcome = self.request_inner(request, now, reply_to);
+        self.local_links(outcome)
+    }
+    fn request_inner(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
         let limits = &self.limits;
         if !request.agent {
             return Outcome::Reply(answers::refusal(403, b"User agent required", limits));
@@ -412,10 +443,48 @@ impl Service {
         reply_to: ReplyTo,
         domain: &fake::Domain,
     ) -> Outcome {
-        match pending.kind {
+        let outcome = match pending.kind {
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
+        };
+        self.local_links(outcome)
+    }
+    /// A host supplies its bound local origin before it accepts requests.
+    pub fn set_origin(&mut self, base: Box<[u8]>) -> Result<(), Problem> {
+        if !valid_origin(&base, self.limits.github.target_bytes) {
+            return Err(Problem::Config);
         }
+        self.base = base;
+        Ok(())
+    }
+    fn local_links(&self, outcome: Outcome) -> Outcome {
+        let mut response = match outcome {
+            Outcome::Reply(response) => response,
+            call @ Outcome::Call(_, _) => return call,
+        };
+        if let Some(link) = response.link.take() {
+            // The dialect renders its pinned public origin. The fake's Config
+            // supplies the origin for every link, including continuation replies.
+            let mut out = Writer::new(usize::try_from(self.limits.response).expect("bounded response"));
+            let mut rest = link.as_ref();
+            // A numbered page has at most next and last links.
+            for _ in 0..2u32 {
+                let Some(at) = skein_lib::bytes::find(rest, b"<https://api.github.com") else { break };
+                let Some(prefix) = rest.get(..at) else { return Outcome::Reply(answers::failed()) };
+                if local_link_chunk(&mut out, prefix, &self.base).is_err() {
+                    return Outcome::Reply(answers::failed());
+                }
+                let Some(tail) = rest.get(at.saturating_add(b"<https://api.github.com".len())..) else {
+                    return Outcome::Reply(answers::failed());
+                };
+                rest = tail;
+            }
+            if out.put(rest).is_err() {
+                return Outcome::Reply(answers::failed());
+            }
+            response.link = answers::finish(out);
+        }
+        Outcome::Reply(response)
     }
     fn app_route(&mut self, route: routes::App, request: &Request<'_>, now: Wall) -> Response {
         if !self.body_fits(request.body) {
@@ -446,7 +515,7 @@ impl Service {
             routes::App::Mint(id) => self.mint(id, request.body, now),
             routes::App::Uninstall(id) => {
                 if self.installations.remove(id) {
-                    Response { status: 204, link: None, body: Box::from([]) }
+                    Response { content_type: ContentType::Json, status: 204, link: None, body: Box::from([]) }
                 } else {
                     answers::missing(&self.limits)
                 }
@@ -599,9 +668,10 @@ pub(crate) fn joined(first: &[u8], last: &[u8]) -> Option<Box<[u8]>> {
     Some(out.finish())
 }
 
-/// Heap held by the tables plus one request's encoding/decoding scratch.
-/// The caller owns and budgets domain replies, input bytes, returned responses
-/// and outstanding `Pending` values; this service retains none of those.
+/// The layer's service scratch and one HTTP connection, including caller-owned
+/// continuations and framing buffers. A host adds one connection envelope per
+/// additional connection and budgets the shared domain's replies separately,
+/// including domain payloads moved into a continuation.
 #[must_use]
 pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     if github::limits::check(&limits.github).is_err()
@@ -616,7 +686,10 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     {
         return None;
     }
-    let mut bytes = pages::worst_case(limits)?.checked_add(List::<Account>::worst_case(config.accounts.capacity())?)?;
+    let mut bytes = crate::server::worst_case(limits)?
+        .checked_add(u64::from(limits.github.target_bytes))?
+        .checked_add(pages::worst_case(limits)?)?
+        .checked_add(List::<Account>::worst_case(config.accounts.capacity())?)?;
     for account in &config.accounts {
         bytes = bytes.checked_add(u64::try_from(account.login.len()).ok()?)?;
     }
@@ -682,4 +755,27 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         .checked_add(u64::from(limits.response).checked_mul(8)?)?
         .checked_add(u64::from(limits.github.target_bytes).checked_mul(8)?)?
         .checked_add(u64::from(limits.github.string_bytes).checked_mul(8)?)
+}
+
+fn valid_origin(base: &[u8], cap: u32) -> bool {
+    let Ok(length) = u32::try_from(base.len()) else { return false };
+    if length > cap {
+        return false;
+    }
+    let Some(host) = base.strip_prefix(b"http://") else { return false };
+    if host.is_empty() {
+        return false;
+    }
+    for byte in host {
+        if *byte <= b' ' || *byte == b'/' || *byte == b'?' || *byte == b'#' || *byte == 127 {
+            return false;
+        }
+    }
+    true
+}
+
+fn local_link_chunk(out: &mut Writer, prefix: &[u8], base: &[u8]) -> Result<(), Overflow> {
+    out.put(prefix)?;
+    out.put(b"<")?;
+    out.put(base)
 }

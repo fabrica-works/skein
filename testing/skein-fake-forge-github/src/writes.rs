@@ -380,7 +380,7 @@ pub(crate) fn finish(
             let a::Answer::Done = answer else {
                 return Outcome::Reply(answers::failed());
             };
-            Response { status: 204, link: None, body: Box::from([]) }
+            Response { content_type: crate::service::ContentType::Json, status: 204, link: None, body: Box::from([]) }
         }
         Stage::Status => {
             let a::Answer::Done = answer else {

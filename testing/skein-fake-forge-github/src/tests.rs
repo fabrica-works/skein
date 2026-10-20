@@ -1,6 +1,6 @@
 mod app;
 mod app_facts;
-mod fixtures;
+pub(crate) mod fixtures;
 mod installations;
 mod keys;
 mod pages_conversion;

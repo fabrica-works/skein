@@ -12,7 +12,10 @@ pub mod manifest;
 pub mod pages;
 mod reads;
 mod routes;
+pub mod server;
 pub mod service;
+pub use server::{Event, MAX_DOWN, MAX_UP, Server, close, closed, down, resume, start, up};
+pub use service::{Config, Limits, Problem, Service, worst_case};
 mod texts;
 mod writes;
 

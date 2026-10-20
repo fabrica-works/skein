@@ -56,3 +56,6 @@ pub(crate) const MERGE_CONFLICT: &[u8] = b"MERGE_CONFLICT";
 pub(crate) const BRANCH_NOT_PROTECTED: &[u8] = b"Branch not protected";
 // unrecorded: o/github will record it.
 pub(crate) const ENQUEUE_APPROVALS: &[u8] = b"unrecorded: o/github will record it";
+// Unrecorded: HTTP admission refusals before GitHub route decoding.
+pub(crate) const PAYLOAD_TOO_LARGE: &[u8] = b"Payload Too Large";
+pub(crate) const METHOD_NOT_ALLOWED: &[u8] = b"Method Not Allowed";

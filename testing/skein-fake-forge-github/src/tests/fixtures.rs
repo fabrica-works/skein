@@ -46,6 +46,7 @@ pub fn config() -> Config {
         accounts.push(Account { login: boxed(login), id, organization }).expect("fixture accounts");
     }
     Config {
+        base: boxed(b"http://127.0.0.1:3000"),
         app: app(),
         app_facts: service::AppFacts::Complete,
         shown: service::Shown::Ruleset,
@@ -61,6 +62,14 @@ pub fn config() -> Config {
 }
 pub fn limits() -> Limits {
     Limits {
+        http: skein_http::server::Limits {
+            head: 4096,
+            headers: 16,
+            body: 4096,
+            read: 1024,
+            response: 16384,
+            send: 1024,
+        },
         github: github::limits::Limits {
             json: tokenizer::Limits { depth: 10, string: 4096, number: 32, chunk: 128, length: 8192 },
             writer: writer::Limits { depth: 10, length: 8192 },
@@ -456,7 +465,12 @@ pub fn converted() -> Harness {
 pub fn page_refusal(h: &Harness, answer: crate::pages::Answer, status: u16, message: &[u8]) {
     assert!(answer.location.is_none(), "refusals never redirect");
     assert_eq!(answer.media, crate::pages::Media::None);
-    refusal(h, &Response { status: answer.status, body: answer.body, link: None }, status, message);
+    refusal(
+        h,
+        &Response { content_type: service::ContentType::Json, status: answer.status, body: answer.body, link: None },
+        status,
+        message,
+    );
 }
 
 pub fn domain_config() -> fake::Config {

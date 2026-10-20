@@ -31,21 +31,6 @@ impl Fake {
     /// Scenario-only App metadata and hook, using the dialect's public configuration.
     #[must_use]
     pub fn scenario(seed: u64, facts: AppFacts, complete: bool, hook: &[u8]) -> Self {
-        let mut repositories = List::with_capacity(3);
-        for (id, name, organization, private) in
-            [(4, b"tools".as_slice(), false, false), (2, b"widgets", true, true), (6, b"absent", true, false)]
-        {
-            repositories
-                .push(Row {
-                    id,
-                    owner: Box::from(b"acme".as_slice()),
-                    owner_id: 22,
-                    organization,
-                    name: Box::from(name),
-                    private,
-                })
-                .expect("fixture rows");
-        }
         let mut accounts = List::with_capacity(2);
         for (login, id, organization) in [(b"acme".as_slice(), 22, true), (b"alice".as_slice(), 31, false)] {
             accounts.push(Account { login: Box::from(login), id, organization }).expect("fixture accounts");
@@ -65,6 +50,7 @@ impl Fake {
             Box::from([])
         };
         let config = Config {
+            base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),
@@ -81,11 +67,19 @@ impl Fake {
             required_signatures: false,
             bot: 9,
             hook: Box::from(hook),
-            repositories,
+            repositories: fixture_repositories(),
             accounts,
             person: Box::from(b"alice".as_slice()),
         };
         let limits = Limits {
+            http: skein_http::server::Limits {
+                head: 4096,
+                headers: 16,
+                body: 4096,
+                read: 1024,
+                response: 16384,
+                send: 1024,
+            },
             github: github::limits::Limits {
                 json: tokenizer::Limits { depth: 10, string: 4096, number: 32, chunk: 128, length: 8192 },
                 writer: writer::Limits { depth: 10, length: 8192 },
@@ -193,6 +187,25 @@ impl Fake {
     pub fn manifest(&self, state: &[u8]) -> Option<&Manifest> {
         self.service.manifest(state)
     }
+}
+
+fn fixture_repositories() -> List<Row> {
+    let mut repositories = List::with_capacity(3);
+    for (id, name, organization, private) in
+        [(4, b"tools".as_slice(), false, false), (2, b"widgets", true, true), (6, b"absent", true, false)]
+    {
+        repositories
+            .push(Row {
+                id,
+                owner: Box::from(b"acme".as_slice()),
+                owner_id: 22,
+                organization,
+                name: Box::from(name),
+                private,
+            })
+            .expect("fixture rows");
+    }
+    repositories
 }
 
 fn parse(request: &[u8]) -> Request<'_> {
