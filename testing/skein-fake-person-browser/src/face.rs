@@ -28,6 +28,11 @@ struct Keeping {
     attribute: Box<[u8]>,
     name: Box<[u8]>,
 }
+enum CommandState {
+    Idle,
+    Pending,
+    Done,
+}
 type KeptValue = (Box<[u8]>, Box<[u8]>);
 
 /// One page's asynchronous semantic face. Nodes are numbered locally.
@@ -51,6 +56,8 @@ pub struct BrowserFace<'a> {
     keep: Option<Keeping>,
     kept: Option<KeptValue>,
     keep_done: bool,
+    command: Option<crate::harness::CommandAction>,
+    command_state: CommandState,
 }
 
 impl<'a> BrowserFace<'a> {
@@ -76,6 +83,8 @@ impl<'a> BrowserFace<'a> {
             keep: None,
             kept: None,
             keep_done: false,
+            command: None,
+            command_state: CommandState::Idle,
         }
     }
     pub fn title(&mut self, words: &[u8]) -> Found {
@@ -113,7 +122,34 @@ impl<'a> BrowserFace<'a> {
     }
     #[must_use]
     pub fn pending(&self) -> bool {
-        self.search.is_some() || self.acting.is_some() || self.keep.is_some()
+        self.search.is_some()
+            || self.acting.is_some()
+            || self.keep.is_some()
+            || matches!(self.command_state, CommandState::Pending)
+    }
+    pub(crate) fn command(&mut self, action: crate::harness::CommandAction) {
+        self.command = Some(action);
+        self.command_state = CommandState::Pending;
+    }
+    pub(crate) fn command_action(&mut self) -> Option<crate::harness::CommandAction> {
+        self.command.take()
+    }
+    pub(crate) fn command_complete(&mut self) {
+        self.command_state = CommandState::Done;
+    }
+    pub(crate) fn command_done(&mut self) -> bool {
+        if matches!(self.command_state, CommandState::Done) {
+            self.command_state = CommandState::Idle;
+            true
+        } else {
+            false
+        }
+    }
+    pub(crate) fn navigating(&self) -> bool {
+        self.acting.is_some()
+    }
+    pub(crate) fn failed(&self) -> bool {
+        self.failure.is_some()
     }
     pub(crate) fn keep(&mut self, selector: Box<[u8]>, attribute: Option<Box<[u8]>>, name: Box<[u8]>) {
         let op = self.token();
@@ -226,7 +262,7 @@ impl<'a> BrowserFace<'a> {
             self.fail(format!("unknown origin {origin}"));
         }
     }
-    fn absolute(&mut self, url: Box<[u8]>) {
+    pub(crate) fn absolute(&mut self, url: Box<[u8]>) {
         let op = self.token();
         self.warned = false;
         self.go = Some(op);

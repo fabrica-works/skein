@@ -7,6 +7,11 @@ use std::collections::VecDeque;
 mod growth;
 
 pub enum Step {
+    Run(super::Command),
+    Exited {
+        code: i32,
+        within: Duration,
+    },
     Person(skein_fake_person::Step<Box<[u8]>>),
     Keep {
         selector: Box<[u8]>,
@@ -70,6 +75,7 @@ pub struct Script {
     action: Option<ServerAction>,
     title: Option<Box<[u8]>>,
     keeping: bool,
+    commanding: bool,
     focused: Option<skein_fake_person::Find>,
     growth: Option<growth::Growth>,
     press: Option<(skein_fake_person::Find, skein_browser::boundary::Point)>,
@@ -88,6 +94,7 @@ impl Script {
             action: None,
             title: None,
             keeping: false,
+            commanding: false,
             focused: None,
             press: None,
             growth: None,
@@ -197,6 +204,13 @@ impl Script {
 impl Play for Script {
     #[expect(clippy::too_many_lines, reason = "one match lists the script's steps")]
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
+        if self.commanding {
+            if face.command_done() {
+                self.commanding = false;
+                self.at += 1;
+            }
+            return Next::Wait { until: None };
+        }
         if self.keeping {
             if face.kept_done() {
                 self.keeping = false;
@@ -252,6 +266,14 @@ impl Play for Script {
             Step::Key(key) | Step::KeyWithShift(key) => {
                 face.key(key, matches!(step, Step::KeyWithShift(_)));
                 self.at += 1;
+            }
+            Step::Run(command) => {
+                face.command(super::CommandAction::Run(command));
+                self.commanding = true;
+            }
+            Step::Exited { code, within } => {
+                face.command(super::CommandAction::Exit { code, within });
+                self.commanding = true;
             }
             Step::Keep { selector, attribute, name } => {
                 face.keep(selector, attribute, name);
@@ -328,6 +350,10 @@ impl Play for Script {
         self.at + self.person.as_ref().map_or(0, Person::at)
     }
     fn check_deadline(&mut self, face: &mut BrowserFace<'_>, now: Time) {
+        if self.commanding && face.command_done() {
+            self.commanding = false;
+            self.at += 1;
+        }
         if self.keeping && face.kept_done() {
             self.keeping = false;
             self.at += 1;

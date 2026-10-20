@@ -10,6 +10,7 @@ fn setup() -> Setup<'static> {
         server: server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), example_bundle().into_os_string()],
         printed: skein_fake_person_browser::harness::Printed {
+            sent: skein_fake_person_browser::harness::Sent::Page,
             prefix: b"skein-ui-example: listening at ",
             on: skein_fake_person_browser::harness::Output::Stderr,
             names: skein_fake_person_browser::harness::Names::Address,

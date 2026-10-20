@@ -31,9 +31,36 @@ pub struct Lent<'a> {
 
 #[derive(Clone, Copy)]
 pub struct Printed<'a> {
+    pub sent: Sent,
     pub prefix: &'a [u8],
     pub on: Output,
     pub names: Names,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Sent {
+    Page,
+    Command,
+}
+pub struct Command {
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+    pub env: Vec<(OsString, OsString)>,
+    pub stdin: Stdin,
+    pub opens: Option<Opens>,
+    pub within: Duration,
+}
+pub enum Stdin {
+    Closed,
+    Printed,
+}
+pub struct Opens {
+    pub prefix: Box<[u8]>,
+    pub on: Output,
+    pub keep: Box<[u8]>,
+}
+pub(crate) enum CommandAction {
+    Run(Command),
+    Exit { code: i32, within: Duration },
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Output {
@@ -86,6 +113,7 @@ pub trait Play {
         None
     }
 }
+mod commands;
 mod request;
 mod script;
 pub use script::{Script, Step};
@@ -109,6 +137,7 @@ pub struct Harness {
     kept: Vec<Kept>,
     server: PathBuf,
     args: Vec<OsString>,
+    sent: Sent,
     prefix: Box<[u8]>,
     output: Output,
     names: Names,
@@ -124,6 +153,7 @@ impl Harness {
             kept: Vec::new(),
             server: setup.server,
             args: setup.args,
+            sent: setup.printed.sent,
             prefix: setup.printed.prefix.into(),
             output: setup.printed.on,
             names: setup.printed.names,
@@ -166,6 +196,11 @@ enum ServerState {
 }
 struct Runtime {
     kept: Vec<Kept>,
+    commands: Vec<Option<commands::Process>>,
+    command_serial: u64,
+    pending_commands: Vec<Option<Command>>,
+    held: Vec<Option<Box<[u8]>>>,
+    raw_lines: Vec<Box<[u8]>>,
     request_serial: u64,
     exchanges: Vec<request::Exchange>,
     expected: Vec<Vec<Box<[u8]>>>,
@@ -224,25 +259,8 @@ impl Runtime {
             })
             .collect()
     }
-    fn new(setup: &Harness, profile: &std::path::Path, people: &[&mut dyn Play], peers: &[u32]) -> Self {
-        let bl = browser::Limits::default();
-        let capacity = capacity::Capacity::new(
-            u32::try_from(people.len()).expect("person count fits"),
-            u32::try_from(setup.origins.len()).expect("origin count fits"),
-            setup.output,
-            &bl,
-        )
-        .expect("harness capacity fits");
-        let il = capacity.io;
-        let mut limits = vec![capacity.operations, capacity::ROOT_OPERATIONS];
-        limits.extend_from_slice(peers);
-        let operations =
-            limits.iter().try_fold(0_u32, |total, limit| total.checked_add(*limit)).expect("shared ring capacity fits");
-        let ring = Ring::new(operations, limits).expect("io_uring is required for the browser suite");
-        let command = browser::command::command(setup.chromium.as_os_str().as_bytes(), profile.as_os_str().as_bytes());
-        let root = open_root(std::path::Path::new("/")).expect("child root");
-        let server_root = open_root(std::path::Path::new("/")).expect("server root");
-        let browser_spawn = Spawn {
+    fn browser_spawn(command: browser::command::Command, root: kernel::Fd) -> Spawn {
+        Spawn {
             program: command.program,
             args: command.args.into_boxed(),
             env: command
@@ -269,7 +287,27 @@ impl Runtime {
                     parent: None,
                 })
                 .collect(),
-        };
+        }
+    }
+    fn new(setup: &Harness, profile: &std::path::Path, people: &[&mut dyn Play], peers: &[u32]) -> Self {
+        let bl = browser::Limits::default();
+        let capacity = capacity::Capacity::new(
+            u32::try_from(people.len()).expect("person count fits"),
+            u32::try_from(setup.origins.len()).expect("origin count fits"),
+            setup.output,
+            &bl,
+        )
+        .expect("harness capacity fits");
+        let il = capacity.io;
+        let mut limits = vec![capacity.operations, capacity::ROOT_OPERATIONS];
+        limits.extend_from_slice(peers);
+        let operations =
+            limits.iter().try_fold(0_u32, |total, limit| total.checked_add(*limit)).expect("shared ring capacity fits");
+        let ring = Ring::new(operations, limits).expect("io_uring is required for the browser suite");
+        let command = browser::command::command(setup.chromium.as_os_str().as_bytes(), profile.as_os_str().as_bytes());
+        let root = open_root(std::path::Path::new("/")).expect("child root");
+        let server_root = open_root(std::path::Path::new("/")).expect("server root");
+        let browser_spawn = Self::browser_spawn(command, root);
         let server_spawn = Spawn {
             program: setup.server.as_os_str().as_bytes().into(),
             args: setup.args.iter().map(|arg| arg.as_bytes().into()).collect(),
@@ -280,6 +318,11 @@ impl Runtime {
         };
         Self {
             kept: Vec::new(),
+            commands: (0..people.len()).map(|_| None).collect(),
+            command_serial: 0,
+            pending_commands: (0..people.len()).map(|_| None).collect(),
+            held: vec![None; people.len()],
+            raw_lines: Vec::new(),
             request_serial: 0,
             exchanges: Vec::new(),
             expected: people.iter().map(|play| play.expected()).collect(),
@@ -369,9 +412,27 @@ impl Runtime {
         let selected = usize::from(setup.output == Output::Stdout);
         if self.server_pipes.get(selected) == Some(&owner) {
             self.output.extend_from_slice(bytes);
+            self.raw_lines.extend(
+                self.output
+                    .split_inclusive(|byte| *byte == b'\n')
+                    .filter(|line| {
+                        line.ends_with(b"\n")
+                            && !printed(
+                                line,
+                                &Printed {
+                                    sent: setup.sent,
+                                    prefix: &setup.prefix,
+                                    on: setup.output,
+                                    names: setup.names,
+                                },
+                            )
+                            .is_empty()
+                    })
+                    .map(Box::from),
+            );
             self.lines.extend(printed(
                 &self.output,
-                &Printed { prefix: &setup.prefix, on: setup.output, names: setup.names },
+                &Printed { sent: setup.sent, prefix: &setup.prefix, on: setup.output, names: setup.names },
             ));
             if let Some(end) = self.output.iter().rposition(|b| *b == b'\n') {
                 self.output.drain(..=end);
@@ -386,6 +447,19 @@ impl Runtime {
         }
     }
     fn io_event(&mut self, event: io::Event, setup: &Harness) {
+        if self.command_event(&event) {
+            let index = self
+                .commands
+                .iter()
+                .position(|command| {
+                    command
+                        .as_ref()
+                        .is_some_and(|command| command.owns(event_owner(&event).expect("command event owner")))
+                })
+                .expect("owned command event");
+            self.commands[index].as_mut().expect("command").event(event);
+            return;
+        }
         let Some(event) = request::route(&mut self.exchanges, event).and_then(|event| self.origin_event(event)) else {
             return;
         };
@@ -559,6 +633,9 @@ impl Runtime {
         for exchange in &mut self.exchanges {
             exchange.stop();
         }
+        for command in self.commands.iter_mut().flatten() {
+            command.stop();
+        }
         self.close_root(0);
         if self.startup.is_empty() {
             self.ask(Request::Close { entity: BROWSER });
@@ -591,6 +668,7 @@ impl Runtime {
                 self.server_stderr.clear();
                 self.output.clear();
                 self.lines.clear();
+                self.raw_lines.clear();
                 let args =
                     restart(&setup.restart, self.address.as_deref().expect("server address"), &self.peer_addresses);
                 self.requests.push_back(io::Request::Spawn {
@@ -650,11 +728,24 @@ impl Runtime {
                     }
                 }
                 Next::Wait { .. } => {}
-                Next::Done => done[index] = true,
+                Next::Done => {
+                    if let Some(command) = &mut self.commands[index]
+                        && command.exit.is_none()
+                    {
+                        let name = command.name.clone();
+                        command.stop();
+                        self.fail(index, play.at(), format!("command {name} still running at story end"));
+                    } else {
+                        done[index] = true;
+                    }
+                }
                 Next::Failed { step, why } => {
                     self.fail(index, step, format!("{why:?}"));
                     break;
                 }
+            }
+            if let Some(action) = face.command_action() {
+                self.command_action(index, action, face, play.at(), now);
             }
             if let Some(asked) = play.request() {
                 self.exchanges.push(request::Exchange::new(
@@ -706,7 +797,19 @@ impl Runtime {
         }
         while let Some(event) = self.events.pop() {
             for (index, face) in faces.iter_mut().enumerate() {
+                let navigating = face.navigating();
                 BrowserFace::event(face, &event);
+                if navigating
+                    && !face.navigating()
+                    && let Some(command) = &mut self.commands[index]
+                    && command.opening()
+                    && command.error.is_none()
+                {
+                    if let commands::Progress::Kept { name, value } = command.advance(now, false, face.failed()) {
+                        self.kept.push(Kept { person: u32::try_from(index).expect("person fits"), name, value });
+                    }
+                    face.command_complete();
+                }
                 if let Some((name, value)) = face.kept() {
                     self.kept.push(Kept { person: u32::try_from(index).expect("person fits"), name, value });
                 }
@@ -724,11 +827,14 @@ impl Runtime {
             && self.opening < faces.len()
             && let Some(line) = opening(&self.lines, setup.names, self.opening)
         {
-            faces[self.opening].first_url.clone_from(&line.url);
+            let raw_index = if setup.names == Names::Address { 0 } else { self.opening };
+            self.held[self.opening] = self.raw_lines.get(raw_index).cloned();
+            let url = if setup.sent == Sent::Command { "about:blank" } else { &line.url };
+            url.clone_into(&mut faces[self.opening].first_url);
             self.ask(Request::Page {
                 person: person(self.opening),
                 page: page(self.opening),
-                url: line.url.as_bytes().into(),
+                url: url.as_bytes().into(),
             });
             return true;
         }
@@ -829,6 +935,7 @@ impl Runtime {
             if began && self.outcome.is_none() {
                 opening_page |= self.open_page(setup, &mut faces, opening_page);
             }
+            self.drive_commands(&mut faces, people, time.now);
             if began && self.outcome.is_none() {
                 self.play(people, &mut faces, &mut done, time.now, setup);
             }
@@ -871,6 +978,9 @@ impl Runtime {
         if started {
             self.origin_requests(now, wall);
         }
+        for command in self.commands.iter_mut().flatten() {
+            self.requests.extend(command.requests.drain(..));
+        }
         while self.io.takes() {
             let Some(request) = self.requests.pop_front() else { break };
             io::down(&mut self.io, &self.ienv, request, &mut self.submits);
@@ -893,6 +1003,7 @@ impl Runtime {
             .into_iter()
             .chain(self.browser.next_deadline())
             .chain(peers.deadline())
+            .chain(self.commands.iter().flatten().filter_map(|command| command.wait.as_ref().map(|wait| wait.0)))
             .fold(now.saturating_add(POLL), Time::min);
         while let Some(record) = self.submits.pop() {
             let host = usize::from(record.op == ROOT || record.op == SERVER_ROOT);
@@ -945,6 +1056,17 @@ impl Runtime {
                 String::from_utf8_lossy(&self.server_stderr)
             )
             .expect("string write");
+            for (index, command) in self.commands.iter().enumerate() {
+                if let Some(command) = command {
+                    write!(
+                        report,
+                        "\nPerson {index} command {} stderr:\n{}",
+                        command.name,
+                        String::from_utf8_lossy(&command.stderr)
+                    )
+                    .expect("string write");
+                }
+            }
         }
         (outcome, self.kept)
     }
@@ -959,5 +1081,21 @@ fn tail(buffer: &mut Vec<u8>, bytes: &[u8]) {
     buffer.extend_from_slice(bytes);
     if buffer.len() > 32768 {
         buffer.drain(..buffer.len() - 32768);
+    }
+}
+fn event_owner(event: &io::Event) -> Option<Token> {
+    match event {
+        io::Event::Listening { owner, .. }
+        | io::Event::Accepted { owner, .. }
+        | io::Event::Connecting { owner, .. }
+        | io::Event::Connected { owner }
+        | io::Event::Stream { owner, .. }
+        | io::Event::Output { owner, .. }
+        | io::Event::Spawned { owner, .. }
+        | io::Event::Exited { owner, .. }
+        | io::Event::Usage { owner, .. }
+        | io::Event::Failed { owner, .. }
+        | io::Event::Closed { owner } => Some(*owner),
+        io::Event::Resized | io::Event::Window { .. } | io::Event::Shutdown { .. } => None,
     }
 }

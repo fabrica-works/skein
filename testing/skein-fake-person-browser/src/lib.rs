@@ -5,7 +5,7 @@ pub mod harness;
 mod keys;
 pub mod origins;
 pub use face::BrowserFace;
-pub use harness::{Harness, Kept, Lent, Outcome, Play, Script, Setup, Step};
+pub use harness::{Command, Harness, Kept, Lent, Opens, Outcome, Play, Script, Sent, Setup, Stdin, Step};
 #[cfg(test)]
 mod tests;
 

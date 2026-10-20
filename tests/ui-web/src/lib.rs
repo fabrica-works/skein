@@ -71,6 +71,7 @@ pub fn fixture_harness_with(
         server: server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), bundle.as_os_str().into()],
         printed: skein_fake_person_browser::harness::Printed {
+            sent: skein_fake_person_browser::harness::Sent::Page,
             prefix: b"skein-ui-example: listening at ",
             on: skein_fake_person_browser::harness::Output::Stderr,
             names: skein_fake_person_browser::harness::Names::Address,
@@ -133,7 +134,12 @@ pub fn lending_harness(
     Harness::new(Setup {
         server: harness_fixture(),
         args: std::iter::once("server").chain(args.iter().copied()).map(Into::into).collect(),
-        printed: Printed { prefix: b"fixture listening ", on: Output::Stderr, names: Names::Address },
+        printed: Printed {
+            sent: skein_fake_person_browser::harness::Sent::Page,
+            prefix: b"fixture listening ",
+            on: Output::Stderr,
+            names: Names::Address,
+        },
         restart: vec!["server".into()],
         chromium: chromium(),
         expected: vec![],

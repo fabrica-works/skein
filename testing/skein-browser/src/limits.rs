@@ -78,7 +78,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.pages))?
         .checked_add(u64::from(limits.ops))?
         .checked_add(4)?;
-    let events = events.checked_mul(u64::try_from(size_of::<crate::boundary::Event>()).ok()?.checked_add(report)?)?;
+    let events = events.checked_mul(
+        u64::try_from(size_of::<crate::boundary::Event>()).ok()?.checked_add(report)?.checked_add(text)?,
+    )?;
     let transient = message
         .checked_mul(4)?
         .checked_add(command.checked_mul(4)?)?

@@ -181,7 +181,10 @@ const PRINTED: &[PrintedRow] = &[
 fn a_printed_line_names_the_url_to_open_and_its_address() {
     for (output, names, expected) in PRINTED {
         let prefix: &[u8] = if *names == Names::Url { b"http://" } else { b"server at " };
-        let found = crate::harness::printed(output, &Printed { prefix, on: Output::Stderr, names: *names });
+        let found = crate::harness::printed(
+            output,
+            &Printed { sent: crate::harness::Sent::Page, prefix, on: Output::Stderr, names: *names },
+        );
         let found: Vec<_> = found.iter().map(|o| (o.url.as_str(), o.address.as_str())).collect();
         assert_eq!(found, *expected, "{}", String::from_utf8_lossy(output));
     }
@@ -198,7 +201,7 @@ fn a_restart_replaces_each_address_placeholder() {
 fn a_second_person_opens_a_line_the_first_did_not() {
     let lines = crate::harness::printed(
         b"http://a:1/one\nhttp://a:1/two\n",
-        &Printed { prefix: b"http://", on: Output::Stdout, names: Names::Url },
+        &Printed { sent: crate::harness::Sent::Page, prefix: b"http://", on: Output::Stdout, names: Names::Url },
     );
     assert_eq!(crate::harness::opening(&lines, Names::Url, 0).unwrap().url, "http://a:1/one");
     assert_eq!(crate::harness::opening(&lines, Names::Url, 1).unwrap().url, "http://a:1/two");

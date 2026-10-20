@@ -45,3 +45,36 @@ fn reports_faults_and_terminals_fit_the_declared_bound() {
     drop(world);
     assert_eq!(meter.held(), 0, "all storage is released");
 }
+
+#[test]
+fn selector_and_attribute_storage_fits_the_declared_bound() {
+    let limits = Limits {
+        text: 2048,
+        message: 16384,
+        command: 16384,
+        matches: 0,
+        snapshot: 0,
+        screenshot: 0,
+        ..compact_limits()
+    };
+    let bound = worst_case(&limits).expect("finite attribute bound");
+    let meter = Meter::new();
+    meter.start();
+    let mut world = World::with_limits(limits);
+    world.start();
+    world.open();
+    world.attributes = format!("[\"value\",\"{}\"]", "x".repeat(2048));
+    world.ask(Request::Attribute {
+        page: Token::new(3),
+        op: Token::new(4),
+        selector: vec![b'x'; 2048].into(),
+        name: b"value".as_slice().into(),
+    });
+    assert!(
+        matches!(world.above.pop(), Some(skein_browser::boundary::Event::Attribute { read: skein_browser::boundary::Read::Value(value), .. }) if value.len() == 2048)
+    );
+    let measured = meter.end();
+    assert!(measured.peak() <= bound, "attribute peak {} exceeds bound {bound}", measured.peak());
+    drop(world);
+    assert_eq!(meter.held(), 0);
+}

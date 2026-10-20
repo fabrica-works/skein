@@ -38,6 +38,7 @@ fn a_reload_keeps_a_pending_add_made_once() {
         server: skein_ui_web_tests::server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         printed: skein_fake_person_browser::harness::Printed {
+            sent: skein_fake_person_browser::harness::Sent::Page,
             prefix: b"skein-ui-example: listening at ",
             on: skein_fake_person_browser::harness::Output::Stderr,
             names: skein_fake_person_browser::harness::Names::Address,
@@ -118,6 +119,7 @@ fn a_reload_with_an_add_pending_meets_the_closing_warning() {
         server: skein_ui_web_tests::server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         printed: skein_fake_person_browser::harness::Printed {
+            sent: skein_fake_person_browser::harness::Sent::Page,
             prefix: b"skein-ui-example: listening at ",
             on: skein_fake_person_browser::harness::Output::Stderr,
             names: skein_fake_person_browser::harness::Names::Address,
