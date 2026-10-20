@@ -266,3 +266,36 @@ impl CheckRun {
 pub fn user(id: u64, login: &[u8], is_admin: bool) -> skein_forge::forgejo::document::User {
     skein_forge::forgejo::document::User { id, login: bytes::copy_of(login), is_admin, full_name: Box::new([]) }
 }
+
+pub const TAKEN: &[u8] = b"handover-token-0123456789abcdef";
+pub const TAKEN_SUFFIX: &[u8] = b"89abcdef";
+pub struct TakeOverRun {
+    pub(super) machine: crate::take_over::TakeOver,
+}
+impl TakeOverRun {
+    pub fn new() -> Self {
+        Self::with_token(TAKEN)
+    }
+    pub fn with_token(token: &[u8]) -> Self {
+        Self { machine: crate::take_over::TakeOver::new(&given(), secret(token)).expect("fixture admitted") }
+    }
+    pub fn step(&mut self, event: crate::reconcile::Event) -> crate::reconcile::Need {
+        let mut out = skein_lib::Queue::with_capacity(crate::take_over::MAX_OUT);
+        crate::take_over::step(&mut self.machine, event, &mut out);
+        assert_eq!(out.len(), 1);
+        out.pop().expect("one need")
+    }
+}
+pub fn take_over_admin() -> crate::reconcile::Event {
+    user_event(user(1, b"root", true))
+}
+pub fn take_over_row(id: u64, last_eight: &[u8]) -> skein_forge::forgejo::document::Row {
+    use skein_forge::forgejo::document::{AccessToken, Row};
+    Row::Token(AccessToken {
+        id,
+        name: b"admin-token".as_slice().into(),
+        scopes: Box::new([]),
+        last_eight: last_eight.into(),
+        value: None,
+    })
+}

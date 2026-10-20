@@ -179,13 +179,13 @@ impl Tokens {
         }
     }
 }
-pub(super) fn reply(event: Event) -> Result<Reply, Why> {
+pub(crate) fn reply(event: Event) -> Result<Reply, Why> {
     match event {
         Event::Reply(reply) => Ok(reply),
         Event::Begin | Event::Read(_) | Event::Written | Event::Drawn(_) => Err(Why::Unexpected),
     }
 }
-pub(super) fn unexpected(reply: Reply) -> Why {
+pub(crate) fn unexpected(reply: Reply) -> Why {
     match reply {
         Reply::Status(status) => Why::Refused(status),
         Reply::Down => Why::Down,

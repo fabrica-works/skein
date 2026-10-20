@@ -106,6 +106,12 @@ impl World {
         let mut machine = skein_forge_setup::check::Check::new(1);
         self.drive(|event, out| skein_forge_setup::check::step(&mut machine, event, out))
     }
+    pub fn take_over(&mut self, token: &[u8]) -> Ended {
+        let secret = fixtures::secret(token);
+        self.secrets.push(secret.clone());
+        let mut machine = skein_forge_setup::take_over::TakeOver::new(&self.given, secret).expect("fixture admitted");
+        self.drive(|event, out| skein_forge_setup::take_over::step(&mut machine, event, out))
+    }
     #[must_use]
     pub fn outcome(&self) -> Option<&Outcome> {
         self.outcome.as_ref()

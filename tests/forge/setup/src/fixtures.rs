@@ -6,6 +6,7 @@ use skein_lib::{List, Secret};
 pub const ADMIN: &[u8] = b"admin-token-for-the-setup-world";
 pub const API: &[u8] = b"api-token-issued-to-the-bot";
 pub const GIT: &[u8] = b"git-token-issued-to-the-bot";
+pub const TAKEN: &[u8] = b"handover-token-0123456789abcdef";
 #[must_use]
 pub fn given(owned: bool) -> Given {
     Given {
@@ -199,5 +200,20 @@ pub fn connected_tokens(world: &mut crate::World) -> u64 {
     world.store_mut().token(id, b"connected-git", &[b"write:repository", b"read:user"], secret(GIT));
     world.put(Item::ApiToken, secret(API));
     world.put(Item::GitToken, secret(GIT));
+    id
+}
+
+/// Five older admin tokens, including the default, precede the handover token.
+pub fn admin_handover(world: &mut crate::World) -> u64 {
+    let id = world.store().find(b"kit-admin").expect("admin fixture").id;
+    for (name, value) in [
+        (b"old-1".as_slice(), b"older-admin-token-1".as_slice()),
+        (b"old-2", b"older-admin-token-2"),
+        (b"old-3", b"older-admin-token-3"),
+        (b"old-4", b"older-admin-token-4"),
+    ] {
+        world.store_mut().token(id, name, &[b"all"], secret(value));
+    }
+    world.store_mut().token(id, b"handover", &[b"all"], secret(TAKEN));
     id
 }
