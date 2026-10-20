@@ -750,11 +750,21 @@ The answers are 6.3's.
 |---|---|---|---|
 | Head | the head so far | `hook_deadline` | a signed `POST` to a forge's path within `hook_body_bytes`: Body; any other head: its answer, Closing; past the deadline: Closing, no answer |
 | Body | the HMAC state, the fields decoded | `hook_deadline` | read and verified: Answering; a wrong signature or a body that does not decode: its answer, Closing |
-| Answering | the hint, or none | `hook_deadline` | `204` queued: the hint offered up, held while the owner has no room (2.2); then Head (kept alive) or Closing |
+| Answering | the hint, or none | `hook_deadline`, from its `204` | `204` queued: the hint offered up, held while the owner has no room (2.2); then Head (kept alive) or Closing |
 | Closing | nothing | io's close deadline | closed |
 
 A fault or the deadline in any state closes the connection with no
 answer and no hint.
+
+Answering has no moment before its `204` is queued that its owner can
+hold. With the room the owner leaves each entry point (2.1), the step
+that verifies the body queues the `204`, sent from the room skein-http
+set aside for its head when the request came, and then offers the hint,
+in that entry point (6.2). Answering lasts only while its hint is held, so
+its deadline and the owner's close meet it with its `204` queued and its
+hint held: then the hint is dropped, never offered. A world proves the
+order inside the step, the `204` queued before the hint and one of each,
+and crosses Answering's deadline and the close with a held hint.
 
 ### 8.5 Ending
 
@@ -842,8 +852,9 @@ The owner's domain owes:
   alone.
 - **The listener,** against scripted deliveries: a good delivery hinted,
   its `204` queued before its hint goes up; each answer of 6.3; an event
-  the dialect does not hint; a hint held while the owner has no room;
-  `hooks` connections full; faults at every byte.
+  the dialect does not hint; a hint held while the owner has no room,
+  and dropped at its deadline or the owner's close; `hooks` connections
+  full; faults at every byte.
 - **The protocol world,** in skein's `tests/forge/protocol`: the client
   and the component against the fake forge's protocol layer and domain
   (fake-forge.md, section 4), joined by in-memory streams cut at random
