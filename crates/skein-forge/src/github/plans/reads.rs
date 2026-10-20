@@ -196,7 +196,15 @@ impl Plan {
                             Body::Document(
                                 document::Document::Repository(_)
                                 | document::Document::Branch(_)
-                                | document::Document::Rows,
+                                | document::Document::Rows
+                                | document::Document::Installation(_)
+                                | document::Document::Minted(_)
+                                | document::Document::Viewer(_)
+                                | document::Document::Graphql(_)
+                                | document::Document::App(_)
+                                | document::Document::HookConfig(_)
+                                | document::Document::Conversion(_)
+                                | document::Document::BotUser(_),
                             )
                             | Body::Raw { .. }
                             | Body::Empty
@@ -235,6 +243,7 @@ impl Plan {
                     Err(_) => Err(api::Error::TooLarge),
                 }
             }
+            document::Row::Installation(_) | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),
         }
     }
 }

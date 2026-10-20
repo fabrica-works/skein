@@ -24,7 +24,15 @@ impl Plan {
                 }
             }
             document::Document::Rows => self.branches_done(bounds),
-            document::Document::Error(_) => Err(api::Error::InvalidAnswer),
+            document::Document::Error(_)
+            | document::Document::Installation(_)
+            | document::Document::Minted(_)
+            | document::Document::Viewer(_)
+            | document::Document::Graphql(_)
+            | document::Document::App(_)
+            | document::Document::HookConfig(_)
+            | document::Document::Conversion(_)
+            | document::Document::BotUser(_) => Err(api::Error::InvalidAnswer),
         }
     }
     fn repository_done(
