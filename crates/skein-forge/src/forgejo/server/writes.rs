@@ -361,6 +361,7 @@ impl BodyDecoder {
                 | Request::RepositoryById { .. }
                 | Request::Repository { .. }
                 | Request::UserRepos { .. }
+                | Request::RepoSearch { .. }
                 | Request::UserSearch { .. }
                 | Request::Issues { .. }
                 | Request::Issue { .. }
@@ -498,6 +499,7 @@ impl BodyDecoder {
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
             | Request::UserRepos { .. }
+            | Request::RepoSearch { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }
@@ -559,6 +561,7 @@ impl BodyDecoder {
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
             | Request::UserRepos { .. }
+            | Request::RepoSearch { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }

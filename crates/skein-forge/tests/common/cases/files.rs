@@ -193,6 +193,7 @@ pub fn expected(answer: Answer) -> (Document, Vec<Row>) {
         | Answer::ApiSettings(_)
         | Answer::Repository(_)
         | Answer::Reachable(_)
+        | Answer::RepoSearch { .. }
         | Answer::Search { .. }
         | Answer::Issues(_)
         | Answer::Issue(_)

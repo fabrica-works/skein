@@ -80,7 +80,8 @@ impl Plan {
             }
             d::Document::Search { ok } => self.search_done(ok, tables),
             d::Document::Listed { skipped } => self.listed_done(skipped, bounds, tables),
-            d::Document::Token(_)
+            d::Document::RepoSearch { .. }
+            | d::Document::Token(_)
             | d::Document::User(_)
             | d::Document::Org(_)
             | d::Document::Hook(_)
@@ -113,6 +114,7 @@ impl Plan {
             | d::Document::Hook(_)
             | d::Document::Team(_)
             | d::Document::ApiSettings(_)
+            | d::Document::RepoSearch { .. }
             | d::Document::Search { .. }
             | d::Document::Listed { .. }
             | d::Document::Issue(_)

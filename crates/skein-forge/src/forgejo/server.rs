@@ -92,6 +92,11 @@ pub enum Answer {
     User(User),
     ApiSettings(ApiSettings),
     Repository(Repository),
+    /// Encodes an admin search page, whose rows are all writable by the admin.
+    RepoSearch {
+        ok: bool,
+        data: Box<[crate::forgejo::document::Reachable]>,
+    },
     Search {
         ok: bool,
         data: Box<[User]>,
@@ -203,6 +208,7 @@ fn write(json: &mut writer::Encoder, answer: &Answer) -> Result<(), writer::Refu
         | Answer::User(_)
         | Answer::ApiSettings(_)
         | Answer::Repository(_)
+        | Answer::RepoSearch { .. }
         | Answer::Search { .. } => {
             start::write(json, answer);
             Ok(())

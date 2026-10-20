@@ -165,6 +165,7 @@ impl TakeOver {
                     }
                 }
                 Row::Reachable(_)
+                | Row::Found(_)
                 | Row::Hook(_)
                 | Row::Team(_)
                 | Row::User(_)

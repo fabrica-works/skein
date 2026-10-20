@@ -207,7 +207,8 @@ impl Plan {
                     Err(_) => Err(api::Error::TooLarge),
                 }
             }
-            d::Row::Reachable(_)
+            d::Row::Found(_)
+            | d::Row::Reachable(_)
             | d::Row::Token(_)
             | d::Row::User(_)
             | d::Row::Issue(_)
@@ -281,6 +282,7 @@ impl Plan {
             | d::Document::Team(_)
             | d::Document::ApiSettings(_)
             | d::Document::Repository(_)
+            | d::Document::RepoSearch { .. }
             | d::Document::Search { .. }
             | d::Document::Issue(_)
             | d::Document::Comment(_)

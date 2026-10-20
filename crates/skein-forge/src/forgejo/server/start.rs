@@ -13,6 +13,18 @@ pub(super) fn route(method: Method, target: &[u8], limits: &Limits) -> Result<Ro
         return Err(Unrouted::Malformed);
     };
     let request = match target.segments.as_ref() {
+        [api, v1, repos, search]
+            if &**api == b"api" && &**v1 == b"v1" && &**repos == b"repos" && &**search == b"search" =>
+        {
+            for pair in &target.query {
+                if (pair.name.as_ref() == b"sort" && pair.value.as_ref() != b"id")
+                    || (pair.name.as_ref() == b"order" && pair.value.as_ref() != b"asc")
+                {
+                    return Err(Unrouted::Malformed);
+                }
+            }
+            Request::RepoSearch { page: super::items::page(&target.query)? }
+        }
         [api, v1, user, repos] if &**api == b"api" && &**v1 == b"v1" && &**user == b"user" && &**repos == b"repos" => {
             Request::UserRepos { page: super::items::page(&target.query)? }
         }
@@ -73,6 +85,7 @@ pub(super) fn user(json: &mut Encoder, user: &User) {
 pub(super) fn write(json: &mut Encoder, answer: &Answer) {
     match answer {
         Answer::Reachable(rows) => reachable(json, rows),
+        Answer::RepoSearch { ok, data } => repo_search(json, *ok, data),
         Answer::User(value) => {
             json.object_start();
             json.key(b"id");
@@ -192,4 +205,13 @@ fn reachable(json: &mut Encoder, rows: &[document::Reachable]) {
         json.object_end();
     }
     json.array_end();
+}
+
+fn repo_search(json: &mut Encoder, ok: bool, rows: &[document::Reachable]) {
+    json.object_start();
+    json.key(b"ok");
+    json.boolean(ok);
+    json.key(b"data");
+    reachable(json, rows);
+    json.object_end();
 }

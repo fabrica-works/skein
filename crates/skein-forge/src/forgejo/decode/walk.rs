@@ -179,6 +179,9 @@ fn element(kind: Kind) -> Option<Kind> {
         Kind::Reachable(crate::forgejo::client::reachable::ReachableKind::Listing) => {
             Some(Kind::Reachable(crate::forgejo::client::reachable::ReachableKind::Row))
         }
+        Kind::Reachable(crate::forgejo::client::reachable::ReachableKind::FoundListing) => {
+            Some(Kind::Reachable(crate::forgejo::client::reachable::ReachableKind::Found))
+        }
         Kind::Users | Kind::Item(Item::Reviewers) => Some(Kind::User),
         Kind::Item(Item::Issues) => Some(Kind::Item(Item::Issue)),
         Kind::Item(Item::Comments) => Some(Kind::Item(Item::Comment)),

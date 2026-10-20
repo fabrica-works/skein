@@ -568,6 +568,7 @@ fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, reques
 fn repository_scoped(request: &Request) -> bool {
     match request {
         Request::RepositoryById { .. }
+        | Request::RepoSearch { .. }
         | Request::UserRepos { .. }
         | Request::Permission { .. }
         | Request::AddCollaborator { .. }
@@ -641,7 +642,8 @@ fn table(service: &Service, request: &Request, user: u64) -> Option<documents::A
         Request::UserSearch { uid, .. } => {
             Some(documents::Answer::Search { ok: true, data: Box::new([routes::user(&service.config, *uid)]) })
         }
-        Request::UserRepos { .. }
+        Request::RepoSearch { .. }
+        | Request::UserRepos { .. }
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::Issues { .. }

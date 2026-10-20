@@ -136,6 +136,8 @@ pub fn request(name: &str) -> (Method, &'static [u8], &'static [u8]) {
         "review-comments" => (Method::Get, br#"/api/v1/repos/fixture/specimen/pulls/1/reviews/5/comments"#, br#""#),
         "reviews" => (Method::Get, br#"/api/v1/repos/fixture/specimen/pulls/1/reviews?page=1&limit=2"#, br#""#),
         "user-repos" => (Method::Get, b"/api/v1/user/repos?page=2&limit=3", b""),
+        "repo-search" => (Method::Get, b"/api/v1/repos/search?sort=id&order=asc&page=2&limit=3", b""),
+        "repo-search-unpaged" => (Method::Get, b"/api/v1/repos/search?sort=id&order=asc", b""),
         "settings-api" => (Method::Get, br#"/api/v1/settings/api"#, br#""#),
         "setup-hook-delete-missing" => (Method::Delete, br#"/api/v1/orgs/ensemble/hooks/999999"#, br#""#),
         "setup-hook-deleted" => (Method::Delete, br#"/api/v1/orgs/ensemble/hooks/2"#, br#""#),

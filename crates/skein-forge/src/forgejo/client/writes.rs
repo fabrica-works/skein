@@ -119,6 +119,7 @@ fn target(request: &Request, out: &mut Target) -> (Method, bool) {
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -268,6 +269,7 @@ fn write(json: &mut Encoder, request: &Request) {
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }

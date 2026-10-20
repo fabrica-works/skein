@@ -37,6 +37,10 @@ pub enum Sort {
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Request {
+    /// Lists repositories in id order for an admin picker.
+    RepoSearch {
+        page: Page,
+    },
     /// Grants repository access to a collaborator, answering without a document.
     AddCollaborator {
         at: Repo,

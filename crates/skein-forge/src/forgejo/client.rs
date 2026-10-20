@@ -93,6 +93,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. } => start::encode(request, limits),
         Request::Issues { .. }
         | Request::Issue { .. }
@@ -168,6 +169,7 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
         Request::CreateToken { .. } => Kind::Setup(setup::SetupKind::Token),
         Request::ApiSettings => Kind::Settings,
         Request::RepositoryById { .. } | Request::Repository { .. } => Kind::Repository,
+        Request::RepoSearch { .. } => Kind::Reachable(reachable::ReachableKind::Search),
         Request::UserSearch { .. } => Kind::Search,
         Request::Issues { .. } => Kind::Item(Item::Issues),
         Request::Issue { .. } | Request::CreateIssue { .. } | Request::EditIssue { .. } => Kind::Item(Item::Issue),
@@ -183,7 +185,7 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
             DecoderState::Hooks(hooks::Hooks::new(kind, limits))
         }
         Kind::Setup(kind) => DecoderState::Setup(setup::Setup::new(kind, limits)),
-        Kind::Reachable(_) => DecoderState::Reachable(reachable::Reachable::new()),
+        Kind::Reachable(kind) => DecoderState::Reachable(reachable::Reachable::new(kind)),
         Kind::Error => DecoderState::Error(writes::Error::new()),
         Kind::Write(_) | Kind::Delivery(_) => unreachable!("answer kind selection"),
         Kind::File(kind) => DecoderState::Files(Box::new(files::Files::new(kind))),

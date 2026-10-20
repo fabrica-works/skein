@@ -270,6 +270,7 @@ pub(crate) fn account(event: Event) -> Result<skein_forge::forgejo::document::Us
                 | Document::ApiSettings(_)
                 | Document::Repository(_)
                 | Document::Search { .. }
+                | Document::RepoSearch { .. }
                 | Document::Listed { .. }
                 | Document::Issue(_)
                 | Document::Comment(_)

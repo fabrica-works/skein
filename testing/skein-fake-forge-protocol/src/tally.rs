@@ -37,6 +37,8 @@ pub enum Route {
     Repository,
     /// Counts connected-token repository listings.
     UserRepos,
+    /// Counts repository search pages used by setup.
+    RepoSearch,
     UserSearch,
     Issues,
     Issue,
@@ -105,6 +107,7 @@ pub fn route(request: &Request) -> Route {
         Request::RepositoryById { .. } => Route::RepositoryById,
         Request::Repository { .. } => Route::Repository,
         Request::UserRepos { .. } => Route::UserRepos,
+        Request::RepoSearch { .. } => Route::RepoSearch,
         Request::UserSearch { .. } => Route::UserSearch,
         Request::Issues { .. } => Route::Issues,
         Request::Issue { .. } => Route::Issue,

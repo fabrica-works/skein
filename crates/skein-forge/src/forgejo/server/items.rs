@@ -257,6 +257,7 @@ pub(super) fn write(json: &mut Encoder, answer: &Answer) -> Result<(), writer::R
         | Answer::ApiSettings(_)
         | Answer::Repository(_)
         | Answer::Reachable(_)
+        | Answer::RepoSearch { .. }
         | Answer::Search { .. } => {
             unreachable!("item answer dispatch")
         }

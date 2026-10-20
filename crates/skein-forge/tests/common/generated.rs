@@ -105,6 +105,7 @@ pub fn documents(seed: u64) -> Vec<Reply> {
         | Answer::Members(_)
         | Answer::Repository(_)
         | Answer::Reachable(_)
+        | Answer::RepoSearch { .. }
         | Answer::Search { .. }
         | Answer::Issues(_)
         | Answer::Comments(_)
@@ -329,7 +330,7 @@ fn vary(answer: &mut Answer, seed: u64) {
                 value.id += seed;
             }
         }
-        Answer::Reachable(_) | Answer::Error(_) => {}
+        Answer::Reachable(_) | Answer::RepoSearch { .. } | Answer::Error(_) => {}
     }
 }
 
@@ -491,6 +492,7 @@ fn shorten(answer: &mut Answer) {
         Answer::Teams(values) => *values = Box::from([]),
         Answer::Hooks(values) => *values = Box::from([]),
         Answer::Reachable(_)
+        | Answer::RepoSearch { .. }
         | Answer::ApiSettings(_)
         | Answer::Run(_)
         | Answer::Branch(_)

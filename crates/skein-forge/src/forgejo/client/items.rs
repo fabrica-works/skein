@@ -118,6 +118,7 @@ fn target(request: &Request, out: &mut Target) {
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }

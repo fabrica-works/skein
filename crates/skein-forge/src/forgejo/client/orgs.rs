@@ -170,6 +170,7 @@ fn target(request: &Request, out: &mut Target) -> Method {
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -253,6 +254,7 @@ fn body(json: &mut Encoder, request: &Request) {
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }

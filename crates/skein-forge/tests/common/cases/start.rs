@@ -73,6 +73,7 @@ pub fn expected(answer: Answer) -> (Document, Vec<Row>) {
         Answer::Repository(value) => (Document::Repository(value), vec![]),
         Answer::Search { ok, data } => (Document::Search { ok }, data.into_vec().into_iter().map(Row::User).collect()),
         Answer::Reachable(_)
+        | Answer::RepoSearch { .. }
         | Answer::Token(_)
         | Answer::Tokens(_)
         | Answer::Error(_)

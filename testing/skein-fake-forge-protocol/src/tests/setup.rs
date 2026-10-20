@@ -583,3 +583,101 @@ fn fake_user_repos_privacy_metadata_is_bounded() {
     assert_eq!(h.service.setup_mut().private(u64::from(cap)), Err(crate::Error::Limits));
     assert_eq!(h.service.setup_mut().private(0), Ok(()));
 }
+
+fn repo_search_harness() -> fixtures::Harness {
+    let mut h = user_repos_harness(true);
+    let store = h.service.setup_mut();
+    let admin = store.account(b"example-app", true, b"");
+    store.token(admin, b"example-app", &[b"write:repository"], Secret::new(boxed(b"acme")));
+    for id in [10, 20, 30] {
+        store.private(id).unwrap();
+    }
+    h
+}
+fn ask_repo_search(h: &mut fixtures::Harness, page: u32, limit: u32, token: &[u8]) -> Box<[Row]> {
+    let request =
+        Request::RepoSearch { page: skein_forge::forgejo::request::Page { page: Some(page), limit: Some(limit) } };
+    let encoded = skein_forge::forgejo::client::encode(&request, &h.env.limits.documents).unwrap();
+    h.ask_as(b"GET", &encoded.target, b"", token);
+    assert_eq!(h.status(), 200);
+    let decoded = h.decoded(&request);
+    assert_eq!(decoded.document, Document::RepoSearch { ok: true });
+    decoded.rows
+}
+fn found_row(id: u64, owner: u64, login: &[u8], name: &[u8], private: bool) -> Row {
+    Row::Found(d::Reachable { repository: id, owner, login: boxed(login), name: boxed(name), private, push: true })
+}
+#[test]
+fn fake_repo_search_admin_lists_every_owners_private_repositories() {
+    let mut h = repo_search_harness();
+    assert_eq!(
+        &*ask_repo_search(&mut h, 1, 4, b"acme"),
+        &[
+            found_row(10, 2, b"bob", b"widgets", true),
+            found_row(20, 1, b"acme", b"widgets", true),
+            found_row(30, 1, b"alice", b"widgets", true),
+            found_row(40, 2, b"bob", b"example-app", false),
+        ]
+    );
+    assert_eq!(h.service.tally().routes.get(&crate::Route::RepoSearch), Some(&1));
+    assert_eq!(h.calls, 0);
+}
+#[test]
+fn fake_repo_search_pages_by_page_and_limit_in_id_order() {
+    let mut h = repo_search_harness();
+    for (page, id) in [(1, 10), (2, 20), (3, 30), (4, 40)] {
+        let rows = ask_repo_search(&mut h, page, 1, b"acme");
+        assert_eq!(rows.len(), 1);
+        let Row::Found(row) = rows.first().unwrap() else { panic!("search row") };
+        assert_eq!(row.repository, id);
+    }
+    for page in [5, u32::MAX] {
+        assert!(ask_repo_search(&mut h, page, 1, b"acme").is_empty());
+        assert_eq!(&*h.body(), br#"{"ok":true,"data":[]}"#);
+    }
+    assert_eq!(ask_repo_search(&mut h, 1, 99, b"acme").len(), 4);
+    h.ask_as(b"GET", b"/api/v1/repos/search?sort=id&order=asc&limit=1", b"", b"acme");
+    let request = Request::RepoSearch { page: PAGE };
+    assert_eq!(h.decoded(&request).rows.len(), 4);
+}
+#[test]
+fn fake_repo_search_answers_ok_and_data() {
+    let mut h = repo_search_harness();
+    ask_repo_search(&mut h, 1, 1, b"acme");
+    assert_eq!(&*h.body(), br#"{"ok":true,"data":[{"id":10,"name":"widgets","private":true,"owner":{"id":2,"login":"bob"},"full_name":"bob/widgets","permissions":{"push":true,"pull":true,"admin":true}}]}"#);
+}
+#[test]
+fn fake_repo_search_non_admin_sees_non_private_and_own_repositories() {
+    let mut h = repo_search_harness();
+    h.service.setup_mut().token(1, b"example-app", &[b"write:repository"], Secret::new(boxed(b"alice")));
+    // The user has both a collaborator grant and an org team, neither widens search.
+    assert_eq!(
+        &*ask_repo_search(&mut h, 1, 4, b"alice"),
+        &[found_row(30, 1, b"alice", b"widgets", true), found_row(40, 2, b"bob", b"example-app", false),]
+    );
+}
+#[test]
+fn fake_repo_search_without_token_is_401() {
+    let mut h = repo_search_harness();
+    for token in [b"".as_slice(), b"unknown"] {
+        h.ask_as(b"GET", b"/api/v1/repos/search", b"", token);
+        assert_eq!(h.status(), 401);
+    }
+    assert_eq!(h.calls, 0);
+}
+#[test]
+fn fake_repo_search_without_repository_scope_is_403() {
+    let mut h = repo_search_harness();
+    h.service.setup_mut().token(3, b"example-app", &[b"read:user"], Secret::new(boxed(b"alice")));
+    h.ask_as(b"GET", b"/api/v1/repos/search?sort=id&order=asc", b"", b"alice");
+    assert_eq!(h.status(), 403);
+    assert_eq!(h.calls, 0);
+}
+#[test]
+fn fake_repo_search_bad_sort_or_order_is_422() {
+    let mut h = repo_search_harness();
+    for target in [b"/api/v1/repos/search?sort=name&order=asc".as_slice(), b"/api/v1/repos/search?sort=id&order=desc"] {
+        h.ask_as(b"GET", target, b"", b"acme");
+        assert_eq!(h.status(), 422);
+    }
+}

@@ -385,7 +385,8 @@ impl Plan {
                 )
             }
             d::Row::Branch(branch) => self.append(api::Answer::Branches(Box::new([branch.name])), bounds),
-            d::Row::Reachable(_)
+            d::Row::Found(_)
+            | d::Row::Reachable(_)
             | d::Row::Token(_)
             | d::Row::Hook(_)
             | d::Row::Team(_)

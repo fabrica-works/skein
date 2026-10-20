@@ -195,31 +195,30 @@ impl Plan {
                 self.retry = fields.retry_after;
                 Ok(None)
             }
-            Heard::Row(row) => {
-                match row {
-                    d::Row::User(user) => {
-                        tables.keep_user(self.repository.forge, user.id, user.login);
-                    }
-                    d::Row::Reachable(_)
-                    | d::Row::Token(_)
-                    | d::Row::Issue(_)
-                    | d::Row::Comment(_)
-                    | d::Row::Status(_)
-                    | d::Row::Review(_)
-                    | d::Row::ReviewComment(_)
-                    | d::Row::Branch(_)
-                    | d::Row::Protection(_)
-                    | d::Row::Pull(_)
-                    | d::Row::File(_)
-                    | d::Row::Commit(_)
-                    | d::Row::Run(_)
-                    | d::Row::Hook(_)
-                    | d::Row::Team(_)
-                    | d::Row::Step(_)
-                    | d::Row::Job(_) => {}
+            Heard::Row(row) => match row {
+                d::Row::User(user) => {
+                    tables.keep_user(self.repository.forge, user.id, user.login);
+                    Ok(None)
                 }
-                Ok(None)
-            }
+                d::Row::Found(_)
+                | d::Row::Reachable(_)
+                | d::Row::Token(_)
+                | d::Row::Issue(_)
+                | d::Row::Comment(_)
+                | d::Row::Status(_)
+                | d::Row::Review(_)
+                | d::Row::ReviewComment(_)
+                | d::Row::Branch(_)
+                | d::Row::Protection(_)
+                | d::Row::Pull(_)
+                | d::Row::File(_)
+                | d::Row::Commit(_)
+                | d::Row::Run(_)
+                | d::Row::Hook(_)
+                | d::Row::Team(_)
+                | d::Row::Step(_)
+                | d::Row::Job(_) => Ok(None),
+            },
             Heard::Failed(fault) => Err(self.error(failure::transport(fault))),
             Heard::Done(body) => {
                 if !self.resolving && self.status == 409 {
@@ -302,6 +301,7 @@ impl Plan {
             | d::Document::Hook(_)
             | d::Document::Team(_)
             | d::Document::ApiSettings(_)
+            | d::Document::RepoSearch { .. }
             | d::Document::Search { .. }
             | d::Document::Listed { .. }
             | d::Document::Issue(_)
@@ -369,6 +369,7 @@ impl Plan {
             | d::Document::Team(_)
             | d::Document::ApiSettings(_)
             | d::Document::Repository(_)
+            | d::Document::RepoSearch { .. }
             | d::Document::Search { .. }
             | d::Document::Listed { .. }
             | d::Document::Issue(_)

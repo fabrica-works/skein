@@ -14,6 +14,12 @@ use skein_json::tokenizer;
 use skein_lib::{Decimal, Writer};
 pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     let length = match request {
+        Request::RepoSearch { page } => {
+            let mut out = super::items::Target { length: 0, writer: None };
+            out.put(b"/api/v1/repos/search?sort=id&order=asc");
+            out.page(*page, true);
+            out.length
+        }
         Request::UserRepos { page } => {
             let mut out = super::items::Target { length: 0, writer: None };
             out.put(b"/api/v1/user/repos");
@@ -104,6 +110,7 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
 fn target(request: &Request, out: &mut Writer) -> Result<(), skein_lib::Overflow> {
     out.put(b"/api/v1/")?;
     match request {
+        Request::RepoSearch { page } => search_target(out, *page),
         Request::UserRepos { page } => {
             out.put(b"user/repos")?;
             let mut query = false;
@@ -383,4 +390,17 @@ impl Start {
         }
         Ok(())
     }
+}
+
+fn search_target(out: &mut Writer, page: crate::forgejo::request::Page) -> Result<(), skein_lib::Overflow> {
+    out.put(b"repos/search?sort=id&order=asc")?;
+    if let Some(n) = page.page {
+        out.put(b"&page=")?;
+        out.put(Decimal::of(u64::from(n)).as_bytes())?;
+    }
+    if let Some(n) = page.limit {
+        out.put(b"&limit=")?;
+        out.put(Decimal::of(u64::from(n)).as_bytes())?;
+    }
+    Ok(())
 }

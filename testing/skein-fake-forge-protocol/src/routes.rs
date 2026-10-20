@@ -89,6 +89,7 @@ pub fn repository(config: &Config, request: &Request) -> Option<Box<[u8]>> {
         | Request::User
         | Request::ApiSettings
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. } => None,
         Request::RepositoryById { id } => {
             for repo in &config.repositories {
@@ -195,6 +196,7 @@ pub fn op(config: &Config, request: &Request) -> Result<Op, a::Error> {
         | Request::User
         | Request::ApiSettings
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. } => return Err(a::Error::Refused),
         Request::RepositoryById { .. } | Request::Repository { .. } => Read::Settings,
         Request::Issues { state, kind, since, sort, page: p, .. } => {
@@ -356,6 +358,7 @@ fn write(config: &Config, request: &Request) -> Result<Op, a::Error> {
         | Request::User
         | Request::ApiSettings
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::RepositoryById { .. }
         | Request::Repository { .. }

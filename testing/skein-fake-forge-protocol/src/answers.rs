@@ -196,6 +196,7 @@ fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<An
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -278,6 +279,7 @@ fn checks(config: &Config, request: &Request, values: &[a::CheckSummary]) -> Res
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -464,6 +466,7 @@ fn collaborators(config: &Config, request: &Request, values: &[a::Collaborator])
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::UserRepos { .. }
+        | Request::RepoSearch { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }

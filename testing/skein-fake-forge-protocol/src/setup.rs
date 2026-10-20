@@ -153,6 +153,7 @@ impl Store {
     }
     pub(crate) fn answer(&mut self, request: &Request, user: u64, config: &Config, limits: &Limits) -> Option<Reply> {
         match request {
+            Request::RepoSearch { page } => Some(self.search(config, user, *page, limits)),
             Request::User => {
                 let user = self.user(user)?;
                 Some(encoded(200, Answer::User(user), limits))
@@ -262,6 +263,7 @@ impl Store {
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
             | Request::UserRepos { .. }
+            | Request::RepoSearch { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }

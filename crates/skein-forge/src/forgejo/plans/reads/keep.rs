@@ -22,7 +22,8 @@ pub(super) fn keep_row(row: &d::Row, forge: u16, tables: &mut Tables) {
             }
         }
         d::Row::Pull(pull) => keep_pull(pull, forge, tables),
-        d::Row::Reachable(_)
+        d::Row::Found(_)
+        | d::Row::Reachable(_)
         | d::Row::Token(_)
         | d::Row::Branch(_)
         | d::Row::Protection(_)
@@ -54,6 +55,7 @@ pub(crate) fn keep_document(document: &d::Document, forge: u16, tables: &mut Tab
         | d::Document::Hook(_)
         | d::Document::Team(_)
         | d::Document::ApiSettings(_)
+        | d::Document::RepoSearch { .. }
         | d::Document::Search { .. }
         | d::Document::Listed { .. }
         | d::Document::CombinedStatus(_)
@@ -77,7 +79,8 @@ pub(super) fn page_bound(request: &Request) -> Option<u32> {
         | Request::PullFiles { page, .. }
         | Request::Runs { page, .. } => page.limit,
         Request::UserSearch { limit, .. } => *limit,
-        Request::UserRepos { .. }
+        Request::RepoSearch { .. }
+        | Request::UserRepos { .. }
         | Request::User
         | Request::ApiSettings
         | Request::RepositoryById { .. }
@@ -140,7 +143,8 @@ pub fn long(heard: &Heard) -> bool {
             d::Row::Comment(row) => long_body(&row.body),
             d::Row::Review(row) => long_body(&row.body),
             d::Row::ReviewComment(row) => long_body(&row.body),
-            d::Row::Reachable(_)
+            d::Row::Found(_)
+            | d::Row::Reachable(_)
             | d::Row::Token(_)
             | d::Row::User(_)
             | d::Row::Status(_)
@@ -166,6 +170,7 @@ pub fn long(heard: &Heard) -> bool {
             | d::Document::Team(_)
             | d::Document::ApiSettings(_)
             | d::Document::Repository(_)
+            | d::Document::RepoSearch { .. }
             | d::Document::Search { .. }
             | d::Document::Listed { .. }
             | d::Document::Status(_)

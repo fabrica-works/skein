@@ -82,6 +82,7 @@ impl Plan {
             | Document::Org(_)
             | Document::Team(_)
             | Document::Repository(_)
+            | Document::RepoSearch { .. }
             | Document::Search { .. }
             | Document::Listed { .. }
             | Document::Issue(_)

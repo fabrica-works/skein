@@ -88,11 +88,12 @@ pub(crate) struct Listing {
     page: Page,
     seen: u64,
     rows: List<Row>,
+    search: bool,
 }
 impl Listing {
     pub(crate) fn new(page: Page, config: &Config) -> Self {
         let (_, cap) = crate::routes::page(config, page);
-        Self { current: None, page, seen: 0, rows: List::with_capacity(cap) }
+        Self { current: None, page, seen: 0, rows: List::with_capacity(cap), search: false }
     }
     pub(crate) fn next<'a>(&self, config: &'a Config) -> Option<&'a Repository> {
         let mut next: Option<&Repository> = None;
@@ -181,6 +182,12 @@ impl Listing {
         Reply { status: 200, headers: Box::from([]), body: json.finish() }
     }
     fn write(&self, json: &mut Encoder) {
+        if self.search {
+            json.object_start();
+            json.key(b"ok");
+            json.boolean(true);
+            json.key(b"data");
+        }
         json.array_start();
         for row in &self.rows {
             let repo = &row.reachable;
@@ -198,6 +205,10 @@ impl Listing {
             json.key(b"login");
             json.string(&repo.login);
             json.object_end();
+            if self.search {
+                json.key(b"full_name");
+                json.string_parts(&[&repo.login, b"/", &repo.name]);
+            }
             json.key(b"permissions");
             json.object_start();
             json.key(b"push");
@@ -210,5 +221,61 @@ impl Listing {
             json.object_end();
         }
         json.array_end();
+        if self.search {
+            json.object_end();
+        }
+    }
+}
+
+impl Store {
+    /// Admins see every repository; other users see public and personally owned repositories, without collaborator or team grants.
+    pub(crate) fn search(&self, config: &Config, user: u64, page: Page, limits: &Limits) -> Reply {
+        match self.search_page(config, user, page) {
+            Ok(listing) => listing.reply(limits),
+            Err(Error::Limits) => super::full(limits),
+        }
+    }
+    fn search_page(&self, config: &Config, user: u64, page: Page) -> Result<Listing, Error> {
+        let admin = match self.user(user) {
+            Some(account) => account.is_admin,
+            None => false,
+        };
+        let login = self.login(config, user).ok_or(Error::Limits)?;
+        let mut listing = Listing::new(page, config);
+        listing.search = true;
+        let (page, cap) = crate::routes::page(config, page);
+        let start = u64::from(page.saturating_sub(1)).saturating_mul(u64::from(cap));
+        while let Some(repo) = listing.next(config) {
+            listing.current = Some(repo.id);
+            let slash = skein_lib::bytes::find(&repo.full, b"/").ok_or(Error::Limits)?;
+            let owner = repo.full.get(..slash).ok_or(Error::Limits)?;
+            let name = repo.full.get(slash.saturating_add(1)..).ok_or(Error::Limits)?;
+            let private = self.is_private(u64::from(repo.id));
+            if !admin && private && owner != login.as_ref() {
+                continue;
+            }
+            if listing.seen >= start && listing.rows.room() > 0 {
+                if owner.len() > self.string_bytes || name.len() > self.string_bytes {
+                    return Err(Error::Limits);
+                }
+                let owner_id = self.owner(config, owner).ok_or(Error::Limits)?;
+                let row = Row {
+                    reachable: Reachable {
+                        repository: u64::from(repo.id),
+                        owner: owner_id,
+                        login: owner.into(),
+                        name: name.into(),
+                        private,
+                        push: true,
+                    },
+                    permission: Permission::Admin,
+                };
+                if listing.rows.push(row).is_err() {
+                    return Err(Error::Limits);
+                }
+            }
+            listing.seen = listing.seen.saturating_add(1);
+        }
+        Ok(listing)
     }
 }

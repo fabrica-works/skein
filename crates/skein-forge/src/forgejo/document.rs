@@ -85,13 +85,15 @@ pub struct Reachable {
     pub login: Box<[u8]>,
     pub name: Box<[u8]>,
     pub private: bool,
-    /// The row's `permissions.push`.
+    /// The row's `permissions.push`, or true for an admin search.
     pub push: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Row {
     /// Retains every repository so the setup host can filter after counting the page.
     Reachable(Reachable),
+    /// Admin search reaches every repository, so each row has push set true.
+    Found(Reachable),
     Hook(Hook),
     Token(AccessToken),
     Team(Team),
@@ -119,8 +121,16 @@ pub enum Document {
     User(User),
     ApiSettings(ApiSettings),
     Repository(Repository),
-    Search { ok: bool },
-    Listed { skipped: u32 },
+    Search {
+        ok: bool,
+    },
+    /// Reports the search flag for the setup host to judge.
+    RepoSearch {
+        ok: bool,
+    },
+    Listed {
+        skipped: u32,
+    },
     Issue(Issue),
     Comment(Comment),
     Status(CommitStatus),
@@ -131,7 +141,9 @@ pub enum Document {
     Protection(BranchProtection),
     Permission(CollaboratorPermission),
     Compare(Compare),
-    Runs { total_count: u64 },
+    Runs {
+        total_count: u64,
+    },
     Run(Run),
     Job(Job),
     Error(ErrorBody),
