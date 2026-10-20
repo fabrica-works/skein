@@ -25,7 +25,6 @@ mod reviews;
 pub(crate) enum Read {
     Repository(u64),
     Enqueue { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
-    QueueMerge { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Reviews { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
     ReviewComments { owner: Box<[u8]>, name: Box<[u8]>, number: u64, review: u64 },
@@ -47,7 +46,6 @@ pub(crate) enum Read {
 pub(crate) enum Pending {
     Repository(Row),
     Enqueue,
-    QueueMerge(api::Commit),
     PullGraphql { repository: u32, number: u64 },
     Reviews { page: u32, size: u32, target: Box<[u8]> },
     ReviewComments(u64),
@@ -68,7 +66,6 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
         Read::Enqueue { owner, name, .. }
-        | Read::QueueMerge { owner, name, .. }
         | Read::PullGraphql { owner, name, .. }
         | Read::Reviews { owner, name, .. }
         | Read::ReviewComments { owner, name, .. }
@@ -96,7 +93,7 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
 }
 fn writing(read: &Read) -> bool {
     match read {
-        Read::Enqueue { .. } | Read::QueueMerge { .. } => true,
+        Read::Enqueue { .. } => true,
         Read::Repository(_)
         | Read::PullGraphql { .. }
         | Read::Reviews { .. }
@@ -147,7 +144,6 @@ pub(crate) fn call(
             };
             (Pending::Enqueue, Op::Write(a::Write::Enqueue { number, head }))
         }
-        Read::QueueMerge { number, head, .. } => (Pending::QueueMerge(head), Op::Read(a::Read::Pull { number })),
         Read::PullGraphql { number, .. } => {
             (Pending::PullGraphql { repository: row.id, number }, Op::Read(a::Read::Pull { number }))
         }
@@ -261,8 +257,7 @@ pub(crate) fn finish(pending: Pending, result: Result<Answer, Error>, limits: &L
             }
             result => result,
         },
-        Pending::QueueMerge(_)
-        | Pending::PullGraphql { .. }
+        Pending::PullGraphql { .. }
         | Pending::Reviews { .. }
         | Pending::ReviewComments(_)
         | Pending::Collaborators { .. }
@@ -284,7 +279,6 @@ pub(crate) fn finish(pending: Pending, result: Result<Answer, Error>, limits: &L
     };
     match pending {
         Pending::Enqueue => enqueue_finish(Ok(answer), limits),
-        Pending::QueueMerge(head) => queue_merge(answer, head, limits),
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
         Pending::ReviewComments(review) => reviews::comments(answer, review, limits),
@@ -367,30 +361,6 @@ fn refused(error: Error, limits: &Limits) -> Response {
         | Error::Unreachable
         | Error::Refused => answers::failed(),
     }
-}
-
-fn queue_merge(answer: Answer, head: api::Commit, limits: &Limits) -> Response {
-    let Answer::Pull(pull) = answer else {
-        return answers::failed();
-    };
-    // Task 23 owns ordinary REST merges; only the queue refusal is served here.
-    if !pull.queue_required {
-        return answers::missing(limits);
-    }
-    if commit(pull.commit) != head {
-        return answers::refusal(409, skein_forge::github::failure::MERGE_STALE, limits);
-    }
-    // Recorded shape: each line, the heading first, ends in a blank line.
-    let Some(prefix) = service::joined(skein_forge::github::failure::RULES, b"\n\n") else {
-        return answers::failed();
-    };
-    let Some(message) = service::joined(&prefix, skein_forge::github::failure::QUEUE) else {
-        return answers::failed();
-    };
-    let Some(message) = service::joined(&message, b"\n\n") else {
-        return answers::failed();
-    };
-    answers::refusal(405, &message, limits)
 }
 
 fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {

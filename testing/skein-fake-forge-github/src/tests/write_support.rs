@@ -25,6 +25,23 @@ pub fn write_after_push(
     write: api::Write,
     moved: Option<u64>,
 ) -> Result<api::Answer, api::Error> {
+    drive(h, token, write, moved, None)
+}
+pub fn write_with_settings(
+    h: &mut f::Harness,
+    token: &Secret,
+    write: api::Write,
+    settings: skein_fake_forge_domain::api::Settings,
+) -> Result<api::Answer, api::Error> {
+    drive(h, token, write, None, Some(settings))
+}
+fn drive(
+    h: &mut f::Harness,
+    token: &Secret,
+    write: api::Write,
+    moved: Option<u64>,
+    settings: Option<skein_fake_forge_domain::api::Settings>,
+) -> Result<api::Answer, api::Error> {
     let mut plan = Plan::new(api::Repository { forge: 1, repository: 2 }, write);
     let mut tables = Tables::new(4, 8);
     let mut step = plan.begin(r::bounds(), b"example-app", &mut tables).expect("begin write");
@@ -44,6 +61,11 @@ pub fn write_after_push(
                     expected: None,
                 }),
             );
+        }
+        if let skein_forge::github::request::Request::Merge { .. } = &exchange.request
+            && let Some(settings) = &settings
+        {
+            skein_fake_forge_domain::settings(&mut h.domain, b"acme/widgets", settings.clone());
         }
         let events = r::exchange_events(h, &exchange, token);
         let mut next = None;

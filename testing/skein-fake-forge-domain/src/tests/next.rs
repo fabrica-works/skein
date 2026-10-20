@@ -237,7 +237,13 @@ fn comparisons_carry_the_shared_base_of_divergent_and_unrelated_histories() {
 #[test]
 fn inspection_reads_protection_without_client_authorization_or_calls() {
     let mut configured = setup();
-    let protection = Protection { branch: copy_of(MAIN), contexts: names(&[b"ci"]), approvals: 1, dismiss_stale: true };
+    let protection = Protection {
+        queue: false,
+        branch: copy_of(MAIN),
+        contexts: names(&[b"ci"]),
+        approvals: 1,
+        dismiss_stale: true,
+    };
     configured.protection = Some(protection.clone());
     let h = Harness::with(CALM, configured);
     let tally = h.domain.tally();

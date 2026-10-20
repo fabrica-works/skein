@@ -121,7 +121,7 @@ impl Fake {
                 Outcome::Reply(response) => break response,
                 Outcome::Call(pending, event) => {
                     let result = domain_reply(&mut self.domain, &self.config, wall, event);
-                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)))
+                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)), &self.domain)
                 }
             };
         };

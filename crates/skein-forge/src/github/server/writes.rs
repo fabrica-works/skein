@@ -22,18 +22,20 @@ pub(super) fn route(method: super::Method, path: &[u8]) -> Option<Request> {
         return Some(Request::CreateBranch { owner, name, branch: Box::from([]), commit: [0; 32] });
     }
     if method == super::Method::Delete
-        && let Some(branch) = tail.strip_prefix(b"git/refs/heads/") {
-            return Some(Request::DeleteBranch { owner, name, branch: super::request::unescape(branch)? });
+        && let Some(branch) = tail.strip_prefix(b"git/refs/heads/")
+    {
+        return Some(Request::DeleteBranch { owner, name, branch: super::request::unescape(branch)? });
     }
     if method == super::Method::Post
-        && let Some(commit) = tail.strip_prefix(b"statuses/") {
-            return Some(Request::Status {
-                owner,
-                name,
-                commit: super::id::commit(commit)?,
-                context: Box::from([]),
-                check: crate::api::Check::Pending,
-            });
+        && let Some(commit) = tail.strip_prefix(b"statuses/")
+    {
+        return Some(Request::Status {
+            owner,
+            name,
+            commit: super::id::commit(commit)?,
+            context: Box::from([]),
+            check: crate::api::Check::Pending,
+        });
     }
     if method == super::Method::Post && tail == b"issues" {
         return Some(Request::CreateIssue { owner, name, title: Box::from([]), body: Box::from([]) });
@@ -51,31 +53,44 @@ pub(super) fn route(method: super::Method, path: &[u8]) -> Option<Request> {
     if let Some(tail) = tail.strip_prefix(b"pulls/") {
         let (number, suffix) = super::split(tail, b'/');
         let number = super::unsigned(number)?;
-        return match (method, suffix) {
-            (super::Method::Put, b"update-branch") => Some(Request::Update { owner, name, number, head: [0; 32] }),
-            (super::Method::Post, b"reviews") => Some(Request::Review {
+        return match suffix {
+            b"merge" if method == super::Method::Put => Some(Request::Merge {
+                owner,
+                name,
+                number,
+                head: [0; 32],
+                method: crate::github::plans::tables::Method::Squash,
+            }),
+            b"update-branch" if method == super::Method::Put => {
+                Some(Request::Update { owner, name, number, head: [0; 32] })
+            }
+            b"reviews" if method == super::Method::Post => Some(Request::Review {
                 owner,
                 name,
                 number,
                 verdict: crate::api::Verdict::Comment,
                 body: Box::from([]),
             }),
-            (super::Method::Post | super::Method::Delete, b"requested_reviewers") => Some(Request::Reviewers {
-                owner,
-                name,
-                number,
-                add: method == super::Method::Post,
-                logins: Box::from([]),
-            }),
+            b"requested_reviewers" if method == super::Method::Post || method == super::Method::Delete => {
+                Some(Request::Reviewers {
+                    owner,
+                    name,
+                    number,
+                    add: method == super::Method::Post,
+                    logins: Box::from([]),
+                })
+            }
             _ => None,
         };
     }
     let tail = tail.strip_prefix(b"issues/")?;
     let (number, suffix) = super::split(tail, b'/');
     let number = super::unsigned(number)?;
-    match (method, suffix) {
-        (super::Method::Patch, b"") => Some(Request::Edit { owner, name, number, title: None, body: None }),
-        (super::Method::Post, b"comments") => Some(Request::Post { owner, name, number, body: Box::from([]) }),
+    match suffix {
+        b"" if method == super::Method::Patch => Some(Request::Edit { owner, name, number, title: None, body: None }),
+        b"comments" if method == super::Method::Post => {
+            Some(Request::Post { owner, name, number, body: Box::from([]) })
+        }
         _ => None,
     }
 }

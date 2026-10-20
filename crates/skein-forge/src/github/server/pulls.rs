@@ -6,6 +6,7 @@ use skein_lib::{Overflow, Writer};
 
 #[derive(Debug)]
 enum Answer<'a> {
+    Refusal(&'a [u8]),
     Merge(&'a api::Commit),
     Enqueued(u32),
     Pull(&'a document::Pull),
@@ -14,6 +15,10 @@ enum Answer<'a> {
     Combined(&'a document::Combined, &'a [document::Context]),
     Runs(&'a [document::Run]),
     Job(&'a document::Job),
+}
+/// Writes the REST merge refusal's message and recorded metadata.
+pub fn merge_refusal(message: &[u8], out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::Refusal(message), out)
 }
 /// Writes the REST merge's landed commit.
 pub fn merged(commit: &api::Commit, out: &mut Writer) -> Result<(), Overflow> {
@@ -60,6 +65,16 @@ fn encode(answer: &Answer<'_>, out: &mut Writer) -> Result<(), Overflow> {
 }
 fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> {
     match answer {
+        Answer::Refusal(message) => {
+            json.object_start();
+            json.key(b"message");
+            json.string(message);
+            json.key(b"documentation_url");
+            json.string(b"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request");
+            json.key(b"status");
+            json.string(b"405");
+            json.object_end();
+        }
         Answer::Merge(commit) => {
             json.object_start();
             json.key(b"sha");

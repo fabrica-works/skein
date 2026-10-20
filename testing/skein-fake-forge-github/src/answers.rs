@@ -8,6 +8,8 @@ pub(crate) const SUSPENDED: &[u8] = b"This installation has been suspended";
 
 #[derive(Debug)]
 pub(crate) enum Body<'a> {
+    Merged(&'a skein_forge::api::Commit),
+    Rules(&'a [u8]),
     Done,
     Number(u64),
     Id(u64),
@@ -43,6 +45,8 @@ pub(crate) enum Body<'a> {
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
     match body {
+        Body::Merged(commit) => server::merged(commit, out),
+        Body::Rules(message) => server::merge_refusal(message, out),
         Body::Done => server::done(out),
         Body::Number(number) => server::number(*number, out),
         Body::Id(id) => server::id(*id, out),

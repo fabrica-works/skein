@@ -19,13 +19,16 @@ use skein_forge::{
 };
 use skein_lib::{List, ReplyTo, Secret, Token};
 
-pub fn harness() -> f::Harness {
+pub fn domain_config() -> fake::Config {
     let mut config = f::domain_config();
     config.limits.items = 8;
     config.limits.comments = 4;
     config.limits.reviews = 4;
     config.limits.files = 4;
-    f::Harness::with_domain(f::limits(), f::config(), config)
+    config
+}
+pub fn harness() -> f::Harness {
+    f::Harness::with_domain(f::limits(), f::config(), domain_config())
 }
 pub fn call(h: &mut f::Harness, op: a::Op) -> a::Answer {
     call_as(h, 1, op)

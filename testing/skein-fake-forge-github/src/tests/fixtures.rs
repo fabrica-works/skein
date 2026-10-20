@@ -133,7 +133,7 @@ impl Harness {
                         reruns: 0,
                         cue: None,
                     },
-                    protection: protection.clone(),
+                    protection: if id == 2 { protection.clone() } else { None },
                     hooked: true,
                 },
             );
@@ -189,7 +189,7 @@ impl Harness {
                 Outcome::Call(pending, event) => {
                     self.calls = self.calls.checked_add(1).expect("fixture calls");
                     let result = self.drive(event);
-                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)))
+                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)), &self.domain)
                 }
             };
         }

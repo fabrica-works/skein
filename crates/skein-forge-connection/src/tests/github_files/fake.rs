@@ -167,7 +167,7 @@ impl Fake {
                 agent = true;
             }
         }
-        let response = match self.service.request(
+        let mut outcome = self.service.request(
             &service::Request {
                 method: github::request::Method::Get,
                 target,
@@ -178,12 +178,15 @@ impl Fake {
             },
             Wall::EPOCH,
             ReplyTo::new(Token::new(77)),
-        ) {
-            service::Outcome::Reply(response) => response,
-            service::Outcome::Call(pending, event) => {
-                let result = self.drive(event);
-                self.service.finish(pending, result)
-            }
+        );
+        let response = loop {
+            outcome = match outcome {
+                service::Outcome::Reply(response) => break response,
+                service::Outcome::Call(pending, event) => {
+                    let result = self.drive(event);
+                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)), &self.domain)
+                }
+            };
         };
         let status = skein_lib::Decimal::of(u64::from(response.status));
         let length = skein_lib::Decimal::of(u64::try_from(response.body.len()).expect("body length"));

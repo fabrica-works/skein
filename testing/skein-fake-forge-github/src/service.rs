@@ -347,28 +347,6 @@ impl Service {
                     }
                     routes::Token::User(id) => Outcome::Reply(reads::user(self, id, self.body_fits(request.body))),
                     routes::Token::Graphql => self.graphql(request, &grant, reply_to),
-                    routes::Token::QueueMerge { owner, name, number } => {
-                        let route = request::Request::Merge {
-                            owner,
-                            name,
-                            number,
-                            head: [0; 32],
-                            method: github::plans::tables::Method::Merge,
-                        };
-                        let Some(request::Request::Merge { owner, name, number, head, .. }) =
-                            server::write_body(route, request.body, &limits.github)
-                        else {
-                            return Outcome::Reply(answers::refusal(422, b"Validation Failed", limits));
-                        };
-                        reads::call(
-                            self,
-                            reads::Read::QueueMerge { owner, name, number, head },
-                            &grant,
-                            request.target,
-                            self.body_fits(request.body),
-                            reply_to,
-                        )
-                    }
                     routes::Token::Write(route) => writes::call(self, route, &grant, request.body, reply_to),
                     routes::Token::Read(read) => {
                         reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)
@@ -409,10 +387,11 @@ impl Service {
         pending: Pending,
         result: Result<fake::api::Answer, fake::api::Error>,
         reply_to: ReplyTo,
+        domain: &fake::Domain,
     ) -> Outcome {
         match pending.kind {
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, &self.limits)),
-            PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to),
+            PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
         }
     }
     fn app_route(&mut self, route: routes::App, request: &Request<'_>, now: Wall) -> Response {
@@ -663,6 +642,8 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         // The fixed JWT reader (512 tokens), its queues and signing scratch.
         .checked_add(65_536)?
         .checked_add(u64::from(limits.body).checked_mul(8)?)?
+        // A merge refusal retains one response-sized rule message while the
+        // JSON encoder measures and writes it; these fit eight response copies.
         .checked_add(u64::from(limits.response).checked_mul(8)?)?
         .checked_add(u64::from(limits.github.target_bytes).checked_mul(8)?)?
         .checked_add(u64::from(limits.github.string_bytes).checked_mul(8)?)

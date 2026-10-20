@@ -13,8 +13,17 @@ use skein_fake_forge_domain::{
 use skein_forge::github::{request::Request, server};
 use skein_lib::ReplyTo;
 
+mod merge;
+
 #[derive(Debug)]
 pub(crate) enum Route {
+    Merge {
+        owner: Box<[u8]>,
+        name: Box<[u8]>,
+        number: u64,
+        head: skein_forge::api::Commit,
+        method: skein_forge::github::plans::tables::Method,
+    },
     CreateBranch {
         owner: Box<[u8]>,
         name: Box<[u8]>,
@@ -94,6 +103,7 @@ pub(crate) enum Route {
 impl Route {
     fn request(self) -> Request {
         match self {
+            Self::Merge { owner, name, number, head, method } => Request::Merge { owner, name, number, head, method },
             Self::CreateBranch { owner, name, branch, commit } => Request::CreateBranch { owner, name, branch, commit },
             Self::DeleteBranch { owner, name, branch } => Request::DeleteBranch { owner, name, branch },
             Self::Status { owner, name, commit, context, check } => {
@@ -119,7 +129,8 @@ impl Route {
     fn contents(&self) -> bool {
         match self {
             Self::CreateBranch { .. } | Self::DeleteBranch { .. } => true,
-            Self::Status { .. }
+            Self::Merge { .. }
+            | Self::Status { .. }
             | Self::OpenPull { .. }
             | Self::Update { .. }
             | Self::Review { .. }
@@ -133,7 +144,8 @@ impl Route {
     }
     fn path(&self) -> (&[u8], &[u8]) {
         match self {
-            Self::CreateBranch { owner, name, .. }
+            Self::Merge { owner, name, .. }
+            | Self::CreateBranch { owner, name, .. }
             | Self::DeleteBranch { owner, name, .. }
             | Self::Status { owner, name, .. }
             | Self::OpenPull { owner, name, .. }
@@ -163,6 +175,7 @@ enum Stage {
     Updated,
     Reviewed,
     Branch,
+    Merge(merge::Stage),
     DeleteBranch,
     Status,
     ReviewAuthor { number: u64, verdict: skein_forge::api::Verdict, body: Box<[u8]> },
@@ -214,8 +227,12 @@ fn verdict_of(verdict: skein_forge::api::Verdict) -> a::Verdict {
         skein_forge::api::Verdict::Comment => a::Verdict::Comment,
     }
 }
+#[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively translates each write request")]
 fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Response> {
     let (stage, write) = match request {
+        Request::Merge { number, head, method, .. } => {
+            return Ok((Stage::Merge(merge::Stage::Settings { number, head, method }), Op::Read(a::Read::Settings)));
+        }
         Request::CreateBranch { branch, commit, .. } => {
             let Some(commit) = reads::count(&commit) else {
                 return Err(answers::missing(&service.limits));
@@ -285,7 +302,6 @@ fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Respons
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
-        | Request::Merge { .. }
         | Request::Enqueue { .. }
         | Request::PullGraphql { .. }
         | Request::App
@@ -326,13 +342,30 @@ pub(crate) fn finish(
     pending: Pending,
     result: Result<a::Answer, a::Error>,
     reply_to: ReplyTo,
+    domain: &fake::Domain,
 ) -> Outcome {
+    let stage = match pending.stage {
+        Stage::Merge(stage) => return merge::finish(service, pending.repository, stage, result, reply_to, domain),
+        stage @ (Stage::Branch
+        | Stage::DeleteBranch
+        | Stage::Status
+        | Stage::ReviewAuthor { .. }
+        | Stage::Done
+        | Stage::Created
+        | Stage::Commented
+        | Stage::OpenPull { .. }
+        | Stage::UpdateHead { .. }
+        | Stage::Updated
+        | Stage::Reviewed
+        | Stage::Reviewers(_)) => stage,
+    };
     let limits = &service.limits;
     let answer = match result {
         Ok(answer) => answer,
-        Err(error) => return Outcome::Reply(refused(&pending.stage, error, limits)),
+        Err(error) => return Outcome::Reply(refused(&stage, error, limits)),
     };
-    let response = match pending.stage {
+    let response = match stage {
+        Stage::Merge(_) => return Outcome::Reply(answers::failed()),
         Stage::Branch => {
             let a::Answer::Branch(created) = answer else {
                 return Outcome::Reply(answers::failed());
@@ -392,24 +425,31 @@ pub(crate) fn finish(
             answers::response(201, &Body::Number(number), limits)
         }
         Stage::Commented => {
-            let a::Answer::Commented(id) = answer else { return Outcome::Reply(answers::failed()); };
+            let a::Answer::Commented(id) = answer else {
+                return Outcome::Reply(answers::failed());
+            };
             answers::response(201, &Body::Id(id), limits)
         }
         Stage::Reviewed => {
-            let a::Answer::Reviewed(id) = answer else { return Outcome::Reply(answers::failed()); };
+            let a::Answer::Reviewed(id) = answer else {
+                return Outcome::Reply(answers::failed());
+            };
             answers::response(200, &Body::Id(id), limits)
         }
     };
     Outcome::Reply(response)
 }
 fn done(status: u16, answer: a::Answer, limits: &Limits) -> Response {
-    let a::Answer::Done = answer else { return answers::failed(); };
+    let a::Answer::Done = answer else {
+        return answers::failed();
+    };
     answers::response(status, &Body::Done, limits)
 }
 
 fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
     use skein_forge::github::failure;
     match stage {
+        Stage::Merge(_) => return answers::failed(),
         Stage::DeleteBranch if error == a::Error::Missing(a::What::Branch) => {
             return answers::refusal(422, failure::REF_MISSING, limits);
         }
@@ -432,6 +472,7 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
                 | a::Error::Missing(_)
                 | a::Error::TooLarge
                 | a::Error::Full
+                | a::Error::AlreadyQueued(_)
                 | a::Error::Circular
                 | a::Error::Empty
                 | a::Error::Closed
@@ -464,7 +505,9 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
         a::Error::Missing(_) | a::Error::Forbidden => answers::missing(limits),
         a::Error::Unavailable => answers::refusal(503, b"Server Error", limits),
         a::Error::Timeout => answers::refusal(504, b"Server Error", limits),
-        a::Error::TooLarge | a::Error::Full | a::Error::RateLimited { .. } => answers::failed(),
+        a::Error::AlreadyQueued(_) | a::Error::TooLarge | a::Error::Full | a::Error::RateLimited { .. } => {
+            answers::failed()
+        }
         a::Error::Empty
         | a::Error::Exists
         | a::Error::Circular
