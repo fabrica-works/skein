@@ -25,7 +25,8 @@ fn forge_peer_publishes_its_bound_loopback_address() {
     let mut world = World::new();
     assert_eq!(world.peer.address(), None);
     world.bind();
-    let address = world.peer.address().expect("listening address");
+    let address = skein_fake_peers::Listening::address(&world.peer);
+    assert_eq!(Some(address), world.peer.address());
     assert!(address.ip().is_loopback());
     assert_ne!(address.port(), 0);
     assert!(world.peer.worst_case() > 0);
@@ -75,7 +76,7 @@ fn shutdown_keeps_a_mid_request_client_until_its_terminal() {
     let request = fixtures::request(b"/api/v1/repos/org/repo/branches/main");
     let split = b"GET /api/v1/repos/org/repo/branches/main HTTP/1.1\r\n".len();
     world.send(fd, &request[..split]);
-    world.peer.shutdown();
+    skein_fake_peers::Listening::shutdown(&mut world.peer);
     world.pass();
     assert!(!world.peer.is_empty());
     world.send(fd, &request[split..]);

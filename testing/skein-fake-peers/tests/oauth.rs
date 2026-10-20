@@ -84,8 +84,11 @@ fn issuer_process_binds_and_settles_for_both_transports() {
                 sim.advance_to(next);
             }
         }
-        assert!(peer.address().unwrap().ip().is_loopback());
-        peer.shutdown();
+        let address = skein_fake_peers::Listening::address(&peer);
+        assert_eq!(Some(address), peer.address());
+        assert!(address.ip().is_loopback());
+        let observations = peer.observations().len();
+        skein_fake_peers::Listening::shutdown(&mut peer);
         for _ in 0..100 {
             sim.reap(pid, peer.completions());
             peer.iterate(sim.now(), sim.wall());
@@ -100,6 +103,7 @@ fn issuer_process_binds_and_settles_for_both_transports() {
             }
         }
         assert!(peer.is_empty());
+        assert_eq!(peer.observations().len(), observations);
         sim.assert_quiescent(pid);
         sim.assert_no_open_fds(pid);
     }

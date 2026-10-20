@@ -107,9 +107,12 @@ fn fake_peer_binds_loopback_and_shutdown_settles_the_actual_listener() {
                 sim.advance_to(next);
             }
         }
-        assert!(peer.address().unwrap().ip().is_loopback());
+        let address = skein_fake_peers::Listening::address(&peer);
+        assert_eq!(Some(address), peer.address());
+        assert!(address.ip().is_loopback());
         assert_ne!(peer.address().unwrap().port(), 0);
-        peer.shutdown();
+        let observations = peer.observations().len();
+        skein_fake_peers::Listening::shutdown(&mut peer);
         for _ in 0..100 {
             sim.reap(pid, peer.completions());
             peer.iterate(sim.now(), sim.wall());
@@ -124,6 +127,7 @@ fn fake_peer_binds_loopback_and_shutdown_settles_the_actual_listener() {
             }
         }
         assert!(peer.is_empty());
+        assert_eq!(peer.observations().len(), observations);
         sim.assert_quiescent(pid);
         sim.assert_no_open_fds(pid);
         assert!(!peer.work_pending(Time::ZERO));
