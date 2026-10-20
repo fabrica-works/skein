@@ -1,6 +1,6 @@
 //! Installations and their tokens (fake-forge.md, 10.1).
 use alloc::boxed::Box;
-use skein_lib::{Duration, List, Rng, Secret, Wall, Writer, bytes};
+use skein_lib::{Duration, List, Queue, Rng, Secret, Wall, Writer, bytes};
 
 /// GitHub's longest login, in bytes.
 pub const LOGIN_BYTES: usize = 39;
@@ -76,6 +76,8 @@ struct Issued {
 /// rows in place, without allocating a second table.
 #[derive(Debug)]
 pub struct Installations {
+    events: Queue<Changed>,
+    now: Wall,
     rows: List<Option<Installation>>,
     tokens: List<Option<Issued>>,
     rng: Rng,
@@ -86,6 +88,8 @@ impl Installations {
     #[must_use]
     pub fn new(limits: &Limits, seed: u64) -> Self {
         Self {
+            events: Queue::with_capacity(event_capacity(limits).expect("admitted event capacity")),
+            now: Wall::EPOCH,
             rows: List::with_capacity(limits.installations),
             tokens: List::with_capacity(limits.tokens),
             rng: Rng::new(seed),
@@ -100,7 +104,7 @@ impl Installations {
         if login.is_empty() || login.len() > LOGIN_BYTES {
             return Err(Install::Login);
         }
-        if self.rows.room() == 0 {
+        if self.rows.room() == 0 || self.events.room() == 0 {
             return Err(Install::Full);
         }
         let next = self.next.checked_add(1).ok_or(Install::Full)?;
@@ -118,26 +122,24 @@ impl Installations {
             }
         };
         let id = self.next;
-        self.rows
-            .push(Some(Installation {
-                id,
-                account,
-                login: bytes::copy_of(login),
-                kind,
-                reach,
-                suspended: false,
-                created: now,
-            }))
-            .expect("installation room checked");
+        let row =
+            Installation { id, account, login: bytes::copy_of(login), kind, reach, suspended: false, created: now };
+        self.events.push(changed(&row, skein_forge::github::delivery::Change::Created, now));
+        self.rows.push(Some(row)).expect("installation room checked");
+        self.now = now;
         self.next = next;
         Ok(id)
     }
 
     /// Removes an installation and every token it minted; false when absent.
     pub fn remove(&mut self, id: u64) -> bool {
+        if self.events.room() == 0 {
+            return false;
+        }
         for at in 0..self.rows.len() {
             let row = self.rows.get(at).expect("stored row").as_ref().expect("packed installation");
             if row.id == id {
+                self.events.push(changed(row, skein_forge::github::delivery::Change::Deleted, self.now));
                 let last = self.rows.len().checked_sub(1).expect("installation found");
                 for index in at..last {
                     let next = index.checked_add(1).expect("before last");
@@ -158,10 +160,25 @@ impl Installations {
     }
 
     pub fn suspend(&mut self, id: u64, suspended: bool) -> bool {
+        if self.events.room() == 0 {
+            return false;
+        }
         for index in 0..self.rows.len() {
             let row = self.rows.get_mut(index).expect("stored row").as_mut().expect("packed installation");
             if row.id == id {
+                if row.suspended == suspended {
+                    return true;
+                }
                 row.suspended = suspended;
+                self.events.push(changed(
+                    row,
+                    if suspended {
+                        skein_forge::github::delivery::Change::Suspended
+                    } else {
+                        skein_forge::github::delivery::Change::Unsuspended
+                    },
+                    self.now,
+                ));
                 return true;
             }
         }
@@ -171,6 +188,9 @@ impl Installations {
     /// Replaces a reach within the listed bound; false for an absent id or an oversized list.
     /// Retains only the list's length, not its caller's spare capacity.
     pub fn set_reach(&mut self, id: u64, reach: Reach) -> bool {
+        if self.events.room() == 0 {
+            return false;
+        }
         let reach = match reach {
             Reach::All => Reach::All,
             Reach::Listed(repositories) => {
@@ -188,12 +208,45 @@ impl Installations {
             let row = self.rows.get_mut(index).expect("stored row").as_mut().expect("packed installation");
             if row.id == id {
                 row.reach = reach;
+                self.events.push(changed(row, skein_forge::github::delivery::Change::Repositories, self.now));
                 return true;
             }
         }
         false
     }
 
+    /// Sets the forge clock used by scenario mutations without a timestamp argument.
+    pub fn clock(&mut self, now: Wall) {
+        self.now = now;
+    }
+    pub(crate) fn event_capacity(&self) -> u32 {
+        self.events.capacity()
+    }
+    pub(crate) fn take_event(&mut self) -> Option<Changed> {
+        self.events.pop()
+    }
+    /// Renames one installation's account, retaining the new login in its event.
+    pub fn rename(&mut self, id: u64, login: &[u8]) -> bool {
+        if login.is_empty() || login.len() > LOGIN_BYTES || self.events.room() == 0 {
+            return false;
+        }
+        for index in 0..self.rows.len() {
+            let row = self.rows.get_mut(index).expect("row").as_mut().expect("packed installation");
+            if row.id == id {
+                if row.login.as_ref() == login {
+                    return true;
+                }
+                row.login = bytes::copy_of(login);
+                self.events.push(changed(
+                    row,
+                    skein_forge::github::delivery::Change::Renamed { login: bytes::copy_of(login) },
+                    self.now,
+                ));
+                return true;
+            }
+        }
+        false
+    }
     #[must_use]
     pub fn get(&self, id: u64) -> Option<&Installation> {
         let mut found = None;
@@ -295,6 +348,10 @@ impl Installations {
         let per_row = u64::try_from(LOGIN_BYTES).ok()?.checked_add(List::<u32>::worst_case(limits.listed)?)?;
         let tokens = List::<Option<Issued>>::worst_case(limits.tokens)?;
         rows.checked_add(per_row.checked_mul(u64::from(limits.installations))?)?
+            .checked_add(Queue::<Changed>::worst_case(event_capacity(limits)?)?)?
+            .checked_add(
+                u64::from(event_capacity(limits)?).checked_mul(u64::try_from(LOGIN_BYTES).ok()?.checked_mul(2)?)?,
+            )?
             .checked_add(tokens)?
             .checked_add(u64::try_from(TOKEN_BYTES).ok()?.checked_mul(u64::from(limits.tokens))?)
     }
@@ -303,3 +360,22 @@ impl Installations {
 #[cfg(test)]
 #[path = "tests/memory.rs"]
 mod tests;
+
+#[derive(Debug)]
+pub(crate) struct Changed {
+    pub payload: skein_forge::github::delivery::Delivery,
+    pub at: Wall,
+}
+fn changed(row: &Installation, change: skein_forge::github::delivery::Change, at: Wall) -> Changed {
+    Changed {
+        payload: skein_forge::github::delivery::Delivery::Installation {
+            installation: row.id,
+            account: skein_forge::github::delivery::Account { id: row.account, login: bytes::copy_of(&row.login) },
+            change,
+        },
+        at,
+    }
+}
+fn event_capacity(limits: &Limits) -> Option<u32> {
+    limits.installations.checked_mul(8)
+}

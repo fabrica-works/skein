@@ -771,6 +771,13 @@ pub enum Created {
     Exists,
 }
 
+/// A pull's queue transition retained at the change, before its delayed hook.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum QueueHook {
+    Enqueued,
+    Dequeued(QueueRemoval),
+}
+
 /// What a webhook says changed. Those about an item name it.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Change {

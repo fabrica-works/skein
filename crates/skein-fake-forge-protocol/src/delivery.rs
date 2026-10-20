@@ -74,7 +74,7 @@ impl Service {
 
     fn payload(&self, hook: &domain::Request, limits: &Limits) -> Option<(u32, server::delivery::Sent)> {
         let (repository, change, number, branch, commit, by, body, ended) = match hook {
-            domain::Request::Hook { repository, change, number, branch, commit, by, body, ended } => {
+            domain::Request::Hook { repository, change, number, branch, commit, by, body, ended, .. } => {
                 (repository, change, number, branch, commit, by, body, ended)
             }
             domain::Request::Reply { .. } => return None,

@@ -39,6 +39,7 @@ pub enum Request {
     /// and the `commit` it moved to (none if it was deleted). A job names
     /// its end; other items carry their body, except pulls. No event answers it.
     Hook {
+        queue: Option<crate::api::QueueHook>,
         repository: Box<[u8]>,
         change: Change,
         number: Option<u64>,

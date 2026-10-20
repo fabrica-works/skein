@@ -1,5 +1,5 @@
 use super::{Installations, Kind, LOGIN_BYTES, Limits, Reach, Scope};
-use skein_lib::{List, Wall};
+use skein_lib::{List, Queue, Wall};
 
 #[test]
 fn github_fake_memory() {
@@ -19,6 +19,13 @@ fn github_fake_memory() {
     for _token in 0..limits.tokens {
         drop(store.mint(1, Scope::Full, Wall::EPOCH).expect("token capacity"));
     }
+    for _ in 0..store.event_capacity() {
+        drop(store.take_event());
+    }
+    for index in 0..store.event_capacity() {
+        let byte = if index % 2 == 0 { b'y' } else { b'x' };
+        assert!(store.rename(1, &[byte; LOGIN_BYTES]));
+    }
     let mut held =
         size_of_val(store.rows.as_slice()).checked_add(size_of_val(store.tokens.as_slice())).expect("table bytes");
     assert_eq!(store.rows.len(), store.rows.capacity());
@@ -35,6 +42,20 @@ fn github_fake_memory() {
     }
     for token in store.tokens.iter().flatten() {
         held = held.checked_add(token.secret.len()).expect("token bytes");
+    }
+    held = held
+        .checked_add(usize::try_from(Queue::<super::Changed>::worst_case(store.event_capacity()).unwrap()).unwrap())
+        .unwrap();
+    assert_eq!(store.events.len(), store.events.capacity());
+    for event in &store.events {
+        let skein_forge::github::delivery::Delivery::Installation { account, change, .. } = &event.payload else {
+            panic!("installation event")
+        };
+        let skein_forge::github::delivery::Change::Renamed { login } = change else { panic!("rename event") };
+        held = held.checked_add(account.login.len()).unwrap().checked_add(login.len()).unwrap();
+    }
+    for _ in 0..store.event_capacity() {
+        drop(store.take_event());
     }
     assert_eq!(Installations::worst_case(&limits), Some(u64::try_from(held).expect("heap bytes")));
     assert_eq!(Installations::worst_case(&Limits { installations: 0, tokens: 0, listed: 0 }), Some(0));

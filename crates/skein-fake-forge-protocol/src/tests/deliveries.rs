@@ -27,6 +27,7 @@ const PUSH_HEAD: &[u8] = b"POST /hooks/1 HTTP/1.1\r\nHost: 127.0.0.1:7200\r\nCon
 
 fn hook(change: Change) -> domain::Request {
     domain::Request::Hook {
+        queue: None,
         repository: boxed(b"org/repo"),
         change,
         number: Some(3),

@@ -149,6 +149,7 @@ fn deliveries_follow_only_the_repository_hooks_that_take_the_row() {
         let mut h = fixtures::setup_harness();
         seed(&mut h, &row);
         let hook = domain::Request::Hook {
+            queue: None,
             repository: boxed(b"org/repo"),
             change: Change::Issue,
             number: Some(3),

@@ -81,3 +81,8 @@ the same guid. `revoke_key` refuses subsequent App requests with 401.
 GitHub wire documents are encoded through `skein_forge::github::server`.
 Payloads carry seeded UUIDs and HMAC-SHA256 signatures. The layer's
 `worst_case` includes the bounded log and encoding scratch.
+
+Installation mutations queue bounded lifecycle events, including repository changes
+and renames. `Service::poll` releases them on the forge clock; hosts drain
+`next_post` for configured endpoints. Domain queue hooks retain their action
+and removal reason when created.

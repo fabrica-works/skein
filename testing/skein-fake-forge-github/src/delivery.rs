@@ -318,11 +318,10 @@ impl Store {
     pub(crate) fn next_deadline(&self) -> Option<Wall> {
         let mut next = None;
         for entry in self.entries.as_slice().iter().flatten() {
-            let deadline = if entry.listed {
-                Wall::from_nanos(entry.row.delivered_at.as_nanos().saturating_add(self.config.log_keep.as_nanos()))
-            } else {
-                entry.visible
-            };
+            if entry.listed {
+                continue;
+            }
+            let deadline = entry.visible;
             next = Some(match next {
                 Some(value) => Wall::min(value, deadline),
                 None => deadline,
@@ -413,7 +412,7 @@ fn sign(secret: &Secret, body: &[u8]) -> [u8; 71] {
 pub(crate) fn valid(config: &Config, limits: Limits, string: u32) -> bool {
     if config.log_entries == 0
         || config.log_entries > limits.entries
-        || limits.payload_bytes == 0
+        || limits.payload_bytes < 1024
         || config.payload_size > limits.payload_bytes
         || config.log_min > config.log_max
         || config.log_keep <= config.log_max
@@ -453,6 +452,103 @@ pub(crate) fn worst_case(config: &Config, limits: Limits, string: u32) -> Option
 )]
 fn address(host: &[u8]) -> Option<SocketAddr> {
     core::str::from_utf8(host).ok()?.parse().ok()
+}
+
+impl crate::Service {
+    /// Converts domain hooks without inspecting later domain state.
+    pub fn hook(&mut self, hook: &skein_fake_forge_domain::Request, now: Wall) -> Result<Option<Post>, Problem> {
+        use github::delivery::{Ci, Pull};
+        use skein_fake_forge_domain::api::{Change, QueueHook, QueueRemoval};
+        use skein_forge::forgejo::document::Body;
+        let (repository, change, number, branch, commit, by, body, ended, queue) = match hook {
+            skein_fake_forge_domain::Request::Reply { .. } => return Ok(None),
+            skein_fake_forge_domain::Request::Hook {
+                repository,
+                change,
+                number,
+                branch,
+                commit,
+                by,
+                body,
+                ended,
+                queue,
+            } => (repository, change, number, branch, commit, by, body, ended, queue),
+        };
+        let mut known = None;
+        for (id, row) in &self.repositories {
+            let prefix = crate::service::joined(&row.owner, b"/").ok_or(Problem::Config)?;
+            let full = crate::service::joined(&prefix, &row.name);
+            if full.as_deref() == Some(repository.as_ref()) {
+                known = Some(*id);
+            }
+        }
+        let Some(id) = known else { return Err(Problem::Config) };
+        let repository = u64::from(id);
+        let payload = match change {
+            Change::Issue => Delivery::Issue {
+                repository,
+                number: number.ok_or(Problem::Config)?,
+                body: Body::Kept(body.clone().ok_or(Problem::Config)?),
+            },
+            Change::Comment => Delivery::Comment {
+                repository,
+                number: number.ok_or(Problem::Config)?,
+                body: Body::Kept(body.clone().ok_or(Problem::Config)?),
+            },
+            Change::Review => Delivery::Review {
+                repository,
+                number: number.ok_or(Problem::Config)?,
+                body: Body::Kept(body.clone().ok_or(Problem::Config)?),
+            },
+            Change::Pull => {
+                let (action, reason): (&[u8], Option<Box<[u8]>>) = match queue {
+                    None => (b"opened".as_slice(), None),
+                    Some(QueueHook::Enqueued) => (b"enqueued", None),
+                    Some(QueueHook::Dequeued(reason)) => (
+                        b"dequeued",
+                        Some(bytes::copy_of(match reason {
+                            QueueRemoval::CiFailure => crate::texts::CI_FAILURE,
+                            QueueRemoval::MergeConflict => crate::texts::MERGE_CONFLICT,
+                        })),
+                    ),
+                };
+                Delivery::Pull {
+                    repository,
+                    number: number.ok_or(Problem::Config)?,
+                    action: Pull { action: bytes::copy_of(action), reason },
+                }
+            }
+            Change::Push => Delivery::Push {
+                repository,
+                branch: branch.clone().ok_or(Problem::Config)?,
+                after: crate::reads::commit(commit.unwrap_or(0)),
+                deleted: commit.is_none(),
+                sender: by.ok_or(Problem::Config)?,
+            },
+            Change::Group { ended } => Delivery::Ci {
+                repository,
+                commit: crate::reads::commit(commit.ok_or(Problem::Config)?),
+                event: if *ended { Ci::Destroyed } else { Ci::ChecksRequested },
+            },
+            Change::Job => Delivery::Ci {
+                repository,
+                commit: crate::reads::commit(ended.ok_or(Problem::Config)?.commit),
+                event: Ci::WorkflowJob,
+            },
+        };
+        let mut installation = None;
+        for row in self.installations.iter() {
+            if self.installations.reaches(
+                &crate::installations::Grant { installation: row.id, scope: crate::installations::Scope::Full },
+                id,
+            ) {
+                installation = Some(row.id);
+                break;
+            }
+        }
+        let (_, post) = self.release(payload, installation, now)?;
+        Ok(post)
+    }
 }
 
 #[cfg(test)]

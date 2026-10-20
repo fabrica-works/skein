@@ -137,7 +137,7 @@ pub(crate) fn enqueue(
     repository.touch(number, domain::clock(env));
     let observation =
         Observation::Enqueued { repository: copy_of(&repository.name), number, head, position: entry.position, by };
-    domain::changed(domain, env, id, observation, Hook::item(Change::Pull, number, by));
+    domain::changed(domain, env, id, observation, Hook::queued(number, by, crate::api::QueueHook::Enqueued));
     rebuild(domain, env, id);
     domain.timers.arm(Alarm::Queue(id), env.now).expect("one queue wake per repository");
     pulls::view(domain, &env.limits.limits, domain.repositories.get(id).expect("queue repository"), number)
@@ -210,7 +210,13 @@ fn remove(domain: &mut Domain, env: &Env<Config>, id: Id<Repository>, index: u32
     let by = pull.queued_by;
     repository.touch(entry.number, domain::clock(env));
     let observation = Observation::Dequeued { repository: copy_of(&repository.name), number: entry.number, reason };
-    domain::changed(domain, env, id, observation, Hook::item(Change::Pull, entry.number, by));
+    domain::changed(
+        domain,
+        env,
+        id,
+        observation,
+        Hook::queued(entry.number, by, crate::api::QueueHook::Dequeued(reason)),
+    );
     // Every dependent group is destroyed before any new CI starts.
     let count = domain.repositories.get(id).expect("queue repository").queue.len();
     for next in index..count {

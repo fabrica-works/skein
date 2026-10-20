@@ -156,6 +156,7 @@ pub(super) fn issue_observations(h: &mut Harness) -> u64 {
 pub(super) fn pushed_and_ended(work: u64) -> Box<[Request]> {
     Box::new([
         Request::Hook {
+            queue: None,
             repository: repository(),
             change: Change::Push,
             number: None,
@@ -166,6 +167,7 @@ pub(super) fn pushed_and_ended(work: u64) -> Box<[Request]> {
             ended: None,
         },
         Request::Hook {
+            queue: None,
             repository: repository(),
             change: Change::Job,
             number: None,
@@ -176,6 +178,7 @@ pub(super) fn pushed_and_ended(work: u64) -> Box<[Request]> {
             ended: Some(Ended { job: JobRef { run: 1, job: 1, attempt: 1 }, commit: work, state: Check::Passed }),
         },
         Request::Hook {
+            queue: None,
             repository: repository(),
             change: Change::Push,
             number: None,

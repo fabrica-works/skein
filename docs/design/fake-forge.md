@@ -843,7 +843,8 @@ These are small, and they land after forge-kit's steps on the fakes:
 
 ### 10.3 Deliveries and their log
 
-Built in the GitHub layer: the bounded signed-delivery store, seeded UUIDs
+Built in the GitHub layer: installation lifecycle and rename events, domain
+queue action snapshots, the bounded signed-delivery store, seeded UUIDs
 and increasing 19-digit ids, visibility delay, retention and capacity
 removal, cursor pages honoring `per_page`, whole-delivery reads, redelivery,
 first-page ETag/304, and key revocation. The server-side route decoder and

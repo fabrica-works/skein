@@ -220,6 +220,7 @@ pub(crate) enum PendingKind {
 pub struct Service {
     pub(crate) deliveries: crate::delivery::Store,
     pub(crate) key_revoked: bool,
+    pub(crate) posts: skein_lib::Queue<crate::delivery::Post>,
     pub(crate) base: Box<[u8]>,
     pub(crate) logs: crate::logs::Store,
     pub(crate) app: App,
@@ -242,6 +243,7 @@ pub struct Service {
 }
 impl Service {
     /// Validates the tables and limits before creating bounded stores.
+    #[expect(clippy::too_many_lines, reason = "admission checks every bounded scenario table before allocation")]
     pub fn new(config: Config, limits: &Limits, seed: u64) -> Result<Self, Problem> {
         if worst_case(limits, &config).is_none() {
             return Err(Problem::Limits);
@@ -284,6 +286,7 @@ impl Service {
                 return Err(Problem::Config);
             }
         }
+        let post_capacity = config.deliveries.log_entries;
         Ok(Self {
             logs: crate::logs::Store::new(
                 config.blob,
@@ -294,6 +297,7 @@ impl Service {
             ),
             deliveries: crate::delivery::Store::new(config.deliveries, limits.deliveries, seed),
             key_revoked: false,
+            posts: skein_lib::Queue::with_capacity(post_capacity),
             base: config.base,
             app: config.app,
             app_facts: config.app_facts,
@@ -338,7 +342,24 @@ impl Service {
         self.deliveries.endpoint()
     }
     pub fn poll(&mut self, now: Wall) {
+        self.installations.clock(now);
+        for _ in 0..self.installations.event_capacity() {
+            if self.posts.room() == 0 {
+                break;
+            }
+            let Some(event) = self.installations.take_event() else { break };
+            let (_, post) = self
+                .deliveries
+                .record(event.payload, None, event.at, &self.app.webhook, &self.limits.github, None)
+                .expect("installation payload fits admitted delivery bound");
+            if let Some(post) = post {
+                self.posts.push(post);
+            }
+        }
         self.deliveries.poll(now);
+    }
+    pub fn next_post(&mut self) -> Option<crate::delivery::Post> {
+        self.posts.pop()
     }
     #[must_use]
     pub fn next_deadline(&self) -> Option<Wall> {
@@ -356,6 +377,7 @@ impl Service {
 
     /// Serves browser pages without API headers or a credential, and never calls the domain.
     pub fn page(&mut self, page: &BrowserPage<'_>, now: Wall) -> Answer {
+        self.poll(now);
         pages::serve(self, page, now)
     }
     /// The posted manifest stays readable after conversion until its record is reclaimed.
@@ -370,7 +392,7 @@ impl Service {
     /// Checks User-Agent, version, route, credential, installation state/reach,
     /// then the body. Every refusal precedes a domain call.
     pub fn request(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
-        self.deliveries.poll(now);
+        self.poll(now);
         let outcome = self.request_inner(request, now, reply_to);
         self.local_links(outcome)
     }
@@ -754,6 +776,14 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     }
     let mut bytes = crate::server::worst_case(limits)?
         .checked_add(List::<u32>::worst_case(limits.installations.listed)?)?
+        .checked_add(skein_lib::Queue::<crate::delivery::Post>::worst_case(config.deliveries.log_entries)?)?
+        .checked_add(
+            u64::from(config.deliveries.log_entries).checked_mul(
+                u64::from(limits.deliveries.payload_bytes)
+                    .checked_add(u64::from(limits.github.string_bytes).checked_mul(2)?)?
+                    .checked_add(512)?,
+            )?,
+        )?
         .checked_add(List::<github::log::Row>::worst_case(limits.github.inner.min(100))?)?
         .checked_add(u64::from(limits.github.inner.min(100)).checked_mul(128)?)?
         .checked_add(crate::delivery::worst_case(&config.deliveries, limits.deliveries, limits.github.string_bytes)?)?

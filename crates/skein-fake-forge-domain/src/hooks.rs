@@ -15,6 +15,7 @@ use crate::store::Repository;
 /// What a webhook tells of a change.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct Hook {
+    queue: Option<crate::api::QueueHook>,
     change: Change,
     number: Option<u64>,
     branch: Option<Box<[u8]>>,
@@ -27,12 +28,22 @@ pub(crate) struct Hook {
 impl Hook {
     /// A change of `change` to the item `number`.
     pub(crate) fn item(change: Change, number: u64, by: u64) -> Hook {
-        Hook { change, number: Some(number), branch: None, commit: None, by: Some(by), body: None, ended: None }
+        Hook {
+            queue: None,
+            change,
+            number: Some(number),
+            branch: None,
+            commit: None,
+            by: Some(by),
+            body: None,
+            ended: None,
+        }
     }
 
     /// `branch` moved to `commit`, or was deleted.
     pub(crate) fn push(branch: &[u8], commit: Option<u64>, by: u64) -> Hook {
         Hook {
+            queue: None,
             change: Change::Push,
             number: None,
             branch: Some(copy_of(branch)),
@@ -43,6 +54,10 @@ impl Hook {
         }
     }
 
+    /// A queue action survives delayed release and subsequent queue changes.
+    pub(crate) fn queued(number: u64, by: u64, queue: crate::api::QueueHook) -> Hook {
+        Hook { queue: Some(queue), ..Self::item(Change::Pull, number, by) }
+    }
     /// A text-bearing issue, comment or review; a pull carries no body.
     pub(crate) fn body(change: Change, number: u64, by: u64, body: &[u8]) -> Hook {
         Hook { body: Some(copy_of(body)), ..Self::item(change, number, by) }
@@ -51,6 +66,7 @@ impl Hook {
     /// A queue group made or ended; its commit identifies the group.
     pub(crate) fn group(commit: u64, by: u64, ended: bool) -> Hook {
         Hook {
+            queue: None,
             change: Change::Group { ended },
             number: None,
             branch: None,
@@ -64,6 +80,7 @@ impl Hook {
     /// A job ended with its run, commit and verdict.
     pub(crate) fn job(ended: Ended, by: u64) -> Hook {
         Hook {
+            queue: None,
             change: Change::Job,
             number: None,
             branch: None,
@@ -119,8 +136,9 @@ pub(crate) fn notify(domain: &mut Domain, env: &Env<Config>, repository: Id<Repo
 pub(crate) fn deliver(domain: &mut Domain, id: Id<Delivery>, out: &mut Queue<Request>) {
     let delivery = domain.deliveries.get(id).expect("a delivery lives until its timer fires");
     let repository = domain.repositories.get(delivery.repository).expect("a repository of the forge");
-    let Hook { change, number, branch, commit, by, body, ended } = &delivery.hook;
+    let Hook { queue, change, number, branch, commit, by, body, ended } = &delivery.hook;
     let hook = Request::Hook {
+        queue: *queue,
         repository: copy_of(&repository.name),
         change: *change,
         number: *number,

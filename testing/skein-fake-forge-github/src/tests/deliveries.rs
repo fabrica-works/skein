@@ -261,3 +261,55 @@ fn github_fake_delivery_payload_choice_reaches_the_dialects_oversize_path() {
         panic!("oversize issue body")
     };
 }
+
+#[test]
+fn github_fake_installation_lifecycle_releases_events() {
+    let mut service = Service::new(f::config(), &f::limits(), 23).unwrap();
+    service.poll(wall(1200));
+    let store = service.installations_mut();
+    let id = store
+        .install(22, b"acme", crate::installations::Kind::Organization, crate::installations::Reach::All, wall(1200))
+        .unwrap();
+    assert!(store.suspend(id, true));
+    assert!(store.suspend(id, false));
+    assert!(store.set_reach(id, crate::installations::Reach::Listed(List::with_capacity(0))));
+    assert!(store.rename(id, b"widgets"));
+    assert!(store.remove(id));
+    let mut bounds = f::limits();
+    bounds.github.inner = 16;
+    service.poll(wall(1203));
+    let page = request(&mut service, b"/app/hook/deliveries?per_page=8", None, wall(1203));
+    let listed = rows(&page);
+    assert_eq!(listed.len(), 6);
+    let expected = [
+        Change::Deleted,
+        Change::Renamed { login: f::boxed(b"widgets") },
+        Change::Repositories,
+        Change::Unsuspended,
+        Change::Suspended,
+        Change::Created,
+    ];
+    for (row, change) in listed.iter().zip(&expected) {
+        assert_eq!((row.installation_id, row.repository_id), (None, None));
+        let target = github::request::encode(
+            &github::request::Request::LogDelivery { id: row.id, event: row.event.clone() },
+            &bounds.github,
+        )
+        .unwrap()
+        .target;
+        let reply = request(&mut service, &target, None, wall(1203));
+        let (_, doc) = f::decode_with(
+            github::decode::log_delivery_decoder(&row.event, &bounds.github),
+            &reply.body,
+            &bounds.github,
+        );
+        let Document::Delivery(logged) = doc else { panic!("whole delivery") };
+        let Delivery::Installation { installation, account, change: found } = logged.delivery else {
+            panic!("installation")
+        };
+        assert_eq!(installation, id);
+        assert_eq!(account.id, 22);
+        assert_eq!(&found, change);
+        assert_eq!(row.delivered_at, wall(1200));
+    }
+}

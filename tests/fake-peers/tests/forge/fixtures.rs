@@ -681,6 +681,7 @@ impl World {
     pub fn inject_hooks(&mut self, count: usize) {
         for _ in 0..count {
             self.forge.borrow_mut().pending.push(domain::Request::Hook {
+                queue: None,
                 repository: boxed(REPOSITORY),
                 change: api::Change::Push,
                 number: None,

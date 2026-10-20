@@ -298,16 +298,25 @@ fn landing_and_ejection_emit_pull_and_group_hooks_and_observations() {
         h.settle();
         let mut group_hooks = 0_u32;
         let mut pull_hooks = 0_u32;
+        let mut enqueued = false;
+        let mut dequeued = None;
         while let Some(hook) = h.hooks.pop() {
             if let Request::Hook { change: Change::Group { ended }, commit: Some(commit), .. } = hook {
                 assert_eq!(commit, group);
                 assert_eq!(ended, group_hooks == 1);
                 group_hooks += 1;
-            } else if let Request::Hook { change: Change::Pull, number: Some(item), .. } = hook {
+            } else if let Request::Hook { change: Change::Pull, number: Some(item), queue, .. } = hook {
                 assert_eq!(item, number);
                 pull_hooks += 1;
+                match queue {
+                    None => {}
+                    Some(crate::api::QueueHook::Enqueued) => enqueued = true,
+                    Some(crate::api::QueueHook::Dequeued(reason)) => dequeued = Some(reason),
+                }
             }
         }
+        assert!(enqueued);
+        assert_eq!(dequeued, reason);
         let mut groups = List::with_capacity(2);
         let mut removed = None;
         let mut merged = None;

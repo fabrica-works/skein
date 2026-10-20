@@ -220,6 +220,7 @@ pub fn hooked_protocol_config() -> skein_fake_forge_protocol::Config {
 pub fn push_hook(branch: &[u8], commit: u64) -> skein_fake_forge_domain::Request {
     use skein_fake_forge_domain::{Request, api::Change};
     Request::Hook {
+        queue: None,
         repository: Box::from(b"org/repo".as_slice()),
         change: Change::Push,
         number: None,
