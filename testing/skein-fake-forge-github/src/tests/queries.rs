@@ -170,3 +170,16 @@ fn envelope(json: &mut skein_json::writer::Encoder, variables: &[u8], limits: &s
     json.string(d::PULL);
     json.object_end();
 }
+
+#[test]
+fn github_fake_graphql_pull_reads_the_domains_retained_admission() {
+    let mut h = r::harness();
+    let (number, head) = r::pull(&mut h);
+    let token = r::token(&mut h);
+    let response = query(&mut h, &token, b"widgets", number);
+    assert_eq!(pull(&h, &response).queued, None);
+    r::call(&mut h, a::Op::Write(a::Write::Enqueue { number, head }));
+    let response = query(&mut h, &token, b"widgets", number);
+    let entry = h.domain.queue_entries(b"acme/widgets").unwrap().first().unwrap();
+    assert_eq!(pull(&h, &response).queued, Some(entry.position));
+}

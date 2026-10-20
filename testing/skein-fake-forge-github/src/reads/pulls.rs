@@ -111,6 +111,10 @@ pub(super) fn graphql(answer: a::Answer, repository: u32, number: u64, limits: &
     if u64::try_from(id.len()).expect("bounded decimal ID") > u64::from(limits.github.string_bytes) {
         return answers::failed();
     }
-    let row = d::PullGraphql { id, merge_commit: optional_commit(row.merged), queued: None, dequeued: None };
+    let queued = match row.queued {
+        Some(entry) => Some(entry.position),
+        None => None,
+    };
+    let row = d::PullGraphql { id, merge_commit: optional_commit(row.merged), queued, dequeued: None };
     answers::response(200, &Body::PullGraphql(&row), limits)
 }
