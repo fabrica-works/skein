@@ -104,6 +104,9 @@ impl Harness {
         Self::with_domain(limits, config, domain_config())
     }
     pub fn with_domain(limits: Limits, config: Config, fake_config: fake::Config) -> Self {
+        Self::with_protection(limits, config, fake_config, None)
+    }
+    pub fn with_protection(limits: Limits, config: Config, fake_config: fake::Config, protection: Option<a::Protection>) -> Self {
         let mut domain = fake::Domain::new(&fake_config, 5);
         let mut first = 0;
         for (id, name) in [(2, b"acme/widgets".as_slice()), (4, b"acme/tools")] {
@@ -125,7 +128,7 @@ impl Harness {
                         reruns: 0,
                         cue: None,
                     },
-                    protection: None,
+                    protection: protection.clone(),
                     hooked: true,
                 },
             );

@@ -30,6 +30,7 @@ pub(crate) enum Token {
     Graphql,
     User(u64),
     Read(reads::Read),
+    QueueMerge { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
 }
 
 pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<Route> {
@@ -38,6 +39,15 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
     }
     if method == Method::Post && target == b"/graphql" {
         return Some(Route::Token(Token::Graphql));
+    }
+    // Task 23 owns the shared REST write dispatcher. A queue refusal needs
+    // only the canonical pull target beneath this one PUT suffix.
+    if method == Method::Put {
+        let pull_target = target.strip_suffix(b"/merge")?;
+        let Request::Pull { owner, name, number } = server::route(Method::Get, pull_target, limits)? else {
+            return None;
+        };
+        return Some(Route::Token(Token::QueueMerge { owner, name, number }));
     }
     // REST keeps server::route's canonical targets, including explicit paging.
     Some(match server::route(method, target, limits)? {
@@ -92,6 +102,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::ReviewComments { owner, name, number, review, page, per_page } if page > 0 && per_page > 0 => {
             Route::Token(Token::Read(reads::Read::ReviewComments { owner, name, number, review }))
         }
+        Request::Merge { owner, name, number, .. } => Route::Token(Token::QueueMerge { owner, name, number }),
         Request::Installations { .. }
         | Request::Reachable { .. }
         | Request::Branches { .. }
@@ -123,7 +134,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
         | Request::Enqueue { .. }
-        | Request::Merge { .. }
         | Request::PullGraphql { .. } => return None,
     })
 }

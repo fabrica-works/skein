@@ -24,6 +24,7 @@ mod reviews;
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    QueueMerge { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Reviews { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
     ReviewComments { owner: Box<[u8]>, name: Box<[u8]>, number: u64, review: u64 },
@@ -44,6 +45,7 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    QueueMerge(api::Commit),
     PullGraphql { repository: u32, number: u64 },
     Reviews { page: u32, size: u32, target: Box<[u8]> },
     ReviewComments(u64),
@@ -63,7 +65,8 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::PullGraphql { owner, name, .. }
+        Read::QueueMerge { owner, name, .. }
+        | Read::PullGraphql { owner, name, .. }
         | Read::Reviews { owner, name, .. }
         | Read::ReviewComments { owner, name, .. }
         | Read::Collaborators { owner, name, .. }
@@ -109,6 +112,7 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::QueueMerge { number, head, .. } => (Pending::QueueMerge(head), Op::Read(a::Read::Pull { number })),
         Read::PullGraphql { number, .. } => {
             (Pending::PullGraphql { repository: row.id, number }, Op::Read(a::Read::Pull { number }))
         }
@@ -218,7 +222,8 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
             }
             result => result,
         },
-        Pending::PullGraphql { .. }
+        Pending::QueueMerge(_)
+        | Pending::PullGraphql { .. }
         | Pending::Reviews { .. }
         | Pending::ReviewComments(_)
         | Pending::Collaborators { .. }
@@ -239,6 +244,17 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
+        Pending::QueueMerge(head) => {
+            let Answer::Pull(pull) = answer else { return answers::failed(); };
+            // Task 23 owns ordinary REST merges; only the queue refusal is served here.
+            if !pull.queue_required { return answers::missing(limits); }
+            if commit(pull.commit) != head {
+                return answers::refusal(409, skein_forge::github::failure::MERGE_STALE, limits);
+            }
+            let Some(prefix) = service::joined(skein_forge::github::failure::RULES, b"\n") else { return answers::failed(); };
+            let Some(message) = service::joined(&prefix, skein_forge::github::failure::QUEUE) else { return answers::failed(); };
+            answers::refusal(405, &message, limits)
+        }
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
         Pending::ReviewComments(review) => reviews::comments(answer, review, limits),

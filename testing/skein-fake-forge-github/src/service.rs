@@ -358,6 +358,16 @@ impl Service {
                             None => Outcome::Reply(answers::response(200, &Body::Graphql, limits)),
                         }
                     }
+                    routes::Token::QueueMerge { owner, name, number } => {
+                        let route = request::Request::Merge {
+                            owner, name, number, head: [0; 32], method: github::plans::tables::Method::Merge,
+                        };
+                        let Some(request::Request::Merge { owner, name, number, head, .. }) =
+                            server::write_body(route, request.body, &limits.github)
+                        else { return Outcome::Reply(answers::refusal(422, b"Validation Failed", limits)); };
+                        reads::call(self, reads::Read::QueueMerge { owner, name, number, head }, &grant,
+                            request.target, self.body_fits(request.body), reply_to)
+                    }
                     routes::Token::Read(read) => {
                         reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)
                     }
