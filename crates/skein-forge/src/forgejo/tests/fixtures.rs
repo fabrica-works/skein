@@ -1,7 +1,7 @@
 use crate::forgejo::{
     client,
     decode::{Malformed, Step},
-    document::{Document, Row},
+    document::{Document, Row, User},
     limits::Limits,
 };
 use skein_json::tokenizer;
@@ -9,51 +9,12 @@ use skein_lib::{
     Env, Intake, List, Queue, Time, Wall,
     stream::{Down, Up},
 };
-pub fn bot() -> crate::forgejo::document::User {
-    crate::forgejo::document::User {
-        id: 1,
-        login: Box::from(*b"fixture"),
-        is_admin: true,
-        full_name: Box::from(*b"kit:bot"),
-    }
+pub fn bot() -> User {
+    User { id: 1, login: Box::from(*b"fixture"), is_admin: true, full_name: Box::from(*b"kit:bot") }
 }
-pub fn user(id: u64, login: &[u8]) -> crate::forgejo::document::User {
-    crate::forgejo::document::User { id, login: Box::from(login), is_admin: false, full_name: Box::from([]) }
-}
-// The sampled corpus's largest document is pull_files_decode_forgejos_changed_status_as_modified (347 bytes).
-const DOCUMENT_BYTES: u32 = 347;
-// The longest retained text is MergeProtected's canned refusal (61 bytes).
-const STRING_BYTES: u32 = 61;
-// Eight containers are the dialect's minimum accepted depth (limits::check).
-const JSON_DEPTH: u32 = 8;
-// The malformed-id fixture must tokenize both bytes of -1 before its range check.
-const NUMBER_BYTES: u32 = 2;
-// The comparison target with files=false and verification=false has 153 bytes.
-const TARGET_BYTES: u32 = 153;
-// Ordinary nested lists hold at most one item; the two-item boundary tests choose inner explicitly.
-const INNER_ITEMS: u32 = 1;
-// These are the sampled boundary strings' exact lengths, independent of shipped profiles.
-pub const SMALL_STRING_BYTES: u32 = 8;
-pub const SMALL_BODY_BYTES: u32 = 16;
-pub fn limits() -> Limits {
-    Limits {
-        json: tokenizer::Limits {
-            depth: JSON_DEPTH,
-            string: STRING_BYTES,
-            number: NUMBER_BYTES,
-            chunk: STRING_BYTES,
-            length: DOCUMENT_BYTES,
-        },
-        writer: skein_json::writer::Limits { depth: JSON_DEPTH, length: DOCUMENT_BYTES },
-        string_bytes: STRING_BYTES,
-        body_bytes: SMALL_BODY_BYTES,
-        inner: INNER_ITEMS,
-        target_bytes: TARGET_BYTES,
-    }
-}
-pub fn small() -> Limits {
-    Limits { string_bytes: SMALL_STRING_BYTES, body_bytes: SMALL_BODY_BYTES, ..limits() }
-}
+#[expect(dead_code, reason = "the shared limits also serve integration document tests")]
+mod admitted;
+pub use admitted::{SMALL_BODY_BYTES, limits, small, user};
 // Both preserved comment stories use thread three in the fixture/specimen repository.
 pub const COMMENT_THREAD: u64 = 3;
 pub fn repository() -> crate::forgejo::request::Repo {
