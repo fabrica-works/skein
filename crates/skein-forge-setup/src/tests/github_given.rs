@@ -43,6 +43,7 @@ fn with_address(place: Place, value: &[u8]) -> Given {
         | Place::Installations
         | Place::Reachable
         | Place::Page
+        | Place::Code
         | Place::Pages
         | Place::StateLife
         | Place::Deadline
@@ -78,7 +79,8 @@ fn zero_limit(value: &mut Limits, place: Place) {
         | Place::Url
         | Place::RedirectUrl
         | Place::SetupUrl
-        | Place::Page => {
+        | Place::Page
+        | Place::Code => {
             unreachable!("limit rows")
         }
     }

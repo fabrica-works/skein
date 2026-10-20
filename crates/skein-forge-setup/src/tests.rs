@@ -2,6 +2,7 @@ mod adopt;
 mod call;
 mod check;
 mod fixtures;
+mod github_convert;
 mod github_fixtures;
 mod github_given;
 mod github_manifest;

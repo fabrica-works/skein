@@ -1,5 +1,38 @@
 use crate::github;
-use skein_lib::Duration;
+use skein_lib::{
+    Duration, Secret, Writer,
+    base64::{self, Alphabet},
+};
+/// The small DER envelope used by the item decoder tests; no RSA operations.
+pub const DER: &[u8] = b"\x30\x03\x02\x01\x07";
+
+pub fn pem(der: &[u8], ending: &[u8], surround: &[u8]) -> Secret {
+    let size = base64::encoded_len(Alphabet::Standard, u32::try_from(der.len()).expect("fixture length"))
+        .expect("fixture encoded length");
+    let mut text = Writer::new(usize::try_from(size).expect("small encoding"));
+    base64::encode(Alphabet::Standard, der, &mut text).expect("encoding fits");
+    pem_text(&text.finish(), ending, surround)
+}
+pub fn pem_text(text: &[u8], ending: &[u8], surround: &[u8]) -> Secret {
+    let parts = [
+        surround,
+        b"-----BEGIN RSA PRIVATE KEY-----",
+        ending,
+        text,
+        ending,
+        b"-----END RSA PRIVATE KEY-----",
+        surround,
+    ];
+    let mut length = 0_usize;
+    for part in parts {
+        length = length.checked_add(part.len()).expect("fixture PEM length");
+    }
+    let mut out = Writer::new(length);
+    for part in parts {
+        out.put(part).expect("fixture PEM fits");
+    }
+    Secret::new(out.finish())
+}
 pub fn limits() -> github::limits::Limits {
     github::limits::Limits {
         key_bytes: 1196,

@@ -2,7 +2,7 @@
 use crate::{
     call::Auth,
     item,
-    reconcile::{Failure, Need, Stage, Why},
+    reconcile::{self, Event, Failure, Need, Reply, Stage, Why},
 };
 use alloc::boxed::Box;
 use core::num::NonZeroU64;
@@ -37,4 +37,21 @@ pub(crate) fn stop(forge: u16, stage: Stage, subject: &[u8], why: Why) -> Need {
 /// An installation id as the subject of a failure.
 pub(crate) fn decimal(id: u64) -> Box<[u8]> {
     bytes::copy_of(Decimal::of(id).as_bytes())
+}
+/// The unauthenticated bot read's nonzero identity (forge-setup.md, 5.3).
+pub(crate) fn bot(event: Event) -> Result<NonZeroU64, Why> {
+    match reconcile::reply(event)? {
+        Reply::GithubDocument(skein_forge::github::document::Document::BotUser(id)) => {
+            NonZeroU64::new(id).ok_or(Why::Unexpected)
+        }
+        Reply::Status(404) => Err(Why::Missing),
+        Reply::Status(status) => Err(Why::Refused(status)),
+        Reply::Down => Err(Why::Down),
+        Reply::Document(_)
+        | Reply::Rows(_)
+        | Reply::Empty
+        | Reply::GithubDocument(_)
+        | Reply::GithubRows(_)
+        | Reply::Unsigned => Err(Why::Unexpected),
+    }
 }

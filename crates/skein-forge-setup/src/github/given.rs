@@ -36,6 +36,7 @@ pub enum Place {
     Reachable,
     Pages,
     Page,
+    Code,
     StateLife,
     Deadline,
     Backoff,
