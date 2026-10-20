@@ -7,6 +7,7 @@ pub const VIEWER: &[u8] = b"query { viewer { login databaseId } }";
 /// The document a decoder expects.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
+    Id,
     Number,
     /// A bounded object whose fields are discarded.
     Done,
@@ -100,6 +101,7 @@ pub struct Refusal {
 /// A whole document, or the end of a streamed listing.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Document {
+    Id(u64),
     Number(u64),
     Done,
     Installation(Installation),

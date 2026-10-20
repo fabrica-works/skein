@@ -47,6 +47,7 @@ impl Minting {
                 | document::Document::User(_)
                 | document::Document::Compare(_)
                 | document::Document::Permission(_)
+                | document::Document::Id(_)
                 | document::Document::Number(_)
                 | document::Document::Done
                 | document::Document::BotUser(_)

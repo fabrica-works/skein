@@ -122,6 +122,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
         Request::CreateBranch { .. } | Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
+        Request::Post { .. } => Kind::Id,
         Request::CreateIssue { .. } | Request::OpenPull { .. } => Kind::Number,
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
@@ -272,6 +273,7 @@ impl Decoder {
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
+                | Node::IdResult
                 | Node::NumberResult
                 | Node::Done
                 | Node::Repository
@@ -301,6 +303,7 @@ impl Decoder {
                     Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
                     Kind::Permission => Document::Permission(self.permission),
+                    Kind::Id => Document::Id(self.result),
                     Kind::Number => Document::Number(self.result),
                     Kind::Done => Document::Done,
                     Kind::Pull => Document::Pull(self.pulls.pull()),
@@ -333,7 +336,7 @@ impl Decoder {
             (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
                 return self.checks.scalar(node, key, token);
             }
-            (Node::NumberResult, b"number", Token::Number(text)) => {
+            (Node::IdResult, b"id", Token::Number(text)) | (Node::NumberResult, b"number", Token::Number(text)) => {
                 self.result = crate::forgejo::id::unsigned(&text).ok_or(Malformed::Range { field: key })?;
             }
             (
@@ -448,6 +451,7 @@ impl Decoder {
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
+                | Node::IdResult
                 | Node::NumberResult
                 | Node::Done
                 | Node::Repository

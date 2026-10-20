@@ -25,6 +25,7 @@ fn github_decode_kind_names_each_documented_answer() {
             Request::CreateIssue { owner: owner(), name: name(), title: Box::from([]), body: Box::from([]) },
             Kind::Number,
         ),
+        (Request::Post { owner: owner(), name: name(), number: 9, body: Box::from([]) }, Kind::Id),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
         (

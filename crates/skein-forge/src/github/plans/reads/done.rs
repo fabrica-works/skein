@@ -95,6 +95,7 @@ impl Plan {
             | document::Document::App(_)
             | document::Document::HookConfig(_)
             | document::Document::Conversion(_)
+            | document::Document::Id(_)
             | document::Document::Number(_)
             | document::Document::Done
             | document::Document::BotUser(_) => Err(api::Error::InvalidAnswer),

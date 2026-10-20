@@ -211,6 +211,10 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Post { owner, name, number, .. } => {
+            let fields = parse(body, &[Field { key: b"body", body: true, required: true }], limits)?;
+            Some(Request::Post { owner, name, number, body: Box::from(fields.get(b"body")?) })
+        }
         Request::CreateIssue { owner, name, .. } => {
             let fields = parse(
                 body,
@@ -381,4 +385,9 @@ fn numeric_json(field: &[u8], value: u64, json: &mut Encoder) {
     json.key(field);
     json.unsigned(value);
     json.object_end();
+}
+
+/// Writes the mutation's exact comment or review id.
+pub fn id(id: u64, out: &mut Writer) -> Result<(), Overflow> {
+    numeric(b"id", id, out)
 }

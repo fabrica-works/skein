@@ -13,6 +13,7 @@ use skein_lib::Stack;
 /// Container roles in the first GitHub documents.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
+    IdResult,
     NumberResult,
     Done,
     Installation,
@@ -274,7 +275,7 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::Issue => issue_fields(),
-        Node::ReviewUser | Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
+        Node::IdResult | Node::ReviewUser | Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
             const { &[field(b"id", Read::Number)] }
         }
         Node::Label | Node::BranchName => const { &[field(b"name", Read::Text)] },
@@ -405,7 +406,8 @@ fn element(role: Role) -> Option<Role> {
         Node::GraphqlErrors => Some(Role::Document(Node::GraphqlError)),
         Node::BranchRows => Some(Role::Document(Node::BranchName)),
         Node::Errors => Some(Role::Document(Node::ErrorEntry)),
-        Node::NumberResult
+        Node::IdResult
+        | Node::NumberResult
         | Node::Done
         | Node::PullObject
         | Node::PullRef { .. }
@@ -496,6 +498,7 @@ pub(super) struct Walk {
 impl Walk {
     pub(super) fn new(kind: document::Kind, limits: &Limits) -> Self {
         let node = match kind {
+            document::Kind::Id => Node::IdResult,
             document::Kind::Number => Node::NumberResult,
             document::Kind::Done => Node::Done,
             document::Kind::Installation => Node::Installation,

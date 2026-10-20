@@ -134,6 +134,7 @@ impl State {
             | Node::RunsObject
             | Node::Runs
             | Node::RunItem
+            | Node::IdResult
             | Node::NumberResult
             | Node::Done
             | Node::ErrorEntry => unreachable!("App container dispatch"),
@@ -176,6 +177,7 @@ impl State {
             | Kind::CombinedStatus
             | Kind::Job
             | Kind::CheckRuns
+            | Kind::Id
             | Kind::Number
             | Kind::Done
             | Kind::Error => unreachable!("App document dispatch"),
@@ -300,6 +302,7 @@ impl State {
                 | Node::RunOutput
                 | Node::RunApp
                 | Node::Job
+                | Node::IdResult
                 | Node::NumberResult
                 | Node::Done
                 | Node::ErrorEntry,

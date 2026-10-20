@@ -708,3 +708,106 @@ fn github_create_issue_lost_find() {
         assert_eq!(observed, found);
     }
 }
+
+fn post(body: &[u8]) -> api::Write {
+    api::Write::Post { number: NUMBER, key: Box::from([0, 255]), body: Box::from(body) }
+}
+#[test]
+fn github_post_marker_and_exact_id() {
+    let mut tables = cached_tables();
+    let mut plan = write_plan(post(b"text"));
+    let request = begin(&mut plan, &mut tables);
+    golden(
+        &request,
+        Method::Post,
+        b"/repos/acme/widgets/issues/9007199254740993/comments",
+        Some(br#"{"body":"<!-- example-app:key 00ff -->\ntext"}"#),
+        Some(Kind::Id),
+    );
+    roundtrip_body(&request);
+    encoded_body_bounds(&request);
+    numeric_result(Kind::Id, br#"{"id":9007199254740993,"unknown":{"nested":[1]}}"#, Document::Id(NUMBER));
+    let mut out = skein_lib::Writer::new(br#"{"id":9007199254740993}"#.len());
+    crate::github::server::id(NUMBER, &mut out).unwrap();
+    numeric_result(Kind::Id, &out.finish(), Document::Id(NUMBER));
+    for body in [b"{}".as_slice(), br#"{"id":1,"id":2}"#, br#"{"id":"1"}"#, br#"{"id":18446744073709551616}"#] {
+        for chunk in [1, 7] {
+            decode(Kind::Id, body, chunk, &limits()).1.unwrap_err();
+        }
+    }
+    head(&mut plan, 201, &mut tables);
+    assert_eq!(
+        finish(&mut plan, Body::Document(Document::Id(NUMBER)), &mut tables),
+        ended(Ok(api::Answer::Commented(NUMBER)))
+    );
+}
+#[test]
+fn github_post_bounds_and_failures() {
+    for (source, error) in [(b"".as_slice(), api::Error::Empty), (b"text", api::Error::Refused)] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(post(source));
+        let request = begin(&mut plan, &mut tables);
+        roundtrip_body(&request);
+        encoded_body_bounds(&request);
+        head(&mut plan, 422, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(b"unknown"), &mut tables), ended(Err(error)));
+    }
+    for body in [
+        Body::Empty,
+        Body::Document(Document::Number(NUMBER)),
+        Body::Malformed(decoding::Malformed::Missing { field: b"id" }),
+    ] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(post(b"text"));
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 201, &mut tables);
+        assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
+    }
+    let mut tables = cached_tables();
+    let mut plan = write_plan(post(b"text"));
+    assert_eq!(plan.begin(Bounds { body_bytes: 1, ..bounds() }, WORD, &mut tables), Err(api::Error::TooLarge));
+}
+#[test]
+fn github_post_original_key_find() {
+    let mut tables = cached_tables();
+    let mut write = write_plan(post(b"text"));
+    begin(&mut write, &mut tables);
+    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
+    for (updated, provenance) in [
+        ("2026-10-20T08:00:00Z", api::Provenance::Original),
+        ("2026-10-20T08:00:01Z", api::Provenance::Revised),
+        ("", api::Provenance::Unknown),
+    ] {
+        let mut find = Plan::new(KEY, api::Op::Read(api::Read::Item { number: NUMBER, after: 0 }));
+        begin(&mut find, &mut tables);
+        head(&mut find, 200, &mut tables);
+        let (_, issue) = decode(Kind::Issue, br#"{"number":9007199254740993,"state":"open","user":{"id":9007199254740993},"updated_at":"2026-10-20T08:00:00Z","title":"alice","body":"text"}"#, 7, &limits());
+        let Some(Step::Send(exchange)) = finish(&mut find, Body::Document(issue.unwrap()), &mut tables).unwrap() else {
+            panic!("comments")
+        };
+        assert_eq!(decoding::kind(&exchange.request), Some(Kind::CommentRows));
+        head(&mut find, 200, &mut tables);
+        let updated =
+            if updated.is_empty() { "null".into() } else { alloc::fmt::format(format_args!("\"{updated}\"")) };
+        let json = alloc::fmt::format(format_args!(
+            r#"[{{"id":9007199254740993,"user":{{"id":9007199254740993}},"created_at":"2026-10-20T08:00:00Z","updated_at":{updated},"body":"<!-- example-app:key 00ff -->\ntext"}}]"#
+        ));
+        let (rows, result) = decode(Kind::CommentRows, json.as_bytes(), 1, &limits());
+        for row in &rows {
+            assert_eq!(find.heard(Heard::Row(row.clone()), bounds(), WORD, &mut tables), Ok(None));
+        }
+        let Some(Step::Done(Ok(api::Answer::Item { comments, .. }))) =
+            finish(&mut find, Body::Document(result.unwrap()), &mut tables).unwrap()
+        else {
+            panic!("item")
+        };
+        let comment = comments.first().unwrap();
+        assert_eq!(comment.provenance, provenance);
+        assert_eq!(comment.key.as_deref(), Some([0, 255].as_slice()));
+        assert_eq!(comment.author, NUMBER);
+        let proves = comment.key.as_deref() == Some([0, 255].as_slice())
+            && comment.author == NUMBER
+            && comment.provenance == api::Provenance::Original;
+        assert_eq!(proves, updated == "\"2026-10-20T08:00:00Z\"");
+    }
+}
