@@ -7,7 +7,7 @@ use crate::{
     given::Given,
     item::{self, Bounds, Item},
     reachable::{self, Reachable},
-    reconcile::{self, Event, Failure, Reconcile, Reply, Why},
+    reconcile::{self, Event, Failure, Reconcile, Reply, Stage, Why},
     take_over::{self, TakeOver},
 };
 use alloc::boxed::Box;
@@ -133,12 +133,24 @@ impl Run {
                         .expect("host checks the given and the page is nonzero"),
                 ),
             },
-            Kind::GitHub(_) => match plan {
-                Plan::Reconcile { .. }
-                | Plan::Reachable { .. }
-                | Plan::Check { .. }
-                | Plan::TakeOver { .. }
-                | Plan::Adopt { .. } => return Err(super::about(forge, &plan, Why::Unexpected)),
+            Kind::GitHub(given) => match plan {
+                Plan::Reachable { installation, page, .. } => {
+                    let Some(id) = installation else {
+                        return Err(Failure {
+                            forge: given.forge,
+                            step: Stage::Installation,
+                            subject: b"none".as_slice().into(),
+                            why: Why::Unexpected,
+                        });
+                    };
+                    match Reachable::github(given, id, page.get()) {
+                        Ok(machine) => Machine::Reachable(machine),
+                        Err(_) => return Err(super::about(forge, &plan, Why::Unexpected)),
+                    }
+                }
+                Plan::Reconcile { .. } | Plan::Check { .. } | Plan::TakeOver { .. } | Plan::Adopt { .. } => {
+                    return Err(super::about(forge, &plan, Why::Unexpected));
+                }
             },
         };
         let times = forge.times();

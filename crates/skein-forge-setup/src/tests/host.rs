@@ -1063,25 +1063,54 @@ fn a_busy_github_forge_names_the_plan_at_the_app() {
     }
 }
 #[test]
-fn a_reconcile_or_reachable_on_a_github_forge_stops_unexpected_until_theirs_land() {
+fn a_reconcile_on_a_github_forge_stops_unexpected_until_53_lands() {
     let mut w = World::with(limits(), github_settings());
-    for (plan, name) in [
-        (Plan::Reconcile { forge: 4, adopted: Box::new([]) }, b"reconcile".as_slice()),
-        (
-            Plan::Reachable {
+    w.plan(1, Plan::Reconcile { forge: 4, adopted: Box::new([]) });
+    assert_eq!(w.up.pop(), Some(github_stop(1, b"reconcile", Why::Unexpected)));
+    assert_eq!(w.up.len(), 0);
+    assert_eq!(w.io.len(), 0);
+    assert_eq!(w.host.next_deadline(), None);
+}
+fn github_reachable(installation: Option<u64>) -> Plan {
+    Plan::Reachable { forge: 4, installation, page: core::num::NonZeroU32::new(1).expect("first page") }
+}
+#[test]
+fn a_github_reachable_with_no_installation_stops_at_once() {
+    let mut w = World::with(limits(), github_settings());
+    w.plan(1, github_reachable(None));
+    assert_eq!(
+        w.up.pop(),
+        Some(Event::Stop {
+            run: Token::new(1),
+            failure: Failure {
                 forge: 4,
-                installation: Some(1),
-                page: core::num::NonZeroU32::new(1).expect("first page"),
+                step: Stage::Installation,
+                subject: b"none".as_slice().into(),
+                why: Why::Unexpected
             },
-            b"reachable",
-        ),
-    ] {
-        w.plan(1, plan);
-        assert_eq!(w.up.pop(), Some(github_stop(1, name, Why::Unexpected)));
-        assert_eq!(w.up.len(), 0);
-        assert_eq!(w.io.len(), 0);
-        assert_eq!(w.host.next_deadline(), None);
-    }
+        })
+    );
+    assert_eq!(w.up.len(), 0);
+    assert_eq!(w.io.len(), 0);
+    assert_eq!(w.host.next_deadline(), None);
+}
+#[test]
+fn a_github_reachable_asks_the_owner_for_the_accepted_set_first() {
+    let mut w = World::with(limits(), github_settings());
+    w.plan(1, github_reachable(Some(2)));
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(1), need: Need::Read(Item::Accepted) }));
+    assert_eq!(w.up.len(), 0);
+    assert_eq!(w.io.len(), 0);
+}
+#[test]
+fn a_github_reachable_is_not_a_writing_run() {
+    let mut w = World::with(limits(), github_settings());
+    w.run(1, 1);
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(1), need: Need::Read(Item::AdminToken) }));
+    w.plan(2, github_reachable(Some(2)));
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::Accepted) }));
+    assert_eq!(w.up.len(), 0);
+    assert_eq!(w.io.len(), 0);
 }
 #[test]
 fn a_github_forges_bounds_come_from_its_given() {

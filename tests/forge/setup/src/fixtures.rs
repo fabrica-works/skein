@@ -240,7 +240,7 @@ pub fn github_given() -> skein_forge_setup::github::given::Given {
             name_bytes: 34,
             page_bytes: 4096,
             installations: 8,
-            reachable: 4,
+            reachable: 2,
             pages: 4,
             state_life: Duration::from_secs(600),
             deadline: Duration::from_secs(120),
@@ -424,4 +424,15 @@ pub fn connected_picker(seed: u64) -> crate::World {
     world.store_mut().member(team, bot);
     world.forget(Item::AdminToken);
     world
+}
+
+/// The accepted installation ids, in ascending order.
+#[must_use]
+pub fn accepted(ids: &[u64]) -> Secret {
+    skein_forge_setup::item::accepted_item(ids)
+}
+/// The App's id as its retained eight-byte item.
+#[must_use]
+pub fn app_id(id: u64) -> Secret {
+    secret(&id.to_le_bytes())
 }

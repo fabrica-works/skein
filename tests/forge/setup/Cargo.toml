@@ -15,6 +15,7 @@ skein-lib.workspace = true
 skein-http.workspace = true
 skein-json.workspace = true
 skein-fake-forge-protocol.workspace = true
+skein-fake-forge-github.workspace = true
 skein-fake-forge-domain.workspace = true
 skein-forge-machine-world.workspace = true
 

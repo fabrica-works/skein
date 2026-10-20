@@ -1,7 +1,10 @@
 //! The host over HTTP bytes, a fake Forgejo and io played by hand.
 use crate::{fixtures, world::seeded_config};
 use skein_fake_forge_protocol::{self as fake, Service};
-use skein_forge_machine_world::pipe::{Cut, Pipe};
+use skein_forge_machine_world::{
+    github::{self, Fake},
+    pipe::{Cut, Pipe},
+};
 use skein_forge_setup::{
     host::{Answer, Event, Host, Limits, Need, Plan, Request, Settings},
     item::Item,
@@ -29,6 +32,7 @@ pub enum Heard {
 struct Peer {
     pipe: Pipe,
     server: Option<fake::Server>,
+    github: bool,
     above: Queue<fake::Event>,
     below: Queue<Down>,
     answer: Option<(u16, &'static [u8])>,
@@ -39,6 +43,8 @@ pub struct HostWorld {
     host: Host,
     env: Env<Limits>,
     service: Service,
+    github: Option<Fake>,
+    wall_base: Option<Wall>,
     fake_env: Env<fake::Limits>,
     above: Queue<Event>,
     below: Queue<skein_io::Request>,
@@ -51,6 +57,7 @@ pub struct HostWorld {
     aborts: u32,
     seed: u64,
     needs: Vec<Need>,
+    reads: Vec<Item>,
     pause_writes: bool,
     pending_writes: Vec<(Token, Item, Secret)>,
     pause_reads: bool,
@@ -60,6 +67,18 @@ impl HostWorld {
     #[must_use]
     pub fn new(seed: u64, script: &[Connect]) -> Self {
         Self::new_with(seed, script, fixtures::host_settings(), fixtures::host_limits())
+    }
+    /// The two forge kinds, with the GitHub peer's App and accepted installations.
+    #[must_use]
+    pub fn github(seed: u64, script: &[Connect]) -> Self {
+        let mut world = Self::new_with(seed, script, fixtures::github_settings(), fixtures::host_limits());
+        world.github = Some(Fake::new(seed));
+        world.wall_base = Some(github::WALL_BASE);
+        world.set_time(Time::ZERO);
+        world.put(Item::AppId, fixtures::app_id(7));
+        world.put(Item::AppKey, fixtures::secret(github::app_key()));
+        world.put(Item::Accepted, fixtures::accepted(&[1, 2]));
+        world
     }
     #[must_use]
     pub fn new_with(seed: u64, script: &[Connect], settings: Settings, limits: Limits) -> Self {
@@ -91,6 +110,8 @@ impl HostWorld {
             host: Host::new(&limits, settings, fixtures::crypto()).expect("host fixtures"),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             service,
+            github: None,
+            wall_base: None,
             fake_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: fake_limits },
             above: Queue::with_capacity(16),
             below: Queue::with_capacity(16),
@@ -103,6 +124,7 @@ impl HostWorld {
             aborts: 0,
             seed,
             needs: Vec::new(),
+            reads: Vec::new(),
             pause_writes: false,
             pending_writes: Vec::new(),
             pause_reads: false,
@@ -135,6 +157,13 @@ impl HostWorld {
         } else {
             self.files.push((item, bytes));
         }
+    }
+    pub fn forget(&mut self, item: Item) {
+        self.files.retain(|(key, _)| *key != item);
+    }
+    #[must_use]
+    pub fn reads(&self) -> &[Item] {
+        &self.reads
     }
     #[must_use]
     pub fn needs(&self) -> &[Need] {
@@ -224,11 +253,17 @@ impl HostWorld {
                 return;
             };
             assert!(at >= self.env.now);
-            self.env.now = at;
-            self.fake_env.now = at;
+            self.set_time(at);
             self.host.fire(&self.env, &mut self.above, &mut self.below);
         }
         panic!("host world's deadlines did not settle");
+    }
+    fn set_time(&mut self, now: Time) {
+        self.env.now = now;
+        self.env.wall =
+            self.wall_base.map_or(Wall::EPOCH, |base| Wall::from_nanos(base.as_nanos().saturating_add(now.as_nanos())));
+        self.fake_env.now = now;
+        self.fake_env.wall = self.env.wall;
     }
     fn tick(&mut self) {
         self.events();
@@ -247,6 +282,8 @@ impl HostWorld {
             if let Some(event) = peer.pipe.server_up() {
                 if let Some(server) = &mut peer.server {
                     fake::up(server, &mut self.service, &self.fake_env, event, &mut peer.above, &mut peer.below);
+                } else if peer.github {
+                    github_answer(peer, event, self.github.as_mut().expect("GitHub peer"), self.env.wall);
                 } else if peer.answer.is_some() {
                     answer(peer, event);
                 }
@@ -284,6 +321,7 @@ impl HostWorld {
                     self.needs.push(need.clone());
                     let answer = match need {
                         Need::Read(item) => {
+                            self.reads.push(item);
                             if self.pause_reads {
                                 self.pending_reads.push((run, item));
                                 continue;
@@ -322,6 +360,9 @@ impl HostWorld {
                 let mut peer = Peer {
                     pipe: Pipe::new(self.seed ^ owner.raw(), Cut::Never),
                     server: None,
+                    github: matches!(connect, Connect::Made)
+                        && self.github.is_some()
+                        && addr == fixtures::github_forge().address,
                     above: Queue::with_capacity(16),
                     below: Queue::with_capacity(16),
                     answer: match connect {
@@ -332,7 +373,9 @@ impl HostWorld {
                     head: Vec::new(),
                     responded: false,
                 };
-                if matches!(connect, Connect::Made) {
+                if peer.github {
+                    peer.below.push(Down::Demand { read: Read::Arrived { max: 4096 }, room: 0 });
+                } else if matches!(connect, Connect::Made) {
                     let mut server = fake::Server::new(owner, &self.fake_env.limits).expect("server");
                     fake::start(&mut server, &mut self.service, &self.fake_env, &mut peer.above, &mut peer.below);
                     peer.server = Some(server);
@@ -393,4 +436,41 @@ fn answer(peer: &mut Peer, event: Up) {
         Up::End => (),
         Up::Failed(_) => panic!("uncut scripted stream"),
     }
+}
+
+fn github_answer(peer: &mut Peer, event: Up, fake: &mut Fake, wall: Wall) {
+    match event {
+        Up::Bytes(bytes) => {
+            peer.head.extend_from_slice(&bytes);
+            if complete_request(&peer.head) {
+                peer.below.push(Down::Demand { read: Read::Nothing, room: 4096 });
+            } else {
+                peer.below.push(Down::Demand { read: Read::Arrived { max: 4096 }, room: 0 });
+            }
+        }
+        Up::Room => {
+            assert!(!peer.responded);
+            peer.responded = true;
+            let request = core::mem::take(&mut peer.head);
+            let response = fake.serve(&request, wall);
+            peer.below.push(Down::Send(response.into_boxed_slice()));
+            peer.below.push(Down::Finish);
+        }
+        Up::End => (),
+        Up::Failed(_) => panic!("uncut GitHub stream"),
+    }
+}
+fn complete_request(bytes: &[u8]) -> bool {
+    let Some(end) = bytes.windows(4).position(|piece| piece == b"\r\n\r\n") else {
+        return false;
+    };
+    let mut length = 0;
+    for line in bytes[..end].split(|byte| *byte == b'\n').skip(1) {
+        let (name, value) = line.split_at(line.iter().position(|byte| *byte == b':').expect("header colon"));
+        if name.eq_ignore_ascii_case(b"Content-Length") {
+            length =
+                core::str::from_utf8(value[1..].trim_ascii()).expect("decimal length").parse().expect("body length");
+        }
+    }
+    bytes.len() >= end + 4 + length
 }
