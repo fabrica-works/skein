@@ -41,8 +41,9 @@ pub struct Answered {
 /// From the routing.
 #[derive(Debug)]
 pub enum Request {
-    /// Hands or replaces a forge's access (forge-connection.md, 3.5): answered by one
-    /// Connected or one Stopped, unless a later connect for that forge comes first.
+    /// Hands or replaces a forge's access (forge-connection.md, 3.5): at most one
+    /// Connected and at most one Stopped per generation, including refusal after Ready.
+    /// A replacement suppresses the old generation's remaining events.
     /// A forge not configured, or a Request after Close, is ignored.
     Connect { forge: u16, access: Access },
     /// Replaces the bounded set of accepted installations (forge-connection.md, 4.4).
@@ -79,10 +80,10 @@ pub enum Event {
     Hint(crate::hooks::Hinted),
     /// The webhooks listener failed to bind or was lost.
     ListenerLost,
-    /// A forge's start is done: the answer to its last connect, or to the access it was built with.
+    /// A forge's start is done: at most once per configured-access or connect generation.
     Connected { forge: u16 },
-    /// A forge's access refused, by a connect's check or its start's, naming the forge:
-    /// at most once per connect. The forge holds no access until the next one.
+    /// A forge's access refused: at most once per generation, possibly after Connected.
+    /// The forge holds no access until the next connect.
     Stopped { forge: u16, why: Stopped },
     /// The terminal of `Close`: every connection closed.
     Closed,

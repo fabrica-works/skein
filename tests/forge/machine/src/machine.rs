@@ -70,6 +70,17 @@ pub struct Cut {
     pub at: usize,
     pub reset: bool,
 }
+#[derive(Debug)]
+struct AccessGeneration {
+    number: u64,
+    connected: bool,
+    stopped: bool,
+}
+impl AccessGeneration {
+    fn new(number: u64) -> Self {
+        Self { number, connected: false, stopped: false }
+    }
+}
 /// The real component, with a scripted peer and io played by the world.
 pub struct Machine {
     component: Component,
@@ -86,7 +97,10 @@ pub struct Machine {
     git_tokens: Vec<Event>,
     installation_events: Vec<Event>,
     facts: Vec<Event>,
-    access_answers: usize,
+    access_generations: BTreeMap<u16, Option<AccessGeneration>>,
+    forge_addresses: Vec<(skein_io::Addr, u16)>,
+    connection_generations: BTreeMap<Token, (u16, u64)>,
+    event_source: Option<(u16, u64)>,
     opened: u32,
     aborts: u32,
     closed: bool,
@@ -163,7 +177,12 @@ impl Machine {
             Some(skein_tls_world::pki::VALID)
         };
         let wall = wall_base.unwrap_or(Wall::EPOCH);
-        let access_answers = settings.forges.iter().filter(|forge| forge.access.is_some()).count();
+        let access_generations = settings
+            .forges
+            .iter()
+            .map(|forge| (forge.number, forge.access.as_ref().map(|_| AccessGeneration::new(1))))
+            .collect();
+        let forge_addresses = settings.forges.iter().map(|forge| (forge.address, forge.number)).collect();
         let mut world = Self {
             component: Component::new(settings, &limits, &fixtures::shared()).expect("fixture bounds agree"),
             env: Env { now: Time::ZERO, wall, limits },
@@ -179,7 +198,10 @@ impl Machine {
             git_tokens: Vec::new(),
             installation_events: Vec::new(),
             facts: Vec::new(),
-            access_answers,
+            access_generations,
+            forge_addresses,
+            connection_generations: BTreeMap::new(),
+            event_source: None,
             opened: 0,
             aborts: 0,
             closed: false,
@@ -300,8 +322,13 @@ impl Machine {
     }
     /// Delivers an owner action, preserving every answer offer in the history.
     pub fn action(&mut self, request: Request) {
-        if matches!(&request, Request::Connect { .. }) {
-            self.access_answers += 1;
+        self.events();
+        if let Request::Connect { forge, .. } = &request
+            && !self.closed
+            && let Some(generation) = self.access_generations.get_mut(forge)
+        {
+            let next = generation.as_ref().map_or(1, |generation| generation.number + 1);
+            *generation = Some(AccessGeneration::new(next));
         }
         if let Request::Refused(answer) | Request::Returned(answer) = &request {
             assert!(self.answers.remove(&answer.call.raw()).is_some(), "owner holds a delivered answer");
@@ -360,7 +387,46 @@ impl Machine {
         self.pause = None;
     }
     fn up(&mut self, event: skein_io::Event) {
+        self.events();
+        let owner = match &event {
+            skein_io::Event::Listening { owner, .. }
+            | skein_io::Event::Accepted { owner, .. }
+            | skein_io::Event::Connecting { owner, .. }
+            | skein_io::Event::Connected { owner }
+            | skein_io::Event::Stream { owner, .. }
+            | skein_io::Event::Output { owner, .. }
+            | skein_io::Event::Spawned { owner, .. }
+            | skein_io::Event::Exited { owner, .. }
+            | skein_io::Event::Usage { owner, .. }
+            | skein_io::Event::Window { owner, .. }
+            | skein_io::Event::Failed { owner, .. }
+            | skein_io::Event::Closed { owner } => Some(*owner),
+            skein_io::Event::Resized | skein_io::Event::Shutdown { .. } => None,
+        };
+        self.event_source = owner.and_then(|owner| self.connection_generations.get(&owner).copied());
         self.component.up(&self.env, event, &mut self.above, &mut self.below);
+        self.events();
+        self.event_source = None;
+    }
+    fn access_event(&mut self, forge: u16, connected: bool) {
+        let generation = self
+            .access_generations
+            .get_mut(&forge)
+            .expect("configured forge")
+            .as_mut()
+            .expect("an access generation is running");
+        if let Some((source, number)) = self.event_source
+            && source == forge
+        {
+            assert_eq!(number, generation.number, "a replaced generation cannot answer");
+        }
+        if connected {
+            assert!(!generation.connected && !generation.stopped, "Connected once before Stopped per generation");
+            generation.connected = true;
+        } else {
+            assert!(!generation.stopped, "Stopped once per generation");
+            generation.stopped = true;
+        }
     }
     fn tick(&mut self) {
         for peer in self.peers.values_mut() {
@@ -437,11 +503,8 @@ impl Machine {
     fn events(&mut self) {
         while let Some(event) = self.above.pop() {
             if let Event::Connected { forge } = event {
+                self.access_event(forge, true);
                 self.connected_forges.push(forge);
-                assert!(
-                    self.stopped.len() + self.connected_forges.len() <= self.access_answers,
-                    "one answer per connect"
-                );
                 continue;
             }
             let name = match &event {
@@ -474,11 +537,8 @@ impl Machine {
                     assert!(self.answers.insert(answer.call.raw(), answer).is_none(), "one answer per call");
                 }
                 Event::Stopped { forge, why } => {
+                    self.access_event(forge, false);
                     self.stopped.push((forge, why));
-                    assert!(
-                        self.stopped.len() + self.connected_forges.len() <= self.access_answers,
-                        "one answer per connect"
-                    );
                 }
                 Event::Connected { .. } => unreachable!("connected taken"),
                 Event::Hint(_) | Event::ListenerLost => panic!("webhooks absent"),
@@ -490,10 +550,18 @@ impl Machine {
             }
         }
     }
+    fn remember_connection_generation(&mut self, owner: Token, addr: skein_io::Addr) {
+        if let Some((_, forge)) = self.forge_addresses.iter().find(|(address, _)| *address == addr)
+            && let Some(Some(generation)) = self.access_generations.get(forge)
+        {
+            self.connection_generations.insert(owner, (*forge, generation.number));
+        }
+    }
     fn io(&mut self, request: skein_io::Request) {
         match request {
             skein_io::Request::Connect { owner, addr } => {
                 self.opened += 1;
+                self.remember_connection_generation(owner, addr);
                 self.peers.insert(
                     owner,
                     Peer::new(

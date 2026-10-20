@@ -147,3 +147,14 @@ fn a_stopped_start_ends_waiting_calls_not_connected_until_the_next_connect() {
     assert_eq!(answer.cost, 1);
     assert!(world.close());
 }
+
+#[test]
+fn an_unknown_forge_connect_starts_no_access_generation() {
+    const UNKNOWN_FORGE: u16 = 99;
+    let mut world = disconnected(vec![]);
+    world.action(Request::Connect { forge: UNKNOWN_FORGE, access: access(TOKEN, WRITER, None) });
+    world.run_for(SECOND);
+    assert!(world.connected_forges().is_empty());
+    assert_eq!(world.stopped(), None);
+    assert!(world.close());
+}

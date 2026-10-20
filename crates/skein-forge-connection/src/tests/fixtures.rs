@@ -115,6 +115,7 @@ pub struct Harness {
     pub peers: skein_lib::Map<skein_lib::Token, Peer>,
     pub endpoints: List<(skein_io::Addr, u16)>,
     pub opened: u32,
+    pub archive: List<(u16, Secret)>,
     pub stopped: Option<(u16, crate::Stopped)>,
     pub git_tokens: Option<List<Event>>,
     pub installation_events: Option<List<Event>>,
@@ -154,6 +155,7 @@ impl Harness {
             peers: skein_lib::Map::with_capacity(32),
             endpoints,
             opened: 0,
+            archive: List::with_capacity(32),
             stopped: None,
             git_tokens: if github { Some(List::with_capacity(32)) } else { None },
             installation_events: if github { Some(List::with_capacity(256)) } else { None },
@@ -298,6 +300,23 @@ impl Harness {
         }
         out.finish()
     }
+    pub fn all_request_bytes(&self, forge: u16) -> Box<[u8]> {
+        let current = self.request_bytes(forge);
+        let mut length = current.len();
+        for (number, bytes) in &self.archive {
+            if *number == forge {
+                length = length.checked_add(bytes.len()).expect("fixture history");
+            }
+        }
+        let mut out = skein_lib::Writer::new(length);
+        for (number, bytes) in &self.archive {
+            if *number == forge {
+                out.put(bytes.expose()).expect("measured history");
+            }
+        }
+        out.put(&current).expect("measured current");
+        out.finish()
+    }
     pub fn connections_opened(&self) -> u32 {
         self.opened
     }
@@ -360,7 +379,10 @@ impl Harness {
                         }
                         if let Some(owner) = owner {
                             self.event(skein_io::Event::Closed { owner });
-                            drop(self.peers.remove(&owner));
+                            let peer = self.peers.remove(&owner).expect("closed peer");
+                            self.archive
+                                .push((peer.forge, Secret::new(Box::from(peer.wire.received.as_slice()))))
+                                .expect("fixture history");
                         }
                     }
                     skein_io::Request::Listen { .. }

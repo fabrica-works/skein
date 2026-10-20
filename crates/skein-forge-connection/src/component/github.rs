@@ -3,7 +3,7 @@ use super::{Component, OwnPlan, backoff};
 use crate::{
     Event, Limits, StartRead, Stopped, Value,
     connection::{self, Exchange, Phase},
-    installations::Read,
+    installations::{HeldToken, Read, Resume, Selected, Tokens, Work},
     start::Start,
 };
 use skein_forge::{
@@ -19,7 +19,7 @@ use skein_forge::{
         request::Scope,
     },
 };
-use skein_lib::{Duration, Env, Queue, Wall};
+use skein_lib::{Duration, Env, Queue};
 
 enum Progress {
     Send(Pending),
@@ -31,10 +31,49 @@ impl Component {
     fn github_bounds(&self, l: &Limits) -> Bounds {
         crate::limits::installation_bounds(l, &self.shared).expect("checked installation bounds")
     }
-    pub(super) fn github_wait(&mut self, at: u32, env: &Env<Limits>) {
-        let state = self.starts.get_mut(at).expect("forge start");
+    // Ready-time jobs use the start plans without moving the public start out of Ready.
+    fn github_state(&self, at: u32) -> Start {
+        let state = *self.starts.get(at).expect("forge start");
+        match state {
+            Start::Ready { .. } => {
+                let gh = self.github.get(at).expect("forge slot").as_ref().expect("GitHub state");
+                match gh.work {
+                    Work::Minting { next } => Start::Minting { next },
+                    Work::Identity { next } => Start::Identity { next },
+                    Work::Idle | Work::Waiting { .. } => state,
+                }
+            }
+            Start::Unconnected
+            | Start::Checking { .. }
+            | Start::Settings { .. }
+            | Start::Listing { .. }
+            | Start::Minting { .. }
+            | Start::Identity { .. }
+            | Start::Waiting { .. }
+            | Start::Stopped(_) => state,
+        }
+    }
+    fn github_phase(&mut self, at: u32, state: Start) {
         let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
-        let next = match *state {
+        if gh.connected {
+            gh.work = match state {
+                Start::Minting { next } => Work::Minting { next },
+                Start::Identity { next } => Work::Identity { next },
+                Start::Ready { .. } | Start::Listing { .. } => Work::Idle,
+                Start::Unconnected
+                | Start::Checking { .. }
+                | Start::Settings { .. }
+                | Start::Waiting { .. }
+                | Start::Stopped(_) => unreachable!("GitHub selection"),
+            };
+        } else {
+            *self.starts.get_mut(at).expect("forge start") = state;
+        }
+    }
+    pub(super) fn github_wait(&mut self, at: u32, env: &Env<Limits>) {
+        let state = self.github_state(at);
+        let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
+        let next = match state {
             Start::Listing { next } | Start::Minting { next } | Start::Identity { next } => next,
             Start::Ready { .. } => match &gh.read {
                 Read::Reading(reading) => reading.next,
@@ -47,19 +86,41 @@ impl Component {
             | Start::Stopped(_) => return,
         };
         let until = env.now.saturating_add(gh.retry.unwrap_or(Duration::ZERO).max(next));
-        let next = next.saturating_mul(2).min(env.limits.start_backoff_max);
-        match *state {
-            Start::Ready { .. } => gh.read = Read::Waiting { until, next },
-            Start::Listing { .. } | Start::Minting { .. } | Start::Identity { .. } => {
-                *state = Start::Waiting { until, next };
-                gh.read = Read::Idle;
-                gh.forget_tokens();
+        let doubled = next.saturating_mul(2).min(env.limits.start_backoff_max);
+        if gh.connected {
+            match state {
+                Start::Minting { .. } => {
+                    let (id, scope) = gh.mint.expect("selected mint");
+                    let row = gh.rows.get_mut(&id).expect("selected row");
+                    row.state = Tokens::Waiting;
+                    if gh.status == Some(403) || gh.status == Some(404) {
+                        row.forget();
+                        row.state = Tokens::Waiting;
+                        gh.held = None;
+                        gh.work = Work::Idle;
+                        gh.selected = None;
+                        gh.mint = None;
+                        gh.read = Read::Waiting { until, next: doubled };
+                        gh.reread = false;
+                        gh.refused_read = true;
+                    } else {
+                        gh.work = Work::Waiting { until, next: doubled, resume: Resume::Minting { scope } };
+                    }
+                }
+                Start::Identity { .. } => {
+                    gh.work = Work::Waiting { until, next: doubled, resume: Resume::Identity };
+                }
+                Start::Listing { .. } | Start::Ready { .. } => gh.read = Read::Waiting { until, next: doubled },
+                Start::Unconnected
+                | Start::Checking { .. }
+                | Start::Settings { .. }
+                | Start::Waiting { .. }
+                | Start::Stopped(_) => unreachable!("active GitHub work"),
             }
-            Start::Unconnected
-            | Start::Checking { .. }
-            | Start::Settings { .. }
-            | Start::Waiting { .. }
-            | Start::Stopped(_) => unreachable!("active GitHub work"),
+        } else {
+            *self.starts.get_mut(at).expect("forge start") = Start::Waiting { until, next: doubled };
+            gh.read = Read::Idle;
+            gh.forget_tokens();
         }
         *self.own_plans.get_mut(at).expect("forge plan") = None;
     }
@@ -74,24 +135,30 @@ impl Component {
     fn github_select(&mut self, at: u32, next: Duration, up: &mut Queue<Event>) {
         let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
         gh.mint = None;
+        gh.selected = None;
         gh.stale = false;
+        let mut chosen = None;
         for (id, row) in &gh.rows {
             if row.accepted && !row.suspended {
-                let scope = if row.api.is_none() {
-                    Some(Scope::Full)
-                } else if row.git_expires == Wall::EPOCH {
-                    Some(Scope::Contents)
-                } else {
-                    None
+                let scope = match row.state {
+                    Tokens::Unminted => Some(Scope::Full),
+                    Tokens::Minting { scope } => Some(scope),
+                    Tokens::Current | Tokens::Waiting | Tokens::Gone => None,
                 };
                 if let Some(scope) = scope {
-                    gh.mint = Some((*id, scope));
-                    *self.starts.get_mut(at).expect("forge start") = Start::Minting { next };
-                    return;
+                    chosen = Some((*id, scope));
+                    break;
                 }
             }
         }
-        // The most recently used accepted Full token is the identity credential.
+        if let Some((id, scope)) = chosen {
+            let row = gh.rows.get_mut(&id).expect("eligible row");
+            row.state = Tokens::Minting { scope };
+            gh.selected = Some(Selected { id, connect: gh.connect, revision: row.revision });
+            gh.mint = Some((id, scope));
+            self.github_phase(at, Start::Minting { next });
+            return;
+        }
         let mut recent = None;
         if let Some(id) = gh.recent
             && let Some(row) = gh.rows.get(&id)
@@ -109,9 +176,14 @@ impl Component {
             }
         }
         gh.recent = recent;
-        if recent.is_some() && !gh.identity_checked {
-            *self.starts.get_mut(at).expect("forge start") = Start::Identity { next };
+        if let Some(id) = recent
+            && !gh.identity_checked
+        {
+            let row = gh.rows.get(&id).expect("identity row");
+            gh.selected = Some(Selected { id, connect: gh.connect, revision: row.revision });
+            self.github_phase(at, Start::Identity { next });
         } else {
+            gh.work = Work::Idle;
             *self.starts.get_mut(at).expect("forge start") = Start::Ready { cap: github::pin::PAGE_CAP };
             if !gh.connected {
                 gh.connected = true;
@@ -120,6 +192,7 @@ impl Component {
         }
     }
     fn github_progress(&mut self, at: u32, progress: Progress, env: &Env<Limits>, up: &mut Queue<Event>) {
+        let state = self.github_state(at);
         match progress {
             Progress::Send(exchange) => {
                 match self.own_plans.get_mut(at).expect("forge plan").as_mut().expect("GitHub plan") {
@@ -174,27 +247,44 @@ impl Component {
                     return;
                 }
             }
-            Progress::Identified(answer) => match answer {
-                Ok(viewer) => {
-                    if viewer.id != self.settings.forges.get(at).expect("forge").access.as_ref().expect("access").user {
-                        self.github_stop(at, Stopped::OtherUser { user: viewer.id }, up);
-                        return;
-                    }
-                    self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state").identity_checked =
-                        true;
-                }
-                Err(error) => {
-                    self.github_error(at, error, env, up);
+            Progress::Identified(answer) => {
+                if !self.github_identified(at, answer, env, up) {
                     return;
                 }
-            },
+            }
         }
         *self.own_plans.get_mut(at).expect("forge plan") = None;
-        let next = active_next(*self.starts.get(at).expect("forge start"));
+        let next = active_next(state);
         if self.github.get(at).expect("forge slot").as_ref().expect("GitHub state").reread {
-            *self.starts.get_mut(at).expect("forge start") = Start::Listing { next };
+            self.github_phase(at, Start::Listing { next });
         } else {
             self.github_select(at, next, up);
+        }
+    }
+    fn github_identified(
+        &mut self,
+        at: u32,
+        answer: Result<document::Viewer, api::Error>,
+        env: &Env<Limits>,
+        up: &mut Queue<Event>,
+    ) -> bool {
+        let gh = self.github.get(at).expect("forge slot").as_ref().expect("GitHub state");
+        if !gh.selected_valid() {
+            return true;
+        }
+        match answer {
+            Ok(viewer) => {
+                if viewer.id != self.settings.forges.get(at).expect("forge").access.as_ref().expect("access").user {
+                    self.github_stop(at, Stopped::OtherUser { user: viewer.id }, up);
+                    return false;
+                }
+                self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state").identity_checked = true;
+                true
+            }
+            Err(error) => {
+                self.github_error(at, error, env, up);
+                false
+            }
         }
     }
     fn github_minted(
@@ -204,45 +294,44 @@ impl Component {
         env: &Env<Limits>,
         up: &mut Queue<Event>,
     ) -> bool {
-        if self.github.get(at).expect("forge slot").as_ref().expect("GitHub state").stale {
-            drop(answer);
-        } else {
-            match answer {
-                Ok(minted) => {
-                    if !crate::limits::header_value(minted.token.expose())
-                        || minted.token.len() > usize::try_from(env.limits.token_bytes).expect("token bound")
-                        || minted.expires <= env.wall
-                    {
-                        self.github_wait(at, env);
-                        return false;
-                    }
-                    let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
-                    let (id, scope) = gh.mint.expect("selected mint");
-                    let row = gh.rows.get_mut(&id).expect("selected row");
-                    if row.accepted && !row.suspended {
-                        match scope {
-                            Scope::Full => {
-                                row.api = Some(minted.token);
-                                row.api_expires = minted.expires;
-                                gh.recent = Some(id);
-                            }
-                            Scope::Contents => {
-                                row.git_expires = minted.expires;
-                                up.push(Event::GitToken {
-                                    forge: self.settings.forges.get(at).expect("forge").number,
-                                    installation: id,
-                                    account: row.account.clone(),
-                                    token: minted.token,
-                                    expires: minted.expires,
-                                });
-                            }
+        if !self.github.get(at).expect("forge slot").as_ref().expect("GitHub state").selected_valid() {
+            return true;
+        }
+        match answer {
+            Ok(minted) => {
+                if !crate::limits::header_value(minted.token.expose())
+                    || minted.token.len() > usize::try_from(env.limits.token_bytes).expect("token bound")
+                    || minted.expires <= env.wall
+                {
+                    self.github_wait(at, env);
+                    return false;
+                }
+                let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
+                let (id, scope) = gh.mint.expect("selected mint");
+                let row = gh.rows.get_mut(&id).expect("selected row");
+                if row.accepted && !row.suspended {
+                    match scope {
+                        Scope::Full => {
+                            row.api = Some(minted.token);
+                            row.api_expires = minted.expires;
+                            row.state = Tokens::Minting { scope: Scope::Contents };
+                            gh.recent = Some(id);
+                        }
+                        Scope::Contents => {
+                            row.git_expires = minted.expires;
+                            row.state = Tokens::Current;
+                            gh.held = Some(HeldToken {
+                                selected: gh.selected.expect("selected Contents"),
+                                token: minted.token,
+                                expires: minted.expires,
+                            });
                         }
                     }
                 }
-                Err(error) => {
-                    self.github_error(at, error, env, up);
-                    return false;
-                }
+            }
+            Err(error) => {
+                self.github_error(at, error, env, up);
+                return false;
             }
         }
         true
@@ -253,7 +342,7 @@ impl Component {
             && (400..500).contains(&status)
             && status != 429
         {
-            let why = match *self.starts.get(at).expect("forge start") {
+            let why = match self.github_state(at) {
                 Start::Listing { .. } | Start::Ready { .. } => Some(if status == 401 {
                     Stopped::KeyRefused
                 } else {
@@ -333,21 +422,10 @@ impl Component {
         env: &Env<Limits>,
         up: &mut Queue<Event>,
     ) -> bool {
-        let state = *self.starts.get(at).expect("forge start");
+        let state = self.github_state(at);
         let c = self.connection_slab.get_mut(id).expect("own connection");
         if c.phase == Phase::Idle {
             let gh = self.github.get(at).expect("forge slot").as_ref().expect("GitHub state");
-            let identity_without_token = match state {
-                Start::Identity { .. } => gh.recent.is_none(),
-                Start::Listing { .. }
-                | Start::Minting { .. }
-                | Start::Unconnected
-                | Start::Checking { .. }
-                | Start::Settings { .. }
-                | Start::Waiting { .. }
-                | Start::Ready { .. }
-                | Start::Stopped(_) => false,
-            };
             if gh.stale_read() {
                 let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
                 gh.read = Read::Idle;
@@ -355,7 +433,16 @@ impl Component {
                 *self.own_plans.get_mut(at).expect("forge plan") = None;
                 return false;
             }
-            if gh.stale || identity_without_token {
+            let selected = match state {
+                Start::Minting { .. } | Start::Identity { .. } => true,
+                Start::Listing { .. } | Start::Ready { .. } => false,
+                Start::Unconnected
+                | Start::Checking { .. }
+                | Start::Settings { .. }
+                | Start::Waiting { .. }
+                | Start::Stopped(_) => unreachable!("active GitHub work"),
+            };
+            if selected && !gh.selected_valid() {
                 *self.own_plans.get_mut(at).expect("forge plan") = None;
                 self.github_select(at, active_next(state), up);
                 return false;
@@ -374,8 +461,13 @@ impl Component {
                 let secret = match state {
                     Start::Identity { .. } => {
                         let row = gh.rows.get(&gh.recent.expect("identity row")).expect("identity row");
-                        if !row.accepted || row.api.is_none() {
+                        if !row.accepted || row.suspended || row.api.is_none() || row.api_expires <= env.wall {
                             *self.own_plans.get_mut(at).expect("forge plan") = None;
+                            let row = gh.rows.get_mut(&gh.recent.expect("identity row")).expect("identity row");
+                            row.forget();
+                            if row.accepted && !row.suspended {
+                                row.unminted();
+                            }
                             let next = active_next(state);
                             self.github_select(at, next, up);
                             return false;
@@ -475,6 +567,7 @@ impl Component {
     // Local output consumes only above room; socket work separately reserves below room.
     fn github_local(&mut self, at: u32, env: &Env<Limits>, up: &mut Queue<Event>) -> bool {
         let state = *self.starts.get(at).expect("forge start");
+        let busy = self.own_plans.get(at).expect("forge plan").is_some();
         let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
         let forge = self.settings.forges.get(at).expect("forge").number;
         match &gh.read {
@@ -483,15 +576,21 @@ impl Component {
                     up.push(event);
                 } else {
                     gh.read = Read::Idle;
+                    if busy {
+                        return true;
+                    }
                     match state {
                         Start::Listing { next } => self.github_select(at, next, up),
+                        Start::Ready { .. } => {
+                            let next = gh.read_next;
+                            self.github_select(at, next, up);
+                        }
                         Start::Unconnected
                         | Start::Checking { .. }
                         | Start::Settings { .. }
                         | Start::Minting { .. }
                         | Start::Identity { .. }
                         | Start::Waiting { .. }
-                        | Start::Ready { .. }
                         | Start::Stopped(_) => {}
                     }
                 }
@@ -522,28 +621,126 @@ impl Component {
                     false
                 }
             }
-            Read::Idle => match state {
-                Start::Listing { next } => {
-                    gh.begin_read(next);
-                    true
+            Read::Idle => self.github_idle(at, env, up),
+        }
+    }
+    fn github_idle(&mut self, at: u32, env: &Env<Limits>, up: &mut Queue<Event>) -> bool {
+        let state = *self.starts.get(at).expect("forge start");
+        let busy = self.own_plans.get(at).expect("forge plan").is_some();
+        let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
+        let forge = self.settings.forges.get(at).expect("forge").number;
+
+        let read_next = match state {
+            Start::Listing { next } => Some(next),
+            Start::Ready { .. } => Some(env.limits.start_backoff),
+            Start::Unconnected
+            | Start::Checking { .. }
+            | Start::Settings { .. }
+            | Start::Minting { .. }
+            | Start::Identity { .. }
+            | Start::Waiting { .. }
+            | Start::Stopped(_) => None,
+        };
+        if !busy
+            && gh.reread
+            && let Some(next) = read_next
+        {
+            gh.begin_read(next);
+            return true;
+        }
+        if let Some(held) = gh.held.take() {
+            if gh.valid(held.selected) {
+                let row = gh.rows.get(&held.selected.id).expect("eligible held token");
+                up.push(Event::GitToken {
+                    forge,
+                    installation: held.selected.id,
+                    account: row.account.clone(),
+                    token: held.token,
+                    expires: held.expires,
+                });
+            }
+            return true;
+        }
+        if busy {
+            return false;
+        }
+        match state {
+            Start::Listing { next } => {
+                gh.begin_read(next);
+                true
+            }
+            Start::Ready { .. } => self.github_ready(at, env, up),
+            Start::Unconnected
+            | Start::Checking { .. }
+            | Start::Settings { .. }
+            | Start::Minting { .. }
+            | Start::Identity { .. }
+            | Start::Waiting { .. }
+            | Start::Stopped(_) => false,
+        }
+    }
+    fn github_ready(&mut self, at: u32, env: &Env<Limits>, up: &mut Queue<Event>) -> bool {
+        let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
+        match gh.work {
+            Work::Waiting { until, next, resume } => {
+                if !gh.selected_valid() {
+                    gh.work = Work::Idle;
+                    self.github_select(at, next, up);
+                    return true;
                 }
-                Start::Ready { .. } => {
-                    if gh.reread {
-                        gh.begin_read(env.limits.start_backoff);
-                        true
-                    } else {
-                        false
+                if until > env.now {
+                    return false;
+                }
+                let selected = gh.selected.expect("retry selection");
+                let row = gh.rows.get_mut(&selected.id).expect("eligible retry");
+                match resume {
+                    Resume::Minting { scope } => {
+                        row.state = Tokens::Minting { scope };
+                        gh.mint = Some((selected.id, scope));
+                        gh.work = Work::Minting { next };
+                    }
+                    Resume::Identity => {
+                        if row.api_expires <= env.wall {
+                            row.forget();
+                            row.unminted();
+                            gh.held = None;
+                            gh.work = Work::Idle;
+                            self.github_select(at, next, up);
+                        } else {
+                            gh.work = Work::Identity { next };
+                        }
                     }
                 }
-                Start::Unconnected
-                | Start::Checking { .. }
-                | Start::Settings { .. }
-                | Start::Minting { .. }
-                | Start::Identity { .. }
-                | Start::Waiting { .. }
-                | Start::Stopped(_) => false,
-            },
+                true
+            }
+            Work::Idle => {
+                self.github_select(at, env.limits.start_backoff, up);
+                github_active(self.github_state(at))
+            }
+            Work::Minting { .. } | Work::Identity { .. } => false,
         }
+    }
+    fn github_retire_unsent(
+        &mut self,
+        at: u32,
+        id: skein_lib::Id<connection::Connection>,
+        up: &mut Queue<Event>,
+        io: &mut Queue<skein_io::Request>,
+    ) -> bool {
+        let gh = self.github.get(at).expect("forge slot").as_ref().expect("GitHub state");
+        let c = self.connection_slab.get_mut(id).expect("own connection");
+        let unsent = match c.phase {
+            Phase::Sending { written } => !written && !c.written,
+            Phase::Connecting | Phase::Handshaking | Phase::Closed | Phase::Reading | Phase::Idle => false,
+        };
+        if unsent && gh.selected.is_some() && !gh.selected_valid() {
+            c.close(false, io);
+            *self.own_plans.get_mut(at).expect("forge plan") = None;
+            let next = active_next(self.github_state(at));
+            self.github_select(at, next, up);
+            return true;
+        }
+        false
     }
     pub(super) fn drive_github(
         &mut self,
@@ -578,7 +775,7 @@ impl Component {
                 self.wake = Some(env.now);
                 break;
             }
-            let state = *self.starts.get(at).expect("forge start");
+            let state = self.github_state(at);
             let gh = self.github.get(at).expect("forge slot").as_ref().expect("GitHub state");
             let reading = match gh.read {
                 Read::Reading(_) => true,
@@ -614,6 +811,9 @@ impl Component {
                 && deadline <= env.now
             {
                 c.timeout();
+            }
+            if self.github_retire_unsent(at, id, up, io) {
+                continue;
             }
             if !self.github_send(at, id, env, up) {
                 continue;
@@ -678,7 +878,7 @@ mod tests {
         tests::fixtures,
     };
     use alloc::boxed::Box;
-    use skein_lib::{List, Time};
+    use skein_lib::{List, Time, Wall};
 
     // More changes than one entry point reserves, including lifecycle then rename on id 1.
     const ROWS: u32 = MAX_OUT.above.saturating_add(4);
@@ -693,6 +893,8 @@ mod tests {
                 .insert(
                     1,
                     Row {
+                        state: Tokens::Gone,
+                        revision: 0,
                         account: Account { id: 22, login: Box::from(b"acme".as_slice()) },
                         suspended: false,
                         accepted: false,
@@ -917,6 +1119,7 @@ mod tests {
         let gh = component.github.get_mut(0).expect("forge").as_mut().expect("GitHub");
         gh.baseline = false;
         gh.connected = true;
+        gh.identity_checked = true;
         gh.accept(&[1]);
         let token = b"artificial-api";
         let expiry = Wall::from_nanos(3_600_000_000_000);
@@ -925,6 +1128,8 @@ mod tests {
                 .insert(
                     1,
                     Row {
+                        state: Tokens::Current,
+                        revision: 0,
                         account: Account { id: 22, login: Box::from(b"acme".as_slice()) },
                         suspended: false,
                         accepted: true,

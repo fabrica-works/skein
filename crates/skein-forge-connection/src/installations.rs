@@ -9,6 +9,8 @@ use skein_lib::{Duration, Map, Secret, Set, Time, Wall};
 
 #[derive(Debug)]
 pub(crate) struct Row {
+    pub state: Tokens,
+    pub revision: u64,
     pub account: Account,
     pub suspended: bool,
     pub accepted: bool,
@@ -17,11 +19,50 @@ pub(crate) struct Row {
     pub git_expires: Wall,
 }
 impl Row {
+    pub fn unminted(&mut self) {
+        self.state = Tokens::Unminted;
+        self.revision = self.revision.wrapping_add(1);
+    }
     pub fn forget(&mut self) {
+        self.state = Tokens::Gone;
+        self.revision = self.revision.wrapping_add(1);
         self.api = None;
         self.api_expires = Wall::EPOCH;
         self.git_expires = Wall::EPOCH;
     }
+}
+/// Eligibility, scopes and waits are explicit; Current has no renewal timer here.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Tokens {
+    Unminted,
+    Minting { scope: Scope },
+    Current,
+    Waiting,
+    Gone,
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Selected {
+    pub id: u64,
+    pub connect: u64,
+    pub revision: u64,
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Resume {
+    Minting { scope: Scope },
+    Identity,
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Work {
+    Idle,
+    Minting { next: Duration },
+    Identity { next: Duration },
+    Waiting { until: Time, next: Duration, resume: Resume },
+}
+#[derive(Debug)]
+pub(crate) struct HeldToken {
+    pub selected: Selected,
+    pub token: Secret,
+    pub expires: Wall,
 }
 #[derive(Debug)]
 pub(crate) struct Metadata {
@@ -233,10 +274,16 @@ pub(crate) struct GitHub {
     pub known: Map<u64, Accepted>,
     pub rows: Map<u64, Row>,
     pub read: Read,
+    pub read_next: Duration,
     pub generation: u64,
     pub baseline: bool,
     pub reread: bool,
+    pub refused_read: bool,
     pub mint: Option<(u64, Scope)>,
+    pub selected: Option<Selected>,
+    pub connect: u64,
+    pub work: Work,
+    pub held: Option<HeldToken>,
     pub stale: bool,
     pub recent: Option<u64>,
     pub identity_checked: bool,
@@ -252,10 +299,16 @@ impl GitHub {
             known: Map::with_capacity(cap),
             rows: Map::with_capacity(cap),
             read: Read::Idle,
+            read_next: Duration::ZERO,
             generation: 0,
             baseline: true,
             reread: false,
+            refused_read: false,
             mint: None,
+            selected: None,
+            connect: 0,
+            work: Work::Idle,
+            held: None,
             stale: false,
             recent: None,
             identity_checked: false,
@@ -266,10 +319,12 @@ impl GitHub {
     }
     /// Access replacement drops private work and credentials, keeping the comparison table.
     pub fn forget(&mut self) {
+        self.connect = self.connect.wrapping_add(1);
         self.jwt.forget();
         self.read = Read::Idle;
         self.forget_tokens();
         self.reread = false;
+        self.refused_read = false;
         self.status = None;
         self.retry = None;
         self.connected = false;
@@ -283,6 +338,9 @@ impl GitHub {
             self.rows.get_mut(&id).expect("row").forget();
         }
         self.mint = None;
+        self.selected = None;
+        self.work = Work::Idle;
+        self.held = None;
         self.stale = false;
         self.recent = None;
         self.identity_checked = false;
@@ -320,40 +378,59 @@ impl GitHub {
         match &mut self.read {
             Read::Reading(reading) => reading.stale = true,
             Read::Waiting { .. } => {
-                if !self.reread {
+                if !self.reread && !self.refused_read {
                     self.read = Read::Idle;
                 }
             }
             Read::Idle | Read::Changes(_) => {}
         }
-        #[expect(clippy::manual_map, reason = "the programming model excludes closures")]
-        let mint_id = match self.mint {
-            Some((id, _)) => Some(id),
-            None => None,
-        };
         let mut rows = skein_lib::List::with_capacity(self.rows.capacity());
         for (id, _) in &self.rows {
             rows.push(*id).expect("bounded rows");
         }
         for id in rows.into_boxed() {
             let row = self.rows.get_mut(&id).expect("row");
-            row.accepted = self.accepted.contains(&id);
-            if !row.accepted || mint_id == Some(id) {
+            let accepted = self.accepted.contains(&id);
+            if row.accepted && !accepted {
                 row.forget();
+            } else if !row.accepted && accepted && !row.suspended {
+                row.unminted();
             }
+            row.accepted = accepted;
         }
-        if self.mint.is_some() {
+        self.invalidate();
+    }
+    pub fn valid(&self, selected: Selected) -> bool {
+        if selected.connect != self.connect {
+            return false;
+        }
+        match self.rows.get(&selected.id) {
+            Some(row) => row.accepted && !row.suspended && row.revision == selected.revision,
+            None => false,
+        }
+    }
+    pub fn selected_valid(&self) -> bool {
+        match self.selected {
+            Some(selected) => !self.stale && self.valid(selected),
+            None => false,
+        }
+    }
+    fn invalidate(&mut self) {
+        if self.selected.is_some() && !self.selected_valid() {
             self.stale = true;
         }
-        if let Some(id) = self.recent
-            && !self.accepted.contains(&id)
+        if let Some(held) = &self.held
+            && !self.valid(held.selected)
         {
-            self.recent = None;
+            self.held = None;
         }
     }
     pub fn begin_read(&mut self, next: Duration) {
         self.mint = None;
+        self.selected = None;
+        self.work = Work::Idle;
         self.stale = false;
+        self.read_next = next;
         self.read = Read::Reading(Reading::new(self.rows.capacity(), self.generation, next));
         self.reread = false;
     }
@@ -407,6 +484,14 @@ impl GitHub {
             let metadata = staged.remove(&id).expect("staged row");
             match self.rows.get_mut(&id) {
                 Some(row) => {
+                    if !row.suspended && metadata.suspended {
+                        row.forget();
+                    } else if !metadata.suspended
+                        && self.accepted.contains(&id)
+                        && (row.suspended || row.state == Tokens::Waiting || row.state == Tokens::Gone)
+                    {
+                        row.unminted();
+                    }
                     row.account = metadata.account;
                     row.suspended = metadata.suspended;
                     row.accepted = self.accepted.contains(&id);
@@ -417,6 +502,12 @@ impl GitHub {
                             .insert(
                                 id,
                                 Row {
+                                    state: if self.accepted.contains(&id) && !metadata.suspended {
+                                        Tokens::Unminted
+                                    } else {
+                                        Tokens::Gone
+                                    },
+                                    revision: 0,
                                     account: metadata.account,
                                     suspended: metadata.suspended,
                                     accepted: self.accepted.contains(&id),
@@ -430,8 +521,10 @@ impl GitHub {
                 }
             }
         }
+        self.invalidate();
         self.read = Read::Changes(Diff { old, accepted, missing, baseline: self.baseline, after: None, renamed: None });
         self.baseline = false;
+        self.refused_read = false;
     }
     #[expect(clippy::manual_map, reason = "the programming model excludes closures")]
     pub fn output(&mut self, forge: u16) -> Option<Event> {
@@ -445,9 +538,19 @@ impl GitHub {
         }
     }
     pub fn deadline(&self) -> Option<Time> {
-        match self.read {
+        let read = match self.read {
             Read::Waiting { until, .. } => Some(until),
             Read::Idle | Read::Reading(_) | Read::Changes(_) => None,
+        };
+        match self.work {
+            Work::Waiting { until, .. } => {
+                if let Some(read) = read {
+                    Some(read.min(until))
+                } else {
+                    Some(until)
+                }
+            }
+            Work::Idle | Work::Minting { .. } | Work::Identity { .. } => read,
         }
     }
 }

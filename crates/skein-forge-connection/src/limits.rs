@@ -528,6 +528,7 @@ pub(crate) fn installation_bounds(l: &Limits, s: &Shared) -> Option<skein_forge:
     })
 }
 // Both metadata tables, live credentials, accepted bookkeeping and page/event handoffs.
+// Retry candidates and held Contents coexist with mint/authorization handoffs.
 fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
     use crate::installations::{Accepted, Metadata, Row};
     use skein_lib::{List, Map, Set};
@@ -545,9 +546,9 @@ fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
             u64::from(cap)
                 .checked_mul(u64::from(s.name_bytes).checked_mul(6)?.checked_add(u64::from(l.token_bytes))?)?,
         )?
-        .checked_add(u64::from(l.token_bytes).checked_mul(4)?)?
+        .checked_add(u64::from(l.token_bytes).checked_mul(6)?)?
         .checked_add(u64::try_from(size_of::<crate::Event>()).ok()?)?
-        .checked_add(u64::from(s.name_bytes).checked_mul(2)?)
+        .checked_add(u64::from(s.name_bytes).checked_mul(3)?)
 }
 /// Conservative complete heap, pricing TLS on every connection because this interface
 /// knows the forge count, not their transports. Raw growth includes its doubling overlap.

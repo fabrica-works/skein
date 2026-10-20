@@ -243,10 +243,11 @@ refusals are 5.1's.
   the old access: the call ends `Forbidden`, as the forge would answer a
   revoked credential. Calls waiting for the forge's start wait for the
   new one, within their deadlines. The old access is dropped, not kept.
-- **One answer per connect:** `connected` when the start is done, or
-  `stopped` when it is refused, now or later (a key refused at a
-  renewal). A connect that arrives while a start runs ends that start
-  unheard: only the newest connect is answered.
+- **At most one of each answer per connect generation:** `connected`
+  when the start is done, and `stopped` if access is refused, including
+  a later refusal after Ready (deferred Identity or a key refused at a
+  mint). Configured access starts a generation too. A replacement ends
+  the old generation unheard: only the newest generation may answer.
 - **Another user is refused.** A connect whose user differs from the
   access the forge holds says `stopped`, `Invalid`, naming the user, and
   the forge holds no access after it. A credential that stands for
@@ -733,7 +734,10 @@ It is the sum of:
   `name_bytes`, its API token at `token_bytes` and two expiries; both
   bounded metadata tables, old-row seen flags and accepted/missing-id
   bookkeeping with known accounts; a 100-row page and its handoff
-  overlap, one overflow fact and the diff cursor's held account; its log
+  overlap, one overflow fact and the diff cursor's held account; private
+  row states and eligibility revisions, selected work and retry state,
+  a deferred Identity candidate and one held git token at `token_bytes`
+  with its account, all at simultaneous peak; its log
   origins, each a host of 253 bytes and an address; and its puller, its
   validator, a guid, the delivery's decoder and the hint it holds.
 
@@ -834,6 +838,35 @@ and crosses Answering's deadline and the close with a held hint.
 | Current | due, `renew_before` its expiry: Minting, the old token still sent until it expires; a `401` on it in a call: Minting |
 | Waiting | the backoff: Minting; calls wait once the old token expires |
 | Gone | deleted, suspended, or no longer accepted: its tokens dropped; accepted again, or unsuspended: Unminted |
+
+Unminted and Gone also run while the forge is Ready: a newly accepted
+or unsuspended retained row becomes Unminted. A committed deletion or
+suspension, or an accepted-set removal at once, drops its Full token
+and both expiries and invalidates its mint, Identity and held git
+output. Identical sets, metadata-only reads and renames keep Current
+tokens. Eligibility revisions reject an older answer even after loss
+and reacceptance; an already-written exchange settles before the own
+connection is reused. Events use the newest account.
+
+Ready-time mints, reads and Identity share the reserved own connection,
+one exchange at a time. Public Ready and other Current rows survive
+private backoff. A mint's transient failure retries its selected scope;
+`403`/`404` drop its tokens and wait before a whole installations read,
+with no mint from stale metadata. Backoff doubles up to
+`start_backoff_max`, and a longer Retry-After wins beyond that maximum.
+The wait wakes at its future deadline. Changes and a held git token
+share the remaining output reservation; eligibility is checked again
+when the token is released.
+
+When Ready was reached without an eligible installation, the first
+later Full/Contents sequence runs 3.4's Identity on Full. Until it
+succeeds the candidate is ineligible for calls. A matching bot sets
+identity_checked without another `connected`; a refusal may emit the
+generation's one `stopped` after `connected`. A transient Viewer retry
+retains its valid candidate and repeats neither Contents nor its git
+event. An expired candidate starts fresh mints, and loss invalidates
+the check so another eligible row may supply it. Replacement resets
+the check; Close discards all private work and token values.
 
 ### 8.7 The delivery log's puller
 

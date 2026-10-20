@@ -130,6 +130,25 @@ impl Component {
             ended: false,
         })
     }
+    #[cfg(test)]
+    pub(crate) fn test_github(&self) -> &crate::installations::GitHub {
+        self.github.get(0).expect("fixture forge").as_ref().expect("GitHub fixture")
+    }
+    #[cfg(test)]
+    pub(crate) fn test_github_mut(&mut self) -> &mut crate::installations::GitHub {
+        self.github.get_mut(0).expect("fixture forge").as_mut().expect("GitHub fixture")
+    }
+    #[cfg(test)]
+    pub(crate) fn test_room(
+        &mut self,
+        env: &Env<Limits>,
+        up: &mut Queue<Event>,
+        io: &mut Queue<skein_io::Request>,
+        above: u32,
+        below: u32,
+    ) {
+        self.drive_room(env, up, io, above, below);
+    }
     /// Opens each forge's start, within the connection and output bounds.
     pub fn begin(&mut self, env: &Env<Limits>, up: &mut Queue<Event>, io: &mut Queue<skein_io::Request>) {
         if self.closed {

@@ -312,7 +312,7 @@ fn installation_heap_covers_simultaneous_tables_and_page_payloads() {
     const ROWS: u32 = 3;
     const NAME: u32 = 128;
     const TOKEN: u32 = 64;
-    const PEAK_PAYLOADS: u64 = 3 * (6 * 128 + 64) + 2 * 100 * 128 + 2 * 128 + 4 * 64;
+    const PEAK_PAYLOADS: u64 = 3 * (6 * 128 + 64) + 2 * 100 * 128 + 3 * 128 + 6 * 64;
     let l = super::Limits { installations: ROWS, token_bytes: TOKEN, ..fixtures::limits() };
     let s = Shared { name_bytes: NAME, ..fixtures::shared() };
     let empty = super::installation_heap(&super::Limits { token_bytes: 0, ..l }, &Shared { name_bytes: 0, ..s })
@@ -332,4 +332,24 @@ fn installation_staging_and_page_accounting_refuse_overflow() {
     let s = Shared { name_bytes: u32::MAX, ..fixtures::shared() };
     assert_eq!(super::installation_heap(&l, &s), None);
     assert_eq!(super::worst_case(&l, &s, 1, 0), None);
+}
+
+#[test]
+fn ready_candidate_and_held_token_fit_at_simultaneous_peak() {
+    const ROWS: u32 = 3;
+    const TOKEN: u32 = 64;
+    const NAME: u32 = 128;
+    // Live Full tokens, decoder/authorization handoffs, retry candidate and held Contents.
+    const TOKEN_COPIES: u64 = 3 + 6;
+    // Six bounded table accounts per row, two page buffers and three event accounts.
+    const NAME_COPIES: u64 = 3 * 6 + 2 * 100 + 3;
+    let l = super::Limits { installations: ROWS, token_bytes: TOKEN, ..fixtures::limits() };
+    let s = Shared { name_bytes: NAME, ..fixtures::shared() };
+    let scalar = super::installation_heap(&super::Limits { token_bytes: 0, ..l }, &Shared { name_bytes: 0, ..s })
+        .expect("scalar storage");
+    let peak = super::installation_heap(&l, &s).expect("simultaneous payloads");
+    assert_eq!(peak - scalar, TOKEN_COPIES * 64 + NAME_COPIES * 128);
+    assert!(
+        scalar >= skein_lib::Map::<u64, crate::installations::Row>::worst_case(ROWS).expect("states and revisions")
+    );
 }

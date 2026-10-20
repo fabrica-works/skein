@@ -5,16 +5,17 @@ use alloc::boxed::Box;
 use skein_lib::{Duration, Time, Wall};
 
 const SECOND: Duration = Duration::from_secs(1);
-const LIVE: &[u8] = br#"[{"id":1,"account":{"id":22,"login":"acme","type":"Organization"},"created_at":"1970-01-01T00:00:01Z","suspended_at":null}]"#;
-const SUSPENDED: &[u8] = br#"[{"id":1,"account":{"id":22,"login":"acme","type":"Organization"},"created_at":"1970-01-01T00:00:01Z","suspended_at":"1970-01-01T00:00:02Z"}]"#;
+pub(super) const LIVE: &[u8] = br#"[{"id":1,"account":{"id":22,"login":"acme","type":"Organization"},"created_at":"1970-01-01T00:00:01Z","suspended_at":null}]"#;
+pub(super) const SUSPENDED: &[u8] = br#"[{"id":1,"account":{"id":22,"login":"acme","type":"Organization"},"created_at":"1970-01-01T00:00:01Z","suspended_at":"1970-01-01T00:00:02Z"}]"#;
 const PAGE_ONE: &[u8] = br#"[{"id":3,"account":{"id":24,"login":"other","type":"User"},"created_at":"1970-01-01T00:00:01Z","suspended_at":"1970-01-01T00:00:02Z"},{"id":1,"account":{"id":22,"login":"acme","type":"Organization"},"created_at":"1970-01-01T00:00:01Z","suspended_at":null}]"#;
 const PAGE_TWO: &[u8] = br#"[{"id":2,"account":{"id":23,"login":"stray","type":"User"},"created_at":"1970-01-01T00:00:01Z","suspended_at":null}]"#;
-const FULL: &[u8] = b"artificial-full-api-secret";
-const CONTENTS: &[u8] = b"artificial-contents-git-secret";
-const EXPIRES: &[u8] = b"1970-01-01T01:00:00Z";
-const EXPIRY: Wall = Wall::from_nanos(3_600_000_000_000);
-const VIEWER: &[u8] = br#"{"data":{"viewer":{"databaseId":9,"login":"test-app[bot]"}}}"#;
-const NEXT_PAGE: &[u8] = b"Link: <https://api.github.test/app/installations?per_page=100&page=2>; rel=\"next\"\r\n";
+pub(super) const FULL: &[u8] = b"artificial-full-api-secret";
+pub(super) const CONTENTS: &[u8] = b"artificial-contents-git-secret";
+pub(super) const EXPIRES: &[u8] = b"1970-01-01T01:00:00Z";
+pub(super) const EXPIRY: Wall = Wall::from_nanos(3_600_000_000_000);
+pub(super) const VIEWER: &[u8] = br#"{"data":{"viewer":{"databaseId":9,"login":"test-app[bot]"}}}"#;
+pub(super) const NEXT_PAGE: &[u8] =
+    b"Link: <https://api.github.test/app/installations?per_page=100&page=2>; rel=\"next\"\r\n";
 // Default token_bytes is 64; its name bound is 128. Exercise them independently.
 const TOKEN_BOUND: usize = 64;
 // Below the 20-byte timestamp, to prove the mint decoder reserves its room independently.
@@ -29,7 +30,7 @@ enum Stage {
     Contents,
     Identity,
 }
-fn accepted(h: &mut Harness, ids: &[u64]) {
+pub(super) fn accepted(h: &mut Harness, ids: &[u64]) {
     h.send(Request::Installations { forge: FORGE, accepted: Box::from(ids) });
 }
 fn harness() -> Harness {
@@ -38,7 +39,7 @@ fn harness() -> Harness {
     h.connected(FORGE);
     h
 }
-fn mint(token: &[u8], expires: &[u8]) -> Box<[u8]> {
+pub(super) fn mint(token: &[u8], expires: &[u8]) -> Box<[u8]> {
     let mut body = skein_lib::Writer::new(
         token.len().checked_add(expires.len()).expect("fixture fields").checked_add(28).expect("JSON framing"),
     );
@@ -52,10 +53,10 @@ fn mint(token: &[u8], expires: &[u8]) -> Box<[u8]> {
 fn listed(h: &mut Harness) {
     h.answer(FORGE, &fixtures::ok(LIVE));
 }
-fn full(h: &mut Harness) {
+pub(super) fn full(h: &mut Harness) {
     h.answer(FORGE, &mint(FULL, EXPIRES));
 }
-fn contents(h: &mut Harness) {
+pub(super) fn contents(h: &mut Harness) {
     h.answer(FORGE, &mint(CONTENTS, EXPIRES));
 }
 fn at(stage: Stage) -> Harness {
@@ -75,7 +76,7 @@ fn at(stage: Stage) -> Harness {
     }
     h
 }
-fn contains(bytes: &[u8], needle: &[u8]) -> bool {
+pub(super) fn contains(bytes: &[u8], needle: &[u8]) -> bool {
     for piece in bytes.windows(needle.len()) {
         if piece == needle {
             return true;
@@ -83,7 +84,7 @@ fn contains(bytes: &[u8], needle: &[u8]) -> bool {
     }
     false
 }
-fn tokens(h: &Harness) -> &[Event] {
+pub(super) fn tokens(h: &Harness) -> &[Event] {
     h.git_tokens.as_ref().expect("GitHub harness").as_slice()
 }
 fn waiting(h: &Harness, until: u64, next: u64) {
