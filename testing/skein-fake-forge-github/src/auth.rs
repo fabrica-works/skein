@@ -166,13 +166,12 @@ pub(crate) fn finish_reach(
             if add {
                 return empty();
             }
-            for (id, row) in &service.repositories {
-                if row.owner_id == installed.account && *id != repository && repositories.push(*id).is_err() {
-                    return answers::refusal(422, b"Validation Failed", &service.limits);
-                }
-            }
+            return answers::refusal(422, crate::texts::REMOVE_ALL_REPOSITORIES, &service.limits);
         }
         Reach::Listed(ids) => {
+            if !add && ids.len() == 1 && ids.as_slice().contains(&repository) {
+                return answers::refusal(422, crate::texts::REMOVE_LAST_REPOSITORY, &service.limits);
+            }
             for id in ids {
                 if *id != repository && repositories.push(*id).is_err() {
                     return answers::refusal(422, b"Validation Failed", &service.limits);

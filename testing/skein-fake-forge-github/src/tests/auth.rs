@@ -114,6 +114,9 @@ fn github_fake_person_tokens_reach_their_users_and_not_the_apps_routes() {
             if method == Method::Put { 200 } else { 404 }
         );
     }
+    assert!(h.service.installations_mut().set_reach(1, f::listed(&[2])));
+    let response = h.ask(Method::Delete, b"/user/installations/1/repositories/2", Some(token.expose()), b"");
+    f::refusal(&h, &response, 422, b"Validation Failed");
     // bob cannot change the reach of a repository alice administers.
     assert_eq!(
         h.ask(Method::Delete, b"/user/installations/1/repositories/2", Some(person(false).expose()), b"").status,
@@ -478,5 +481,39 @@ fn github_fake_all_repositories_stays_within_the_installations_account() {
         let response = h.ask(Method::Get, f::REACHABLE, Some(token.expose()), b"");
         let (rows, _) = h.decode(Kind::ReachableRows, &response);
         assert!(rows.is_empty());
+    }
+}
+
+#[test]
+fn github_fake_installation_repository_removal_refusals_preserve_reach() {
+    use crate::installations::Reach;
+    for (reach, status, still_reachable, all) in
+        [(Reach::All, 422_u16, true, true), (f::listed(&[2]), 422, true, false), (f::listed(&[2, 4]), 204, false, false)]
+    {
+        let mut h = harness();
+        assert!(h.service.installations_mut().set_reach(1, reach));
+        let token = person(true);
+        let response = h.ask(Method::Delete, b"/user/installations/1/repositories/2", Some(token.expose()), b"");
+        if status == 422 {
+            f::refusal(&h, &response, 422, b"Validation Failed");
+        } else {
+            assert_eq!(response.status, 204);
+        }
+        let installation = f::bearer(h.mint(1, false).token.expose());
+        assert_eq!(
+            h.ask(Method::Get, b"/repositories/2", Some(installation.expose()), b"").status,
+            if still_reachable { 200 } else { 404 }
+        );
+        assert_eq!(h.ask(Method::Put, b"/user/installations/1/repositories/2", Some(token.expose()), b"").status, 204);
+        if status == 422 {
+            let reach = &h.service.installations().get(1).unwrap().reach;
+            match reach {
+                Reach::All => assert!(all),
+                Reach::Listed(ids) => {
+                    assert!(!all);
+                    assert_eq!(ids.as_slice(), &[2]);
+                }
+            }
+        }
     }
 }

@@ -711,6 +711,10 @@ below are tracked in STATUS.md.
   A person's `PUT` or `DELETE /user/installations/<id>/repositories/<repo>`
   checks that user's domain admin permission and answers `204` when it changes
   the selection. The repository must belong to the installation's account.
+  Removing from an all-repositories installation, or removing the last
+  listed repository, is `422` "Validation Failed" without changing reach.
+  These two refusal texts are docs-derived and unchecked live. `PUT` on
+  an all-repositories installation is `204` without changing reach.
 - **The browser's pages, as plain HTTP** (seams S4), at the `web`
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and
