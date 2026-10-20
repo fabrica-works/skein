@@ -214,11 +214,14 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
 
 - **Worktrees** under `tmp/owners/<name>/`, one per implementer, never
   a primary checkout. A worktree's `target/` is cleared when done with.
-  Worktrees of different repositories may share a target directory;
-  two worktrees of one repository may not. Cargo names a workspace
-  member's artifacts by a hash that leaves out the worktree's path and
-  judges them fresh by their sources' mtimes, so one worktree takes
-  another's older build as current: a false failure, or a false pass.
+  Worktrees of different repositories may share a target directory,
+  named by its real path in `CARGO_TARGET_DIR`, never through a
+  `target` link: a test that refuses a path reached through a link
+  fails on its scratch directory then. Two worktrees of one repository
+  may not share one. Cargo names a workspace member's artifacts by a
+  hash that leaves out the worktree's path and judges them fresh by
+  their sources' mtimes, so one worktree takes another's older build
+  as current: a false failure, or a false pass.
 - **`heavy`** is the only way to build and test, for everyone: `heavy
   cargo nextest run -p <crate>`. It queues on pueue in two lanes:
   builds, two at a time, and gates, alone on a quiet machine.
