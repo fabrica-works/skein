@@ -180,14 +180,20 @@ impl Harness {
             self.now,
             ReplyTo::new(Token::new(77)),
         );
-        match outcome {
-            Outcome::Reply(response) => response,
-            Outcome::Call(pending, event) => {
-                self.calls = self.calls.checked_add(1).expect("fixture calls");
-                let result = self.drive(event);
-                self.service.finish(pending, result)
-            }
+        let mut outcome = outcome;
+        // A merge refusal needs at most five domain calls (settings, merge,
+        // pull, protection and author); leave room for response reads as well.
+        for _call in 0..8_u32 {
+            outcome = match outcome {
+                Outcome::Reply(response) => return response,
+                Outcome::Call(pending, event) => {
+                    self.calls = self.calls.checked_add(1).expect("fixture calls");
+                    let result = self.drive(event);
+                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)))
+                }
+            };
         }
+        panic!("request settles within fixture call bound")
     }
     pub fn page(&mut self, method: Method, target: &[u8], body: &[u8]) -> crate::pages::Answer {
         self.service.page(&crate::pages::Page { method, target, body }, self.now)

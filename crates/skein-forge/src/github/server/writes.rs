@@ -21,6 +21,38 @@ pub(super) fn route(method: super::Method, path: &[u8]) -> Option<Request> {
     if method == super::Method::Post && tail == b"issues" {
         return Some(Request::CreateIssue { owner, name, title: Box::from([]), body: Box::from([]) });
     }
+    if method == super::Method::Post && tail == b"pulls" {
+        return Some(Request::OpenPull {
+            owner,
+            name,
+            title: Box::from([]),
+            body: Box::from([]),
+            head: Box::from([]),
+            base: Box::from([]),
+        });
+    }
+    if let Some(tail) = tail.strip_prefix(b"pulls/") {
+        let (number, suffix) = super::split(tail, b'/');
+        let number = super::unsigned(number)?;
+        return match (method, suffix) {
+            (super::Method::Put, b"update-branch") => Some(Request::Update { owner, name, number, head: [0; 32] }),
+            (super::Method::Post, b"reviews") => Some(Request::Review {
+                owner,
+                name,
+                number,
+                verdict: crate::api::Verdict::Comment,
+                body: Box::from([]),
+            }),
+            (super::Method::Post | super::Method::Delete, b"requested_reviewers") => Some(Request::Reviewers {
+                owner,
+                name,
+                number,
+                add: method == super::Method::Post,
+                logins: Box::from([]),
+            }),
+            _ => None,
+        };
+    }
     let tail = tail.strip_prefix(b"issues/")?;
     let (number, suffix) = super::split(tail, b'/');
     let number = super::unsigned(number)?;

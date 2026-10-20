@@ -115,12 +115,15 @@ impl Fake {
     /// Answers one complete HTTP/1.1 request, keeping the connection open.
     pub fn serve(&mut self, request: &[u8], wall: Wall) -> Vec<u8> {
         let request = parse(request);
-        let response = match self.service.request(&request, wall, ReplyTo::new(Token::new(77))) {
-            Outcome::Reply(response) => response,
-            Outcome::Call(pending, event) => {
-                let result = domain_reply(&mut self.domain, &self.config, wall, event);
-                self.service.finish(pending, result)
-            }
+        let mut outcome = self.service.request(&request, wall, ReplyTo::new(Token::new(77)));
+        let response = loop {
+            outcome = match outcome {
+                Outcome::Reply(response) => break response,
+                Outcome::Call(pending, event) => {
+                    let result = domain_reply(&mut self.domain, &self.config, wall, event);
+                    self.service.finish(pending, result, ReplyTo::new(Token::new(77)))
+                }
+            };
         };
         let mut bytes = response_head(response.status, wall, Some("application/json; charset=utf-8"));
         if let Some(link) = response.link {

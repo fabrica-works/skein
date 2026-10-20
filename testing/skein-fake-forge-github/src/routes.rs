@@ -105,6 +105,18 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
             Route::Token(Token::Read(reads::Read::ReviewComments { owner, name, number, review }))
         }
         Request::Merge { owner, name, number, .. } => Route::Token(Token::QueueMerge { owner, name, number }),
+        Request::OpenPull { owner, name, title, body, head, base } => {
+            Route::Token(Token::Write(writes::Route::OpenPull { owner, name, title, body, head, base }))
+        }
+        Request::Update { owner, name, number, head } => {
+            Route::Token(Token::Write(writes::Route::Update { owner, name, number, head }))
+        }
+        Request::Review { owner, name, number, verdict, body } => {
+            Route::Token(Token::Write(writes::Route::Review { owner, name, number, verdict, body }))
+        }
+        Request::Reviewers { owner, name, number, add, logins } => {
+            Route::Token(Token::Write(writes::Route::Reviewers { owner, name, number, add, logins }))
+        }
         Request::Reopen { owner, name, number } => {
             Route::Token(Token::Write(writes::Route::Reopen { owner, name, number }))
         }
@@ -140,10 +152,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Collaborators { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
-        | Request::Reviewers { .. }
-        | Request::Update { .. }
-        | Request::Review { .. }
-        | Request::OpenPull { .. }
         | Request::DeleteBranch { .. }
         | Request::Enqueue { .. }
         | Request::PullGraphql { .. } => return None,

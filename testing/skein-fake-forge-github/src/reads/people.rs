@@ -8,7 +8,7 @@ use skein_fake_forge_domain::api as a;
 use skein_forge::{api, github::document as d};
 use skein_lib::List;
 
-pub(super) fn id(service: &Service, login: &[u8]) -> Option<u64> {
+pub(crate) fn id(service: &Service, login: &[u8]) -> Option<u64> {
     if login == crate::service::joined(&service.app.slug, b"[bot]")?.as_ref() {
         return Some(service.bot);
     }

@@ -189,11 +189,15 @@ fn github_fake_domain_errors_map_to_statuses() {
         (Error::Refused, 500),
     ] {
         let pending = pending(&mut h, b"/repositories/2", token.expose());
-        let response = h.service.finish(pending, Err(error));
+        let Outcome::Reply(response) = h.service.finish(pending, Err(error), ReplyTo::new(Token::new(77))) else {
+            panic!("read settles")
+        };
         refusal(&h, &response, status, if status == 404 { b"Not Found" } else { b"Server Error" });
     }
     let pending = pending(&mut h, b"/repos/acme/widgets", token.expose());
-    let response = h.service.finish(pending, Ok(Answer::Done));
+    let Outcome::Reply(response) = h.service.finish(pending, Ok(Answer::Done), ReplyTo::new(Token::new(77))) else {
+        panic!("read settles")
+    };
     refusal(&h, &response, 500, b"Server Error");
 }
 
@@ -218,7 +222,9 @@ fn github_fake_read_continuations_reject_wrong_answers() {
         let Outcome::Call(pending, _) = outcome else {
             panic!("read calls domain");
         };
-        let response = h.service.finish(pending, Ok(Answer::Done));
+        let Outcome::Reply(response) = h.service.finish(pending, Ok(Answer::Done), ReplyTo::new(Token::new(77))) else {
+            panic!("read settles")
+        };
         refusal(&h, &response, 500, b"Server Error");
     }
 }

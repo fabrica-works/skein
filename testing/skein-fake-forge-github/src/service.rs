@@ -131,7 +131,7 @@ impl core::fmt::Debug for Response {
             .finish()
     }
 }
-/// An immediate reply or exactly one shared-domain read.
+/// An immediate reply or the next shared-domain call in this request.
 #[derive(Debug)]
 pub enum Outcome {
     /// No domain call was needed.
@@ -401,11 +401,18 @@ impl Service {
         }
     }
 
-    /// Completes the one domain call. No served route needs a second call.
-    pub fn finish(&mut self, pending: Pending, result: Result<fake::api::Answer, fake::api::Error>) -> Response {
+    /// Continues the request after a domain reply. The caller must finish all
+    /// its calls before handling another request, so checks and writes agree.
+    /// The domain reply returns the right supplied for the preceding call.
+    pub fn finish(
+        &mut self,
+        pending: Pending,
+        result: Result<fake::api::Answer, fake::api::Error>,
+        reply_to: ReplyTo,
+    ) -> Outcome {
         match pending.kind {
-            PendingKind::Read(pending) => reads::finish(pending, result, &self.limits),
-            PendingKind::Write(pending) => writes::finish(pending, result, &self.limits),
+            PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, &self.limits)),
+            PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to),
         }
     }
     fn app_route(&mut self, route: routes::App, request: &Request<'_>, now: Wall) -> Response {
@@ -644,6 +651,10 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     bytes = bytes
         .checked_add(List::<skein_json::Token>::worst_case(16)?)?
         .checked_add(u64::from(limits.github.body_bytes))?;
+    // Reviewer login decoding and the translated user ids coexist. Pending
+    // repository paths are caller-owned; write_body's retained fields, copied
+    // request, intake and token text fit the eight input-body copies below.
+    bytes = bytes.checked_add(List::<u64>::worst_case(limits.github.inner)?)?;
     let row_bytes = u64::from(limits.github.string_bytes).checked_mul(4)?.checked_add(256)?;
     bytes
         .checked_add(row_bytes.checked_mul(u64::from(limits.page))?)?

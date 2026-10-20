@@ -50,3 +50,5 @@ mod queries;
 mod queue;
 mod write_issues;
 mod write_support;
+
+mod write_pulls;

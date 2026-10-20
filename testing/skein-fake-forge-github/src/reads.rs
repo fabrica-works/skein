@@ -17,7 +17,7 @@ use skein_forge::{
 use skein_lib::{List, ReplyTo, Wall, bytes};
 
 mod issues;
-mod people;
+pub(crate) mod people;
 mod pulls;
 mod reviews;
 
@@ -234,7 +234,7 @@ fn object(commit: u64) -> ObjectId {
     }
     ObjectId { format: ObjectFormat::Sha1, bytes }
 }
-fn commit(count: u64) -> api::Commit {
+pub(crate) fn commit(count: u64) -> api::Commit {
     object(count).bytes
 }
 

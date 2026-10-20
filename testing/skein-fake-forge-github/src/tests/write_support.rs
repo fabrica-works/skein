@@ -17,6 +17,14 @@ pub fn harness() -> f::Harness {
     h
 }
 pub fn write(h: &mut f::Harness, token: &Secret, write: api::Write) -> Result<api::Answer, api::Error> {
+    write_after_push(h, token, write, None)
+}
+pub fn write_after_push(
+    h: &mut f::Harness,
+    token: &Secret,
+    write: api::Write,
+    moved: Option<u64>,
+) -> Result<api::Answer, api::Error> {
     let mut plan = Plan::new(api::Repository { forge: 1, repository: 2 }, write);
     let mut tables = Tables::new(4, 8);
     let mut step = plan.begin(r::bounds(), b"example-app", &mut tables).expect("begin write");
@@ -25,6 +33,18 @@ pub fn write(h: &mut f::Harness, token: &Secret, write: api::Write) -> Result<ap
             Step::Done(result) => return result,
             Step::Send(exchange) => exchange,
         };
+        if let skein_forge::github::request::Request::Update { .. } = &exchange.request
+            && let Some(commit) = moved
+        {
+            r::call(
+                h,
+                skein_fake_forge_domain::api::Op::Git(skein_fake_forge_domain::api::Git::Push {
+                    branch: f::boxed(b"feature"),
+                    commit,
+                    expected: None,
+                }),
+            );
+        }
         let events = r::exchange_events(h, &exchange, token);
         let mut next = None;
         for event in events.into_boxed() {
@@ -36,4 +56,13 @@ pub fn write(h: &mut f::Harness, token: &Secret, write: api::Write) -> Result<ap
         step = next.expect("exchange advances");
     }
     panic!("bounded write plan settles")
+}
+
+pub fn ask(
+    h: &mut f::Harness,
+    token: &Secret,
+    request: &skein_forge::github::request::Request,
+) -> crate::service::Response {
+    let encoded = skein_forge::github::request::encode(request, &h.limits.github).unwrap();
+    h.ask(encoded.method, &encoded.target, Some(token.expose()), encoded.body.as_deref().unwrap_or(b""))
 }
