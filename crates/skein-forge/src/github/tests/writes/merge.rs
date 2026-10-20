@@ -171,6 +171,54 @@ fn github_merge_queue_and_stale() {
     }
 }
 #[test]
+fn github_server_enqueue_refusal_round_trips() {
+    for (kind, message, expected) in [
+        (
+            b"UNPROCESSABLE".as_slice(),
+            b"Pull request At least 1 approving review is required by reviewers with write access.".as_slice(),
+            br#"{"data":{"enqueuePullRequest":null},"errors":[{"type":"UNPROCESSABLE","path":["enqueuePullRequest"],"message":"Pull request At least 1 approving review is required by reviewers with write access."}]}"#.as_slice(),
+        ),
+        (
+            b"OTHER",
+            b"refused \"review\"\\\n",
+            br#"{"data":{"enqueuePullRequest":null},"errors":[{"type":"OTHER","path":["enqueuePullRequest"],"message":"refused \"review\"\\\n"}]}"#,
+        ),
+    ] {
+        let mut out = Writer::new(expected.len());
+        server::enqueue_refused(kind, message, &mut out).unwrap();
+        let body = super::super::fixtures::bytes(out);
+        assert_eq!(body.as_ref(), expected);
+        for chunk in [1, 7] {
+            let (rows, document) = decode(Kind::Enqueue, &body, chunk, &limits());
+            assert_eq!(rows.len(), 0);
+            assert_eq!(
+                document,
+                Ok(Document::Graphql(document::GraphqlRefusal { kind: Box::from(kind), message: Box::from(message) }))
+            );
+        }
+        let mut short = Writer::new(body.len() - 1);
+        assert_eq!(server::enqueue_refused(kind, message, &mut short), Err(Overflow));
+    }
+}
+#[test]
+fn github_enqueue_reads_the_recorded_refusal_whole() {
+    // live session 1917's body, verbatim, with the fields the fake leaves out.
+    let body = br#"{"data": {"enqueuePullRequest": null}, "errors": [{"type": "UNPROCESSABLE", "path": ["enqueuePullRequest"], "locations": [{"line": 1, "column": 39}], "message": "Pull request At least 1 approving review is required by reviewers with write access."}]}"#;
+    for chunk in [1, 7, 4096] {
+        let (rows, document) = decode(Kind::Enqueue, body, chunk, &limits());
+        assert_eq!(rows.len(), 0);
+        assert_eq!(
+            document,
+            Ok(Document::Graphql(document::GraphqlRefusal {
+                kind: Box::from(*b"UNPROCESSABLE"),
+                message: Box::from(
+                    *b"Pull request At least 1 approving review is required by reviewers with write access."
+                ),
+            }))
+        );
+    }
+}
+#[test]
 fn github_merge_graphql_bounds_and_errors() {
     for request in [enqueue(), Request::Enqueue { id: Box::from(*b"opaque\"\\node"), head: commit() }, query()] {
         let encoded = request::encode(&request, &limits()).unwrap();

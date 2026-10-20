@@ -23,7 +23,7 @@ pub use app::{
     mint_scope, minted, reachable, viewer,
 };
 pub use delivery::{Sent, encode};
-pub use pulls::{combined, enqueued, job, merge_refusal, merged, pull, pull_graphql, pulls, runs};
+pub use pulls::{combined, enqueue_refused, enqueued, job, merge_refusal, merged, pull, pull_graphql, pulls, runs};
 pub use writes::{done, id, number, write_body};
 /// Reads a request target into the request whose canonical spelling it carries.
 #[must_use]

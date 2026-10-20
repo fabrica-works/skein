@@ -9,6 +9,7 @@ enum Answer<'a> {
     Refusal(&'a [u8]),
     Merge(&'a api::Commit),
     Enqueued(u32),
+    EnqueueRefused(&'a [u8], &'a [u8]),
     Pull(&'a document::Pull),
     PullGraphql(&'a document::PullGraphql),
     Pulls(&'a [document::Pull]),
@@ -27,6 +28,11 @@ pub fn merged(commit: &api::Commit, out: &mut Writer) -> Result<(), Overflow> {
 /// Writes a nonnull enqueue entry and its position.
 pub fn enqueued(position: u32, out: &mut Writer) -> Result<(), Overflow> {
     encode(&Answer::Enqueued(position), out)
+}
+/// GitHub answers a refused `enqueuePullRequest` this way, as recorded in live session 1917. The
+/// error's `locations` is left out: it depends on the query's text.
+pub fn enqueue_refused(kind: &[u8], message: &[u8], out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::EnqueueRefused(kind, message), out)
 }
 /// Writes one pull including its merged flag.
 pub fn pull(row: &document::Pull, out: &mut Writer) -> Result<(), Overflow> {
@@ -96,6 +102,7 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> 
             json.object_end();
             json.object_end();
         }
+        Answer::EnqueueRefused(kind, message) => enqueue_refused_json(kind, message, json),
         Answer::PullGraphql(row) => pull_graphql_json(row, json)?,
         Answer::Job(row) => {
             json.object_start();
@@ -154,6 +161,28 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> 
         }
     }
     Ok(())
+}
+fn enqueue_refused_json(kind: &[u8], message: &[u8], json: &mut Encoder) {
+    json.object_start();
+    json.key(b"data");
+    json.object_start();
+    json.key(b"enqueuePullRequest");
+    json.null();
+    json.object_end();
+    json.key(b"errors");
+    json.array_start();
+    json.object_start();
+    json.key(b"type");
+    json.string(kind);
+    json.key(b"path");
+    json.array_start();
+    json.string(b"enqueuePullRequest");
+    json.array_end();
+    json.key(b"message");
+    json.string(message);
+    json.object_end();
+    json.array_end();
+    json.object_end();
 }
 fn pull_json(row: &document::Pull, merged: bool, json: &mut Encoder) -> Result<(), Overflow> {
     json.object_start();
