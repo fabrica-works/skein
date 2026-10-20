@@ -535,6 +535,7 @@ fn an_issue_is_opened_with_labels_and_read_back() {
     assert_eq!(&*item.title, b"crash");
     assert_eq!(&*item.body, b"it crashes");
     assert_eq!((item.kind, item.state, item.author), (Kind::Issue, State::Open, ENGINE));
+    assert!(!item.merged);
     assert_eq!(item.labels, names(&[b"bug", b"kit"]), "labels in their order");
     assert_eq!(item.created, Time::ZERO);
     assert!(comments.is_empty());
@@ -1062,12 +1063,14 @@ fn a_pull_request_follows_its_head_branch_while_it_is_open() {
     let pull = h.pull(1);
     assert_eq!((&*pull.head, &*pull.base, pull.commit, pull.base_commit), (&b"work"[..], MAIN, work, Some(FIRST)));
     assert_eq!((pull.state, pull.merged, pull.mergeable), (State::Open, None, true));
+    assert!(!h.item(1).0.merged);
     let more = h.commit(work, &[(b"src", b"two")]);
     let pushed = h.env.now;
     h.push(ENGINE, b"work", more).expect("pushed");
     assert_eq!(h.pull(1).commit, more);
     assert_eq!(h.item(1).0.updated, pushed, "a new head updates it, when the push arrives");
     h.ok(ENGINE, write(Write::Close { number: 1 }));
+    assert!(!h.item(1).0.merged);
     let after = h.commit(more, &[(b"src", b"three")]);
     h.push(ENGINE, b"work", after).expect("pushed");
     assert_eq!(h.pull(1).commit, more, "a closed pull request stays where it was");
@@ -1125,6 +1128,7 @@ fn a_merge_squashes_the_head_onto_the_base() {
     assert_eq!(h.ok(PERSON, fetch(Want::Default)), Answer::Commit(commit), "the next fetch sees it");
     let pull = h.pull(1);
     assert_eq!((pull.state, pull.merged), (State::Closed, Some(commit)));
+    assert!(h.item(1).0.merged);
     assert_eq!(h.call(ENGINE, merge(1, more)), Err(Error::Closed));
     assert_eq!(h.call(ENGINE, write(Write::Reopen { number: 1 })), Err(Error::Closed));
 }

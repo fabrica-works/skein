@@ -55,10 +55,11 @@ fn github_fake_issues_and_comments_drive_the_dialect_plans() {
     assert_eq!(h.hooks, 0);
 }
 #[test]
-fn github_fake_issues_list_pulls_in_the_same_numbering() {
+fn github_fake_merged_pull_reads_as_merged_in_the_mixed_listing() {
     let mut h = r::harness();
     let issue = r::issue(&mut h, b"issue");
     let (pull, head) = r::pull(&mut h);
+    h.env.now = Time::from_nanos(2_000_000_000);
     r::call(&mut h, a::Op::Write(a::Write::Merge { number: pull, head }));
     let token = r::token(&mut h);
     let api::Answer::Items { items, .. } =
@@ -81,8 +82,42 @@ fn github_fake_issues_list_pulls_in_the_same_numbering() {
     let (_, Document::Issue(row)) = h.decode(Kind::Issue, &response) else { panic!("pull issue") };
     assert!(row.pull);
     assert_eq!(row.state, api::State::Closed);
-    assert!(!row.merged, "the listing's merged_at is null");
-    assert!(skein_lib::bytes::find(&response.body, br#""merged_at":null"#).is_some());
+    assert!(row.merged);
+    assert_closed_pull_listing(&mut h, pull, true);
+}
+#[test]
+fn github_fake_closed_unmerged_pull_reads_as_unmerged_through_the_listing() {
+    let mut h = r::harness();
+    let (pull, _) = r::pull(&mut h);
+    r::call(&mut h, a::Op::Write(a::Write::Close { number: pull }));
+    assert_closed_pull_listing(&mut h, pull, false);
+}
+fn assert_closed_pull_listing(h: &mut f::Harness, number: u64, merged: bool) {
+    let token = r::token(h);
+    let request = Request::Issues {
+        owner: f::boxed(b"acme"),
+        name: f::boxed(b"widgets"),
+        since: super::wall(0),
+        page: 1,
+        per_page: 100,
+    };
+    let encoded = skein_forge::github::request::encode(&request, &h.limits.github).expect("issues listing");
+    let response = h.ask(encoded.method, &encoded.target, Some(token.expose()), b"");
+    assert_eq!(response.status, 200);
+    let (rows, Document::Rows) = h.decode(Kind::IssueRows, &response) else { panic!("issues listing") };
+    let mut found = None;
+    for row in &rows {
+        let Row::Issue(row) = row else { panic!("issue listing row") };
+        if row.number == number {
+            found = Some(row);
+        }
+    }
+    let row = found.expect("pull in listing");
+    assert!(row.pull);
+    assert_eq!(row.state, api::State::Closed);
+    assert_eq!(row.merged, merged);
+    let merged_at = if merged { br#""merged_at":"1970-01-01T00:00:02Z""#.as_slice() } else { br#""merged_at":null"# };
+    assert!(skein_lib::bytes::find(&response.body, merged_at).is_some());
 }
 #[test]
 fn github_fake_issue_routes_refuse_outside_installation_and_invalid_pages() {

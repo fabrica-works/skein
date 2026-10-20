@@ -39,6 +39,7 @@ fn issue_documents_keep_the_domain_values() {
         number: 7,
         kind: a::Kind::Issue,
         state: a::State::Closed,
+        merged: false,
         title: boxed(b"title"),
         body: boxed(b"body"),
         author: 2,

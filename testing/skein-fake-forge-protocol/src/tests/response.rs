@@ -101,6 +101,7 @@ fn write_responses_keep_the_readbacks_author_text_and_time() {
             number: 9,
             kind: a::Kind::Issue,
             state: a::State::Closed,
+            merged: false,
             title: boxed(b"existing title"),
             body: boxed(b"existing body"),
             author: 2,

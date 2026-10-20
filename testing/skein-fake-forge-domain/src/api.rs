@@ -562,6 +562,8 @@ pub struct Summary {
     pub number: u64,
     pub kind: Kind,
     pub state: State,
+    /// Whether the pull merged; false for issues.
+    pub merged: bool,
     pub title: Box<[u8]>,
     pub body: Box<[u8]>,
     pub author: u64,

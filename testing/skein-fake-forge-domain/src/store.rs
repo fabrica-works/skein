@@ -353,6 +353,10 @@ impl Item {
             number,
             kind: self.kind(),
             state: self.state,
+            merged: match &self.pull {
+                Some(pull) => pull.merged.is_some(),
+                None => false,
+            },
             title: copy_of(&self.title),
             body: copy_of(&self.body),
             author: self.author,
