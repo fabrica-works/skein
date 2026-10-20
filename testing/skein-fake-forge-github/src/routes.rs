@@ -83,6 +83,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }

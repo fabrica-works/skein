@@ -891,3 +891,176 @@ fn github_review_original_key_find() {
     let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Reviews { number: NUMBER, page: 1 }));
     assert_eq!(proof.begin(bounds(), WORD, &mut tables), Err(api::Error::Refused));
 }
+
+const UPDATE_PULL: &[u8] = br#"{"number":9007199254740993,"state":"open","merged":false,"merge_commit_sha":null,"mergeable":true,"head":{"ref":"alice/x","sha":"0123456789abcdef0123456789abcdef01234567"},"base":{"ref":"main","sha":"abcdef0123456789abcdef0123456789abcdef01"},"requested_reviewers":[{"id":9007199254740993}],"unknown":{"nested":[true]}}"#;
+fn update() -> api::Write {
+    api::Write::Update { number: NUMBER }
+}
+fn update_pull() -> document::Pull {
+    let (_, decoded) = decode(Kind::Pull, UPDATE_PULL, 1, &limits());
+    let Document::Pull(pull) = decoded.unwrap() else { panic!("pull") };
+    pull
+}
+fn start_update(tables: &mut Tables) -> (Plan, Request) {
+    let mut plan = write_plan(update());
+    let request = begin(&mut plan, tables);
+    golden(&request, Method::Get, b"/repos/acme/widgets/pulls/9007199254740993", None, Some(Kind::Pull));
+    head(&mut plan, 200, tables);
+    let Some(Step::Send(exchange)) = finish(&mut plan, Body::Document(Document::Pull(update_pull())), tables).unwrap()
+    else {
+        panic!("update")
+    };
+    (plan, exchange.request)
+}
+#[test]
+fn github_update_reads_and_pins_head() {
+    for chunk in [1, 7] {
+        assert_eq!(decode(Kind::Pull, UPDATE_PULL, chunk, &limits()).1, Ok(Document::Pull(update_pull())));
+    }
+    let mut tables = cached_tables();
+    let (mut plan, request) = start_update(&mut tables);
+    golden(
+        &request,
+        Method::Put,
+        b"/repos/acme/widgets/pulls/9007199254740993/update-branch",
+        Some(br#"{"expected_head_sha":"0123456789abcdef0123456789abcdef01234567"}"#),
+        Some(Kind::Done),
+    );
+    roundtrip_body(&request);
+    encoded_body_bounds(&request);
+    for body in [
+        b"{}".as_slice(),
+        br#"{"expected_head_sha":"x"}"#,
+        br#"{"expected_head_sha":1}"#,
+        br#"{"expected_head_sha":"0123456789ABCDEF0123456789abcdef01234567"}"#,
+    ] {
+        assert!(crate::github::server::write_body(request.clone(), body, &limits()).is_none());
+    }
+    head(&mut plan, 202, &mut tables);
+    assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+    let mut tables = Tables::new(0, 0);
+    let mut plan = write_plan(update());
+    assert_eq!(begin(&mut plan, &mut tables), Request::Repository { id: 7 });
+    head(&mut plan, 200, &mut tables);
+    let Some(Step::Send(exchange)) =
+        finish(&mut plan, Body::Document(Document::Repository(repository())), &mut tables).unwrap()
+    else {
+        panic!("pull")
+    };
+    assert_eq!(
+        exchange.request,
+        Request::Pull { owner: Box::from(*b"acme"), name: Box::from(*b"widgets"), number: NUMBER }
+    );
+}
+#[test]
+fn github_update_422_and_first_failure() {
+    for (status, message, error) in [
+        (422, "expected head sha didn’t match current head ref.", api::Error::Stale),
+        (422, "merge conflict between base and head", api::Error::Conflict),
+        (409, "merge conflict between base and head", api::Error::Refused),
+        (422, "unknown", api::Error::Refused),
+        (503, "unknown", api::Error::Timeout),
+    ] {
+        let mut tables = cached_tables();
+        let (mut plan, _) = start_update(&mut tables);
+        head(&mut plan, status, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(message.as_bytes()), &mut tables), ended(Err(error)));
+    }
+    for (body, error) in [
+        (Body::Malformed(decoding::Malformed::Missing { field: b"head" }), api::Error::Unavailable),
+        (Body::Malformed(decoding::Malformed::Bound { field: b"requested_reviewers" }), api::Error::TooLarge),
+        (Body::Empty, api::Error::Unavailable),
+    ] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(update());
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(error)));
+        assert_eq!(
+            finish(&mut plan, Body::Document(Document::Pull(update_pull())), &mut tables),
+            Err(api::Error::InvalidAnswer)
+        );
+    }
+    for failed in [Failure::Unseen, Failure::Seen] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(update());
+        begin(&mut plan, &mut tables);
+        assert_eq!(plan.heard(Heard::Failed(failed), bounds(), WORD, &mut tables), ended(Err(api::Error::Unavailable)));
+    }
+    for (pull, call_bounds, error) in [
+        (document::Pull { number: 1, ..update_pull() }, bounds(), api::Error::Unavailable),
+        (document::Pull { head_commit: [255; 32], ..update_pull() }, bounds(), api::Error::Unavailable),
+        (update_pull(), Bounds { rows: 0, ..bounds() }, api::Error::TooLarge),
+        (update_pull(), Bounds { answer_bytes: 1, ..bounds() }, api::Error::TooLarge),
+    ] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(update());
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(
+            plan.heard(Heard::Done(Body::Document(Document::Pull(pull))), call_bounds, WORD, &mut tables),
+            ended(Err(error))
+        );
+    }
+    for (body, status) in
+        [(Body::Empty, 202), (Body::Document(Document::Number(NUMBER)), 202), (Body::Document(Document::Done), 200)]
+    {
+        let mut tables = cached_tables();
+        let (mut plan, _) = start_update(&mut tables);
+        let answer = plan.heard(Heard::Head { status, head: Head::new() }, bounds(), WORD, &mut tables);
+        if status == 202 {
+            assert_eq!(answer, Ok(None));
+            assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
+        } else {
+            assert_eq!(answer, ended(Err(api::Error::Timeout)));
+        }
+    }
+}
+#[test]
+fn github_update_202_and_proof() {
+    for lost in [false, true] {
+        let mut tables = cached_tables();
+        let (mut plan, _) = start_update(&mut tables);
+        if lost {
+            assert_eq!(
+                plan.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables),
+                ended(Err(api::Error::Timeout))
+            );
+        } else {
+            head(&mut plan, 202, &mut tables);
+            assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+        }
+        assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), Err(api::Error::InvalidAnswer));
+        let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Pull { number: NUMBER }));
+        assert_eq!(
+            begin(&mut proof, &mut tables),
+            Request::Pull { owner: Box::from(*b"acme"), name: Box::from(*b"widgets"), number: NUMBER }
+        );
+        head(&mut proof, 200, &mut tables);
+        let Some(Step::Send(_)) =
+            finish(&mut proof, Body::Document(Document::Pull(update_pull())), &mut tables).unwrap()
+        else {
+            panic!("combined")
+        };
+        head(&mut proof, 200, &mut tables);
+        let Some(Step::Send(_)) = finish(
+            &mut proof,
+            Body::Document(Document::Combined(document::Combined { check: api::Check::Passed, total: 0 })),
+            &mut tables,
+        )
+        .unwrap() else {
+            panic!("runs")
+        };
+        head(&mut proof, 200, &mut tables);
+        let Some(Step::Done(Ok(api::Answer::Pull(pull)))) =
+            finish(&mut proof, Body::Document(Document::Rows), &mut tables).unwrap()
+        else {
+            panic!("pull")
+        };
+        assert_eq!(pull.commit, commit());
+        // Compare's read dependency supplies contains_before for the client's proof.
+        let before = crate::github::id::commit(super::fixtures::OTHER_SHA).unwrap();
+        let mut compare = Plan::new(KEY, api::Op::Read(api::Read::Compare { before, after: pull.commit }));
+        assert_eq!(compare.begin(bounds(), WORD, &mut tables), Err(api::Error::Refused));
+    }
+}

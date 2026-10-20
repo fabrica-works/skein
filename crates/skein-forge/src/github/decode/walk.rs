@@ -275,9 +275,13 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::Issue => issue_fields(),
-        Node::IdResult | Node::ReviewUser | Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
-            const { &[field(b"id", Read::Number)] }
-        }
+        Node::IdResult
+        | Node::ReviewUser
+        | Node::RemarkUser
+        | Node::Reviewer
+        | Node::IssueUser
+        | Node::CommentUser
+        | Node::BotUser => const { &[field(b"id", Read::Number)] },
         Node::Label | Node::BranchName => const { &[field(b"name", Read::Text)] },
         Node::PullRequest => const { &[optional(b"merged_at", Read::Presence)] },
         Node::Comment => comment_fields(),

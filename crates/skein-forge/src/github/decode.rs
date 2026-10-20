@@ -121,7 +121,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
-        Request::CreateBranch { .. } | Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
+        Request::Update { .. } | Request::CreateBranch { .. } | Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
         Request::Review { .. } | Request::Post { .. } => Kind::Id,
         Request::CreateIssue { .. } | Request::OpenPull { .. } => Kind::Number,
         Request::Branch { .. } => Kind::Branch,

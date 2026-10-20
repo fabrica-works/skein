@@ -355,7 +355,6 @@ fn github_plans_writes_refused() {
     for write in [
         api::Write::SetReviewers { number: 1, reviewers: Box::from([]) },
         api::Write::Merge { number: 1, head: [0; 32] },
-        api::Write::Update { number: 1 },
     ] {
         assert_eq!(
             Plan::new(KEY, api::Op::Write(write)).begin(bounds(), b"example-app", &mut tables),

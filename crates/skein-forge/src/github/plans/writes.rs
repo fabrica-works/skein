@@ -19,6 +19,7 @@ use alloc::boxed::Box;
 enum Stage {
     New,
     Resolve,
+    Pull,
     Mutate,
     Done,
 }
@@ -37,11 +38,12 @@ pub struct Plan {
     response: Response,
     row: Option<Repository>,
     pending: Option<Exchange>,
+    pinned: Option<api::Commit>,
 }
 impl Plan {
     #[must_use]
     pub fn new(repository: api::Repository, write: api::Write) -> Self {
-        Self { repository, write, stage: Stage::New, response: Response::None, row: None, pending: None }
+        Self { repository, write, stage: Stage::New, response: Response::None, row: None, pending: None, pinned: None }
     }
     pub fn begin(&mut self, bounds: Bounds, word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
         if self.stage != Stage::New {
@@ -57,8 +59,9 @@ impl Plan {
             | api::Write::OpenPull { .. }
             | api::Write::CreateIssue { .. }
             | api::Write::Post { .. }
-            | api::Write::Review { .. } => {}
-            api::Write::SetReviewers { .. } | api::Write::Merge { .. } | api::Write::Update { .. } => {
+            | api::Write::Review { .. }
+            | api::Write::Update { .. } => {}
+            api::Write::SetReviewers { .. } | api::Write::Merge { .. } => {
                 return Err(api::Error::Refused);
             }
         }
@@ -67,7 +70,7 @@ impl Plan {
             self.stage = Stage::Resolve;
             return Ok(self.send(Request::Repository { id: u64::from(self.repository.repository) }));
         }
-        self.mutation(bounds, word)
+        self.initial(bounds, word)
     }
     pub fn pending(&mut self) -> Option<Exchange> {
         self.pending.take()
@@ -79,11 +82,36 @@ impl Plan {
         self.response = Response::Head;
         Step::send(request)
     }
+    fn initial(&mut self, bounds: Bounds, word: &[u8]) -> Result<Step, api::Error> {
+        match self.write {
+            api::Write::Update { number } => {
+                let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
+                let request = Request::Pull { owner: row.owner.clone(), name: row.name.clone(), number };
+                self.stage = Stage::Pull;
+                Ok(self.send(request))
+            }
+            api::Write::CreateIssue { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::Post { .. }
+            | api::Write::Review { .. }
+            | api::Write::Edit { .. }
+            | api::Write::SetReviewers { .. }
+            | api::Write::Close { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Merge { .. }
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. }
+            | api::Write::DeleteBranch { .. } => self.mutation(bounds, word),
+        }
+    }
     fn mutation(&mut self, bounds: Bounds, word: &[u8]) -> Result<Step, api::Error> {
         let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::Update { number } => {
+                Request::Update { owner, name, number: *number, head: self.pinned.ok_or(api::Error::InvalidAnswer)? }
+            }
             api::Write::Review { number, key, verdict, body } => Request::Review {
                 owner,
                 name,
@@ -117,7 +145,7 @@ impl Plan {
             api::Write::Reopen { number } => Request::Reopen { owner, name, number: *number },
             api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
-            api::Write::SetReviewers { .. } | api::Write::Merge { .. } | api::Write::Update { .. } => {
+            api::Write::SetReviewers { .. } | api::Write::Merge { .. } => {
                 return Err(api::Error::Refused);
             }
         };
@@ -142,6 +170,7 @@ impl Plan {
     }
     fn status(&self) -> u16 {
         match self.write {
+            api::Write::Update { .. } => 202,
             api::Write::DeleteBranch { .. } => 204,
             api::Write::Post { .. }
             | api::Write::CreateIssue { .. }
@@ -153,12 +182,12 @@ impl Plan {
             | api::Write::SetReviewers { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
-            | api::Write::Merge { .. }
-            | api::Write::Update { .. } => 200,
+            | api::Write::Merge { .. } => 200,
         }
     }
     fn asked(&self) -> Asked {
         match &self.write {
+            api::Write::Update { .. } => Asked::Update,
             api::Write::Review { body, .. } => Asked::Review { empty: body.is_empty() },
             api::Write::Post { body, .. } => Asked::Write { empty: body.is_empty() },
             api::Write::CreateIssue { title, body, .. } => Asked::Write { empty: title.is_empty() || body.is_empty() },
@@ -172,7 +201,6 @@ impl Plan {
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
-            | api::Write::Update { .. }
             | api::Write::Status { .. } => Asked::Write { empty: false },
         }
     }
@@ -296,6 +324,59 @@ impl Plan {
             Heard::Done(body) => self.done(body, bounds, word, tables),
         }
     }
+    fn update_pull(
+        &mut self,
+        pull: crate::github::document::Pull,
+        bounds: Bounds,
+        word: &[u8],
+    ) -> Result<Step, api::Error> {
+        let number = match self.write {
+            api::Write::Update { number } => number,
+            api::Write::CreateIssue { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::Post { .. }
+            | api::Write::Review { .. }
+            | api::Write::Edit { .. }
+            | api::Write::SetReviewers { .. }
+            | api::Write::Close { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Merge { .. }
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. }
+            | api::Write::DeleteBranch { .. } => return Err(api::Error::InvalidAnswer),
+        };
+        if pull.number != number || crate::github::id::write_commit(&pull.head_commit).is_none() {
+            return Err(api::Error::Unavailable);
+        }
+        if u64::try_from(pull.reviewers.len()).ok().ok_or(api::Error::TooLarge)? > u64::from(bounds.rows) {
+            return Err(api::Error::TooLarge);
+        }
+        let Ok(pull) = super::reading::pull(pull, api::Ci::None) else {
+            return Err(api::Error::Unavailable);
+        };
+        if crate::measure::pull(&pull).ok_or(api::Error::TooLarge)? > u64::from(bounds.answer_bytes) {
+            return Err(api::Error::TooLarge);
+        }
+        self.pinned = Some(pull.commit);
+        self.mutation(bounds, word)
+    }
+    fn identified(&self, id: u64) -> Result<api::Answer, api::Error> {
+        match self.write {
+            api::Write::Review { .. } => Ok(api::Answer::Reviewed(id)),
+            api::Write::Post { .. } => Ok(api::Answer::Commented(id)),
+            api::Write::CreateIssue { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::Edit { .. }
+            | api::Write::SetReviewers { .. }
+            | api::Write::Close { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Merge { .. }
+            | api::Write::Update { .. }
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. }
+            | api::Write::DeleteBranch { .. } => Err(self.invalid()),
+        }
+    }
     fn done(
         &mut self,
         body: Body,
@@ -314,9 +395,9 @@ impl Plan {
                     | Document::App(_)
                     | Document::HookConfig(_)
                     | Document::Conversion(_)
-                 | Document::User(_)
-                 | Document::Compare(_)
-                 | Document::Permission(_)
+                    | Document::User(_)
+                    | Document::Compare(_)
+                    | Document::Permission(_)
                     | Document::Id(_)
                     | Document::Number(_)
                     | Document::Done
@@ -347,26 +428,15 @@ impl Plan {
                 tables.keep_repository(self.repository, row.clone());
                 tables.keep_user(self.repository.forge, repository.owner_id, repository.owner);
                 self.row = Some(row);
-                return Ok(Some(self.mutation(bounds, word)?));
+                return Ok(Some(self.initial(bounds, word)?));
+            }
+            Body::Document(Document::Pull(pull)) if self.stage == Stage::Pull => {
+                return Ok(Some(self.update_pull(pull, bounds, word)?));
             }
             Body::Document(Document::Id(id))
                 if self.stage == Stage::Mutate && self.result_kind() == Some(crate::github::document::Kind::Id) =>
             {
-                let answer = match self.write {
-                    api::Write::Review { .. } => api::Answer::Reviewed(id),
-                    api::Write::Post { .. } => api::Answer::Commented(id),
-                    api::Write::CreateIssue { .. }
-                    | api::Write::OpenPull { .. }
-                    | api::Write::Edit { .. }
-                    | api::Write::SetReviewers { .. }
-                    | api::Write::Close { .. }
-                    | api::Write::Reopen { .. }
-                    | api::Write::Merge { .. }
-                    | api::Write::Update { .. }
-                    | api::Write::Status { .. }
-                    | api::Write::CreateBranch { .. }
-                    | api::Write::DeleteBranch { .. } => return Err(self.invalid()),
-                };
+                let answer = self.identified(id)?;
                 return self.terminal(answer, bounds);
             }
             Body::Document(Document::Number(number))
@@ -385,9 +455,9 @@ impl Plan {
                 | Document::App(_)
                 | Document::HookConfig(_)
                 | Document::Conversion(_)
-                 | Document::User(_)
-                 | Document::Compare(_)
-                 | Document::Permission(_)
+                | Document::User(_)
+                | Document::Compare(_)
+                | Document::Permission(_)
                 | Document::Id(_)
                 | Document::Number(_)
                 | Document::Done

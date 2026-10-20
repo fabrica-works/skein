@@ -67,6 +67,7 @@ pub enum Request {
     Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
     Status { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, context: Box<[u8]>, check: api::Check },
     CreateBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]>, commit: api::Commit },
+    Update { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     Review { owner: Box<[u8]>, name: Box<[u8]>, number: u64, verdict: api::Verdict, body: Box<[u8]> },
     Post { owner: Box<[u8]>, name: Box<[u8]>, number: u64, body: Box<[u8]> },
     CreateIssue { owner: Box<[u8]>, name: Box<[u8]>, title: Box<[u8]>, body: Box<[u8]> },
@@ -146,6 +147,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
@@ -274,6 +276,12 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.repo(owner, name)?;
             out.put(b"/statuses/");
             out.commit(commit)?;
+        }
+        Request::Update { owner, name, number, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/pulls/");
+            out.number(*number);
+            out.put(b"/update-branch");
         }
         Request::Review { owner, name, number, .. } => {
             out.repo(owner, name)?;
@@ -482,6 +490,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
@@ -521,6 +530,7 @@ fn escape_digit(byte: u8) -> Option<u8> {
 
 fn selection(request: &Request) -> (Method, Auth) {
     match request {
+        Request::Update { .. } => (Method::Put, Auth::Installation),
         Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => (Method::Patch, Auth::Installation),
         Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
         Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
@@ -567,7 +577,8 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::Review { .. }
+        Request::Update { .. }
+        | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
@@ -634,6 +645,10 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Result<(), Refusal> {
     json.object_start();
     match request {
+        Request::Update { head, .. } => {
+            json.key(b"expected_head_sha");
+            json.string(&id::write_commit(head).ok_or(Refusal::Text)?);
+        }
         Request::Review { verdict, body, .. } => {
             json.key(b"event");
             json.string(match verdict {
@@ -817,6 +832,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
@@ -862,7 +878,8 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
         {
             return Err(Refusal::TooLong);
         }
-        Request::DeleteBranch { .. }
+        Request::Update { .. }
+        | Request::DeleteBranch { .. }
         | Request::Raw { .. }
         | Request::Installations { .. }
         | Request::Installation { .. }

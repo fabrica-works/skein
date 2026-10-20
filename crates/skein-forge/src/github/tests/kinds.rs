@@ -36,6 +36,7 @@ fn github_decode_kind_names_each_documented_answer() {
             },
             Kind::Id,
         ),
+        (Request::Update { owner: owner(), name: name(), number: 9, head: commit }, Kind::Done),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
         (

@@ -211,6 +211,10 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Update { owner, name, number, .. } => {
+            let fields = parse(body, &[Field { key: b"expected_head_sha", body: true, required: true }], limits)?;
+            Some(Request::Update { owner, name, number, head: super::id::commit(fields.get(b"expected_head_sha")?)? })
+        }
         Request::Review { owner, name, number, .. } => {
             let fields = parse(
                 body,
