@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3 -I -B -S -c 'import os, sys; sys.path.insert(0, os.path.dirname(os.path.realpath(sys.argv.pop(1)))); from runner.cli import main; sys.exit(main())' "$0" "$@"

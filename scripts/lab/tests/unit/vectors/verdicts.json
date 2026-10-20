@@ -1,0 +1,83 @@
+[
+  {
+    "evidence": [
+      {
+        "seed": "1",
+        "outcome": "pass"
+      },
+      {
+        "seed": "2",
+        "outcome": "fail"
+      }
+    ],
+    "verdict": "not enough evidence"
+  },
+  {
+    "evidence": [
+      {
+        "seed": "1",
+        "outcome": "pass"
+      },
+      {
+        "seed": "2",
+        "outcome": "pass"
+      },
+      {
+        "seed": "3",
+        "outcome": "pass"
+      }
+    ],
+    "verdict": "pass"
+  },
+  {
+    "evidence": [
+      {
+        "seed": "1",
+        "outcome": "fail"
+      },
+      {
+        "seed": "2",
+        "outcome": "fail"
+      },
+      {
+        "seed": "3",
+        "outcome": "fail"
+      }
+    ],
+    "verdict": "fail"
+  },
+  {
+    "evidence": [
+      {
+        "seed": "1",
+        "outcome": "pass"
+      },
+      {
+        "seed": "2",
+        "outcome": "fail"
+      },
+      {
+        "seed": "3",
+        "outcome": "pass"
+      }
+    ],
+    "verdict": "flaky"
+  },
+  {
+    "evidence": [
+      {
+        "seed": "1",
+        "outcome": "pass"
+      },
+      {
+        "seed": "2",
+        "outcome": "pass"
+      },
+      {
+        "seed": "3",
+        "outcome": "error"
+      }
+    ],
+    "verdict": "not enough evidence"
+  }
+]

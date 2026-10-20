@@ -1,0 +1,10 @@
+[
+  {
+    "bytes": "{\"entries\":[],\"format\":\"lab-tree/1\"}\n",
+    "digest": "sha256:97f571ab3d197e44af44a64e317165f009224379c9ac640accb1a768c0b105e5"
+  },
+  {
+    "bytes": "{\"format\":\"lab-tree/1\",\"value\":[true,1,false,0,\"é😀\",null,-9007199254740991]}\n",
+    "digest": "sha256:fcd1522ea4f69300b90640a96ff28599247e0fca95a3b85e0aba9867cf3bacf5"
+  }
+]
