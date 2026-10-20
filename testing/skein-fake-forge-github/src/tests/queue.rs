@@ -259,7 +259,7 @@ fn lost_enqueue_answer_recovery_and_a_repeated_merge_keep_one_admission() {
         Err(skein_forge::api::Error::Timeout)
     );
     let skein_forge::api::Answer::Pull(pull) =
-        r::read_with_empty_ci(&mut h, &token, skein_forge::api::Read::Pull { number }).unwrap()
+        r::read(&mut h, &token, skein_forge::api::Read::Pull { number }).unwrap()
     else {
         panic!("recovery pull")
     };

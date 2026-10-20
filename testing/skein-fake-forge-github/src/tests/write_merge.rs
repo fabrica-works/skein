@@ -51,7 +51,7 @@ fn github_fake_merge_plans_land_each_allowed_method_and_read_back() {
         let api::Answer::Merged(landed) = w::write(&mut h, &token, write(number, head)).unwrap() else {
             panic!("merged")
         };
-        let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+        let api::Answer::Pull(pull) = r::read(&mut h, &token, api::Read::Pull { number }).unwrap() else {
             panic!("merged pull")
         };
         assert_eq!(pull.state, api::State::Closed);
@@ -78,7 +78,7 @@ fn github_fake_merge_moved_head_is_409_and_plan_stale() {
     assert_eq!(w::write(&mut h, &token, write(number, head.checked_sub(1).unwrap())), Err(api::Error::Stale));
     let response = w::ask(&mut h, &token, &request(number, head.checked_sub(1).unwrap(), Method::Squash));
     f::refusal(&h, &response, 409, crate::texts::MERGE_STALE);
-    let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+    let api::Answer::Pull(pull) = r::read(&mut h, &token, api::Read::Pull { number }).unwrap() else {
         panic!("stale readback")
     };
     assert_eq!(pull.commit, r::object(head));
@@ -102,7 +102,7 @@ fn github_fake_merge_conflict_is_405_and_preserves_head() {
     assert_eq!(w::write(&mut h, &token, write(number, head)), Err(api::Error::Conflict));
     let response = w::ask(&mut h, &token, &request(number, head, Method::Squash));
     f::refusal(&h, &response, 405, crate::texts::NOT_MERGEABLE);
-    let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+    let api::Answer::Pull(pull) = r::read(&mut h, &token, api::Read::Pull { number }).unwrap() else {
         panic!("conflict readback")
     };
     assert_eq!(pull.commit, r::object(head));

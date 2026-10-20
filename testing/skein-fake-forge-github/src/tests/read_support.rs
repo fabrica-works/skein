@@ -93,14 +93,6 @@ pub fn response_events(h: &f::Harness, request: &Request, response: Response) ->
     events
 }
 pub fn read(h: &mut f::Harness, token: &Secret, read: api::Read) -> Result<api::Answer, api::Error> {
-    read_inner(h, token, read, false)
-}
-// Pull reads fold CI before their GraphQL query. CI belongs to another task;
-// supply empty prerequisites while every other exchange goes through the fake.
-pub fn read_with_empty_ci(h: &mut f::Harness, token: &Secret, read: api::Read) -> Result<api::Answer, api::Error> {
-    read_inner(h, token, read, true)
-}
-fn read_inner(h: &mut f::Harness, token: &Secret, read: api::Read, empty_ci: bool) -> Result<api::Answer, api::Error> {
     let mut plan = Plan::new(api::Repository { forge: 1, repository: 2 }, read);
     let mut tables = Tables::new(4, 8);
     let mut step = plan.begin(bounds(), b"example-app", &mut tables).expect("begin read plan");
@@ -110,16 +102,7 @@ fn read_inner(h: &mut f::Harness, token: &Secret, read: api::Read, empty_ci: boo
             Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
             Step::Send(exchange) => exchange,
         };
-        let events = if empty_ci && github::decode::kind(&exchange.request) == Some(Kind::CombinedStatus) {
-            fixture(github::document::Document::Combined(github::document::Combined {
-                check: api::Check::Pending,
-                total: 0,
-            }))
-        } else if empty_ci && github::decode::kind(&exchange.request) == Some(Kind::CheckRuns) {
-            fixture(github::document::Document::Rows)
-        } else {
-            exchange_events(h, &exchange, token)
-        };
+        let events = exchange_events(h, &exchange, token);
         let mut next = None;
         for event in events.into_boxed() {
             next = plan.heard(event, bounds(), b"example-app", &mut tables).expect("ordered exchange");
@@ -164,12 +147,6 @@ pub fn exchange_events(h: &mut f::Harness, exchange: &github::plans::plan::Excha
             }
         }
     }
-    events
-}
-fn fixture(document: github::document::Document) -> List<Heard> {
-    let mut events = List::with_capacity(2);
-    events.push(Heard::Head { status: 200, head: Head::new() }).unwrap();
-    events.push(Heard::Done(Body::Document(document))).unwrap();
     events
 }
 pub fn object(count: u64) -> api::Commit {

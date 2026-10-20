@@ -1,4 +1,5 @@
 mod app;
+mod checks;
 mod app_facts;
 pub(crate) mod fixtures;
 mod installations;
