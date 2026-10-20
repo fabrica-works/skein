@@ -14,6 +14,11 @@ pub struct Exchange {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Step {
     Send(Exchange),
+    /// Follow one admitted log origin, then return its head and raw body as Heard.
+    Redirect {
+        redirect: crate::github::redirect::Redirect,
+        retention: Retention,
+    },
     Done(Result<api::Answer, api::Error>),
 }
 impl Step {

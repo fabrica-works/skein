@@ -143,7 +143,7 @@ pub(super) fn job(answer: a::Answer, repository: &[u8], limits: &Limits, domain:
     };
     answers::response(
         200,
-        &Body::Job(&d::Job { id: job.id, run: job.run, attempt: job.attempt, head: commit(count) }),
+        &Body::Job(&d::Job { id: job.id, run: job.run, attempt: job.attempt, head: commit(count), step: None }),
         limits,
     )
 }

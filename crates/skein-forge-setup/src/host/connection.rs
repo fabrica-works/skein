@@ -447,6 +447,7 @@ pub(crate) fn kind_of(request: &dialect::request::Request) -> Result<Option<dial
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }

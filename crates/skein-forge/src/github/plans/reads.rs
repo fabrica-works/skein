@@ -15,13 +15,14 @@ mod checks;
 mod done;
 mod files;
 mod issues;
+mod job;
 mod people;
 mod protection;
 mod pulls;
 mod reviews;
 mod size;
 
-/// Only these reads have stages; all others are refused at admission.
+/// The reads planned by the GitHub dialect.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Read {
     Protection { branch: Box<[u8]> },
@@ -42,7 +43,7 @@ enum Read {
     File { head: api::Commit, path: Box<[u8]>, max_bytes: u32 },
     Compare { before: api::Commit, after: api::Commit },
     PullFiles { number: u64, head: api::Commit, page: u32 },
-    Refused,
+    Job { attempt: api::JobAttempt, max_bytes: u32 },
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Stage {
@@ -58,6 +59,9 @@ enum Stage {
     Runs,
     PullGraphql,
     Jobs,
+    Job,
+    JobLog,
+    Log,
     ResolveUser,
     Permission,
     Raw,
@@ -98,6 +102,7 @@ pub struct Plan {
     reviews: List<api::Review>,
     last_review: u64,
     raw_cap: u32,
+    job_step: Option<api::Step>,
     files: files::State,
     protection: protection::State,
 }
@@ -123,7 +128,7 @@ impl Plan {
             api::Read::PullFiles { number, head, page } => Read::PullFiles { number, head, page },
             api::Read::Checks { commit } => Read::Checks { commit },
             api::Read::Protection { branch } => Read::Protection { branch },
-            api::Read::Job { .. } => Read::Refused,
+            api::Read::Job { attempt, max_bytes } => Read::Job { attempt, max_bytes },
         };
         Self {
             repository,
@@ -146,6 +151,7 @@ impl Plan {
             reviews: List::with_capacity(0),
             last_review: 0,
             raw_cap: 0,
+            job_step: None,
             files: files::State::new(),
             protection: protection::State::new(),
         }
@@ -198,9 +204,7 @@ impl Plan {
                 }
             }
             Read::Protection { .. } => self.protection_admission(bounds)?,
-            Read::Branch { .. } => {}
-            // Later tasks plan every other read.
-            Read::Refused => return Err(api::Error::Refused),
+            Read::Branch { .. } | Read::Job { .. } => {}
         }
         self.row = tables.repository(self.repository).cloned();
         if self.row.is_none() {
@@ -224,6 +228,7 @@ impl Plan {
         match self.read {
             Read::Protection { .. } => return self.protection_initial(),
             Read::Checks { .. } => return self.checks_initial(),
+            Read::Job { .. } => return self.job_initial(),
             Read::Permission { .. } => return self.permission_initial(),
             Read::Compare { .. } => return self.compare_initial(),
             Read::PullFiles { .. } => return self.pull_files_initial(),
@@ -237,8 +242,7 @@ impl Plan {
             | Read::Branch { .. }
             | Read::Branches
             | Read::Items { .. }
-            | Read::Item { .. }
-            | Read::Refused => {}
+            | Read::Item { .. } => {}
         }
         let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
         let owner = row.owner.clone();
@@ -268,7 +272,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => return Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
         Ok(self.send(request))
@@ -315,6 +319,15 @@ impl Plan {
     ) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, head } => {
+                if self.stage == Stage::JobLog && status == 302 {
+                    return self.job_redirect(&head);
+                }
+                if self.stage == Stage::Log && (300..400).contains(&status) {
+                    return Err(api::Error::Unavailable);
+                }
+                if self.stage == Stage::JobLog && status == 200 {
+                    return Err(api::Error::InvalidAnswer);
+                }
                 if status == 200 {
                     if head.json {
                         if self.stage == Stage::Raw {
@@ -347,7 +360,7 @@ impl Plan {
                         | Read::Compare { .. }
                         | Read::PullFiles { .. }
                         | Read::Protection { .. }
-                        | Read::Refused => {}
+                        | Read::Job { .. } => {}
                     }
                     self.response = Response::Body { next: head.next };
                     return Ok(None);
@@ -361,7 +374,7 @@ impl Plan {
                     self.response = Response::Refusal { status, head };
                     return Ok(None);
                 }
-                Err(failure::read(status, &head, None, self.repository, tables))
+                Err(self.read_failure(status, &head, None, tables))
             }
             Heard::Row(row) => {
                 match self.response {
@@ -417,7 +430,7 @@ impl Plan {
                         {
                             return self.classic_done(None, bounds);
                         }
-                        return Err(failure::read(*status, head, refusal, self.repository, tables));
+                        return Err(self.read_failure(*status, head, refusal, tables));
                     }
                     Response::Body { .. } => {}
                     Response::None | Response::Head => return Err(api::Error::InvalidAnswer),
@@ -430,10 +443,25 @@ impl Plan {
                 }
             }
             Heard::Failed(failed) => match &self.response {
-                Response::Refusal { status, head } => Err(failure::read(*status, head, None, self.repository, tables)),
+                Response::Refusal { status, head } => Err(self.read_failure(*status, head, None, tables)),
                 Response::None | Response::Head | Response::Body { .. } => Err(failure::transport(failed)),
             },
         }
+    }
+    fn read_failure(
+        &self,
+        status: u16,
+        head: &Head,
+        refusal: Option<&document::Refusal>,
+        tables: &mut Tables,
+    ) -> api::Error {
+        let error = failure::read(status, head, refusal, self.repository, tables);
+        if let Read::Job { .. } = self.read
+            && error == api::Error::Missing
+        {
+            return api::Error::MissingJob;
+        }
+        error
     }
     fn keep_row(
         &mut self,
@@ -457,7 +485,7 @@ impl Plan {
             | Read::Branches
             | Read::Permission { .. }
             | Read::File { .. }
-            | Read::Refused => {}
+            | Read::Job { .. } => {}
         }
         if self.stage != Stage::Read || self.read != Read::Branches {
             return Err(api::Error::InvalidAnswer);

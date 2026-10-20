@@ -150,7 +150,11 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
         // Raw bodies, and an uninstall's empty answer.
-        Request::Raw { .. } | Request::JobLog { .. } | Request::DeleteBranch { .. } | Request::Uninstall { .. } => {
+        Request::Raw { .. }
+        | Request::JobLog { .. }
+        | Request::Followed { .. }
+        | Request::DeleteBranch { .. }
+        | Request::Uninstall { .. } => {
             return None;
         }
     })
@@ -199,6 +203,7 @@ impl Decoder {
     fn movement(&mut self, movement: Move) -> Result<(tokenizer::Request, Step), Malformed> {
         match movement {
             Move::PayloadStart(token) => return Ok((self.log.start(token)?, Step::Demand)),
+            Move::End(Node::JobStep) => self.checks.step_end(),
             Move::End(Node::LogRow) => return Ok((tokenizer::Request::Next, Step::Row(Row::Log(self.log.row())))),
             Move::End(Node::PullGraphql(node)) => self.pull_graphql.end(node)?,
             Move::Demand(demand) => return Ok((demand, Step::Demand)),
@@ -323,6 +328,7 @@ impl Decoder {
                 | Node::RunOutput
                 | Node::RunApp
                 | Node::Job
+                | Node::JobSteps
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
@@ -407,7 +413,7 @@ impl Decoder {
                 token,
             ) => return self.log.scalar(node, key, token),
             (Node::PullGraphql(node), key, token) => return self.pull_graphql.scalar(node, key, token),
-            (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
+            (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job | Node::JobStep), key, token) => {
                 return self.checks.scalar(node, key, token);
             }
             (Node::IdResult, b"id", Token::Number(text)) | (Node::NumberResult, b"number", Token::Number(text)) => {
@@ -525,6 +531,7 @@ impl Decoder {
             (
                 Node::Collaborator
                 | Node::CollaboratorRows
+                | Node::JobSteps
                 | Node::User
                 | Node::Permission
                 | Node::IdResult

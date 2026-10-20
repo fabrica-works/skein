@@ -941,7 +941,7 @@ fn raw_request(request: &request::Request) -> bool {
 fn github_raw_request(request: &github::request::Request) -> bool {
     use github::request::Request;
     match request {
-        Request::Raw { .. } | Request::JobLog { .. } => true,
+        Request::Raw { .. } | Request::JobLog { .. } | Request::Followed { .. } => true,
         Request::LogPage { .. }
         | Request::LogDelivery { .. }
         | Request::Installations { .. }

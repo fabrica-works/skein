@@ -35,6 +35,7 @@ fn github_fake_graphql_pull_drives_the_plan_with_empty_ci_fixture() {
                 assert_eq!(h.hooks, 0);
                 return;
             }
+            Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
             Step::Send(exchange) => exchange,
         };
         // CI routes belong to another task. Supply only their empty plan

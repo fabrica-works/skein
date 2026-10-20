@@ -48,6 +48,7 @@ fn drive(
     for _exchange in 0..32_u32 {
         let exchange = match step {
             Step::Done(result) => return result,
+            Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
             Step::Send(exchange) => exchange,
         };
         if let skein_forge::github::request::Request::Update { .. } = &exchange.request

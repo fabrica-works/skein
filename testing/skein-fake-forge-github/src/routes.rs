@@ -168,6 +168,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::CombinedStatus { .. }
         | Request::CheckRuns { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }
         | Request::RulesForBranch { .. }

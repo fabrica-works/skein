@@ -39,7 +39,7 @@ impl Plan {
                     | Read::Compare { .. }
                     | Read::PullFiles { .. }
                     | Read::Protection { .. }
-                    | Read::Refused => Err(api::Error::InvalidAnswer),
+                    | Read::Job { .. } => Err(api::Error::InvalidAnswer),
                 }
             }
             document::Document::Compare(comparison) => self.compare_done(comparison, bounds),
@@ -52,7 +52,7 @@ impl Plan {
                     self.pull_done(pull, bounds)
                 }
             }
-            document::Document::Job(job) => self.checks_job_done(job, bounds),
+            document::Document::Job(job) => self.job_document(job, bounds),
             document::Document::Combined(combined) => match self.read {
                 Read::Checks { .. } => self.checks_combined_done(),
                 Read::Locate { .. }
@@ -72,7 +72,7 @@ impl Plan {
                 | Read::Compare { .. }
                 | Read::PullFiles { .. }
                 | Read::Protection { .. }
-                | Read::Refused => self.combined_done(combined, bounds),
+                | Read::Job { .. } => self.combined_done(combined, bounds),
             },
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
@@ -91,7 +91,7 @@ impl Plan {
                 | Read::Permission { .. }
                 | Read::File { .. }
                 | Read::Compare { .. }
-                | Read::Refused => self.branches_done(bounds),
+                | Read::Job { .. } => self.branches_done(bounds),
             },
             document::Document::Error(_)
             | document::Document::Delivery(_)
@@ -146,6 +146,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
+            | Read::Job { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -166,7 +167,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => {
+            | Read::Job { .. } => {
                 return Err(api::Error::InvalidAnswer);
             }
         };

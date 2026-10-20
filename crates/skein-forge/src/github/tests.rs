@@ -4,6 +4,7 @@ mod app_facts;
 mod checks;
 mod delivery;
 mod items;
+mod job;
 mod kinds;
 mod log;
 mod protection;

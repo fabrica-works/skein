@@ -110,3 +110,29 @@ fn github_exchange_handoff_drops_on_loss_close_replacement_and_answer() {
         assert!(h.connection.request.is_none(), "{terminal:?}: handoff released");
     }
 }
+
+#[test]
+fn github_followed_request_sends_exact_bytes_without_authorization_or_range() {
+    let redirect = github::redirect::parse(b"http://logs.example.test/job%2Fpart?signature=invented", 128, 1024)
+        .expect("invented log origin");
+    let mut h = ConnectionHarness::github();
+    h.forge.transport = Transport::Plaintext { name: Some(redirect.origin.host.clone()) };
+    h.forge.address = skein_io::Addr::Ip(([127, 0, 0, 1], redirect.origin.port).into());
+    h.connection
+        .start(
+            &h.env,
+            &h.forge,
+            f::USER_AGENT,
+            Exchange::GitHub {
+                exchange: GitHubExchange {
+                    request: github::redirect::request(&redirect),
+                    retention: Some(Retention::Tail { bytes: 8 }),
+                    comparison: Comparison::Full,
+                },
+                authorization: None,
+            },
+        )
+        .expect("followed request encodes");
+    h.github_answer(&f::ok(b"log"));
+    assert_eq!(h.sent.as_ref(), b"GET /job%2Fpart?signature=invented HTTP/1.1\r\nHost: logs.example.test\r\nUser-Agent: kit/0.0.0\r\nAccept: application/vnd.github+json\r\nX-GitHub-Api-Version: 2026-03-10\r\n\r\n");
+}

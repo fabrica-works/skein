@@ -95,6 +95,8 @@ pub(super) enum Node {
     RunOutput,
     RunApp,
     Job,
+    JobSteps,
+    JobStep,
 }
 /// Payload roles share the walker without extending the document-only Node vocabulary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -365,12 +367,16 @@ fn document_fields(node: Node) -> &'static [Field] {
         }
         Node::RunOutput => const { &[optional(b"title", Read::Text)] },
         Node::RunApp => const { &[optional(b"slug", Read::Text)] },
+        Node::JobStep => {
+            const { &[field(b"number", Read::Number), field(b"name", Read::Text), optional(b"conclusion", Read::Text)] }
+        }
         Node::Job => {
             const {
                 &[
                     field(b"id", Read::Number),
                     field(b"run_id", Read::Number),
                     field(b"run_attempt", Read::Number),
+                    optional(b"steps", Read::Container(Role::Document(Node::JobSteps))),
                     field(b"head_sha", Read::Text),
                 ]
             }
@@ -470,7 +476,8 @@ fn document_fields(node: Node) -> &'static [Field] {
             const { &[field(b"message", Read::Body), optional(b"errors", Read::Container(Role::Document(Node::Errors)))] }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::LogRows
+        Node::JobSteps
+        | Node::LogRows
         | Node::AppPermissions
         | Node::AppEvents
         | Node::FileRows
@@ -501,6 +508,7 @@ fn element(role: Role) -> Option<Role> {
     };
     match node {
         Node::Protection(node) => protection::element(node),
+        Node::JobSteps => Some(Role::Document(Node::JobStep)),
         Node::LogRows => Some(Role::Document(Node::LogRow)),
         Node::AppEvents => Some(Role::Document(Node::AppEvents)),
         Node::FileRows => Some(Role::Document(Node::FileRow)),
@@ -552,6 +560,7 @@ fn element(role: Role) -> Option<Role> {
         | Node::RunOutput
         | Node::RunApp
         | Node::Job
+        | Node::JobStep
         | Node::Issue
         | Node::IssueUser
         | Node::Label
@@ -727,8 +736,12 @@ impl Walk {
                         return Ok(Move::Scalar(Node::AppEvents, b"events", self.app_text(event, b"events")?));
                     }
                     frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"errors" })?;
-                    if frame.node == Role::Document(Node::LogRows) && frame.seen > self.limits.inner {
-                        return Err(Malformed::Bound { field: b"deliveries" });
+                    if (frame.node == Role::Document(Node::LogRows) || frame.node == Role::Document(Node::JobSteps))
+                        && frame.seen > self.limits.inner
+                    {
+                        return Err(Malformed::Bound {
+                            field: if frame.node == Role::Document(Node::JobSteps) { b"steps" } else { b"deliveries" },
+                        });
                     }
                     if self.enqueue
                         && frame.node == Role::Document(Node::GraphqlErrors)

@@ -118,3 +118,10 @@ fn authority_parts(authority: &[u8], default_port: u16) -> Option<(&[u8], u16)> 
     }
     Some((host, port))
 }
+
+/// GET the target as given, without credentials or Range. The caller selects
+/// the connection by `redirect.origin`; User-Agent and Accept are `JobLog`'s.
+#[must_use]
+pub fn request(redirect: &Redirect) -> super::request::Request {
+    super::request::Request::Followed { target: bytes::copy_of(&redirect.target) }
+}

@@ -56,6 +56,7 @@ pub enum Request {
     CombinedStatus { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, page: u32, per_page: u32 },
     CheckRuns { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, page: u32, per_page: u32 },
     Job { owner: Box<[u8]>, name: Box<[u8]>, id: u64 },
+    Followed { target: Box<[u8]> },
     JobLog { owner: Box<[u8]>, name: Box<[u8]>, id: u64 },
     Branch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
     Branches { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
@@ -150,6 +151,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }
@@ -375,6 +377,7 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.page(*page, *per_page, true);
         }
         Request::Job { owner, name, id } => out.job(owner, name, *id, b"")?,
+        Request::Followed { target } => out.put(target),
         Request::JobLog { owner, name, id } => out.job(owner, name, *id, b"/logs")?,
         Request::Branch { owner, name, branch } => {
             out.repo(owner, name)?;
@@ -521,6 +524,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Compare { .. }
         | Request::Raw { .. }
@@ -591,7 +595,7 @@ fn selection(request: &Request) -> (Method, Auth) {
         Request::SetHook { .. } => (Method::Patch, Auth::App),
         Request::Uninstall { .. } => (Method::Delete, Auth::App),
         Request::Conversion { .. } => (Method::Post, Auth::None),
-        Request::BotUser { .. } => (Method::Get, Auth::None),
+        Request::BotUser { .. } | Request::Followed { .. } => (Method::Get, Auth::None),
         Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
@@ -671,6 +675,7 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }
@@ -847,6 +852,7 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Resul
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }
@@ -930,6 +936,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }
@@ -1040,6 +1047,7 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }

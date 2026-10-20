@@ -57,7 +57,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => {
+            | Read::Job { .. } => {
                 return Err(api::Error::InvalidAnswer);
             }
         }
@@ -146,7 +146,7 @@ impl Plan {
                 | Read::Compare { .. }
                 | Read::PullFiles { .. }
                 | Read::Protection { .. }
-                | Read::Refused,
+                | Read::Job { .. },
                 document::Row::Issue(_)
                 | document::Row::Comment(_)
                 | document::Row::Log(_)
@@ -192,7 +192,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => return Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => return Err(api::Error::InvalidAnswer),
         };
         if issue.number != number {
             return Err(api::Error::InvalidAnswer);
@@ -227,7 +227,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => return Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => return Err(api::Error::InvalidAnswer),
         };
         Ok(Some(self.send(Request::Comments {
             owner: row.owner.clone(),
@@ -276,7 +276,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => Err(api::Error::InvalidAnswer),
         }
     }
 }

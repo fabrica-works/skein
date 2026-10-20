@@ -449,6 +449,13 @@ impl Component {
                 }
                 false
             }
+            Step::Redirect { .. } => {
+                // Following redirects is o/github-runtime's component work;
+                // its implementation replaces this refusal (forge-github.md, 10).
+                self.release_github_call(id, env, io);
+                self.finish(call, id, Err(api::Error::Unavailable), up);
+                true
+            }
             Step::Done(result) => {
                 if self.waiting.get(id).expect("call").discovery.is_some() {
                     self.github_discovered(holder, result, env, up, io, checked.expect("discovery response"));
@@ -502,6 +509,13 @@ impl Component {
                 match self.initialize_github_plan(id, env) {
                     Ok(Step::Send(exchange)) => {
                         github_plan(self.waiting.get_mut(id).expect("call")).set_pending(exchange);
+                    }
+                    Ok(Step::Redirect { .. }) => {
+                        // o/github-runtime's redirect following replaces this
+                        // refusal (forge-github.md, 10).
+                        self.release_github_call(id, env, io);
+                        self.finish(call, id, Err(api::Error::Unavailable), up);
+                        return;
                     }
                     Ok(Step::Done(result)) => {
                         self.release_github_call(id, env, io);

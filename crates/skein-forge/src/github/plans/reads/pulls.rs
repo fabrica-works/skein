@@ -92,7 +92,7 @@ impl Plan {
             | Read::PullFiles { .. }
             | Read::Checks { .. }
             | Read::Protection { .. }
-            | Read::Refused => return Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => return Err(api::Error::InvalidAnswer),
         };
         Ok(self.send(request))
     }
@@ -178,7 +178,7 @@ impl Plan {
             | Read::PullFiles { .. }
             | Read::Checks { .. }
             | Read::Protection { .. }
-            | Read::Refused => return Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => return Err(api::Error::InvalidAnswer),
         }
         let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
         self.pulls.merged_missing = pull.merged && pull.merge_commit.is_none();
@@ -317,6 +317,6 @@ fn is_statuses(read: &Read) -> bool {
         | Read::PullFiles { .. }
         | Read::Checks { .. }
         | Read::Protection { .. }
-        | Read::Refused => false,
+        | Read::Job { .. } => false,
     }
 }

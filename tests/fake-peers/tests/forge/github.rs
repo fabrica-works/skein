@@ -310,6 +310,7 @@ impl World {
             let exchange = match step {
                 Step::Done(result) => return result,
                 Step::Send(exchange) => exchange,
+                Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
             };
             let encoded =
                 github::request::encode(&exchange.request, &limits().github).expect("bounded request encoding");

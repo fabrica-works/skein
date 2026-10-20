@@ -5,12 +5,15 @@ use crate::{
     forgejo::{id::unsigned, time},
     github::{document, id},
 };
+use alloc::boxed::Box;
 use skein_json::Token;
 
 #[derive(Debug)]
 pub(super) struct State {
     run: document::Run,
     job: document::Job,
+    step: api::Step,
+    failed: bool,
     completed: bool,
     conclusion: Option<api::Check>,
 }
@@ -18,9 +21,17 @@ impl State {
     pub(super) fn new() -> Self {
         Self {
             run: document::Run::new(api::Check::Pending),
-            job: document::Job { id: 0, run: 0, attempt: 0, head: [0; 32] },
+            job: document::Job { id: 0, run: 0, attempt: 0, head: [0; 32], step: None },
+            step: api::Step { number: 0, name: Box::from([]) },
+            failed: false,
             completed: false,
             conclusion: None,
+        }
+    }
+    pub(super) fn step_end(&mut self) {
+        let step = core::mem::replace(&mut self.step, api::Step { number: 0, name: Box::from([]) });
+        if core::mem::replace(&mut self.failed, false) && self.job.step.is_none() {
+            self.job.step = Some(step);
         }
     }
     pub(super) fn job(&self) -> document::Job {
@@ -37,7 +48,9 @@ impl State {
         match token {
             Token::Number(text) => {
                 let number = unsigned(&text).ok_or(Malformed::Range { field: key })?;
-                if node == Node::RunItem {
+                if node == Node::JobStep {
+                    self.step.number = u32::try_from(number).or(Err(Malformed::Range { field: key }))?;
+                } else if node == Node::RunItem {
                     self.run.id = Some(number);
                 } else if key == b"id" {
                     self.job.id = number;
@@ -48,7 +61,13 @@ impl State {
                 }
             }
             Token::String(text) => {
-                if node == Node::Job {
+                if node == Node::JobStep {
+                    if key == b"name" {
+                        self.step.name = text;
+                    } else {
+                        self.failed = text.as_ref() == b"failure";
+                    }
+                } else if node == Node::Job {
                     self.job.head = id::commit(&text).ok_or(Malformed::Id { field: key })?;
                 } else if node == Node::RunOutput {
                     self.run.title = text;

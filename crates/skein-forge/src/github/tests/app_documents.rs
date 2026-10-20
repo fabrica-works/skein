@@ -423,6 +423,7 @@ fn github_app_server_round_trip() {
                 | Request::CheckRuns { .. }
                 | Request::Job { .. }
                 | Request::JobLog { .. }
+                | Request::Followed { .. }
                 | Request::Branch { .. }
                 | Request::Branches { .. }
                 | Request::PullFiles { .. }

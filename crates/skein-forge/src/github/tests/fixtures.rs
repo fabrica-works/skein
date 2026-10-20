@@ -216,3 +216,12 @@ pub fn context(check: crate::api::Check) -> super::super::document::Context {
         url: Box::from(*b"https://example.invalid/build/1"),
     }
 }
+
+/// A fixture field at a chosen bound, allocated at its final length.
+pub fn filled(length: usize, byte: u8) -> Box<[u8]> {
+    let mut out = Writer::new(length);
+    for _ in 0..length {
+        out.put(&[byte]).unwrap();
+    }
+    out.finish()
+}

@@ -44,7 +44,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Protection { .. }
-            | Read::Refused => Err(api::Error::InvalidAnswer),
+            | Read::Job { .. } => Err(api::Error::InvalidAnswer),
         }
     }
     pub(super) fn checks_admission(&mut self, bounds: Bounds) -> Result<(), api::Error> {

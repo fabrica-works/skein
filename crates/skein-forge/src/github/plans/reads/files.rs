@@ -28,6 +28,9 @@ impl Plan {
         more: bool,
         bounds: Bounds,
     ) -> Result<Option<Step>, api::Error> {
+        if let Read::Job { .. } = self.read {
+            return self.job_raw(bytes, more, bounds);
+        }
         if self.stage == Stage::Before || self.stage == Stage::After {
             if more {
                 return Err(api::Error::TooLarge);

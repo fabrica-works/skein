@@ -112,6 +112,8 @@ impl State {
             | Node::RunOutput
             | Node::RunApp
             | Node::Job
+            | Node::JobSteps
+            | Node::JobStep
             | Node::User
             | Node::Compare
             | Node::MergeBaseOnly
@@ -364,6 +366,8 @@ impl State {
                 | Node::RunApp
                 | Node::Job
                 | Node::Protection(_)
+                | Node::JobSteps
+                | Node::JobStep
                 | Node::IdResult
                 | Node::NumberResult
                 | Node::Done

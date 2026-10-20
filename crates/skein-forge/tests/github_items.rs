@@ -111,7 +111,7 @@ impl Call {
     fn answer(&mut self) -> api::Answer {
         match self.done(Document::Rows).unwrap().unwrap() {
             Step::Done(Ok(answer)) => answer,
-            Step::Send(_) | Step::Done(Err(_)) => panic!("expected successful answer"),
+            Step::Send(_) | Step::Redirect { .. } | Step::Done(Err(_)) => panic!("expected successful answer"),
         }
     }
 }

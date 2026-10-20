@@ -37,7 +37,7 @@ fn run(id: u64, check: api::Check, app: &[u8]) -> document::Run {
     }
 }
 fn job(id: u64) -> document::Job {
-    document::Job { id, run: 9_007_199_254_740_993, attempt: 2, head: head() }
+    document::Job { id, run: 9_007_199_254_740_993, attempt: 2, head: head(), step: None }
 }
 fn request(stage: Kind, page: u32, per_page: u32) -> Request {
     let owner = Box::from(*b"acme");
@@ -363,7 +363,7 @@ fn github_checks_metadata_round_trip() {
         let (rows, doc) = decode(Kind::CheckRuns, &bytes(out), chunk, &limits());
         assert_eq!(doc, Ok(Document::Rows));
         assert_eq!(rows.as_slice(), &[Row::Run(row)]);
-        let row = document::Job { id: u64::MAX, run: u64::MAX, attempt: u32::MAX, head: head() };
+        let row = document::Job { id: u64::MAX, run: u64::MAX, attempt: u32::MAX, head: head(), step: None };
         let mut out = Writer::new(4096);
         server::job(&row, &mut out).unwrap();
         assert_eq!(decode(Kind::Job, &bytes(out), chunk, &limits()).1, Ok(Document::Job(row)));
@@ -371,7 +371,8 @@ fn github_checks_metadata_round_trip() {
 }
 #[test]
 fn github_checks_metadata_malformed() {
-    let job = r#"{"id":11,"run_id":22,"run_attempt":2,"head_sha":"0123456789abcdef0123456789abcdef01234567","steps":[{"ignored":true}]}"#;
+    let job =
+        r#"{"id":11,"run_id":22,"run_attempt":2,"head_sha":"0123456789abcdef0123456789abcdef01234567","steps":[]}"#;
     for (json, expected) in [
         (job.replace("\"id\":11,", ""), Malformed::Missing { field: b"id" }),
         (job.replace("\"run_id\":22,", ""), Malformed::Missing { field: b"run_id" }),
@@ -433,8 +434,8 @@ fn github_checks_metadata_defaults_and_bounds() {
                 job: None
             }
         );
-        let (_, result) = decode(Kind::Job, br#"{"id":11,"run_id":22,"run_attempt":2,"head_sha":"0123456789abcdef0123456789abcdef01234567","steps":[{"name":"ignored","conclusion":"failure"}]}"#, chunk, &limits());
-        assert_eq!(result, Ok(Document::Job(document::Job { id: 11, run: 22, attempt: 2, head: head() })));
+        let (_, result) = decode(Kind::Job, br#"{"id":11,"run_id":22,"run_attempt":2,"head_sha":"0123456789abcdef0123456789abcdef01234567","steps":[{"number":1,"name":"ignored","conclusion":"success"}]}"#, chunk, &limits());
+        assert_eq!(result, Ok(Document::Job(document::Job { id: 11, run: 22, attempt: 2, head: head(), step: None })));
     }
     for missing_id in [false, true] {
         let mut call = runs_started(bounds());

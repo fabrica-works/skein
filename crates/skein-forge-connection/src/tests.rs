@@ -327,16 +327,18 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 const FIXTURE_HEAP: u64 = 2_815_291;
 
 // Complete GitHub fixture: the same common limits and owned bytes. Its
-// decoder's fixed size is 2352, including the 96-byte GraphQL pull builder,
+// decoder's fixed size is 2400, including the 96-byte GraphQL pull builder,
 // App builder state, the enqueue error's two type/message boxes, and the
 // 304-byte log row/wrapper builder and 96-byte protection builder.
 // Both builders are inline in three connection and four hook decoders.
+// Job metadata retains a 24-byte optional failed step alongside its 24-byte
+// current step builder, in each decoder: 7*48 = 336 bytes.
 // App builder/document overlap needs max(3*128 + 2*48 + 2*16,
 // 4*128 + 2*24 + 2*16) = 592 per inner entry; its permissions and event
 // lists coexist. Decoder = 32*128 + 8*592 + 2*1042 + 16*128 + 4096
-// + 2352 = 19_412. Each connection also holds a 120-byte boxed exchange
+// + 2400 = 19_460. Each connection also holds a 120-byte boxed exchange
 // retaining request, raw retention and comparison. Three connections are
-// 768_323 each; four hooks are 4*121682 + 4832 = 491_560.
+// 768_371 each; four hooks are 4*121730 + 4832 = 491_752.
 // Installation storage = 2136 (live Row tree, Row 176) + 2*552 (metadata)
 // + 2*552 (accepted accounts) + 464 (missing accounts) + 3*200 (id sets)
 // + 2*3*8 (id lists) + 2*100*48 (installation pages) + 2*100*128
@@ -348,7 +350,7 @@ const FIXTURE_HEAP: u64 = 2_815_291;
 // GitHub's tables are 3888; discovery's one-row tables are 2056.
 // Protection reserves 8*8 ruleset ids beside the context union. Its state
 // adds 120 bytes per read plan and 96 bytes per connection decoder.
-// Call payload = 2*1472 (probe/original read boxes) + write box 480
+// Call payload = 2*1496 (probe/original read boxes) + write box 480
 // + staging 2056 + 3*24 (revision-bearing candidates) + 3*65536
 // (payload/conversion/handoff envelopes) + max read storage 3008:
 // descriptors 8*40, File rows 8*48, Commit rows 8*32 and paths/previous
@@ -360,18 +362,19 @@ const FIXTURE_HEAP: u64 = 2_815_291;
 // decoded reviewer ids 8*8 and pull/GraphQL/error text 6*128 = 960.
 // Login text shares the answer envelopes; the retained arrays and box, ids,
 // row/request texts and enqueue id are counted once above.
-// Call payload = 210_322.
+// Each read plan holds a 24-byte optional job step; the probe and original
+// coexist, so each call pays 2*24 = 48 bytes. Call payload = 210_370.
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
-// Total = 3*768323 + index 288 + slab 3*1400 + 491560 + 138592
-// + 2*210322 + 3888 + 1056 + 489769 + 46384 + 284 = 3_901_634.
-const GITHUB_FIXTURE_HEAP: u64 = 3_901_634;
+// Total = 3*768371 + index 288 + slab 3*1400 + 491752 + 138592
+// + 2*210370 + 3888 + 1056 + 489769 + 46384 + 284 = 3_902_066.
+const GITHUB_FIXTURE_HEAP: u64 = 3_902_066;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 544 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
 const FORGEJO_CALL_SLOT: u64 = 151_232; // 544 + 16 + 1536 + 65536 + 83600.
-const GITHUB_CALL_SLOT: u64 = 277_954; // 544 + 16 + 1536 + 65536 + 210322.
+const GITHUB_CALL_SLOT: u64 = 278_002; // 544 + 16 + 1536 + 65536 + 210370.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
 const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };
@@ -401,9 +404,9 @@ fn a_forgejo_forge_pays_no_github_share() {
 
 #[test]
 fn a_github_forge_pays_its_app_share() {
-    assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2352);
-    assert_eq!(size_of::<skein_forge::github::plans::reads::Plan>(), 1472);
-    assert_eq!(limits::github_call_heap(&fixtures::limits(), &fixtures::shared()), Some(210_322));
+    assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2400);
+    assert_eq!(size_of::<skein_forge::github::plans::reads::Plan>(), 1496);
+    assert_eq!(limits::github_call_heap(&fixtures::limits(), &fixtures::shared()), Some(210_370));
     let settings = fixtures::github_settings();
     assert_eq!(limits::Forges::of(&settings), Some(GITHUB));
     assert_eq!(

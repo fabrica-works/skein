@@ -87,6 +87,7 @@ fn started(read: api::Read, bounds: Bounds, tables: &mut Tables) -> Plan {
     match plan.begin(bounds, b"example-app", tables).expect("admitted read") {
         Step::Send(_) => {}
         Step::Done(answer) => panic!("expected request, got {answer:?}"),
+        Step::Redirect { .. } => panic!("read begins with an API request"),
     }
     head(&mut plan, false, bounds, tables);
     plan
@@ -350,10 +351,17 @@ fn github_plans_malformed_body() {
 }
 
 #[test]
-fn github_plans_remaining_reads_refused() {
-    let mut tables = Tables::new(2, 2);
-    let read = api::Read::Job { attempt: api::JobAttempt { head: [0; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 1 };
-    assert_eq!(read_plan(read).begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
+fn github_plans_job_and_protection_resolve_repository() {
+    for read in [
+        api::Read::Job { attempt: api::JobAttempt { head: [0; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 1 },
+        api::Read::Protection { branch: Box::from(*b"b") },
+    ] {
+        let mut tables = Tables::new(2, 2);
+        assert_eq!(
+            read_plan(read).begin(bounds(), b"example-app", &mut tables),
+            Ok(Step::send(Request::Repository { id: 7 }))
+        );
+    }
 }
 
 #[test]

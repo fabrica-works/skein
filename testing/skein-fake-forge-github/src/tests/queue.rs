@@ -159,6 +159,7 @@ fn drive_merge(
                 assert_eq!(requests.as_slice(), expected);
                 return result;
             }
+            Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
             Step::Send(exchange) => exchange,
         };
         let label: &[u8] = if let Request::Repository { .. } = &exchange.request {

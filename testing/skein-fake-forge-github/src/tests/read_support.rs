@@ -107,6 +107,7 @@ fn read_inner(h: &mut f::Harness, token: &Secret, read: api::Read, empty_ci: boo
     for _exchange in 0..64_u32 {
         let exchange = match step {
             Step::Done(result) => return result,
+            Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
             Step::Send(exchange) => exchange,
         };
         let events = if empty_ci && github::decode::kind(&exchange.request) == Some(Kind::CombinedStatus) {

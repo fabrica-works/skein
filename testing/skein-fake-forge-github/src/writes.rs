@@ -326,6 +326,7 @@ fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Respons
         | Request::CheckRuns { .. }
         | Request::Job { .. }
         | Request::JobLog { .. }
+        | Request::Followed { .. }
         | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::PullFiles { .. }
