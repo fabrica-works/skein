@@ -149,6 +149,8 @@ hands them as it does Forgejo's (forge.md, 4.2):
 
 R as in section 3; `<size>` the page size; `GQ` a GraphQL request
 (4.3). Several requests run in turn on one connection, as forge.md 5.2.
+"Every page" in Pull's and Checks' rows stops at 50 pages a listing:
+the call fails `TooLarge` when a 50th page still has a next.
 
 | Call | Requests | Answer from |
 |---|---|---|
