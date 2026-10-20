@@ -862,6 +862,24 @@ The owner's domain owes:
   the installations in turn, the puller's catch-up, cursor, gap and
   `304`s, and a job log's redirect followed to its configured origin
   alone, another origin said once per connect as a fact.
+- **Over TLS, every byte outside the gate.** Each TLS fault is a world of
+  its own, with a real handshake that draws the kernel's entropy
+  (testing-strategy.md, 4.4). So its flight is its own, bound to its own
+  hello, and no two faults can share one. In a debug build, a fault past
+  the client's hello costs 3 to 10 ms, about 2.4 ms of it the handshake's
+  cryptography. Faults at
+  every byte of both handshake flights and of the HTTP start's and first
+  call's requests and responses, each with EOF and reset, take 20 to 30
+  seconds. The gate's fuzzy suite cuts at the boundaries a reader
+  changes state at, each one byte either side, with EOF and reset: each
+  TLS record's start and its header's end, found in that fault's own
+  flight, and the flight's end; each HTTP line's end, and the end of the
+  head and of the body. The every-byte sweep runs unchanged, with the same
+  assertions, in the exhaustive suite. The post-landing lane runs it
+  after each push to main and reports a failure against that push's
+  commit. This departs from testing-strategy.md, section 8, whose gate
+  runs both suites in full: the exhaustive suite is a third, run after
+  the gate rather than in it.
 - **The listener,** against scripted deliveries: a good delivery hinted,
   its `204` queued before its hint goes up; each answer of 6.3; an event
   the dialect does not hint; a hint held while the owner has no room,
