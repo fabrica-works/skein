@@ -344,6 +344,8 @@ fn github_app_secrets_hidden() {
             | Document::Id(_)
             | Document::Number(_)
             | Document::Done
+            | Document::Ruleset(_)
+            | Document::ClassicProtection(_)
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)
@@ -502,6 +504,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                     | Row::Review(_)
                     | Row::Remark(_)
                     | Row::Collaborator(_)
+                    | Row::Rule(_)
                     | Row::Branch(_) => {
                         panic!("App row fixture")
                     }
@@ -521,6 +524,8 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         | Document::Repository(_)
         | Document::Branch(_)
         | Document::Issue(_)
+        | Document::Ruleset(_)
+        | Document::ClassicProtection(_)
         | Document::Error(_) => {
             panic!("App document fixture")
         }

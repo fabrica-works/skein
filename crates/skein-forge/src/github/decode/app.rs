@@ -158,6 +158,7 @@ impl State {
             | Node::RunsObject
             | Node::Runs
             | Node::RunItem
+            | Node::Protection(_)
             | Node::IdResult
             | Node::NumberResult
             | Node::Done
@@ -215,6 +216,9 @@ impl State {
             | Kind::Id
             | Kind::Number
             | Kind::Done
+            | Kind::RuleRows
+            | Kind::Ruleset
+            | Kind::ClassicProtection
             | Kind::Error => unreachable!("App document dispatch"),
         })
     }
@@ -351,6 +355,7 @@ impl State {
                 | Node::RunOutput
                 | Node::RunApp
                 | Node::Job
+                | Node::Protection(_)
                 | Node::IdResult
                 | Node::NumberResult
                 | Node::Done

@@ -23,7 +23,7 @@ const USER: u64 = 9_007_199_254_740_993;
 const WORD: &[u8] = b"example-app";
 const ROOM: u32 = 4096;
 fn bounds() -> Bounds {
-    Bounds { page_size: 4, rows: 4, answer_bytes: ROOM, body_bytes: 128 }
+    Bounds { inner: 8, page_size: 4, rows: 4, answer_bytes: ROOM, body_bytes: 128 }
 }
 fn owner() -> Box<[u8]> {
     Box::from(*b"acme")

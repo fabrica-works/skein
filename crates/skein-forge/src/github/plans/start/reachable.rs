@@ -57,6 +57,7 @@ impl Reachable {
                     | document::Row::Pull(_)
                     | document::Row::Context(_)
                     | document::Row::Run(_)
+                    | document::Row::Rule(_)
                     | document::Row::Comment(_) => return Err(api::Error::InvalidAnswer),
                 };
                 if self.rows.len() >= self.per_page || self.rows.len() >= bounds.rows {
@@ -89,6 +90,8 @@ impl Reachable {
                 | document::Document::Id(_)
                 | document::Document::Number(_)
                 | document::Document::Done
+                | document::Document::Ruleset(_)
+                | document::Document::ClassicProtection(_)
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)

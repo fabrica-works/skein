@@ -542,7 +542,13 @@ fn github_plan(waiting: &mut Waiting) -> &mut Plan {
     }
 }
 fn bounds(page_size: u32, env: &Env<Limits>, shared: &crate::Shared) -> Bounds {
-    Bounds { page_size, rows: shared.rows, answer_bytes: shared.answer_bytes, body_bytes: env.limits.body_bytes }
+    Bounds {
+        inner: env.limits.inner,
+        page_size,
+        rows: shared.rows,
+        answer_bytes: shared.answer_bytes,
+        body_bytes: env.limits.body_bytes,
+    }
 }
 fn admitted(op: &api::Op) -> bool {
     match op {

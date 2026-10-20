@@ -5,6 +5,7 @@ mod checks;
 mod delivery;
 mod items;
 mod kinds;
+mod protection;
 mod pulls;
 mod pulls_decode;
 mod rate_validator;

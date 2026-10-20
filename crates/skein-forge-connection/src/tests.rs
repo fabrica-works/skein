@@ -344,7 +344,9 @@ const FIXTURE_HEAP: u64 = 2_815_291;
 // handoffs coexist with staging and pages; the GitHub box itself is 464.
 // Key/JWT = 1200+512, so each GitHub forge's App share is 46_384.
 // GitHub's tables are 3888; discovery's one-row tables are 2056.
-// Call payload = 2*1352 (probe/original read boxes) + write box 480
+// Protection reserves 8*8 ruleset ids beside the context union. Its state
+// adds 120 bytes per read plan and 224 bytes per connection decoder.
+// Call payload = 2*1472 (probe/original read boxes) + write box 480
 // + staging 2056 + 3*24 (revision-bearing candidates) + 3*65536
 // (payload/conversion/handoff envelopes) + max read storage 3008:
 // descriptors 8*40, File rows 8*48, Commit rows 8*32 and paths/previous
@@ -356,18 +358,18 @@ const FIXTURE_HEAP: u64 = 2_815_291;
 // decoded reviewer ids 8*8 and pull/GraphQL/error text 6*128 = 960.
 // Login text shares the answer envelopes; the retained arrays and box, ids,
 // row/request texts and enqueue id are counted once above.
-// Call payload = 210_018.
+// Call payload = 210_322.
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
-// Total = 3*767923 + index 288 + slab 3*1400 + 489960 + 138592
-// + 2*210018 + 3888 + 1056 + 489769 + 46384 + 284 = 3_898_226.
-const GITHUB_FIXTURE_HEAP: u64 = 3_898_226;
+// Total = 3*768147 + index 288 + slab 3*1400 + 489960 + 138592
+// + 2*210322 + 3888 + 1056 + 489769 + 46384 + 284 = 3_899_506.
+const GITHUB_FIXTURE_HEAP: u64 = 3_899_506;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 544 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
 const FORGEJO_CALL_SLOT: u64 = 151_232; // 544 + 16 + 1536 + 65536 + 83600.
-const GITHUB_CALL_SLOT: u64 = 277_650; // 544 + 16 + 1536 + 65536 + 210018.
+const GITHUB_CALL_SLOT: u64 = 277_954; // 544 + 16 + 1536 + 65536 + 210322.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
 const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };

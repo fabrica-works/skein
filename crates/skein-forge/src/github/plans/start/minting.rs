@@ -53,6 +53,8 @@ impl Minting {
                 | document::Document::Id(_)
                 | document::Document::Number(_)
                 | document::Document::Done
+                | document::Document::Ruleset(_)
+                | document::Document::ClassicProtection(_)
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)

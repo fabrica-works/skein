@@ -564,6 +564,7 @@ impl Component {
             }
             Heard::Row(
                 document::Row::Installation(_)
+                | document::Row::Rule(_)
                 | document::Row::Reachable(_)
                 | document::Row::Branch(_)
                 | document::Row::Issue(_)

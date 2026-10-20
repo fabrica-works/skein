@@ -58,7 +58,7 @@ pub fn token(h: &mut f::Harness) -> Secret {
     f::bearer(h.mint(1, false).token.expose())
 }
 pub fn bounds() -> Bounds {
-    Bounds { page_size: 2, rows: 8, answer_bytes: 8192, body_bytes: 4096 }
+    Bounds { inner: 8, page_size: 2, rows: 8, answer_bytes: 8192, body_bytes: 4096 }
 }
 pub fn events(h: &mut f::Harness, request: &Request, token: &Secret) -> List<Heard> {
     let encoded = github::request::encode(request, &h.limits.github).expect("dialect encodes request");

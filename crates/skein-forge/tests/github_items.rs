@@ -21,7 +21,7 @@ use skein_lib::{Duration, Time, Wall};
 const KEY: api::Repository = api::Repository { forge: 3, repository: 7 };
 const WORD: &[u8] = b"example-app";
 fn default_bounds() -> Bounds {
-    Bounds { page_size: 8, rows: 16, answer_bytes: 4096, body_bytes: 1024 }
+    Bounds { inner: 8, page_size: 8, rows: 16, answer_bytes: 4096, body_bytes: 1024 }
 }
 fn issue(number: u64) -> document::Issue {
     document::Issue {

@@ -283,6 +283,7 @@ fn installation_pages_use_their_own_full_page_budget() {
     assert_eq!(
         super::installation_bounds(&l, &s),
         Some(skein_forge::github::plans::plan::Bounds {
+            inner: l.inner,
             page_size: 100,
             rows: 100,
             answer_bytes: 2000,

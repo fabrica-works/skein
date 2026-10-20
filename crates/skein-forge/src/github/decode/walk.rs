@@ -10,9 +10,12 @@ use skein_json::{
     tokenizer::{self, Event, Request},
 };
 use skein_lib::Stack;
+mod protection;
+use super::protection::Node as P;
 /// Container roles in the first GitHub documents.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
+    Protection(P),
     IdResult,
     NumberResult,
     Done,
@@ -218,6 +221,7 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::Protection(node) => protection::fields(node),
         Node::PullGraphql(node) => pull_fields(node),
         Node::Compare => {
             const {
@@ -462,6 +466,7 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::Protection(node) => protection::element(node),
         Node::AppEvents => Some(Role::Document(Node::AppEvents)),
         Node::FileRows => Some(Role::Document(Node::FileRow)),
         Node::CompareCommits => Some(Role::Document(Node::CompareCommit)),
@@ -590,6 +595,9 @@ pub(super) struct Walk {
 impl Walk {
     pub(super) fn new(kind: document::Kind, limits: &Limits) -> Self {
         let node = match kind {
+            document::Kind::RuleRows => Node::Protection(P::Rows),
+            document::Kind::Ruleset => Node::Protection(P::Ruleset),
+            document::Kind::ClassicProtection => Node::Protection(P::Classic),
             document::Kind::Merge => Node::Commit,
             document::Kind::Enqueue => Node::PullGraphql(PullNode::EnqueueEnvelope),
             document::Kind::Id => Node::IdResult,
@@ -656,6 +664,18 @@ impl Walk {
                     if frame.node == Role::Document(Node::GraphqlErrors) && frame.seen != 0 && !self.enqueue {
                         return self.unknown(&event, 0);
                     }
+                    if frame.node == Role::Document(Node::Protection(P::Contexts)) {
+                        frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"contexts" })?;
+                        if frame.seen > self.limits.inner {
+                            return Err(Malformed::Bound { field: b"contexts" });
+                        }
+                        self.want = Want::Element;
+                        return Ok(Move::Scalar(
+                            Node::Protection(P::Contexts),
+                            b"contexts",
+                            self.app_text(event, b"contexts")?,
+                        ));
+                    }
                     if frame.node == Role::Document(Node::AppEvents) {
                         frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"events" })?;
                         if frame.seen > self.limits.inner {
@@ -721,7 +741,9 @@ impl Walk {
                 }
             }
             Want::Element => {
-                if self.open.top().expect("array").node == Role::Document(Node::AppEvents) {
+                if self.open.top().expect("array").node == Role::Document(Node::AppEvents)
+                    || self.open.top().expect("array").node == Role::Document(Node::Protection(P::Contexts))
+                {
                     Request::Text(self.limits.string_bytes)
                 } else {
                     Request::Next

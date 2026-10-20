@@ -12,6 +12,8 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<Option<Step>, api::Error> {
         match document {
+            document::Document::Ruleset(bypass) => self.ruleset_done(bypass),
+            document::Document::ClassicProtection(value) => self.classic_done(value, bounds),
             document::Document::PullGraphql(pull) => self.pull_graphql_done(pull, bounds),
             document::Document::Repository(repository) => self.repository_done(repository, bounds, tables),
             document::Document::Branch(branch) => {
@@ -36,6 +38,7 @@ impl Plan {
                     | Read::File { .. }
                     | Read::Compare { .. }
                     | Read::PullFiles { .. }
+                    | Read::Protection { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
@@ -68,10 +71,12 @@ impl Plan {
                 | Read::File { .. }
                 | Read::Compare { .. }
                 | Read::PullFiles { .. }
+                | Read::Protection { .. }
                 | Read::Refused => self.combined_done(combined, bounds),
             },
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
+                Read::Protection { .. } => self.protection_rows_done(),
                 Read::Checks { .. } => self.checks_runs_done(bounds),
                 Read::PullFiles { .. } => self.file_listing_done(bounds),
                 Read::Reviews { .. } => self.reviews_done(bounds),
@@ -139,6 +144,7 @@ impl Plan {
             | Read::File { .. }
             | Read::Compare { .. }
             | Read::PullFiles { .. }
+            | Read::Protection { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -158,6 +164,7 @@ impl Plan {
             | Read::File { .. }
             | Read::Compare { .. }
             | Read::PullFiles { .. }
+            | Read::Protection { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }

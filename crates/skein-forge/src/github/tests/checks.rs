@@ -19,7 +19,7 @@ use skein_lib::{Time, Wall, Writer};
 
 const KEY: api::Repository = api::Repository { forge: 3, repository: 7 };
 fn bounds() -> Bounds {
-    Bounds { page_size: 2, rows: 16, answer_bytes: 4096, body_bytes: 1024 }
+    Bounds { inner: 8, page_size: 2, rows: 16, answer_bytes: 4096, body_bytes: 1024 }
 }
 fn head() -> api::Commit {
     fixtures::pull(5).head_commit

@@ -342,6 +342,7 @@ impl Reachable {
                 | github_document::Row::Remark(_)
                 | github_document::Row::Review(_)
                 | github_document::Row::Commit(_)
+                | github_document::Row::Rule(_)
                 | github_document::Row::File(_) => return Err(Why::Unexpected),
             };
             reached

@@ -180,6 +180,8 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             | Document::Id(_)
             | Document::Number(_)
             | Document::Done
+            | Document::Ruleset(_)
+            | Document::ClassicProtection(_)
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)
@@ -209,6 +211,7 @@ fn keep_installation(
         | Row::Review(_)
         | Row::Remark(_)
         | Row::Collaborator(_)
+        | Row::Rule(_)
         | Row::Reachable(_)
         | Row::Branch(_)
         | Row::Issue(_)

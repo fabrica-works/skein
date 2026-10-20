@@ -129,12 +129,18 @@ fn github_decode_kind_is_none_for_raw_and_empty_answers() {
 }
 
 #[test]
-fn github_decode_kind_is_none_for_reads_not_yet_decoded() {
-    for request in [
-        Request::RulesForBranch { owner: owner(), name: name(), branch: Box::from(*b"main"), page: 1 },
-        Request::Ruleset { owner: owner(), name: name(), id: 4 },
-        Request::ClassicProtection { owner: owner(), name: name(), branch: Box::from(*b"main") },
+fn github_protection_requests_select_their_decoders() {
+    for (request, kind) in [
+        (
+            Request::RulesForBranch { owner: owner(), name: name(), branch: Box::from(*b"main"), page: 1 },
+            Kind::RuleRows,
+        ),
+        (Request::Ruleset { owner: owner(), name: name(), id: 4 }, Kind::Ruleset),
+        (
+            Request::ClassicProtection { owner: owner(), name: name(), branch: Box::from(*b"main") },
+            Kind::ClassicProtection,
+        ),
     ] {
-        assert_eq!(decode::kind(&request), None, "{request:?}");
+        assert_eq!(decode::kind(&request), Some(kind));
     }
 }

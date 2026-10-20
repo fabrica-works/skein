@@ -91,6 +91,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Checks { .. }
+            | Read::Protection { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(self.send(request))
@@ -144,6 +145,7 @@ impl Plan {
             | document::Row::Review(_)
             | document::Row::Remark(_)
             | document::Row::Collaborator(_)
+            | document::Row::Rule(_)
             | document::Row::Reachable(_) => return Err(api::Error::InvalidAnswer),
         }
         Ok(())
@@ -174,6 +176,7 @@ impl Plan {
             | Read::Compare { .. }
             | Read::PullFiles { .. }
             | Read::Checks { .. }
+            | Read::Protection { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         }
         let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
@@ -312,6 +315,7 @@ fn is_statuses(read: &Read) -> bool {
         | Read::Compare { .. }
         | Read::PullFiles { .. }
         | Read::Checks { .. }
+        | Read::Protection { .. }
         | Read::Refused => false,
     }
 }

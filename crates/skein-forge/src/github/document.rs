@@ -11,6 +11,9 @@ pub const ENQUEUE: &[u8] = b"mutation($id: ID!, $head: GitObjectID!) { enqueuePu
 /// The document a decoder expects.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
+    RuleRows,
+    Ruleset,
+    ClassicProtection,
     /// The REST merge's landed commit.
     Merge,
     /// Queue admission, including every GraphQL error.
@@ -85,6 +88,7 @@ pub struct Branch {
 /// A streamed listing row.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Row {
+    Rule(Rule),
     Installation(Installation),
     Reachable(Reachable),
     Branch(Box<[u8]>),
@@ -111,6 +115,8 @@ pub struct Refusal {
 /// A whole document, or the end of a streamed listing.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Document {
+    Ruleset(api::Bypass),
+    ClassicProtection(Option<Protection>),
     /// The REST merge's landed commit.
     Merge(api::Commit),
     /// A nonnull queue entry with its checked position.
@@ -430,4 +436,46 @@ pub struct PullGraphql {
     pub merge_commit: Option<api::Commit>,
     pub queued: Option<u32>,
     pub dequeued: Option<Box<[u8]>>,
+}
+
+/// Rules kept from either GitHub protection source (forge-github.md, 5.3).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[expect(clippy::struct_excessive_bools, reason = "independent protection facts")]
+pub struct Protection {
+    pub contexts: Box<[Box<[u8]>]>,
+    pub approvals: u32,
+    pub dismiss_stale: bool,
+    pub code_owners: bool,
+    pub linear: bool,
+    pub signatures: bool,
+    pub queue: bool,
+}
+impl Protection {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            contexts: Box::from([]),
+            approvals: 0,
+            dismiss_stale: false,
+            code_owners: false,
+            linear: false,
+            signatures: false,
+            queue: false,
+        }
+    }
+}
+/// One applicable rule, including unknown types which the plan ignores.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Rule {
+    pub ruleset: u64,
+    pub kind: RuleKind,
+}
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum RuleKind {
+    PullRequest { approvals: u32, dismiss_stale: bool, code_owners: bool },
+    StatusChecks(Box<[Box<[u8]>]>),
+    Queue,
+    Signatures,
+    Linear,
+    Skipped,
 }

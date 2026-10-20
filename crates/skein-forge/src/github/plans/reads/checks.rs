@@ -43,6 +43,7 @@ impl Plan {
             | Read::File { .. }
             | Read::Compare { .. }
             | Read::PullFiles { .. }
+            | Read::Protection { .. }
             | Read::Refused => Err(api::Error::InvalidAnswer),
         }
     }
@@ -109,6 +110,7 @@ impl Plan {
             | document::Row::Run(_)
             | document::Row::Pull(_)
             | document::Row::Installation(_)
+            | document::Row::Rule(_)
             | document::Row::Reachable(_)
             | document::Row::Branch(_)
             | document::Row::Issue(_)

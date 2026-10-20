@@ -36,7 +36,7 @@ fn limits() -> Limits {
     }
 }
 fn bounds() -> Bounds {
-    Bounds { page_size: 2, rows: 4, answer_bytes: 256, body_bytes: DOCUMENT_BYTES }
+    Bounds { inner: 8, page_size: 2, rows: 4, answer_bytes: 256, body_bytes: DOCUMENT_BYTES }
 }
 fn repository(id: u64) -> document::Repository {
     document::Repository {
@@ -352,12 +352,8 @@ fn github_plans_malformed_body() {
 #[test]
 fn github_plans_remaining_reads_refused() {
     let mut tables = Tables::new(2, 2);
-    for read in [
-        api::Read::Job { attempt: api::JobAttempt { head: [0; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 1 },
-        api::Read::Protection { branch: Box::from(*b"b") },
-    ] {
-        assert_eq!(read_plan(read).begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
-    }
+    let read = api::Read::Job { attempt: api::JobAttempt { head: [0; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 1 };
+    assert_eq!(read_plan(read).begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
 }
 
 #[test]

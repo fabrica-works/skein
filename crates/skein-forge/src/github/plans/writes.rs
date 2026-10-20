@@ -432,6 +432,8 @@ impl Plan {
                     | Document::Id(_)
                     | Document::Number(_)
                     | Document::Done
+                    | Document::Ruleset(_)
+                    | Document::ClassicProtection(_)
                     | Document::BotUser(_)
                     | Document::Repository(_)
                     | Document::Branch(_)
@@ -531,6 +533,8 @@ impl Plan {
                 | Document::Id(_)
                 | Document::Number(_)
                 | Document::Done
+                | Document::Ruleset(_)
+                | Document::ClassicProtection(_)
                 | Document::BotUser(_)
                 | Document::Repository(_)
                 | Document::Branch(_)

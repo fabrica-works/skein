@@ -32,7 +32,7 @@ fn repository() -> document::Repository {
     }
 }
 fn bounds() -> Bounds {
-    Bounds { page_size: 4, rows: 4, answer_bytes: 4096, body_bytes: 4096 }
+    Bounds { inner: 8, page_size: 4, rows: 4, answer_bytes: 4096, body_bytes: 4096 }
 }
 fn cached_tables() -> Tables {
     let mut tables = Tables::new(1, 1);

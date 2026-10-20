@@ -168,20 +168,10 @@ fn github_successes_use_the_requests_decoder() {
 #[test]
 fn github_empty_answers_are_discarded() {
     let mut h = ConnectionHarness::github();
-    for (label, request, status, body) in [
-        ("uninstall", Request::Uninstall { id: INSTALLATION }, 204, b"".as_slice()),
-        (
-            "undecoded read",
-            Request::Ruleset { owner: Box::from(b"acme".as_slice()), name: Box::from(b"tools".as_slice()), id: 7 },
-            200,
-            b"discard even non-JSON bytes",
-        ),
-    ] {
-        start(&mut h, request, Some(APP_TOKEN));
-        let heard = h.github_answer(&fixtures::response(status, body));
-        assert_eq!(heard.as_slice(), [expected_head(status), Heard::Done(Body::Empty)], "{label}: discarded");
-        assert_eq!(h.connection.phase, Phase::Idle, "{label}: reusable after discarding");
-    }
+    start(&mut h, Request::Uninstall { id: INSTALLATION }, Some(APP_TOKEN));
+    let heard = h.github_answer(&fixtures::response(204, b""));
+    assert_eq!(heard.as_slice(), [expected_head(204), Heard::Done(Body::Empty)]);
+    assert_eq!(h.connection.phase, Phase::Idle);
 }
 
 #[test]

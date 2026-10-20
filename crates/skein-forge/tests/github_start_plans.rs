@@ -44,7 +44,7 @@ fn limits() -> Limits {
     }
 }
 fn bounds() -> Bounds {
-    Bounds { page_size: 2, rows: 4, answer_bytes: 256, body_bytes: DOCUMENT_BYTES }
+    Bounds { inner: 8, page_size: 2, rows: 4, answer_bytes: 256, body_bytes: DOCUMENT_BYTES }
 }
 fn picker_bounds() -> Bounds {
     Bounds { page_size: PICKER_SIZE, rows: PICKER_SIZE, ..bounds() }

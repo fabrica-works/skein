@@ -14,6 +14,7 @@ pub(crate) mod delivery;
 mod files;
 mod issues;
 mod people;
+mod protection;
 mod pull_graphql;
 mod pulls;
 mod reviews;
@@ -42,6 +43,7 @@ pub struct Decoder {
     collaborator: document::Collaborator,
     reviews: reviews::State,
     files: files::State,
+    protection: protection::State,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -66,6 +68,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         collaborator: people::collaborator(),
         reviews: reviews::State::new(),
         files: files::State::new(limits.inner),
+        protection: protection::State::new(limits.inner),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -127,21 +130,24 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
-        Request::Reviewers { .. } | Request::Update { .. } | Request::CreateBranch { .. } | Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
+        Request::RulesForBranch { .. } => Kind::RuleRows,
+        Request::Ruleset { .. } => Kind::Ruleset,
+        Request::ClassicProtection { .. } => Kind::ClassicProtection,
+        Request::Reviewers { .. }
+        | Request::Update { .. }
+        | Request::CreateBranch { .. }
+        | Request::Status { .. }
+        | Request::Edit { .. }
+        | Request::Close { .. }
+        | Request::Reopen { .. } => Kind::Done,
         Request::Review { .. } | Request::Post { .. } => Kind::Id,
         Request::CreateIssue { .. } | Request::OpenPull { .. } => Kind::Number,
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
         // Raw bodies, and an uninstall's empty answer.
-        Request::Raw { .. }
-        | Request::JobLog { .. }
-        | Request::DeleteBranch { .. }
-        | Request::Uninstall { .. }
-        // Reads whose documents are not decoded yet; each gains its kind with its decoder.
-        | Request::RulesForBranch { .. }
-        | Request::Ruleset { .. }
-        | Request::ClassicProtection { .. }
-        => return None,
+        Request::Raw { .. } | Request::JobLog { .. } | Request::DeleteBranch { .. } | Request::Uninstall { .. } => {
+            return None;
+        }
     })
 }
 impl Decoder {
@@ -255,6 +261,11 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
+            Move::End(Node::Protection(node)) => {
+                if let Some(row) = self.protection.end(node)? {
+                    return Ok((tokenizer::Request::Next, Step::Row(row)));
+                }
+            }
             Move::End(Node::RunItem) => {
                 let row = self.checks.end()?;
                 return Ok((tokenizer::Request::Next, Step::Row(Row::Run(row))));
@@ -317,6 +328,8 @@ impl Decoder {
                         Some(refusal) => Document::Graphql(refusal.clone()),
                         None => self.pull_graphql.enqueued()?,
                     },
+                    Kind::Ruleset => Document::Ruleset(self.protection.ruleset()),
+                    Kind::ClassicProtection => Document::ClassicProtection(self.protection.classic()),
                     Kind::Job => Document::Job(self.checks.job()),
                     Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
@@ -328,7 +341,8 @@ impl Decoder {
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::FileRows
+                    Kind::RuleRows
+                    | Kind::FileRows
                     | Kind::ReviewRows
                     | Kind::RemarkRows
                     | Kind::CollaboratorRows
@@ -351,6 +365,7 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (Node::Protection(node), key, token) => return self.protection.scalar(node, key, token),
             (Node::PullGraphql(node), key, token) => return self.pull_graphql.scalar(node, key, token),
             (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
                 return self.checks.scalar(node, key, token);

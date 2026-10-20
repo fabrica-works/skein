@@ -16,6 +16,7 @@ mod done;
 mod files;
 mod issues;
 mod people;
+mod protection;
 mod pulls;
 mod reviews;
 mod size;
@@ -23,6 +24,7 @@ mod size;
 /// Only these reads have stages; all others are refused at admission.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Read {
+    Protection { branch: Box<[u8]> },
     Locate { owner: Box<[u8]>, name: Box<[u8]> },
     Settings,
     Branch { branch: Box<[u8]> },
@@ -44,6 +46,9 @@ enum Read {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Stage {
+    Rules,
+    Ruleset,
+    Classic,
     New,
     Resolve,
     Read,
@@ -94,6 +99,7 @@ pub struct Plan {
     last_review: u64,
     raw_cap: u32,
     files: files::State,
+    protection: protection::State,
 }
 impl Plan {
     #[must_use]
@@ -116,7 +122,8 @@ impl Plan {
             api::Read::Permission { user } => Read::Permission { user },
             api::Read::PullFiles { number, head, page } => Read::PullFiles { number, head, page },
             api::Read::Checks { commit } => Read::Checks { commit },
-            api::Read::Job { .. } | api::Read::Protection { .. } => Read::Refused,
+            api::Read::Protection { branch } => Read::Protection { branch },
+            api::Read::Job { .. } => Read::Refused,
         };
         Self {
             repository,
@@ -140,6 +147,7 @@ impl Plan {
             last_review: 0,
             raw_cap: 0,
             files: files::State::new(),
+            protection: protection::State::new(),
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -189,6 +197,7 @@ impl Plan {
                     self.login = Some(Box::from(login));
                 }
             }
+            Read::Protection { .. } => self.protection_admission(bounds)?,
             Read::Branch { .. } => {}
             // Later tasks plan every other read.
             Read::Refused => return Err(api::Error::Refused),
@@ -213,6 +222,7 @@ impl Plan {
     }
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
+            Read::Protection { .. } => return self.protection_initial(),
             Read::Checks { .. } => return self.checks_initial(),
             Read::Permission { .. } => return self.permission_initial(),
             Read::Compare { .. } => return self.compare_initial(),
@@ -257,6 +267,7 @@ impl Plan {
             | Read::File { .. }
             | Read::Compare { .. }
             | Read::PullFiles { .. }
+            | Read::Protection { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -335,6 +346,7 @@ impl Plan {
                         | Read::File { .. }
                         | Read::Compare { .. }
                         | Read::PullFiles { .. }
+                        | Read::Protection { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -345,7 +357,7 @@ impl Plan {
                 }
                 // Both limit statuses wait for Done so secondary-limit text can be
                 // classified. If transport fails meanwhile, the heard status wins.
-                if status == 403 || status == 429 {
+                if status == 403 || status == 429 || (status == 404 && self.stage == Stage::Classic) {
                     self.response = Response::Refusal { status, head };
                     return Ok(None);
                 }
@@ -389,12 +401,21 @@ impl Plan {
                                 | document::Document::Id(_)
                                 | document::Document::Number(_)
                                 | document::Document::Done
+                                | document::Document::Ruleset(_)
+                                | document::Document::ClassicProtection(_)
                                 | document::Document::BotUser(_),
                             )
                             | Body::Raw { .. }
                             | Body::Empty
                             | Body::Malformed(_) => None,
                         };
+                        if *status == 404
+                            && self.stage == Stage::Classic
+                            && let Some(refusal) = refusal
+                            && refusal.message.as_ref() == b"Branch not protected"
+                        {
+                            return self.classic_done(None, bounds);
+                        }
                         return Err(failure::read(*status, head, refusal, self.repository, tables));
                     }
                     Response::Body { .. } => {}
@@ -421,6 +442,7 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<(), api::Error> {
         match self.read {
+            Read::Protection { .. } => return self.protection_row(row, bounds),
             Read::Checks { .. } => return self.checks_row(row, bounds),
             Read::Compare { .. } | Read::PullFiles { .. } => return self.file_row(row, bounds),
             Read::Reviews { .. } => return self.review_row(row, bounds, word),
@@ -462,6 +484,7 @@ impl Plan {
             | document::Row::Review(_)
             | document::Row::Remark(_)
             | document::Row::Collaborator(_)
+            | document::Row::Rule(_)
             | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),
         }
     }

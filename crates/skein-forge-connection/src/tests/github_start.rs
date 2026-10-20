@@ -461,7 +461,7 @@ fn github_mint_one_past_a_small_token_bound_is_too_large() {
     };
     let mut h = fixtures::ConnectionHarness::github();
     h.env.limits.token_bytes = SMALL_TOKEN_BOUND;
-    let bounds = Bounds { page_size: 100, rows: 1, answer_bytes: 1024, body_bytes: fixtures::BODY_ROOM };
+    let bounds = Bounds { inner: 8, page_size: 100, rows: 1, answer_bytes: 1024, body_bytes: fixtures::BODY_ROOM };
     let mut plan = Minting::new(1, Scope::Full);
     let request = match plan.begin(bounds).expect("mint begins") {
         Step::Send(exchange) => exchange.request,

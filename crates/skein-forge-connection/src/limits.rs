@@ -560,6 +560,7 @@ fn decoder_heap(l: &Limits, forges: Forges) -> Option<u64> {
 pub(crate) fn installation_bounds(l: &Limits, s: &Shared) -> Option<skein_forge::github::plans::plan::Bounds> {
     let cap = skein_forge::github::pin::PAGE_CAP;
     Some(skein_forge::github::plans::plan::Bounds {
+        inner: l.inner,
         page_size: cap,
         rows: cap,
         answer_bytes: cap
@@ -788,6 +789,8 @@ pub(crate) fn github_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
         .checked_add(github_tables_heap(l, 1, 1)?)?
         .checked_add(List::<crate::installations::Selected>::worst_case(l.installations)?)?
         .checked_add(read)?
+        // Protection keeps distinct ruleset ids beside its context union.
+        .checked_add(List::<u64>::worst_case(l.inner)?)?
         .checked_add(reviewers)?
         // Two repository rows (probe/original), request owner/name and three
         // strings for Permission's login/request, a raw path or Merge's id.

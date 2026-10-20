@@ -26,6 +26,8 @@ impl Step {
 /// The owner's checked values for this call; body bytes are bounded by its decoder.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Bounds {
+    /// Maximum distinct protection rulesets, from the dialect document limit.
+    pub inner: u32,
     pub page_size: u32,
     pub rows: u32,
     pub answer_bytes: u32,

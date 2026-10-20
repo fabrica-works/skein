@@ -157,6 +157,7 @@ impl Plan {
                 }
             }
             crate::github::document::Row::Installation(_)
+            | crate::github::document::Row::Rule(_)
             | crate::github::document::Row::Reachable(_)
             | crate::github::document::Row::Branch(_)
             | crate::github::document::Row::Issue(_)
