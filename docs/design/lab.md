@@ -188,7 +188,8 @@ named by its digest.
 ### 2.4 Immutable, run-specific, append-only
 
 - **Immutable inputs:** the store's experiments and subjects
-  (directories `0500`, files `0400`), shared by every run of their keys,
+  (directories `0500`, files `0400`, executable files `0500`), shared by
+  every run of their keys,
   never written once made, removed only by pruning (3.3).
 - **Run-specific:** the seed; the run's id, `<UTC time>-<6 hex>`; its
   unit (5.2); its directories (`{dir.D}`) and each process's scratch
