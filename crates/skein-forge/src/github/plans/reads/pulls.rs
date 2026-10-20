@@ -9,11 +9,16 @@ use skein_lib::List;
 // Check runs are folded without retaining rows, but at most 50 pages are read.
 pub(super) const RUN_PAGES: u32 = 50;
 #[derive(Debug)]
-#[expect(clippy::struct_excessive_bools, reason = "listing preference and the three independent CI fold flags")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "listing preference, GraphQL selection, merged fallback and independent CI fold flags"
+)]
 pub(super) struct State {
     pull: Option<api::Pull>,
     number: Option<u64>,
     open: bool,
+    graphql: bool,
+    merged_missing: bool,
     failed: bool,
     pending: bool,
     present: bool,
@@ -25,6 +30,8 @@ impl State {
             pull: None,
             number: None,
             open: true,
+            graphql: false,
+            merged_missing: false,
             failed: false,
             pending: false,
             present: false,
@@ -141,7 +148,7 @@ impl Plan {
         }
         Ok(())
     }
-    pub(super) fn pull_done(&mut self, pull: document::Pull, bounds: Bounds) -> Result<Option<Step>, api::Error> {
+    pub(super) fn pull_done(&mut self, mut pull: document::Pull, bounds: Bounds) -> Result<Option<Step>, api::Error> {
         if self.stage != Stage::Read || Some(pull.number) != self.pulls.number {
             return Err(api::Error::InvalidAnswer);
         }
@@ -168,6 +175,14 @@ impl Plan {
             | Read::PullFiles { .. }
             | Read::Checks { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
+        }
+        let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
+        self.pulls.merged_missing = pull.merged && pull.merge_commit.is_none();
+        self.pulls.graphql = (!pull.closed && !pull.merged && row.organization) || self.pulls.merged_missing;
+        // The GraphQL fallback supplies the landed commit before the answer is exposed.
+        if self.pulls.merged_missing {
+            pull.merged = false;
+            pull.closed = true;
         }
         let pull = reading::pull(pull, api::Ci::None)?;
         if measure::pull(&pull).ok_or(api::Error::TooLarge)? > u64::from(bounds.answer_bytes) {
@@ -245,6 +260,34 @@ impl Plan {
             self.page = self.page.checked_add(1).ok_or(api::Error::TooLarge)?;
             return self.runs_request();
         }
+        if self.pulls.graphql {
+            self.stage = Stage::PullGraphql;
+            let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
+            return Ok(Some(self.send(Request::PullGraphql {
+                owner: row.owner.clone(),
+                name: row.name.clone(),
+                number: self.pulls.number.ok_or(api::Error::InvalidAnswer)?,
+            })));
+        }
+        self.pull_answer(bounds)
+    }
+    pub(super) fn pull_graphql_done(
+        &mut self,
+        value: document::PullGraphql,
+        bounds: Bounds,
+    ) -> Result<Option<Step>, api::Error> {
+        if self.stage != Stage::PullGraphql {
+            return Err(api::Error::InvalidAnswer);
+        }
+        let pull = self.pulls.pull.as_mut().ok_or(api::Error::InvalidAnswer)?;
+        if self.pulls.merged_missing {
+            pull.merged = Some(value.merge_commit.ok_or(api::Error::InvalidAnswer)?);
+        }
+        pull.queued = value.queued;
+        pull.dequeued = value.dequeued;
+        self.pull_answer(bounds)
+    }
+    fn pull_answer(&mut self, bounds: Bounds) -> Result<Option<Step>, api::Error> {
         let mut pull = self.pulls.pull.take().ok_or(api::Error::InvalidAnswer)?;
         pull.ci = self.pulls.ci();
         self.terminal(api::Answer::Pull(pull), bounds)

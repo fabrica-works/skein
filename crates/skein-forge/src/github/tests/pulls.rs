@@ -26,7 +26,7 @@ fn repository() -> document::Repository {
         id: 7,
         owner: Box::from(*b"acme"),
         owner_id: 8,
-        organization: true,
+        organization: false,
         name: Box::from(*b"widgets"),
         default_branch: Box::from(*b"main"),
         html_url: Box::from(*b"https://example.invalid/acme/widgets"),
@@ -281,9 +281,6 @@ fn github_pull_merged_and_closed() {
         let pull = pull_answer(call.runs(&[], false));
         assert_eq!((pull.state, pull.merged), (state, expected));
     }
-    let mut pull = fixtures::pull(5);
-    pull.merged = true;
-    assert_eq!(started(api::Read::Pull { number: 5 }).pull(&pull), failed(api::Error::InvalidAnswer));
 }
 #[test]
 fn github_pull_wrong_number() {
@@ -538,5 +535,144 @@ fn github_statuses_failures() {
         let mut call = started(statuses(1));
         call.head(false);
         assert_eq!(call.heard(Heard::Done(Body::Document(document))), failed(api::Error::InvalidAnswer));
+    }
+}
+
+fn graphql_request() -> Request {
+    Request::PullGraphql { owner: Box::from(*b"acme"), name: Box::from(*b"widgets"), number: 5 }
+}
+fn graphql_row() -> document::PullGraphql {
+    document::PullGraphql {
+        id: Box::from(*b"opaque+/=node"),
+        merge_commit: Some(fixtures::pull(5).base_commit),
+        queued: Some(2),
+        dequeued: Some(Box::from(*b"checks failed")),
+    }
+}
+impl Call {
+    fn graphql(&mut self, row: &document::PullGraphql) -> Option<Step> {
+        let mut out = Writer::new(4096);
+        server::pull_graphql(row, &mut out).unwrap();
+        self.json(Kind::PullGraphql, out, false)
+    }
+}
+fn graphql_started(read: api::Read, organization: bool, merged: bool, bounds: Bounds, cached: bool) -> Call {
+    let mut call = Call::new(read.clone(), bounds, false);
+    let mut repository = repository();
+    repository.organization = organization;
+    if cached {
+        call.tables.keep_repository(KEY, tables::repository(&repository));
+        call.begin().unwrap();
+    } else {
+        assert_eq!(call.begin(), Ok(Step::send(Request::Repository { id: 7 })));
+        let mut out = Writer::new(4096);
+        server::repository(&repository, &mut out).unwrap();
+        let step = if read == pull_for() { listing_request(true) } else { pull_request(5) };
+        assert_eq!(call.json(Kind::Repository, out, false), Some(Step::send(step)));
+    }
+    if read == pull_for() {
+        assert_eq!(call.listing(&[fixtures::pull(5)]), Some(Step::send(pull_request(5))));
+    }
+    let mut pull = fixtures::pull(5);
+    pull.merged = merged;
+    assert_eq!(call.pull(&pull), Some(Step::send(combined_request(1, 1))));
+    assert_eq!(call.combined(api::Check::Passed, 1, &[], false), Some(Step::send(runs_request(1, 8))));
+    assert_eq!(call.runs(&[], false), Some(Step::send(graphql_request())));
+    call
+}
+#[test]
+fn github_pull_queue_graphql() {
+    for read in [api::Read::Pull { number: 5 }, pull_for()] {
+        for cached in [false, true] {
+            for queued in [Some(2), None] {
+                let mut call = graphql_started(read.clone(), true, false, bounds(), cached);
+                let row = document::PullGraphql { queued, ..graphql_row() };
+                let pull = pull_answer(call.graphql(&row));
+                assert_eq!(pull.queued, queued);
+                assert_eq!(pull.dequeued, row.dequeued);
+                assert_eq!(pull.merged, None);
+                assert_eq!(pull.ci, api::Ci::Passed);
+                assert_eq!(pull.state, api::State::Open);
+            }
+        }
+    }
+}
+#[test]
+fn github_pull_merged_null_graphql_fallback() {
+    for organization in [false, true] {
+        for read in [api::Read::Pull { number: 5 }, pull_for()] {
+            let row = document::PullGraphql { queued: None, dequeued: None, ..graphql_row() };
+            let mut call = graphql_started(read.clone(), organization, true, bounds(), true);
+            let pull = pull_answer(call.graphql(&row));
+            assert_eq!(pull.merged, row.merge_commit);
+            assert_eq!(pull.state, api::State::Closed);
+            let mut call = graphql_started(read, organization, true, bounds(), true);
+            let row = document::PullGraphql { merge_commit: None, ..row };
+            assert_eq!(call.graphql(&row), failed(api::Error::InvalidAnswer));
+        }
+    }
+}
+#[test]
+fn github_pull_graphql_answer_bounds() {
+    let mut call = graphql_started(api::Read::Pull { number: 5 }, true, false, bounds(), true);
+    let answer = api::Answer::Pull(pull_answer(call.graphql(&graphql_row())));
+    let bytes = u32::try_from(crate::measure::answer(&answer).unwrap()).unwrap();
+    for (answer_bytes, fits) in [(bytes, true), (bytes - 1, false)] {
+        let mut call = graphql_started(api::Read::Pull { number: 5 }, true, false, bounds(), true);
+        call.bounds.answer_bytes = answer_bytes;
+        if fits {
+            assert_eq!(call.graphql(&graphql_row()), Some(Step::Done(Ok(answer.clone()))));
+        } else {
+            assert_eq!(call.graphql(&graphql_row()), failed(api::Error::TooLarge));
+        }
+    }
+}
+#[test]
+fn github_pull_graphql_plan_failures() {
+    for (status, expected) in [(401, api::Error::Forbidden), (404, api::Error::Missing), (500, api::Error::Timeout)] {
+        let mut call = graphql_started(api::Read::Pull { number: 5 }, true, false, bounds(), true);
+        assert_eq!(call.heard(Heard::Head { status, head: Head::new() }), failed(expected));
+    }
+    for body in [
+        Body::Document(Document::Graphql(document::GraphqlRefusal {
+            kind: Box::from(*b"FORBIDDEN"),
+            message: Box::from(*b"refused"),
+        })),
+        Body::Document(Document::Rows),
+        Body::Malformed(Malformed::Missing { field: b"id" }),
+        Body::Empty,
+    ] {
+        let mut call = graphql_started(api::Read::Pull { number: 5 }, true, false, bounds(), true);
+        call.head(false);
+        assert_eq!(call.heard(Heard::Done(body)), failed(api::Error::InvalidAnswer));
+    }
+    let mut call = started(api::Read::Pull { number: 5 });
+    call.head(false);
+    assert_eq!(
+        call.heard(Heard::Done(Body::Document(Document::PullGraphql(graphql_row())))),
+        failed(api::Error::InvalidAnswer)
+    );
+    let mut call = graphql_started(api::Read::Pull { number: 5 }, true, false, bounds(), true);
+    assert_eq!(call.heard(Heard::Failed(Failure::Unseen)), failed(api::Error::Unavailable));
+}
+
+#[test]
+fn github_pull_graphql_skipped_for_closed_organization_pulls() {
+    for merged in [false, true] {
+        let mut call = Call::new(api::Read::Pull { number: 5 }, bounds(), false);
+        let mut repository = repository();
+        repository.organization = true;
+        call.tables.keep_repository(KEY, tables::repository(&repository));
+        call.begin().unwrap();
+        let mut pull = fixtures::pull(5);
+        pull.closed = true;
+        pull.merged = merged;
+        pull.merge_commit = Some(pull.base_commit);
+        assert_eq!(call.pull(&pull), Some(Step::send(combined_request(1, 1))));
+        assert_eq!(call.combined(api::Check::Pending, 0, &[], false), Some(Step::send(runs_request(1, 8))));
+        let answer = pull_answer(call.runs(&[], false));
+        assert_eq!(answer.merged, if merged { pull.merge_commit } else { None });
+        assert_eq!(answer.queued, None);
+        assert_eq!(answer.dequeued, None);
     }
 }

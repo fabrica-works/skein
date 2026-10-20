@@ -7,6 +7,7 @@ use skein_lib::{Overflow, Writer};
 #[derive(Debug)]
 enum Answer<'a> {
     Pull(&'a document::Pull),
+    PullGraphql(&'a document::PullGraphql),
     Pulls(&'a [document::Pull]),
     Combined(&'a document::Combined, &'a [document::Context]),
     Runs(&'a [document::Run]),
@@ -15,6 +16,10 @@ enum Answer<'a> {
 /// Writes one pull including its merged flag.
 pub fn pull(row: &document::Pull, out: &mut Writer) -> Result<(), Overflow> {
     encode(&Answer::Pull(row), out)
+}
+/// Writes the shared GraphQL pull query's answer.
+pub fn pull_graphql(row: &document::PullGraphql, out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::PullGraphql(row), out)
 }
 /// Writes a pull listing, which omits the merged flag.
 pub fn pulls(rows: &[document::Pull], out: &mut Writer) -> Result<(), Overflow> {
@@ -45,6 +50,7 @@ fn encode(answer: &Answer<'_>, out: &mut Writer) -> Result<(), Overflow> {
 }
 fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> {
     match answer {
+        Answer::PullGraphql(row) => pull_graphql_json(row, json)?,
         Answer::Job(row) => {
             json.object_start();
             json.key(b"id");
@@ -202,5 +208,52 @@ fn run_metadata(row: &document::Run, json: &mut Encoder) -> Result<(), Overflow>
         json.string(app);
         json.object_end();
     }
+    Ok(())
+}
+
+fn pull_graphql_json(row: &document::PullGraphql, json: &mut Encoder) -> Result<(), Overflow> {
+    json.object_start();
+    json.key(b"data");
+    json.object_start();
+    json.key(b"repository");
+    json.object_start();
+    json.key(b"pullRequest");
+    json.object_start();
+    json.key(b"id");
+    json.string(&row.id);
+    json.key(b"mergeCommit");
+    if let Some(commit) = row.merge_commit {
+        json.object_start();
+        json.key(b"oid");
+        json.string(&id::write_commit(&commit).ok_or(Overflow)?);
+        json.object_end();
+    } else {
+        json.null();
+    }
+    json.key(b"mergeQueueEntry");
+    if let Some(position) = row.queued {
+        json.object_start();
+        json.key(b"position");
+        json.unsigned(u64::from(position));
+        json.object_end();
+    } else {
+        json.null();
+    }
+    json.key(b"timelineItems");
+    json.object_start();
+    json.key(b"nodes");
+    json.array_start();
+    if let Some(reason) = &row.dequeued {
+        json.object_start();
+        json.key(b"reason");
+        json.string(reason);
+        json.object_end();
+    }
+    json.array_end();
+    json.object_end();
+    json.object_end();
+    json.object_end();
+    json.object_end();
+    json.object_end();
     Ok(())
 }

@@ -17,7 +17,7 @@ pub use app::{
     minted, reachable, viewer,
 };
 pub use delivery::{Sent, encode};
-pub use pulls::{combined, job, pull, pulls, runs};
+pub use pulls::{combined, job, pull, pull_graphql, pulls, runs};
 pub use writes::{done, id, number, write_body};
 /// Reads a request target into the request whose canonical spelling it carries.
 #[must_use]

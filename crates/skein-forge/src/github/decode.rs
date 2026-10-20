@@ -14,6 +14,7 @@ pub(crate) mod delivery;
 mod files;
 mod issues;
 mod people;
+mod pull_graphql;
 mod pulls;
 mod reviews;
 mod walk;
@@ -34,6 +35,7 @@ pub struct Decoder {
     app: app::State,
     issues: issues::State,
     pulls: pulls::State,
+    pull_graphql: pull_graphql::State,
     checks: checks::State,
     user: document::User,
     permission: crate::api::Permission,
@@ -57,6 +59,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         app: app::State::new(kind),
         issues: issues::State::new(limits.inner),
         pulls: pulls::State::new(limits.inner),
+        pull_graphql: pull_graphql::State::new(limits.inner),
         checks: checks::State::new(),
         user: document::User { id: 0, login: Box::from([]) },
         permission: crate::api::Permission::None,
@@ -100,6 +103,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Installation { .. } => Kind::Installation,
         Request::Mint { .. } => Kind::Minted,
         Request::Reachable { .. } => Kind::ReachableRows,
+        Request::PullGraphql { .. } => Kind::PullGraphql,
         Request::Viewer => Kind::Viewer,
         Request::App => Kind::App,
         Request::HookConfig | Request::SetHook { .. } => Kind::HookConfig,
@@ -159,6 +163,7 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes each document node at its end")]
     fn movement(&mut self, movement: Move) -> Result<(tokenizer::Request, Step), Malformed> {
         match movement {
+            Move::End(Node::PullGraphql(node)) => self.pull_graphql.end(node)?,
             Move::Demand(demand) => return Ok((demand, Step::Demand)),
             Move::Scalar(node, key, token) => self.scalar(node, key, token)?,
             Move::End(
@@ -299,6 +304,10 @@ impl Decoder {
                     | Kind::HookConfig
                     | Kind::Conversion
                     | Kind::BotUser => self.app.document()?,
+                    Kind::PullGraphql => match self.app.graphql() {
+                        Some(refusal) => Document::Graphql(refusal.clone()),
+                        None => self.pull_graphql.document()?,
+                    },
                     Kind::Job => Document::Job(self.checks.job()),
                     Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
@@ -333,6 +342,7 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (Node::PullGraphql(node), key, token) => return self.pull_graphql.scalar(node, key, token),
             (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
                 return self.checks.scalar(node, key, token);
             }

@@ -4,7 +4,7 @@ use super::super::{
     document,
     limits::{DEPTH, Limits},
 };
-use super::Malformed;
+use super::{Malformed, pull_graphql::Node as PullNode};
 use skein_json::{
     Token,
     tokenizer::{self, Event, Request},
@@ -24,6 +24,7 @@ pub(super) enum Node {
     ReachableRows,
     Reachable,
     AppOwner,
+    PullGraphql(PullNode),
     ViewerEnvelope,
     ViewerData,
     Viewer,
@@ -109,6 +110,7 @@ enum Read {
     Text,
     Body,
     LongBody,
+    Reason,
     Secret,
     Presence,
     Number,
@@ -120,12 +122,52 @@ struct Field {
     key: &'static [u8],
     read: Read,
     required: bool,
+    nullable: bool,
 }
 const fn field(key: &'static [u8], read: Read) -> Field {
-    Field { key, read, required: true }
+    Field { key, read, required: true, nullable: false }
 }
 const fn optional(key: &'static [u8], read: Read) -> Field {
-    Field { key, read, required: false }
+    Field { key, read, required: false, nullable: false }
+}
+const fn nullable(key: &'static [u8], read: Read) -> Field {
+    Field { key, read, required: true, nullable: true }
+}
+const fn pull_node(key: &'static [u8], node: PullNode) -> Field {
+    field(key, Read::Container(Role::Document(Node::PullGraphql(node))))
+}
+fn pull_fields(node: PullNode) -> &'static [Field] {
+    match node {
+        PullNode::Envelope => {
+            const {
+                &[
+                    optional(b"data", Read::Container(Role::Document(Node::PullGraphql(PullNode::Data)))),
+                    optional(b"errors", Read::Container(Role::Document(Node::GraphqlErrors))),
+                ]
+            }
+        }
+        PullNode::Data => {
+            const { &[optional(b"repository", Read::Container(Role::Document(Node::PullGraphql(PullNode::Repository))))] }
+        }
+        PullNode::Repository => {
+            const { &[optional(b"pullRequest", Read::Container(Role::Document(Node::PullGraphql(PullNode::Pull))))] }
+        }
+        PullNode::Pull => {
+            const {
+                &[
+                    field(b"id", Read::Text),
+                    nullable(b"mergeCommit", Read::Container(Role::Document(Node::PullGraphql(PullNode::Commit)))),
+                    nullable(b"mergeQueueEntry", Read::Container(Role::Document(Node::PullGraphql(PullNode::Queue)))),
+                    pull_node(b"timelineItems", PullNode::Timeline),
+                ]
+            }
+        }
+        PullNode::Commit => const { &[field(b"oid", Read::Text)] },
+        PullNode::Queue => const { &[field(b"position", Read::Number)] },
+        PullNode::Timeline => const { &[pull_node(b"nodes", PullNode::Nodes)] },
+        PullNode::Removal => const { &[nullable(b"reason", Read::Reason)] },
+        PullNode::Nodes => &[],
+    }
 }
 fn issue_fields() -> &'static [Field] {
     const {
@@ -155,6 +197,7 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::PullGraphql(node) => pull_fields(node),
         Node::Compare => {
             const {
                 &[
@@ -357,12 +400,7 @@ fn document_fields(node: Node) -> &'static [Field] {
         }
         Node::CompareCommit | Node::MergeBase | Node::Commit => const { &[field(b"sha", Read::Text)] },
         Node::Error => {
-            const {
-                &[
-                    field(b"message", Read::Body),
-                    Field { key: b"errors", read: Read::Container(Role::Document(Node::Errors)), required: false },
-                ]
-            }
+            const { &[field(b"message", Read::Body), optional(b"errors", Read::Container(Role::Document(Node::Errors)))] }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
         Node::FileRows
@@ -407,10 +445,21 @@ fn element(role: Role) -> Option<Role> {
         Node::Labels => Some(Role::Document(Node::Label)),
         Node::InstallationRows => Some(Role::Document(Node::Installation)),
         Node::ReachableRows => Some(Role::Document(Node::Reachable)),
+        Node::PullGraphql(PullNode::Nodes) => Some(Role::Document(Node::PullGraphql(PullNode::Removal))),
         Node::GraphqlErrors => Some(Role::Document(Node::GraphqlError)),
         Node::BranchRows => Some(Role::Document(Node::BranchName)),
         Node::Errors => Some(Role::Document(Node::ErrorEntry)),
-        Node::IdResult
+        Node::PullGraphql(
+            PullNode::Envelope
+            | PullNode::Data
+            | PullNode::Repository
+            | PullNode::Pull
+            | PullNode::Commit
+            | PullNode::Queue
+            | PullNode::Timeline
+            | PullNode::Removal,
+        )
+        | Node::IdResult
         | Node::NumberResult
         | Node::Done
         | Node::PullObject
@@ -509,6 +558,7 @@ impl Walk {
             document::Kind::InstallationRows => Node::InstallationRows,
             document::Kind::Minted => Node::Minted,
             document::Kind::ReachableRows => Node::ReachableEnvelope,
+            document::Kind::PullGraphql => Node::PullGraphql(PullNode::Envelope),
             document::Kind::Viewer => Node::ViewerEnvelope,
             document::Kind::App => Node::App,
             document::Kind::HookConfig => Node::Hook,
@@ -604,6 +654,7 @@ impl Walk {
                         frame.touched |= bit;
                         self.want = Want::Value(*field, bit);
                         return Ok(Move::Demand(match field.read {
+                            Read::Reason => Request::Text(self.limits.json.string),
                             Read::Text | Read::Secret => Request::Text(self.limits.string_bytes),
                             Read::Body => Request::Text(self.limits.body_bytes.min(self.limits.string_bytes)),
                             Read::LongBody => Request::Text(self.limits.body_bytes),
@@ -646,7 +697,7 @@ impl Walk {
                 self.unknown(&event, 0)?;
                 return Ok(scalar(node, field.key, Token::True));
             }
-            Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::Number | Read::Boolean => {}
+            Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::Reason | Read::Number | Read::Boolean => {}
         }
         let wrong = Malformed::Shape { field: field.key };
         let token = match event {
@@ -671,8 +722,9 @@ impl Walk {
             Event::Skipped(_) | Event::Done | Event::Failed(_) | Event::Closed => return Err(wrong),
         };
         let valid = match (&field.read, &token) {
-            (Read::Text | Read::Secret | Read::Body | Read::LongBody, Token::String(text)) => {
+            (Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::Reason, Token::String(text)) => {
                 if field.read != Read::LongBody
+                    && field.read != Read::Reason
                     && text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize")
                 {
                     return Err(if field.read == Read::Secret {
@@ -696,6 +748,7 @@ impl Walk {
                 | Read::Presence
                 | Read::Body
                 | Read::LongBody
+                | Read::Reason
                 | Read::Number
                 | Read::Boolean
                 | Read::Container(_),
@@ -754,7 +807,7 @@ impl Walk {
         let frame = self.open.pop().expect("container end");
         for (index, field) in fields(frame.node).iter().enumerate() {
             let bit = 1u32.checked_shl(u32::try_from(index).expect("small table")).expect("field bit");
-            if field.required && frame.seen & bit == 0 {
+            if field.required && (if field.nullable { frame.touched } else { frame.seen }) & bit == 0 {
                 return Err(Malformed::Missing { field: field.key });
             }
         }

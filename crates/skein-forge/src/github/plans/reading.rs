@@ -86,7 +86,6 @@ pub(super) fn pull(value: document::Pull, ci: api::Ci) -> Result<api::Pull, api:
         merged,
         mergeable: value.mergeable,
         ci,
-        // The merge queue's facts come with runtime 30 (forge-client 7.7).
         queued: None,
         dequeued: None,
     })

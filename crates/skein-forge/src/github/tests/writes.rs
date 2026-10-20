@@ -1110,6 +1110,18 @@ fn fresh_update_pull(tables: &mut Tables, current: api::Commit, chunk: u32) -> a
     assert_eq!(observed, current);
     head(&mut proof, 200, tables);
     let (_, document) = decode(Kind::CheckRuns, br#"{"check_runs":[]}"#, chunk, &limits());
+    assert_eq!(
+        finish(&mut proof, Body::Document(document.unwrap()), tables),
+        Ok(Some(Step::send(Request::PullGraphql {
+            owner: Box::from(*b"acme"),
+            name: Box::from(*b"widgets"),
+            number: NUMBER,
+        })))
+    );
+    head(&mut proof, 200, tables);
+    let (_, document) = decode(Kind::PullGraphql,
+        br#"{"data":{"repository":{"pullRequest":{"id":"opaque-node","mergeCommit":null,"mergeQueueEntry":null,"timelineItems":{"nodes":[]}}}}}"#,
+        chunk, &limits());
     let Some(Step::Done(Ok(api::Answer::Pull(pull)))) =
         finish(&mut proof, Body::Document(document.unwrap()), tables).unwrap()
     else {

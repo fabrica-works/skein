@@ -84,7 +84,8 @@ impl State {
             | Node::Hook
             | Node::Conversion
             | Node::BotUser => {}
-            Node::RunOutput
+            Node::PullGraphql(_)
+            | Node::RunOutput
             | Node::RunApp
             | Node::Job
             | Node::User
@@ -141,6 +142,9 @@ impl State {
         }
         Ok(None)
     }
+    pub(super) fn graphql(&self) -> Option<&document::GraphqlRefusal> {
+        if self.has_graphql { Some(&self.graphql) } else { None }
+    }
     pub(super) fn document(&self) -> Result<Document, Malformed> {
         Ok(match self.kind {
             Kind::Installation => Document::Installation(self.installation.clone()),
@@ -159,7 +163,8 @@ impl State {
             Kind::HookConfig => Document::HookConfig(self.hook.clone()),
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
-            Kind::User
+            Kind::PullGraphql
+            | Kind::User
             | Kind::Compare
             | Kind::FileRows
             | Kind::ReviewRows
@@ -299,6 +304,7 @@ impl State {
                 | Node::RunsObject
                 | Node::Runs
                 | Node::RunItem
+                | Node::PullGraphql(_)
                 | Node::RunOutput
                 | Node::RunApp
                 | Node::Job

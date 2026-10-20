@@ -33,6 +33,7 @@ pub enum Request {
     Mint { installation: u64, scope: Scope },
     Reachable { page: u32, per_page: u32 },
     Viewer,
+    PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     App,
     HookConfig,
     SetHook { url: Box<[u8]> },
@@ -113,6 +114,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
+        | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig
         | Request::SetHook { .. }
@@ -250,6 +252,7 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
+        | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig
         | Request::SetHook { .. }
@@ -464,6 +467,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
+        | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig
         | Request::SetHook { .. }
@@ -547,7 +551,8 @@ fn selection(request: &Request) -> (Method, Auth) {
         | Request::OpenPull { .. }
         | Request::CreateBranch { .. }
         | Request::Status { .. }
-        | Request::Viewer => (Method::Post, Auth::Installation),
+        | Request::Viewer
+        | Request::PullGraphql { .. } => (Method::Post, Auth::Installation),
         Request::Reachable { .. }
         | Request::Repository { .. }
         | Request::Locate { .. }
@@ -586,6 +591,7 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         | Request::Status { .. }
         | Request::Mint { scope: Scope::Contents, .. }
         | Request::Viewer
+        | Request::PullGraphql { .. }
         | Request::SetHook { .. }
         | Request::Reopen { .. }
         | Request::Close { .. }
@@ -722,6 +728,19 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Resul
             json.string(b"write");
             json.object_end();
         }
+        Request::PullGraphql { owner, name, number } => {
+            json.key(b"query");
+            json.string(super::document::PULL);
+            json.key(b"variables");
+            json.object_start();
+            json.key(b"owner");
+            json.string(owner);
+            json.key(b"name");
+            json.string(name);
+            json.key(b"number");
+            json.unsigned(*number);
+            json.object_end();
+        }
         Request::Viewer => {
             json.key(b"query");
             json.string(super::document::VIEWER);
@@ -790,7 +809,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.put(b"/installation/repositories");
             out.page(*page, *per_page, false);
         }
-        Request::Viewer => out.put(b"/graphql"),
+        Request::Viewer | Request::PullGraphql { .. } => out.put(b"/graphql"),
         Request::App => out.put(b"/app"),
         Request::HookConfig | Request::SetHook { .. } => out.put(b"/app/hook/config"),
         Request::Conversion { code } => {
@@ -851,6 +870,13 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
+        Request::PullGraphql { owner, name, number } => {
+            bounded(owner, limits.string_bytes)?;
+            bounded(name, limits.string_bytes)?;
+            if *number == 0 || i32::try_from(*number).is_err() {
+                return Err(Refusal::Text);
+            }
+        }
         Request::Review { body, .. } | Request::Post { body, .. } => bounded(body, limits.body_bytes)?,
         Request::CreateIssue { title, body, .. } => {
             bounded(title, limits.string_bytes)?;

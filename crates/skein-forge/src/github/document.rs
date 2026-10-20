@@ -4,6 +4,8 @@ use alloc::boxed::Box;
 use skein_lib::{Secret, Wall};
 /// The identity document sent on an installation token (forge-github.md, 4.3).
 pub const VIEWER: &[u8] = b"query { viewer { login databaseId } }";
+/// Pull identity, landed commit and merge queue facts (forge-github.md, 4.3).
+pub const PULL: &[u8] = b"query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id mergeCommit { oid } mergeQueueEntry { position } timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on RemovedFromMergeQueueEvent { reason } } } } } }";
 /// The document a decoder expects.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
@@ -30,6 +32,8 @@ pub enum Kind {
     Pull,
     /// Pull objects streamed from a listing.
     PullRows,
+    /// The shared GraphQL pull query.
+    PullGraphql,
     /// Combined status envelope and streamed contexts.
     CombinedStatus,
     /// Check runs streamed from their envelope.
@@ -120,6 +124,7 @@ pub enum Document {
     Issue(Issue),
     /// One whole pull.
     Pull(Pull),
+    PullGraphql(PullGraphql),
     /// The combined status after its contexts.
     Combined(Combined),
     Job(Job),
@@ -353,4 +358,13 @@ pub enum FileStatus {
     Changed,
     Copied,
     Unchanged,
+}
+
+/// Opaque pull identity and merge queue facts shared by reads and merging.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct PullGraphql {
+    pub id: Box<[u8]>,
+    pub merge_commit: Option<api::Commit>,
+    pub queued: Option<u32>,
+    pub dequeued: Option<Box<[u8]>>,
 }

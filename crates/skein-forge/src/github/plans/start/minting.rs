@@ -40,6 +40,7 @@ impl Minting {
                 document::Document::Minted(minted) => Ok(Some(Step::terminal(&mut self.state, Ok(minted)))),
                 document::Document::Installation(_)
                 | document::Document::Viewer(_)
+                | document::Document::PullGraphql(_)
                 | document::Document::Graphql(_)
                 | document::Document::App(_)
                 | document::Document::HookConfig(_)

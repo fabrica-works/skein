@@ -332,6 +332,7 @@ fn github_app_secrets_hidden() {
             Document::Conversion(row) => assert_redacted(&alloc::fmt::format(format_args!("{row:?}"))),
             Document::Installation(_)
             | Document::Viewer(_)
+            | Document::PullGraphql(_)
             | Document::Graphql(_)
             | Document::App(_)
             | Document::HookConfig(_)
@@ -395,6 +396,7 @@ fn github_app_server_round_trip() {
                 Request::Installations { .. }
                 | Request::Installation { .. }
                 | Request::Reachable { .. }
+                | Request::PullGraphql { .. }
                 | Request::Viewer
                 | Request::App
                 | Request::HookConfig
@@ -466,6 +468,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         Document::Installation(row) => server::installation(row, out),
         Document::Minted(row) => server::minted(row, out),
         Document::Viewer(row) => server::viewer(row, out),
+        Document::PullGraphql(row) => server::pull_graphql(row, out),
         Document::Graphql(row) => server::graphql_refusal(&row.kind, &row.message, out),
         Document::App(row) => server::app(row, out),
         Document::HookConfig(row) => server::hook(row, out),

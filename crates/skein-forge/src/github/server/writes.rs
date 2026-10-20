@@ -344,6 +344,7 @@ pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Requ
         | Request::Installation { .. }
         | Request::Mint { .. }
         | Request::Reachable { .. }
+        | Request::PullGraphql { .. }
         | Request::Viewer
         | Request::App
         | Request::HookConfig

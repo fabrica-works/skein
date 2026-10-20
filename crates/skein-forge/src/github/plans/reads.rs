@@ -51,6 +51,7 @@ enum Stage {
     Listing,
     Combined,
     Runs,
+    PullGraphql,
     Jobs,
     ResolveUser,
     Permission,
@@ -375,6 +376,7 @@ impl Plan {
                                 | document::Document::Installation(_)
                                 | document::Document::Minted(_)
                                 | document::Document::Viewer(_)
+                                | document::Document::PullGraphql(_)
                                 | document::Document::Graphql(_)
                                 | document::Document::App(_)
                                 | document::Document::HookConfig(_)

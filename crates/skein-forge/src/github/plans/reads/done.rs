@@ -12,6 +12,7 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<Option<Step>, api::Error> {
         match document {
+            document::Document::PullGraphql(pull) => self.pull_graphql_done(pull, bounds),
             document::Document::Repository(repository) => self.repository_done(repository, bounds, tables),
             document::Document::Branch(branch) => {
                 if self.stage != Stage::Read {

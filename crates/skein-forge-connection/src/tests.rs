@@ -294,16 +294,16 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 #[test]
 fn the_worst_case_counts_answers_and_refuses_overflow() {
     // Complete fixture heap (forge-connection.md, 7.5), including both dialects.
-    // Three connection and four webhook decoders each include 568 bytes of
-    // people/review/file/run/job builders (352 + 216) and an 8-byte numeric
-    // write result (1712 bytes per GitHub decoder). The write result adds
-    // 7 * 8 = 56 bytes. Two own-plan slots each include 16 bytes of exchange
-    // retention/comparison fields. Rows/documents fit the routing maxima and
-    // decoder payload envelopes (forge.md, 3.7 and 5.3; forge-github.md, 6).
+    // Three connection and four webhook decoders each hold 1808 fixed bytes.
+    // The GraphQL pull builder occupies 96: its 80-byte document, a presence
+    // flag, a u32 removal count and limit, and alignment. Its 7 * 96 = 672 bytes are
+    // priced by decoder_heap's fixed size. Two own-plan slots each include
+    // 16 bytes of exchange retention/comparison fields. Rows/documents fit
+    // the routing maxima and decoder payload envelopes (forge.md, 3.7 and 5.3; forge-github.md, 6).
     // Installation staging, page buffers and handoff overlap add 39_432 bytes
     // to the heap. Ready-time row revisions, jobs and held tokens add 464
     // bytes.
-    const FIXTURE_HEAP: u64 = 3_636_518;
+    const FIXTURE_HEAP: u64 = 3_637_190;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(
