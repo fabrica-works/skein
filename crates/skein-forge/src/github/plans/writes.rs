@@ -407,7 +407,7 @@ impl Plan {
                     | Document::Issue(_)
                     | Document::Pull(_)
                     | Document::Job(_)
-                | Document::Combined(_)
+                    | Document::Combined(_)
                     | Document::Rows,
                 )
                 | Body::Raw { .. }
