@@ -11,6 +11,7 @@ use skein_lib::List;
 mod app;
 pub(crate) mod delivery;
 mod issues;
+mod people;
 mod pulls;
 mod walk;
 use walk::{Move, Node, Walk};
@@ -30,6 +31,8 @@ pub struct Decoder {
     app: app::State,
     issues: issues::State,
     pulls: pulls::State,
+    user: document::User,
+    permission: crate::api::Permission,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -46,6 +49,8 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         app: app::State::new(kind),
         issues: issues::State::new(limits.inner),
         pulls: pulls::State::new(limits.inner),
+        user: document::User { id: 0, login: Box::from([]) },
+        permission: crate::api::Permission::None,
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -88,6 +93,8 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::User { .. } => Kind::User,
+        Request::Permission { .. } => Kind::Permission,
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
         // Raw bodies, and an uninstall's empty answer.
@@ -104,8 +111,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
-        | Request::Permission { .. }
-        | Request::User { .. } => return None,
+        => return None,
     })
 }
 impl Decoder {
@@ -200,7 +206,9 @@ impl Decoder {
                 }
             }
             Move::End(
-                Node::Repository
+                Node::User
+                | Node::Permission
+                | Node::Repository
                 | Node::Owner
                 | Node::Branch
                 | Node::Commit
@@ -223,6 +231,8 @@ impl Decoder {
                     | Kind::HookConfig
                     | Kind::Conversion
                     | Kind::BotUser => self.app.document()?,
+                    Kind::User => Document::User(self.user.clone()),
+                    Kind::Permission => Document::Permission(self.permission),
                     Kind::Pull => Document::Pull(self.pulls.pull()),
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
@@ -241,6 +251,7 @@ impl Decoder {
         }
         Ok((tokenizer::Request::Next, Step::Demand))
     }
+    #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
             (
@@ -292,6 +303,11 @@ impl Decoder {
                 key,
                 token,
             ) => return self.app.scalar(node, key, token),
+            (Node::User, b"id", Token::Number(text)) => {
+                self.user.id = crate::forgejo::id::unsigned(&text).ok_or(Malformed::Range { field: key })?;
+            }
+            (Node::User, b"login", Token::String(text)) => self.user.login = text,
+            (Node::Permission, b"role_name", Token::String(text)) => self.permission = people::permission(&text)?,
             (Node::Repository, b"id", Token::Number(text)) => {
                 self.repository.id = crate::forgejo::id::unsigned(&text).expect("walker checked integer");
             }
@@ -315,7 +331,9 @@ impl Decoder {
             (Node::Error, b"message", Token::String(text)) => self.message = text,
             (Node::ErrorEntry, b"message", Token::String(text)) => self.error = text,
             (
-                Node::Repository
+                Node::User
+                | Node::Permission
+                | Node::Repository
                 | Node::Owner
                 | Node::Branch
                 | Node::BranchName

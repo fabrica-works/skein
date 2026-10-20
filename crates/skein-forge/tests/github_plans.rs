@@ -364,7 +364,6 @@ fn github_plans_writes_refused() {
         api::Read::File { head: [0; 32], path: Box::from(*b"f"), max_bytes: 1 },
         api::Read::Protection { branch: Box::from(*b"b") },
         api::Read::Collaborators { page: 1 },
-        api::Read::Permission { user: 1 },
     ] {
         assert_eq!(read_plan(read).begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
     }

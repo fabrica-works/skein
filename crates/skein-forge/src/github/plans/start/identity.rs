@@ -41,6 +41,8 @@ impl Identity {
                 | document::Document::App(_)
                 | document::Document::HookConfig(_)
                 | document::Document::Conversion(_)
+                | document::Document::User(_)
+                | document::Document::Permission(_)
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)

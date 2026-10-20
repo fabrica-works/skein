@@ -30,6 +30,8 @@ pub(super) enum Node {
     Hook,
     Conversion,
     BotUser,
+    User,
+    Permission,
     Repository,
     Owner,
     Branch,
@@ -130,6 +132,8 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::User => const { &[field(b"id", Read::Number), field(b"login", Read::Text)] },
+        Node::Permission => const { &[field(b"role_name", Read::Text)] },
         Node::PullObject => {
             const {
                 &[
@@ -310,6 +314,8 @@ fn element(role: Role) -> Option<Role> {
         | Node::App
         | Node::Hook
         | Node::Conversion
+        | Node::User
+        | Node::Permission
         | Node::BotUser
         | Node::Repository
         | Node::Owner
@@ -366,6 +372,8 @@ impl Walk {
             document::Kind::HookConfig => Node::Hook,
             document::Kind::Conversion => Node::Conversion,
             document::Kind::BotUser => Node::BotUser,
+            document::Kind::User => Node::User,
+            document::Kind::Permission => Node::Permission,
             document::Kind::Repository => Node::Repository,
             document::Kind::Branch => Node::Branch,
             document::Kind::BranchRows => Node::BranchRows,

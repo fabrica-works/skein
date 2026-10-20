@@ -335,6 +335,8 @@ fn github_app_secrets_hidden() {
             | Document::Graphql(_)
             | Document::App(_)
             | Document::HookConfig(_)
+            | Document::User(_)
+            | Document::Permission(_)
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)
@@ -452,6 +454,8 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         Document::App(row) => server::app(row, out),
         Document::HookConfig(row) => server::hook(row, out),
         Document::Conversion(row) => server::conversion(row, out),
+        Document::User(row) => server::user(row, out),
+        Document::Permission(value) => server::permission(*value, out),
         Document::BotUser(id) => server::bot_user(*id, out),
         Document::Rows => {
             let mut installations = skein_lib::List::with_capacity(3);

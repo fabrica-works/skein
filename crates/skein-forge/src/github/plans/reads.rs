@@ -13,6 +13,7 @@ use skein_lib::List;
 
 mod done;
 mod issues;
+mod people;
 mod pulls;
 mod size;
 
@@ -28,6 +29,7 @@ enum Read {
     Pull { number: u64 },
     PullFor { head: Box<[u8]>, base: Box<[u8]> },
     Statuses { commit: api::Commit, page: u32 },
+    Permission { user: u64 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -39,6 +41,8 @@ enum Stage {
     Listing,
     Combined,
     Runs,
+    ResolveUser,
+    Permission,
     Done,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -63,6 +67,7 @@ pub struct Plan {
     limit: u32,
     issues: issues::State,
     pulls: pulls::State,
+    login: Option<Box<[u8]>>,
 }
 impl Plan {
     #[must_use]
@@ -77,6 +82,7 @@ impl Plan {
             api::Read::Pull { number } => Read::Pull { number },
             api::Read::PullFor { head, base } => Read::PullFor { head, base },
             api::Read::Statuses { commit, page } => Read::Statuses { commit, page },
+            api::Read::Permission { user } => Read::Permission { user },
             api::Read::Reviews { .. }
             | api::Read::Remarks { .. }
             | api::Read::PullFiles { .. }
@@ -85,8 +91,7 @@ impl Plan {
             | api::Read::Job { .. }
             | api::Read::File { .. }
             | api::Read::Protection { .. }
-            | api::Read::Collaborators { .. }
-            | api::Read::Permission { .. } => Read::Refused,
+            | api::Read::Collaborators { .. } => Read::Refused,
         };
         Self {
             repository,
@@ -102,6 +107,7 @@ impl Plan {
             limit: 0,
             issues: issues::State::new(),
             pulls: pulls::State::new(),
+            login: None,
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -124,6 +130,11 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
+            Read::Permission { user } => {
+                if let Some(login) = tables.user(self.repository.forge, *user) {
+                    self.login = Some(Box::from(login));
+                }
+            }
             Read::Branch { .. } => {}
             // Later tasks plan every other read.
             Read::Refused => return Err(api::Error::Refused),
@@ -148,6 +159,7 @@ impl Plan {
     }
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
+            Read::Permission { .. } => return self.permission_initial(),
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_initial(),
             Read::Locate { .. }
             | Read::Settings
@@ -176,6 +188,7 @@ impl Plan {
             | Read::Statuses { .. }
             | Read::Locate { .. }
             | Read::Settings
+            | Read::Permission { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -234,6 +247,7 @@ impl Plan {
                         | Read::Pull { .. }
                         | Read::PullFor { .. }
                         | Read::Statuses { .. }
+                        | Read::Permission { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -275,6 +289,8 @@ impl Plan {
                                 | document::Document::App(_)
                                 | document::Document::HookConfig(_)
                                 | document::Document::Conversion(_)
+                                | document::Document::User(_)
+                                | document::Document::Permission(_)
                                 | document::Document::BotUser(_),
                             )
                             | Body::Raw { .. }
@@ -302,7 +318,12 @@ impl Plan {
         match self.read {
             Read::Items { .. } | Read::Item { .. } => return self.issue_row(row, bounds, word),
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_row(row, bounds),
-            Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {}
+            Read::Locate { .. }
+            | Read::Settings
+            | Read::Branch { .. }
+            | Read::Branches
+            | Read::Permission { .. }
+            | Read::Refused => {}
         }
         if self.stage != Stage::Read || self.read != Read::Branches {
             return Err(api::Error::InvalidAnswer);

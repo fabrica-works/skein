@@ -27,6 +27,8 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::SetHook { url: Box::from(*b"https://example.test/hook") }, Kind::HookConfig),
         (Request::Conversion { code: Box::from(*b"code") }, Kind::Conversion),
         (Request::BotUser { slug: Box::from(*b"example-app") }, Kind::BotUser),
+        (Request::User { id: 6 }, Kind::User),
+        (Request::Permission { owner: owner(), name: name(), login: Box::from(*b"alice") }, Kind::Permission),
         (Request::Repository { id: 5 }, Kind::Repository),
         (Request::Locate { owner: owner(), name: name() }, Kind::Repository),
         (Request::Issues { owner: owner(), name: name(), since: Wall::EPOCH, page: 1, per_page: 100 }, Kind::IssueRows),
@@ -79,8 +81,6 @@ fn github_decode_kind_is_none_for_reads_not_yet_decoded() {
         Request::Ruleset { owner: owner(), name: name(), id: 4 },
         Request::ClassicProtection { owner: owner(), name: name(), branch: Box::from(*b"main") },
         Request::Collaborators { owner: owner(), name: name(), page: 1, per_page: 100 },
-        Request::Permission { owner: owner(), name: name(), login: Box::from(*b"octo") },
-        Request::User { id: 6 },
     ] {
         assert_eq!(decode::kind(&request), None, "{request:?}");
     }

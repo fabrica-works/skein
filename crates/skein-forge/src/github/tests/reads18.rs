@@ -1,0 +1,216 @@
+//! Task 18's documents and plans are driven entirely in process.
+use super::fixtures::{self, bytes, decode, limits};
+use crate::{
+    api,
+    github::{
+        decode::Malformed,
+        document::{self, Document, Kind, Row},
+        header::Head,
+        plans::{
+            Body, Failure, Heard,
+            plan::{Bounds, Plan, Step},
+            tables::{self, Tables},
+        },
+        request::{self, Accept, Request},
+        server,
+    },
+};
+use alloc::boxed::Box;
+use skein_lib::Writer;
+
+const KEY: api::Repository = api::Repository { forge: 3, repository: 7 };
+const USER: u64 = 9_007_199_254_740_993;
+const WORD: &[u8] = b"example-app";
+const ROOM: u32 = 4096;
+fn bounds() -> Bounds {
+    Bounds { page_size: 4, rows: 4, answer_bytes: ROOM, body_bytes: 128 }
+}
+fn owner() -> Box<[u8]> {
+    Box::from(*b"acme")
+}
+fn name() -> Box<[u8]> {
+    Box::from(*b"widgets")
+}
+fn user() -> document::User {
+    document::User { id: USER, login: Box::from(*b"alice") }
+}
+fn permission_request() -> Request {
+    Request::Permission { owner: owner(), name: name(), login: Box::from(*b"alice") }
+}
+struct Call {
+    plan: Plan,
+    tables: Tables,
+    bounds: Bounds,
+}
+impl Call {
+    fn new(read: api::Read, bounds: Bounds, cached: bool) -> Self {
+        let mut tables = Tables::new(2, 2);
+        if cached {
+            tables.keep_repository(
+                KEY,
+                tables::Repository {
+                    owner: owner(),
+                    name: name(),
+                    owner_id: 8,
+                    organization: true,
+                    merge: None,
+                    html_url: Box::from([]),
+                },
+            );
+        }
+        Self { plan: Plan::new(KEY, api::Op::Read(read)), tables, bounds }
+    }
+    fn begin(&mut self) -> Result<Step, api::Error> {
+        self.plan.begin(self.bounds, WORD, &mut self.tables)
+    }
+    fn heard(&mut self, heard: Heard) -> Result<Option<Step>, api::Error> {
+        self.plan.heard(heard, self.bounds, WORD, &mut self.tables)
+    }
+    fn head(&mut self, next: bool) {
+        let mut head = Head::new();
+        head.next = next;
+        assert_eq!(self.heard(Heard::Head { status: 200, head }), Ok(None));
+    }
+    fn done(&mut self, document: Document) -> Result<Option<Step>, api::Error> {
+        self.heard(Heard::Done(Body::Document(document)))
+    }
+}
+fn started(read: api::Read, bounds: Bounds) -> Call {
+    let mut call = Call::new(read, bounds, true);
+    let Ok(Step::Send(_)) = call.begin() else {
+        panic!("expected request");
+    };
+    call.head(false);
+    call
+}
+#[expect(clippy::unnecessary_wraps, reason = "expected verdicts retain the plan event result shape")]
+fn ended(value: Result<api::Answer, api::Error>) -> Result<Option<Step>, api::Error> {
+    Ok(Some(Step::Done(value)))
+}
+fn golden(request: &Request, target: &[u8], kind: Option<Kind>, accept: Accept) {
+    let encoded = request::encode(request, &limits()).unwrap();
+    assert_eq!(encoded.target.as_ref(), target);
+    assert_eq!(encoded.accept, accept);
+    assert_eq!(crate::github::decode::kind(request), kind);
+}
+fn document(kind: Kind, wire: &[u8], expected: Document, expected_rows: &[Row]) {
+    for chunk in [1, 7] {
+        let (rows, value) = decode(kind, wire, chunk, &limits());
+        assert_eq!(value, Ok(expected.clone()));
+        assert_eq!(rows.as_slice(), expected_rows);
+    }
+}
+fn malformed(kind: Kind, wire: &[u8]) {
+    for chunk in [1, 7] {
+        decode(kind, wire, chunk, &limits()).1.unwrap_err();
+    }
+}
+#[test]
+fn github_permission_cached_and_uncached_user() {
+    golden(&Request::User { id: USER }, b"/user/9007199254740993", Some(Kind::User), Accept::Json);
+    golden(
+        &permission_request(),
+        b"/repos/acme/widgets/collaborators/alice/permission",
+        Some(Kind::Permission),
+        Accept::Json,
+    );
+    for cached in [false, true] {
+        let mut call = Call::new(api::Read::Permission { user: USER }, bounds(), true);
+        if cached {
+            call.tables.keep_user(KEY.forge, USER, user().login);
+        }
+        let request = if cached { permission_request() } else { Request::User { id: USER } };
+        assert_eq!(call.begin(), Ok(Step::send(request)));
+        call.head(false);
+        if !cached {
+            assert_eq!(call.done(Document::User(user())), Ok(Some(Step::send(permission_request()))));
+            call.head(false);
+        }
+        assert_eq!(
+            call.done(Document::Permission(api::Permission::Write)),
+            ended(Ok(api::Answer::Permission(api::Permission::Write)))
+        );
+        assert_eq!(call.tables.user(KEY.forge, USER), Some(b"alice".as_slice()));
+    }
+    let mut call = Call::new(api::Read::Permission { user: USER }, bounds(), false);
+    assert_eq!(call.begin(), Ok(Step::send(Request::Repository { id: 7 })));
+    call.head(false);
+    let mut repository = fixtures::repository();
+    repository.id = 7;
+    repository.owner = owner();
+    repository.name = name();
+    assert_eq!(call.done(Document::Repository(repository)), Ok(Some(Step::send(Request::User { id: USER }))));
+}
+#[test]
+fn github_permission_roles_and_bad_user() {
+    for (role, expected) in [
+        ("admin", api::Permission::Admin),
+        ("maintain", api::Permission::Admin),
+        ("write", api::Permission::Write),
+        ("triage", api::Permission::Read),
+        ("read", api::Permission::Read),
+        ("none", api::Permission::None),
+    ] {
+        let mut wire = Writer::new(64);
+        wire.put(b"{\"role_name\":\"").unwrap();
+        wire.put(role.as_bytes()).unwrap();
+        wire.put(b"\"}").unwrap();
+        document(Kind::Permission, &bytes(wire), Document::Permission(expected), &[]);
+        let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+        server::permission(expected, &mut out).unwrap();
+        document(Kind::Permission, &bytes(out), Document::Permission(expected), &[]);
+    }
+    let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+    server::user(&user(), &mut out).unwrap();
+    document(Kind::User, &bytes(out), Document::User(user()), &[]);
+    for (kind, wire) in [
+        (Kind::Permission, b"{\"role_name\":\"future\"}".as_slice()),
+        (Kind::Permission, b"{}"),
+        (Kind::Permission, b"{\"role_name\":false}"),
+        (Kind::Permission, b"{\"role_name\":\"read\",\"role_name\":null}"),
+        (Kind::User, b"{\"id\":18446744073709551616,\"login\":\"alice\"}"),
+        (Kind::User, b"{\"id\":1}"),
+    ] {
+        malformed(kind, wire);
+    }
+    let mut call = started(api::Read::Permission { user: USER }, bounds());
+    assert_eq!(
+        call.done(Document::User(document::User { id: 1, login: user().login })),
+        ended(Err(api::Error::InvalidAnswer))
+    );
+    assert_eq!(call.tables.user(KEY.forge, USER), None);
+}
+#[test]
+fn github_permission_bounds_and_failures() {
+    for length in [128, 129] {
+        let row = document::User { id: USER, login: Box::from(&[b'x'; 129][..length]) };
+        let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+        server::user(&row, &mut out).unwrap();
+        let wire = bytes(out);
+        for chunk in [1, 7] {
+            assert_eq!(decode(Kind::User, &wire, chunk, &limits()).1.is_ok(), length == 128);
+        }
+    }
+    let mut small = Writer::new(1);
+    assert_eq!(server::user(&user(), &mut small), Err(skein_lib::Overflow));
+    assert_eq!(small.written(), 0);
+    for (status, error) in [
+        (404, api::Error::Missing),
+        (410, api::Error::Missing),
+        (401, api::Error::Forbidden),
+        (500, api::Error::Timeout),
+    ] {
+        let mut call = Call::new(api::Read::Permission { user: USER }, bounds(), true);
+        call.begin().unwrap();
+        assert_eq!(call.heard(Heard::Head { status, head: Head::new() }), ended(Err(error)));
+    }
+    for (failure, error) in [(Failure::Unseen, api::Error::Unavailable), (Failure::Seen, api::Error::Timeout)] {
+        let mut call = started(api::Read::Permission { user: USER }, bounds());
+        assert_eq!(call.heard(Heard::Failed(failure)), ended(Err(error)));
+    }
+    let mut call = started(api::Read::Permission { user: USER }, bounds());
+    assert_eq!(
+        call.heard(Heard::Done(Body::Malformed(Malformed::Value { field: b"role_name" }))),
+        ended(Err(api::Error::InvalidAnswer))
+    );
+}

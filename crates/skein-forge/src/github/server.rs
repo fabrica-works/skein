@@ -397,3 +397,6 @@ fn page_target(target: &[u8], page: u32) -> Result<Box<[u8]>, Overflow> {
     out.put(suffix)?;
     Ok(out.finish())
 }
+
+mod people;
+pub use people::{permission, user};

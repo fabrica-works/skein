@@ -30,6 +30,10 @@ pub enum Kind {
     CombinedStatus,
     /// Check runs streamed from their envelope.
     CheckRuns,
+    /// A user resolved by numeric id.
+    User,
+    /// A repository permission.
+    Permission,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -85,6 +89,8 @@ pub enum Document {
     HookConfig(Hook),
     Conversion(Conversion),
     BotUser(u64),
+    User(User),
+    Permission(api::Permission),
     Repository(Repository),
     Branch(Branch),
     Issue(Issue),
@@ -225,4 +231,11 @@ pub struct Combined {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Run {
     pub check: api::Check,
+}
+
+/// A user id and bounded login for the users table.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct User {
+    pub id: u64,
+    pub login: Box<[u8]>,
 }

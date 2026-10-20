@@ -171,6 +171,8 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             | Document::App(_)
             | Document::HookConfig(_)
             | Document::Conversion(_)
+            | Document::User(_)
+            | Document::Permission(_)
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)

@@ -76,6 +76,7 @@ impl Plan {
             | Read::Branches
             | Read::Items { .. }
             | Read::Item { .. }
+            | Read::Permission { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(self.send(request))
@@ -146,6 +147,7 @@ impl Plan {
             | Read::Branches
             | Read::Items { .. }
             | Read::Item { .. }
+            | Read::Permission { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         }
         let pull = reading::pull(pull, api::Ci::None)?;
@@ -240,6 +242,7 @@ fn is_statuses(read: &Read) -> bool {
         | Read::Branches
         | Read::Items { .. }
         | Read::Item { .. }
+        | Read::Permission { .. }
         | Read::Refused => false,
     }
 }

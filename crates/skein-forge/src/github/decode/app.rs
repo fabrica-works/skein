@@ -84,7 +84,9 @@ impl State {
             | Node::Hook
             | Node::Conversion
             | Node::BotUser => {}
-            Node::Repository
+            Node::User
+            | Node::Permission
+            | Node::Repository
             | Node::Owner
             | Node::Branch
             | Node::Commit
@@ -134,7 +136,9 @@ impl State {
             Kind::HookConfig => Document::HookConfig(self.hook.clone()),
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
-            Kind::Repository
+            Kind::User
+            | Kind::Permission
+            | Kind::Repository
             | Kind::Branch
             | Kind::BranchRows
             | Kind::IssueRows
@@ -216,6 +220,8 @@ impl State {
                 | Node::Hook
                 | Node::Conversion
                 | Node::BotUser
+                | Node::User
+                | Node::Permission
                 | Node::Repository
                 | Node::Owner
                 | Node::Branch

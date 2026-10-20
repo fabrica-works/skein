@@ -27,18 +27,24 @@ impl Plan {
                     | Read::Pull { .. }
                     | Read::PullFor { .. }
                     | Read::Statuses { .. }
+                    | Read::Permission { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
+            document::Document::User(user) => self.user_done(user, tables),
+            document::Document::Permission(value) => self.permission_done(value, bounds),
             document::Document::Pull(pull) => self.pull_done(pull, bounds),
             document::Document::Combined(combined) => self.combined_done(combined, bounds),
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
                 Read::Items { .. } | Read::Item { .. } => self.issue_rows_done(bounds),
                 Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_rows_done(bounds),
-                Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {
-                    self.branches_done(bounds)
-                }
+                Read::Locate { .. }
+                | Read::Settings
+                | Read::Branch { .. }
+                | Read::Branches
+                | Read::Permission { .. }
+                | Read::Refused => self.branches_done(bounds),
             },
             document::Document::Error(_)
             | document::Document::Installation(_)
@@ -78,6 +84,7 @@ impl Plan {
             | Read::Pull { .. }
             | Read::PullFor { .. }
             | Read::Statuses { .. }
+            | Read::Permission { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -89,6 +96,7 @@ impl Plan {
             | Read::Pull { .. }
             | Read::PullFor { .. }
             | Read::Statuses { .. }
+            | Read::Permission { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }
