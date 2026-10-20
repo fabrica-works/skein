@@ -94,6 +94,17 @@ pub fn response(code: u16, body: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(body);
     bytes
 }
+/// An Items listing supplies the time of its own snapshot (forge.md, 5.3).
+#[must_use]
+pub fn dated_response(code: u16, body: &[u8]) -> Vec<u8> {
+    let mut bytes = format!(
+        "HTTP/1.1 {code} Answer\r\nDate: Thu, 01 Jan 2026 00:00:00 GMT\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    )
+    .into_bytes();
+    bytes.extend_from_slice(body);
+    bytes
+}
 /// One branch read after its repository resolution.
 #[must_use]
 pub fn branch() -> skein_forge::api::Op {

@@ -179,7 +179,7 @@ fn raw_sides_at_the_answer_bound_fit_and_one_byte_more_is_too_large() {
         h.known(fixtures::REPO, fixtures::specimen());
         h.call(1, fixtures::REPO, Op::Read(Read::PullFiles { number: 1, head: HEAD, page: 1 }));
         h.answer(fixtures::FORGE, &fixtures::ok(PULL));
-        h.answer(fixtures::FORGE, &fixtures::ok(br#"[{"filename":"x","status":"added"}]"#));
+        h.answer(fixtures::FORGE, &fixtures::last_page(br#"[{"filename":"x","status":"added"}]"#));
         h.answer(fixtures::FORGE, &fixtures::ok(body));
         h.run(Duration::from_millis(10));
         let answer = h.answered(1).expect("bounded answer");
@@ -212,7 +212,7 @@ fn multiple_changed_files_each_advance_to_their_own_sides() {
     h.answer(fixtures::FORGE, &fixtures::ok(PULL));
     h.answer(
         fixtures::FORGE,
-        &fixtures::ok(br#"[{"filename":"new","status":"added"},{"filename":"old","status":"deleted"}]"#),
+        &fixtures::last_page(br#"[{"filename":"new","status":"added"},{"filename":"old","status":"deleted"}]"#),
     );
     h.answer(fixtures::FORGE, &fixtures::ok(b"new text"));
     h.answer(fixtures::FORGE, &fixtures::ok(b"old text"));

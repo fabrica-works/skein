@@ -277,10 +277,11 @@ impl Plan {
                     }
                     return Err(crate::forgejo::plans::failure::read(status, &fields));
                 }
-                self.now = match fields.date {
-                    Some(wall) => reading::time(wall),
-                    None => Time::ZERO,
-                };
+                if self.stage == Stage::Read
+                    && let api::Read::Items { .. } = &self.read
+                {
+                    self.now = reading::time(fields.date.ok_or(api::Error::InvalidAnswer)?);
+                }
                 Ok(None)
             }
             Heard::Row(row) => {

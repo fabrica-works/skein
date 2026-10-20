@@ -117,18 +117,17 @@ impl Plan {
     ) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, fields } => {
+                self.missing = status == 404 && (self.stage == Stage::RunLookup || self.stage == Stage::JobsLookup);
+                if self.missing {
+                    return Ok(None);
+                }
                 if status == 404 || (300..400).contains(&status) {
                     tables.drop_repository(repository);
                 }
                 if status == 404 {
                     match self.mode {
                         Mode::Job { .. } => return Err(api::Error::MissingJob),
-                        Mode::Checks(_) => {
-                            if self.stage == Stage::RunLookup || self.stage == Stage::JobsLookup {
-                                self.missing = true;
-                                return Ok(None);
-                            }
-                        }
+                        Mode::Checks(_) => {}
                     }
                 }
                 if status != 200 && !(self.stage == Stage::Log && status == 206) {

@@ -1,4 +1,5 @@
 //! Canned call boundaries, delivery hints, markers and statuses.
+mod paths_and_headers;
 use crate::api::{Error, Op, Read};
 use crate::forgejo::plans::plan::Step;
 use crate::forgejo::tests::fixtures::{ATTEMPT, JOB, PULL, RAW_BYTES, RUN, Run};

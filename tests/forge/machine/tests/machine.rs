@@ -141,7 +141,7 @@ fn a_body_past_body_bytes_is_carried_empty_without_its_key() {
             Answer::case("GET /api/v1/repositories/1", "repository-by-id"),
             Answer {
                 request: "GET /api/v1/repos/fixture/specimen/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=leastupdate&page=1&limit=2",
-                response: Response::Bytes(fixtures::response(200, format!("[{body}]").as_bytes())),
+                response: Response::Bytes(fixtures::dated_response(200, format!("[{body}]").as_bytes())),
             },
         ],
     );

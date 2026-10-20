@@ -368,16 +368,25 @@ pub fn ok(body: &[u8]) -> Box<[u8]> {
     response(200, body)
 }
 pub fn response(code: u16, body: &[u8]) -> Box<[u8]> {
+    response_with_fields(code, body, b"")
+}
+pub fn last_page(body: &[u8]) -> Box<[u8]> {
+    response_with_fields(200, body, b"X-HasMore: false\r\n")
+}
+fn response_with_fields(code: u16, body: &[u8], fields: &[u8]) -> Box<[u8]> {
     let decimal = skein_lib::Decimal::of(u64::try_from(body.len()).expect("body length"));
     let mut out = skein_lib::Writer::new(
         body.len()
+            .saturating_add(fields.len())
             .saturating_add(b"HTTP/1.1 200 OK\r\nContent-Length: ".len())
             .saturating_add(decimal.as_bytes().len())
             .saturating_add(b"\r\nDate: Wed, 01 Jan 2020 00:00:00 GMT\r\n\r\n".len()),
     );
     out.put(b"HTTP/1.1 ").expect("head fits");
     out.put(skein_lib::Decimal::of(u64::from(code)).as_bytes()).expect("code fits");
-    out.put(b" OK\r\nContent-Length: ").expect("head fits");
+    out.put(b" OK\r\n").expect("head fits");
+    out.put(fields).expect("fields fit");
+    out.put(b"Content-Length: ").expect("head fits");
     out.put(decimal.as_bytes()).expect("length fits");
     out.put(b"\r\nDate: Wed, 01 Jan 2020 00:00:00 GMT\r\n\r\n").expect("date fits");
     out.put(body).expect("body fits");

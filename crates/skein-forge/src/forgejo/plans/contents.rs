@@ -39,7 +39,7 @@ pub struct Plan {
     size: u64,
     limit: u32,
     missing: bool,
-    more: bool,
+    more: Option<bool>,
     contains: bool,
 }
 impl Plan {
@@ -80,7 +80,7 @@ impl Plan {
             size: 0,
             limit,
             missing: false,
-            more: false,
+            more: None,
             contains: false,
         })
     }
@@ -131,19 +131,19 @@ impl Plan {
     ) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, fields } => {
-                if status == 404 || (300..400).contains(&status) {
-                    tables.drop_repository(repository);
-                }
                 self.missing = status == 404 && (self.stage == Stage::Before || self.stage == Stage::After);
                 if self.missing {
                     return Ok(None);
+                }
+                if status == 404 || (300..400).contains(&status) {
+                    tables.drop_repository(repository);
                 }
                 let raw = self.stage == Stage::File || self.stage == Stage::Before || self.stage == Stage::After;
                 if status != 200 && !(raw && status == 206) {
                     return Err(crate::forgejo::plans::failure::read(status, &fields));
                 }
                 if self.stage == Stage::Files {
-                    self.more = fields.has_more.unwrap_or(false);
+                    self.more = fields.has_more;
                 }
                 Ok(None)
             }
@@ -375,7 +375,11 @@ impl Plan {
     fn terminal(&mut self) -> Result<Option<Step>, api::Error> {
         let files = core::mem::replace(&mut self.files, List::with_capacity(0)).into_boxed();
         let answer = match self.mode {
-            Mode::Pull { head, .. } => api::Answer::PullFiles { head, files, more: self.more },
+            Mode::Pull { head, .. } => api::Answer::PullFiles {
+                head,
+                more: self.more.unwrap_or(files.len() == usize::try_from(self.limit).expect("page limit")),
+                files,
+            },
             Mode::Compare { before, after } => api::Answer::Compare {
                 before,
                 after,
