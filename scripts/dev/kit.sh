@@ -21,7 +21,7 @@ run_kit() {
     DEV_ROOT=$root DEV_TMP=$tmp DEV_KIT_HOME=$kit exec "$pinned/$tool" "$@"
 }
 
-# The machine file accepts only these four integer settings. An environment
+# The machine file accepts only these five integer settings. An environment
 # value wins, then the file's last valid value, then the caller's default.
 machine_setting() {
     local key=$1 fallback=$2 value
@@ -30,7 +30,7 @@ machine_setting() {
         return
     fi
     value=$(awk -F= -v key="$key" '
-        /^(PLAN_MIN_MEM_GB|PLAN_MIN_DISK_GB|HEAVY_BUILD_SLOTS|HEAVY_BUILD_JOBS)=[0-9]+$/ && $1 == key { value = $2 }
+        /^(PLAN_MIN_MEM_GB|PLAN_MIN_DISK_GB|HEAVY_BUILD_SLOTS|HEAVY_BUILD_JOBS|KACHE_MAX_GB)=[0-9]+$/ && $1 == key { value = $2 }
         END { print value }' "$tmp/machine.env" 2>/dev/null || true)
     if [[ -n $value ]]; then printf '%s machine.env\n' "$value"; else printf '%s default\n' "$fallback"; fi
 }

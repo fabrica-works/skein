@@ -490,9 +490,9 @@ and those upstream of it, or all of them without a plan.
 
 The machine keeps its settings in `$DEV_TMP/machine.env`: lines
 `KEY=integer`, for `PLAN_MIN_MEM_GB`, `PLAN_MIN_DISK_GB`,
-`HEAVY_BUILD_SLOTS` and `HEAVY_BUILD_JOBS` only. The environment wins
-over the file, and the file over the defaults (6 GB, 40 GB, 2 tasks and
-4 cargo jobs). The file is parsed, never sourced; `plan check` warns of
+`HEAVY_BUILD_SLOTS`, `HEAVY_BUILD_JOBS` and `KACHE_MAX_GB` only. The
+environment wins over the file, and the file over the defaults (6 GB,
+40 GB, 2 tasks, 4 cargo jobs and a 12 GiB cache store). The file is parsed, never sourced; `plan check` warns of
 invalid lines and prints each minimum and lane width with its source.
 
 `plan` holds the command dispatch, settings, ledger and worktree commands.
@@ -2622,6 +2622,11 @@ be told from a loaded machine.
   paths, so a fresh worktree reuses every crate that did not change.
 - **It gains most when worktrees are new,** and little on the crates a
   session keeps editing.
+- **The kit pins its version.** `kache-setup`, run through `heavy
+  --exclusive`, installs the pinned release, caps its store at the
+  machine file's `KACHE_MAX_GB` and keeps the disk floor; from 1.2, kache
+  collects its own store past its cap. `plan check` warns of another
+  version.
 - **Mind its store.** Watch its size against its cap (`kache report`).
 - **`cargo clippy --fix` fails on its read-only outputs.** Fix lints by
   hand, or run with `RUSTC_WRAPPER=` set empty.

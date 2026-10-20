@@ -411,6 +411,11 @@ check_machine() {
         else
             ok "kache is configured"
         fi
+        local pinned
+        pinned=$(sed -n 's/^version=//p' "$kit/kache-setup")
+        [[ $(kache --version 2>/dev/null) == "kache $pinned" ]] &&
+            ok "kache is $pinned, the kit's pin" ||
+            warn "kache is not $pinned, the kit's pin: heavy --exclusive -- kache-setup"
     else
         warn "no kache rustc-wrapper in ~/.cargo/config.toml"
     fi
@@ -425,7 +430,7 @@ check_machine() {
     local group want have status slots slots_source line source
     read -r slots slots_source < <(machine_setting HEAVY_BUILD_SLOTS 2)
     while IFS= read -r line; do warn "machine.env: ignored line $line"; done < <(
-        awk 'NF && $0 !~ /^(PLAN_MIN_MEM_GB|PLAN_MIN_DISK_GB|HEAVY_BUILD_SLOTS|HEAVY_BUILD_JOBS)=[0-9]+$/ { print NR ": " $0 }' "$tmp/machine.env" 2>/dev/null || true)
+        awk 'NF && $0 !~ /^(PLAN_MIN_MEM_GB|PLAN_MIN_DISK_GB|HEAVY_BUILD_SLOTS|HEAVY_BUILD_JOBS|KACHE_MAX_GB)=[0-9]+$/ { print NR ": " $0 }' "$tmp/machine.env" 2>/dev/null || true)
     for group in gate build; do
         want=1 source=default
         [[ $group == build ]] && { want=$slots; source=$slots_source; }
