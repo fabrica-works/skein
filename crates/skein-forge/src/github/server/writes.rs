@@ -211,6 +211,26 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::OpenPull { owner, name, .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"title", body: false, required: true },
+                    Field { key: b"body", body: true, required: true },
+                    Field { key: b"head", body: false, required: true },
+                    Field { key: b"base", body: false, required: true },
+                ],
+                limits,
+            )?;
+            Some(Request::OpenPull {
+                owner,
+                name,
+                title: Box::from(fields.get(b"title")?),
+                body: Box::from(fields.get(b"body")?),
+                head: Box::from(fields.get(b"head")?),
+                base: Box::from(fields.get(b"base")?),
+            })
+        }
         Request::CreateBranch { owner, name, .. } => {
             let fields = parse(
                 body,
@@ -323,4 +343,26 @@ fn copy_optional(text: Option<&[u8]>) -> Option<Box<[u8]>> {
         Some(text) => Some(Box::from(text)),
         None => None,
     }
+}
+
+/// Writes the creation's exact issue or pull number.
+pub fn number(number: u64, out: &mut Writer) -> Result<(), Overflow> {
+    numeric(b"number", number, out)
+}
+fn numeric(field: &[u8], value: u64, out: &mut Writer) -> Result<(), Overflow> {
+    let limits = output_limits(out)?;
+    let mut measure = Encoder::measure(&limits);
+    numeric_json(field, value, &mut measure);
+    let Ok(length) = measure.measured() else {
+        return Err(Overflow);
+    };
+    let mut json = Encoder::write(length, &limits);
+    numeric_json(field, value, &mut json);
+    out.put(&json.finish())
+}
+fn numeric_json(field: &[u8], value: u64, json: &mut Encoder) {
+    json.object_start();
+    json.key(field);
+    json.unsigned(value);
+    json.object_end();
 }

@@ -34,7 +34,7 @@ fn repository() -> document::Repository {
 fn bounds() -> Bounds {
     Bounds { page_size: 4, rows: 4, answer_bytes: 4096, body_bytes: 4096 }
 }
-fn tables() -> Tables {
+fn cached_tables() -> Tables {
     let mut tables = Tables::new(1, 1);
     tables.keep_repository(KEY, tables::repository(&repository()));
     tables
@@ -79,7 +79,7 @@ fn delete() -> api::Write {
 }
 #[test]
 fn github_delete_branch_request_and_empty() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(delete());
     let request = begin(&mut plan, &mut tables);
     golden(&request, Method::Delete, b"/repos/acme/widgets/git/refs/heads/alice/x%20y", None, None);
@@ -105,7 +105,7 @@ fn github_delete_branch_missing_and_failures() {
         (301, b"moved", api::Error::Unavailable),
         (404, b"gone", api::Error::Missing),
     ] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(delete());
         begin(&mut plan, &mut tables);
         head(&mut plan, status, &mut tables);
@@ -123,7 +123,7 @@ fn github_delete_branch_missing_and_failures() {
         Body::Malformed(decoding::Malformed::Bound { field: b"body" }),
         Body::Raw { bytes: Box::from([]), more: false },
     ] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(delete());
         begin(&mut plan, &mut tables);
         head(&mut plan, 204, &mut tables);
@@ -132,7 +132,7 @@ fn github_delete_branch_missing_and_failures() {
 }
 #[test]
 fn github_delete_branch_lost_answer_find() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut write = write_plan(delete());
     let sent = begin(&mut write, &mut tables);
     assert_eq!(write.pending(), None);
@@ -194,7 +194,7 @@ fn close() -> api::Write {
 }
 #[test]
 fn github_close_request_and_done() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(close());
     let request = begin(&mut plan, &mut tables);
     golden(
@@ -234,21 +234,21 @@ fn github_close_request_and_done() {
 #[test]
 fn github_close_replay_and_failures() {
     for _attempt in 0_u32..2 {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(close());
         begin(&mut plan, &mut tables);
         head(&mut plan, 200, &mut tables);
         assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
     }
     for (status, error) in [(422, api::Error::Refused), (409, api::Error::Refused), (500, api::Error::Timeout)] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(close());
         begin(&mut plan, &mut tables);
         head(&mut plan, status, &mut tables);
         assert_eq!(finish(&mut plan, refusal(b"unknown"), &mut tables), ended(Err(error)));
     }
     for body in [Body::Empty, Body::Document(Document::Rows)] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(close());
         begin(&mut plan, &mut tables);
         head(&mut plan, 200, &mut tables);
@@ -258,7 +258,7 @@ fn github_close_replay_and_failures() {
 
 #[test]
 fn github_reopen_request_and_done() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(api::Write::Reopen { number: NUMBER });
     let request = begin(&mut plan, &mut tables);
     golden(
@@ -283,14 +283,14 @@ fn github_reopen_request_and_done() {
 #[test]
 fn github_reopen_replay_and_failures() {
     for _attempt in 0_u32..2 {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(api::Write::Reopen { number: NUMBER });
         begin(&mut plan, &mut tables);
         head(&mut plan, 200, &mut tables);
         assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
     }
     for status in [409, 422] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(api::Write::Reopen { number: NUMBER });
         begin(&mut plan, &mut tables);
         head(&mut plan, status, &mut tables);
@@ -333,7 +333,7 @@ fn github_edit_optional_fields_and_pull() {
         (edit(None, Some(b"alice")), br#"{"body":"alice"}"#),
         (edit(Some(b"alice"), Some(b"")), br#"{"title":"alice","body":""}"#),
     ] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(write);
         let request = begin(&mut plan, &mut tables);
         golden(&request, Method::Patch, b"/repos/acme/widgets/issues/9007199254740993", Some(body), Some(Kind::Done));
@@ -344,7 +344,7 @@ fn github_edit_optional_fields_and_pull() {
 }
 #[test]
 fn github_edit_text_and_bounds() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(edit(Some(b"alice\"\\\n"), Some("é".as_bytes())));
     let request = begin(&mut plan, &mut tables);
     encoded_body_bounds(&request);
@@ -377,14 +377,14 @@ fn github_edit_empty_and_replay() {
         (edit(Some(b""), None), api::Error::Empty),
         (edit(None, Some(b"")), api::Error::Empty),
     ] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(write);
         begin(&mut plan, &mut tables);
         head(&mut plan, 422, &mut tables);
         assert_eq!(finish(&mut plan, refusal(b"unknown"), &mut tables), ended(Err(error)));
     }
     for _attempt in 0_u32..2 {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(edit(None, None));
         begin(&mut plan, &mut tables);
         head(&mut plan, 200, &mut tables);
@@ -404,7 +404,7 @@ fn github_status_states_and_request() {
         (api::Check::Passed, br#"{"state":"success","context":"alice"}"#),
         (api::Check::Failed, br#"{"state":"failure","context":"alice"}"#),
     ] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(status(check));
         let request = begin(&mut plan, &mut tables);
         golden(
@@ -421,7 +421,7 @@ fn github_status_states_and_request() {
 }
 #[test]
 fn github_status_integration_forbidden() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(status(api::Check::Pending));
     begin(&mut plan, &mut tables);
     head(&mut plan, 403, &mut tables);
@@ -433,14 +433,14 @@ fn github_status_integration_forbidden() {
 #[test]
 fn github_status_replay_and_bounds() {
     for _attempt in 0_u32..2 {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(status(api::Check::Passed));
         let request = begin(&mut plan, &mut tables);
         encoded_body_bounds(&request);
         head(&mut plan, 201, &mut tables);
         assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
     }
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(status(api::Check::Pending));
     let mut request = begin(&mut plan, &mut tables);
     if let Request::Status { commit, .. } = &mut request {
@@ -466,7 +466,7 @@ fn create_branch() -> api::Write {
 }
 #[test]
 fn github_create_branch_ref_and_bounds() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut plan = write_plan(create_branch());
     let request = begin(&mut plan, &mut tables);
     golden(
@@ -501,7 +501,7 @@ fn github_create_branch_exists_not_409() {
         (409, b"Reference already exists", Err(api::Error::Refused)),
         (422, b"unknown", Err(api::Error::Refused)),
     ] {
-        let mut tables = tables();
+        let mut tables = cached_tables();
         let mut plan = write_plan(create_branch());
         begin(&mut plan, &mut tables);
         head(&mut plan, status, &mut tables);
@@ -510,7 +510,7 @@ fn github_create_branch_exists_not_409() {
 }
 #[test]
 fn github_create_branch_find() {
-    let mut tables = tables();
+    let mut tables = cached_tables();
     let mut write = write_plan(create_branch());
     begin(&mut write, &mut tables);
     assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
@@ -524,5 +524,99 @@ fn github_create_branch_find() {
             &mut tables
         ),
         ended(Ok(api::Answer::Commit(commit())))
+    );
+}
+fn open_pull(title: &[u8], body: &[u8]) -> api::Write {
+    api::Write::OpenPull {
+        title: Box::from(title),
+        body: Box::from(body),
+        head: Box::from(*b"alice/x"),
+        base: Box::from(*b"main"),
+    }
+}
+fn numeric_result(kind: Kind, body: &[u8], expected: Document) {
+    for chunk in [1, 7] {
+        assert_eq!(decode(kind, body, chunk, &limits()).1, Ok(expected.clone()));
+    }
+}
+#[test]
+fn github_open_pull_single_post_and_number() {
+    let mut tables = cached_tables();
+    let mut plan = write_plan(open_pull(b"alice", b"text"));
+    let request = begin(&mut plan, &mut tables);
+    golden(
+        &request,
+        Method::Post,
+        b"/repos/acme/widgets/pulls",
+        Some(br#"{"title":"alice","body":"text","head":"alice/x","base":"main"}"#),
+        Some(Kind::Number),
+    );
+    roundtrip_body(&request);
+    encoded_body_bounds(&request);
+    numeric_result(Kind::Number, br#"{"number":9007199254740993,"unknown":{"nested":[1]}}"#, Document::Number(NUMBER));
+    let mut out = skein_lib::Writer::new(br#"{"number":9007199254740993}"#.len());
+    crate::github::server::number(NUMBER, &mut out).unwrap();
+    numeric_result(Kind::Number, &out.finish(), Document::Number(NUMBER));
+    head(&mut plan, 201, &mut tables);
+    assert_eq!(
+        finish(&mut plan, Body::Document(Document::Number(NUMBER)), &mut tables),
+        ended(Ok(api::Answer::Created(NUMBER)))
+    );
+    for body in
+        [b"{}".as_slice(), br#"{"number":1,"number":2}"#, br#"{"number":"1"}"#, br#"{"number":18446744073709551616}"#]
+    {
+        for chunk in [1, 7] {
+            decode(Kind::Number, body, chunk, &limits()).1.unwrap_err();
+        }
+    }
+    for body in [Body::Document(Document::Done), Body::Malformed(decoding::Malformed::Bound { field: b"number" })] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(open_pull(b"alice", b"text"));
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 201, &mut tables);
+        assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
+    }
+}
+#[test]
+fn github_open_pull_422_neighbours() {
+    for (status, message, error) in [
+        (422, b"No commits between main and alice".as_slice(), api::Error::NothingToMerge),
+        (422, b"A pull request already exists for alice", api::Error::Exists),
+        (409, b"A pull request already exists for alice", api::Error::Refused),
+        (422, b"unknown", api::Error::Empty),
+    ] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(open_pull(b"", b""));
+        begin(&mut plan, &mut tables);
+        head(&mut plan, status, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(message), &mut tables), ended(Err(error)));
+    }
+}
+#[test]
+fn github_open_pull_lost_find() {
+    let mut tables = cached_tables();
+    let mut write = write_plan(open_pull(b"alice", b"text"));
+    begin(&mut write, &mut tables);
+    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
+    let mut find =
+        Plan::new(KEY, api::Op::Read(api::Read::PullFor { head: Box::from(*b"alice/x"), base: Box::from(*b"main") }));
+    let request = begin(&mut find, &mut tables);
+    golden(
+        &request,
+        Method::Get,
+        b"/repos/acme/widgets/pulls?state=open&head=acme%3Aalice%2Fx&base=main&per_page=1",
+        None,
+        Some(Kind::PullRows),
+    );
+    head(&mut find, 200, &mut tables);
+    assert_eq!(
+        finish(&mut find, Body::Document(Document::Rows), &mut tables),
+        Ok(Some(Step::send(Request::PullsFor {
+            owner: Box::from(*b"acme"),
+            name: Box::from(*b"widgets"),
+            head: Box::from(*b"alice/x"),
+            base: Box::from(*b"main"),
+            open: false
+        })))
     );
 }

@@ -13,6 +13,7 @@ use skein_lib::Stack;
 /// Container roles in the first GitHub documents.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
+    NumberResult,
     Done,
     Installation,
     InstallationAccount,
@@ -207,6 +208,7 @@ fn document_fields(node: Node) -> &'static [Field] {
         }
         Node::User => const { &[field(b"id", Read::Number), field(b"login", Read::Text)] },
         Node::Permission => const { &[field(b"role_name", Read::Text)] },
+        Node::NumberResult => const { &[field(b"number", Read::Number)] },
         Node::PullObject => {
             const {
                 &[
@@ -403,7 +405,8 @@ fn element(role: Role) -> Option<Role> {
         Node::GraphqlErrors => Some(Role::Document(Node::GraphqlError)),
         Node::BranchRows => Some(Role::Document(Node::BranchName)),
         Node::Errors => Some(Role::Document(Node::ErrorEntry)),
-        Node::Done
+        Node::NumberResult
+        | Node::Done
         | Node::PullObject
         | Node::PullRef { .. }
         | Node::Reviewer
@@ -493,6 +496,7 @@ pub(super) struct Walk {
 impl Walk {
     pub(super) fn new(kind: document::Kind, limits: &Limits) -> Self {
         let node = match kind {
+            document::Kind::Number => Node::NumberResult,
             document::Kind::Done => Node::Done,
             document::Kind::Installation => Node::Installation,
             document::Kind::InstallationRows => Node::InstallationRows,

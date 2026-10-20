@@ -296,7 +296,7 @@ pub(super) fn check() {
             message: b"No commits between main and feature",
             errors: &[],
             head: Head::new(),
-            expected: fail(api::Error::Empty),
+            expected: fail(api::Error::NothingToMerge),
         },
         Case {
             label: "empty review",

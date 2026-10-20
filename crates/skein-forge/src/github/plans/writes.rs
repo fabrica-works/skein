@@ -52,9 +52,9 @@ impl Plan {
             | api::Write::Reopen { .. }
             | api::Write::Edit { .. }
             | api::Write::Status { .. }
-            | api::Write::CreateBranch { .. } => {}
+            | api::Write::CreateBranch { .. }
+            | api::Write::OpenPull { .. } => {}
             api::Write::CreateIssue { .. }
-            | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
@@ -83,6 +83,14 @@ impl Plan {
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::OpenPull { title, body, head, base } => Request::OpenPull {
+                owner,
+                name,
+                title: title.clone(),
+                body: body.clone(),
+                head: head.clone(),
+                base: base.clone(),
+            },
             api::Write::CreateBranch { branch, commit } => {
                 Request::CreateBranch { owner, name, branch: branch.clone(), commit: *commit }
             }
@@ -96,7 +104,6 @@ impl Plan {
             api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
             api::Write::CreateIssue { .. }
-            | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
@@ -106,12 +113,29 @@ impl Plan {
         self.stage = Stage::Mutate;
         Ok(self.send(request))
     }
+    fn result_kind(&self) -> Option<crate::github::document::Kind> {
+        use crate::github::document::Kind;
+        match self.write {
+            api::Write::DeleteBranch { .. } => None,
+            api::Write::OpenPull { .. } => Some(Kind::Number),
+            api::Write::CreateIssue { .. }
+            | api::Write::Post { .. }
+            | api::Write::Review { .. }
+            | api::Write::Edit { .. }
+            | api::Write::SetReviewers { .. }
+            | api::Write::Close { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Merge { .. }
+            | api::Write::Update { .. }
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. } => Some(Kind::Done),
+        }
+    }
     fn status(&self) -> u16 {
         match self.write {
             api::Write::DeleteBranch { .. } => 204,
-            api::Write::Status { .. } | api::Write::CreateBranch { .. } => 201,
+            api::Write::OpenPull { .. } | api::Write::Status { .. } | api::Write::CreateBranch { .. } => 201,
             api::Write::CreateIssue { .. }
-            | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
@@ -124,13 +148,13 @@ impl Plan {
     }
     fn asked(&self) -> Asked {
         match &self.write {
+            api::Write::OpenPull { title, body, .. } => Asked::OpenPull { empty: title.is_empty() || body.is_empty() },
             api::Write::DeleteBranch { .. } => Asked::DeleteBranch,
             api::Write::CreateBranch { .. } => Asked::CreateBranch,
             api::Write::Edit { title, body, .. } => {
                 Asked::Write { empty: empty(title.as_deref()) || empty(body.as_deref()) }
             }
             api::Write::CreateIssue { .. }
-            | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
@@ -270,6 +294,7 @@ impl Plan {
                  | Document::User(_)
                  | Document::Compare(_)
                  | Document::Permission(_)
+                    | Document::Number(_)
                     | Document::Done
                     | Document::BotUser(_)
                     | Document::Repository(_)
@@ -300,8 +325,14 @@ impl Plan {
                 self.row = Some(row);
                 return Ok(Some(self.mutation()?));
             }
+            Body::Document(Document::Number(number))
+                if self.stage == Stage::Mutate && self.result_kind() == Some(crate::github::document::Kind::Number) =>
+            {
+                return self.terminal(api::Answer::Created(number), bounds);
+            }
             Body::Empty if self.stage == Stage::Mutate && self.asked() == Asked::DeleteBranch => {}
-            Body::Document(Document::Done) if self.stage == Stage::Mutate && self.asked() != Asked::DeleteBranch => {}
+            Body::Document(Document::Done)
+                if self.stage == Stage::Mutate && self.result_kind() == Some(crate::github::document::Kind::Done) => {}
             Body::Document(
                 Document::Installation(_)
                 | Document::Minted(_)
@@ -313,6 +344,7 @@ impl Plan {
                  | Document::User(_)
                  | Document::Compare(_)
                  | Document::Permission(_)
+                | Document::Number(_)
                 | Document::Done
                 | Document::BotUser(_)
                 | Document::Repository(_)

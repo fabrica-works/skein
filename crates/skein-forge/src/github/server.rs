@@ -18,7 +18,7 @@ pub use app::{
 };
 pub use delivery::{Sent, encode};
 pub use pulls::{combined, job, pull, pulls, runs};
-pub use writes::{done, write_body};
+pub use writes::{done, number, write_body};
 /// Reads a request target into the request whose canonical spelling it carries.
 #[must_use]
 pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> {

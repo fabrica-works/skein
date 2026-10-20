@@ -338,6 +338,7 @@ fn github_app_secrets_hidden() {
             | Document::User(_)
             | Document::Compare(_)
             | Document::Permission(_)
+            | Document::Number(_)
             | Document::Done
             | Document::BotUser(_)
             | Document::Repository(_)
@@ -426,6 +427,7 @@ fn github_app_server_round_trip() {
                 | Request::Edit { .. }
                 | Request::Status { .. }
                 | Request::CreateBranch { .. }
+                | Request::OpenPull { .. }
                 | Request::Close { .. }
                 | Request::DeleteBranch { .. }
                 | Request::User { .. } => {}
@@ -466,6 +468,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         Document::User(row) => server::user(row, out),
         Document::Compare(_) => panic!("App fixture"),
         Document::Permission(value) => server::permission(*value, out),
+        Document::Number(number) => server::number(*number, out),
         Document::Done => server::done(out),
         Document::BotUser(id) => server::bot_user(*id, out),
         Document::Rows => {

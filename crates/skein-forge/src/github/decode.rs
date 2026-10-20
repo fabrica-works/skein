@@ -46,6 +46,7 @@ pub struct Decoder {
     errors: List<Box<[u8]>>,
     error: Box<[u8]>,
     terminal: bool,
+    result: u64,
 }
 /// Starts a decoder; its first tokenizer demand is Next.
 #[must_use]
@@ -79,6 +80,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         errors: List::with_capacity(limits.inner),
         error: Box::from([]),
         terminal: false,
+        result: 0,
     }
 }
 /// Starts a comparison decoder that requires only the merge base.
@@ -120,6 +122,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
         Request::CreateBranch { .. } | Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
+        Request::OpenPull { .. } => Kind::Number,
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
         // Raw bodies, and an uninstall's empty answer.
@@ -269,6 +272,7 @@ impl Decoder {
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
+                | Node::NumberResult
                 | Node::Done
                 | Node::Repository
                 | Node::Owner
@@ -297,6 +301,7 @@ impl Decoder {
                     Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
                     Kind::Permission => Document::Permission(self.permission),
+                    Kind::Number => Document::Number(self.result),
                     Kind::Done => Document::Done,
                     Kind::Pull => Document::Pull(self.pulls.pull()),
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
@@ -327,6 +332,9 @@ impl Decoder {
         match (node, key, token) {
             (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
                 return self.checks.scalar(node, key, token);
+            }
+            (Node::NumberResult, b"number", Token::Number(text)) => {
+                self.result = crate::forgejo::id::unsigned(&text).ok_or(Malformed::Range { field: key })?;
             }
             (
                 node @ (Node::Compare
@@ -440,6 +448,7 @@ impl Decoder {
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
+                | Node::NumberResult
                 | Node::Done
                 | Node::Repository
                 | Node::Owner

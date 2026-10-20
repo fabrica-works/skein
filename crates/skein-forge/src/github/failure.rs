@@ -158,7 +158,6 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
                 unknown
             }
         }
-        422 if empty => api::Error::Empty,
         422 => match asked {
             Asked::Update if has(refusal, UPDATE_STALE, Match::Whole) => api::Error::Stale,
             Asked::Update if has(refusal, UPDATE_CONFLICT, Match::Whole) => api::Error::Conflict,
@@ -166,6 +165,8 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
             Asked::OpenPull { .. } if has(refusal, PULL_EXISTS, Match::Prefix) => api::Error::Exists,
             Asked::CreateBranch if has(refusal, REF_EXISTS, Match::Whole) => return Verdict::BranchExists,
             Asked::DeleteBranch if has(refusal, REF_MISSING, Match::Whole) => api::Error::Missing,
+            Asked::Review { .. } if has(refusal, OWN_REVIEW, Match::Whole) => api::Error::Refused,
+            Asked::OpenPull { .. } | Asked::Review { .. } | Asked::Write { .. } if empty => api::Error::Empty,
             Asked::Read
             | Asked::Job
             | Asked::Merge
