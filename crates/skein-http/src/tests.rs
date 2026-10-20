@@ -7,6 +7,7 @@
 mod body;
 mod data;
 mod exchange;
+mod gzip;
 mod request;
 mod response;
 mod server;

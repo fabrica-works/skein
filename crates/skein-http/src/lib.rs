@@ -15,6 +15,8 @@
 //!   event at each blank line, each under a maximum. An event's data goes
 //!   up whole, and [`sse::Data`] reads it to a machine stacked above, a
 //!   JSON tokenizer.
+//! - [`gzip`] is a pure function beside the client: a whole request body
+//!   to its gzip member, for a caller whose server takes one.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -23,6 +25,7 @@ extern crate alloc;
 
 mod body;
 pub mod client;
+pub mod gzip;
 mod header;
 mod message;
 pub mod server;
