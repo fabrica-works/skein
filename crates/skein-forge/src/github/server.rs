@@ -33,6 +33,8 @@ pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> 
     let query = Query::read(query)?;
     let request = if let Some(request) = app::route(method, path, query.page(), query.size()) {
         request
+    } else if let Some(request) = writes::route(method, path) {
+        request
     } else if method != Method::Get {
         return None;
     } else if let Some(number) = path.strip_prefix(b"/repositories/") {

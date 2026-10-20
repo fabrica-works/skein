@@ -62,19 +62,19 @@ pub fn events(h: &mut f::Harness, request: &Request, token: &Secret) -> List<Hea
     let response = h.ask(encoded.method, &encoded.target, Some(token.expose()), encoded.body.as_deref().unwrap_or(b""));
     response_events(h, request, response)
 }
-fn response_events(h: &f::Harness, request: &Request, response: Response) -> List<Heard> {
+pub fn response_events(h: &f::Harness, request: &Request, response: Response) -> List<Heard> {
     let mut events = List::with_capacity(32);
     let mut head = Head::new();
     head.date = Some(skein_lib::Wall::from_nanos(fake::time(&h.env.limits, h.env.now).as_nanos()));
     if let Some(link) = &response.link {
         github::header::field(&mut head, b"Link", link, &h.limits.github);
     }
-    if response.status == 200 && github::decode::kind(request).is_none() {
+    if response.status < 300 && github::decode::kind(request).is_none() {
         events.push(Heard::Head { status: response.status, head }).expect("head room");
         events.push(Heard::Done(Body::Raw { bytes: response.body, more: false })).expect("raw room");
         return events;
     }
-    let kind = if response.status == 200 { github::decode::kind(request).expect("JSON read") } else { Kind::Error };
+    let kind = if response.status < 300 { github::decode::kind(request).expect("JSON read") } else { Kind::Error };
     let (rows, document) = h.decode(kind, &response);
     events.push(Heard::Head { status: response.status, head }).expect("head room");
     for row in rows.into_boxed() {

@@ -216,9 +216,12 @@ pub(crate) fn call(
             Op::Git(a::Git::Clone),
         ),
     };
-    Outcome::Call(service::Pending { kind }, fake::Event::Call { reply_to, user: service.bot, repository, op })
+    Outcome::Call(
+        service::Pending { kind: service::PendingKind::Read(kind) },
+        fake::Event::Call { reply_to, user: service.bot, repository, op },
+    )
 }
-fn full(row: &Row) -> Option<Box<[u8]>> {
+pub(crate) fn full(row: &Row) -> Option<Box<[u8]>> {
     let owner = service::joined(&row.owner, b"/")?;
     service::joined(&owner, &row.name)
 }
@@ -249,8 +252,8 @@ fn count(value: &api::Commit) -> Option<u64> {
     if commit(count) == *value { Some(count) } else { None }
 }
 
-pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, limits: &Limits) -> Response {
-    let result = match &pending.kind {
+pub(crate) fn finish(pending: Pending, result: Result<Answer, Error>, limits: &Limits) -> Response {
+    let result = match &pending {
         Pending::Enqueue => return enqueue_finish(result, limits),
         Pending::PullsFor { .. } => match result {
             Err(Error::Missing(a::What::Item | a::What::Pull)) => {
@@ -279,7 +282,7 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Ok(answer) => answer,
         Err(error) => return refused(error, limits),
     };
-    match pending.kind {
+    match pending {
         Pending::Enqueue => enqueue_finish(Ok(answer), limits),
         Pending::QueueMerge(head) => queue_merge(answer, head, limits),
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),

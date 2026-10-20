@@ -1,5 +1,5 @@
 //! The task's route subset; credentials precede body decoding.
-use crate::reads;
+use crate::{reads, writes};
 use alloc::boxed::Box;
 use skein_forge::github::{
     limits::Limits,
@@ -31,8 +31,10 @@ pub(crate) enum Token {
     User(u64),
     Read(reads::Read),
     QueueMerge { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
+    Write(writes::Route),
 }
 
+#[expect(clippy::too_many_lines, reason = "exhaustive selection of the served dialect routes")]
 pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<Route> {
     if target.len() > usize::try_from(limits.target_bytes).ok()? {
         return None;
@@ -103,6 +105,21 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
             Route::Token(Token::Read(reads::Read::ReviewComments { owner, name, number, review }))
         }
         Request::Merge { owner, name, number, .. } => Route::Token(Token::QueueMerge { owner, name, number }),
+        Request::Reopen { owner, name, number } => {
+            Route::Token(Token::Write(writes::Route::Reopen { owner, name, number }))
+        }
+        Request::Close { owner, name, number } => {
+            Route::Token(Token::Write(writes::Route::Close { owner, name, number }))
+        }
+        Request::Edit { owner, name, number, title, body } => {
+            Route::Token(Token::Write(writes::Route::Edit { owner, name, number, title, body }))
+        }
+        Request::Post { owner, name, number, body } => {
+            Route::Token(Token::Write(writes::Route::Post { owner, name, number, body }))
+        }
+        Request::CreateIssue { owner, name, title, body } => {
+            Route::Token(Token::Write(writes::Route::CreateIssue { owner, name, title, body }))
+        }
         Request::Installations { .. }
         | Request::Reachable { .. }
         | Request::Branches { .. }
@@ -121,17 +138,12 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
-        | Request::Reopen { .. }
-        | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
         | Request::Reviewers { .. }
         | Request::Update { .. }
         | Request::Review { .. }
-        | Request::Post { .. }
-        | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
-        | Request::Close { .. }
         | Request::DeleteBranch { .. }
         | Request::Enqueue { .. }
         | Request::PullGraphql { .. } => return None,

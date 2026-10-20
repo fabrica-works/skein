@@ -8,6 +8,9 @@ pub(crate) const SUSPENDED: &[u8] = b"This installation has been suspended";
 
 #[derive(Debug)]
 pub(crate) enum Body<'a> {
+    Done,
+    Number(u64),
+    Id(u64),
     App(&'a d::App),
     AppIdentity(&'a d::App),
     BotUser(u64, &'a [u8]),
@@ -40,6 +43,9 @@ pub(crate) enum Body<'a> {
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
     match body {
+        Body::Done => server::done(out),
+        Body::Number(number) => server::number(*number, out),
+        Body::Id(id) => server::id(*id, out),
         Body::BotUser(id, slug) => server::bot_user(*id, slug, out),
         Body::App(row) => server::app(row, out),
         Body::AppIdentity(row) => server::app_identity(row, out),

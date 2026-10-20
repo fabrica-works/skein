@@ -11,6 +11,25 @@ use skein_lib::{
     stream::{Down, Up},
 };
 
+/// Repository write paths carry placeholders until `write_body` decodes the body.
+pub(super) fn route(method: super::Method, path: &[u8]) -> Option<Request> {
+    let path = path.strip_prefix(b"/repos/")?;
+    let (owner, tail) = super::split(path, b'/');
+    let (name, tail) = super::split(tail, b'/');
+    let owner = super::request::unescape(owner)?;
+    let name = super::request::unescape(name)?;
+    if method == super::Method::Post && tail == b"issues" {
+        return Some(Request::CreateIssue { owner, name, title: Box::from([]), body: Box::from([]) });
+    }
+    let tail = tail.strip_prefix(b"issues/")?;
+    let (number, suffix) = super::split(tail, b'/');
+    let number = super::unsigned(number)?;
+    match (method, suffix) {
+        (super::Method::Patch, b"") => Some(Request::Edit { owner, name, number, title: None, body: None }),
+        (super::Method::Post, b"comments") => Some(Request::Post { owner, name, number, body: Box::from([]) }),
+        _ => None,
+    }
+}
 /// Writes the minimal JSON object accepted by Done-result mutations.
 pub fn done(out: &mut Writer) -> Result<(), Overflow> {
     let limits = output_limits(out)?;
@@ -425,11 +444,22 @@ pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Requ
             let fields = parse(
                 body,
                 &[
+                    Field { key: b"state", body: false, required: false },
                     Field { key: b"title", body: false, required: false },
                     Field { key: b"body", body: true, required: false },
                 ],
                 limits,
             )?;
+            if let Some(state) = fields.get(b"state") {
+                if fields.get(b"title").is_some() || fields.get(b"body").is_some() {
+                    return None;
+                }
+                return match state {
+                    b"open" => Some(Request::Reopen { owner, name, number }),
+                    b"closed" => Some(Request::Close { owner, name, number }),
+                    _ => None,
+                };
+            }
             let title = copy_optional(fields.get(b"title"));
             let body = copy_optional(fields.get(b"body"));
             Some(Request::Edit { owner, name, number, title, body })

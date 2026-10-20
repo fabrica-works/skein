@@ -5,7 +5,7 @@ use crate::{
     installations::{self, Grant, Installations, Kind, Mint, Scope},
     manifest::Manifest,
     pages::{self, Answer, Page as BrowserPage},
-    reads, routes,
+    reads, routes, writes,
 };
 use alloc::boxed::Box;
 use skein_fake_forge_domain as fake;
@@ -144,7 +144,12 @@ pub enum Outcome {
 /// in-flight calls and owns their pending values, as it owns the domain replies.
 #[derive(Debug)]
 pub struct Pending {
-    pub(crate) kind: reads::Pending,
+    pub(crate) kind: PendingKind,
+}
+#[derive(Debug)]
+pub(crate) enum PendingKind {
+    Read(reads::Pending),
+    Write(writes::Pending),
 }
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
@@ -364,6 +369,7 @@ impl Service {
                             reply_to,
                         )
                     }
+                    routes::Token::Write(route) => writes::call(self, route, &grant, request.body, reply_to),
                     routes::Token::Read(read) => {
                         reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)
                     }
@@ -397,7 +403,10 @@ impl Service {
 
     /// Completes the one domain call. No served route needs a second call.
     pub fn finish(&mut self, pending: Pending, result: Result<fake::api::Answer, fake::api::Error>) -> Response {
-        reads::finish(pending, result, &self.limits)
+        match pending.kind {
+            PendingKind::Read(pending) => reads::finish(pending, result, &self.limits),
+            PendingKind::Write(pending) => writes::finish(pending, result, &self.limits),
+        }
     }
     fn app_route(&mut self, route: routes::App, request: &Request<'_>, now: Wall) -> Response {
         if !self.body_fits(request.body) {
@@ -472,7 +481,7 @@ impl Service {
             Err(Mint::Full) => answers::refusal(503, b"Server Error", &self.limits),
         }
     }
-    fn body_fits(&self, body: &[u8]) -> bool {
+    pub(crate) fn body_fits(&self, body: &[u8]) -> bool {
         match u32::try_from(body.len()) {
             Ok(length) => length <= self.limits.body,
             Err(_) => false,

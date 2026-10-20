@@ -13,6 +13,7 @@ pub mod pages;
 mod reads;
 mod routes;
 pub mod service;
+mod writes;
 
 #[cfg(test)]
 mod tests;

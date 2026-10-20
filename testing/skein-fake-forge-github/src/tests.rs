@@ -48,3 +48,5 @@ mod reviews;
 mod queries;
 
 mod queue;
+mod write_issues;
+mod write_support;
