@@ -597,7 +597,9 @@ The roles run in the background:
   `PLAN_CODEX_SANDBOX` (danger-full-access), since no one is there to
   approve.
 
-`HEAVY_BUILD_JOBS`, `HEAVY_BUILD_SLOTS` and `HEAVY_TAIL` tune the queue;
+`HEAVY_BUILD_JOBS`, `HEAVY_BUILD_SLOTS` and `HEAVY_TAIL` tune the queue.
+`HEAVY_SETTLE` bounds a gate's wait for load below the core count (120
+seconds; 0 skips it).
 `PLAN_MIN_DISK_GB`, `PLAN_MIN_MEM_GB`, `PLAN_QUIET`, `PLAN_POLL`,
 `PLAN_CLAUDE_DIR` (where the Claude Code roles start), the roles' limits
 above tune `plan`. `PLAN_DRY_RUN=1` prints what `plan` would start or

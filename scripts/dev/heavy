@@ -10,6 +10,8 @@
 # HEAVY_BUILD_JOBS cargo jobs. The gate lane (group `gate`, parallelism 1)
 # runs gates, whole suites, measurements and benchmarks alone: it pauses
 # every other group, waits for their running tasks, runs, and resumes them.
+# HEAVY_SETTLE bounds the wait for load below the core count (120 seconds,
+# 0 skips it).
 # The task runs from the current directory with the caller's environment.
 # Its whole output goes to a log file; heavy prints the last lines and the
 # log's path. The gate lane takes only a committed tree: from a git
@@ -49,7 +51,7 @@ kache_gc() {
 # Inside a gate task: hold every other group, run the command alone, then
 # release what it held.
 held=()
-# shellcheck disable=SC2317 # called by the EXIT trap
+# shellcheck disable=SC2317,SC2329 # called by the EXIT trap
 release() {
     local group
     [[ -z ${collector:-} ]] || kill "$collector" 2>/dev/null || true
@@ -69,6 +71,25 @@ exclusive() {
         jq '[.tasks[] | select(.group != "gate")] | length') != 0 ]]; do
         sleep 1
     done
+    # A finished build's load lingers; let it settle before timing a gate,
+    # but bound the wait for work that pueue does not hold.
+    local settle=${HEAVY_SETTLE:-120} cores load waited=0 delay settle_start=$SECONDS
+    cores=$(nproc)
+    read -r load _ < /proc/loadavg
+    while ((waited < settle)) && awk -v load="$load" -v cores="$cores" 'BEGIN { exit !(load >= cores) }'; do
+        delay=$((settle - waited))
+        ((delay <= 5)) || delay=5
+        sleep "$delay"
+        waited=$((SECONDS - settle_start))
+        read -r load _ < /proc/loadavg
+    done
+    if ((waited > 0)); then
+        if awk -v load="$load" -v cores="$cores" 'BEGIN { exit !(load < cores) }'; then
+            echo "heavy: waited ${waited}s for the load to settle ($load on $cores cores)"
+        else
+            echo "heavy: the load is still $load on $cores cores after ${waited}s; the gate starts anyway"
+        fi
+    fi
     # What else loads the machine, which pueue does not hold: the load
     # average and the busiest processes as the command starts alone.
     echo "heavy: load $(cut -d' ' -f1-3 /proc/loadavg) on $(nproc) cores as it starts alone; busiest: $(
