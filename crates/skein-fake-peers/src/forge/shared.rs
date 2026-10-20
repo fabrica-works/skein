@@ -55,6 +55,11 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
     {
         return None;
     }
+    if let protocol::Limits::Forgejo(limits) = protocol
+        && !skein_fake_forge_protocol::git::fits(limits, domain)
+    {
+        return None;
+    }
     if let protocol::Limits::Github(github) = protocol {
         // Domain text may need six JSON bytes per input byte. Leave room
         // for the delivery envelope before admitting any hook source.
