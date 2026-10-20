@@ -21,7 +21,7 @@ fn github_fake_heads_are_checked() {
         (true, Some(github::pin::API_VERSION.as_bytes()), b"/user/1", 401),
     ] {
         let outcome = h.service.request(
-            &Request { method: Method::Get, target, authorization: None, agent, version, body: b"" },
+            &Request { validator: None, method: Method::Get, target, authorization: None, agent, version, body: b"" },
             h.now,
             ReplyTo::new(Token::new(77)),
         );

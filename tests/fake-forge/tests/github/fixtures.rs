@@ -19,6 +19,7 @@ pub const MANIFEST: &[u8] = br#"{"name":"example-app","url":"http://127.0.0.1/",
 
 pub fn limits() -> fake::Limits {
     fake::Limits {
+        deliveries: fake::delivery::Limits { entries: 64, payload_bytes: 32768 },
         http: skein_http::server::Limits { head: 4096, headers: 16, body: 4096, read: 128, response: 16384, send: 128 },
         github: skein_forge::github::limits::Limits {
             json: skein_json::tokenizer::Limits { depth: 16, string: 4096, number: 32, chunk: 128, length: 16384 },
@@ -56,6 +57,7 @@ pub fn config() -> fake::Config {
         accounts.push(Account { login: login.into(), id, organization }).expect("bounded fixture");
     }
     fake::Config {
+        deliveries: fake::delivery::Config::standard(),
         base: Box::from(b"http://127.0.0.1:3000".as_slice()),
         blob: Box::from(b"http://127.0.0.1:3001".as_slice()),
         third_origin: None,
@@ -278,6 +280,7 @@ pub fn ask(
 ) -> fake::service::Response {
     let fake::service::Outcome::Reply(response) = service.request(
         &fake::service::Request {
+            validator: None,
             method,
             target,
             authorization,

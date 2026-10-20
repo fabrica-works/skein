@@ -56,6 +56,7 @@ pub enum Shown {
 /// The scenario's GitHub-only tables, including the signed-in browser account.
 #[derive(Debug)]
 pub struct Config {
+    pub deliveries: crate::delivery::Config,
     /// Origin used by pagination links; a socket host sets its bound origin before serving.
     pub base: Box<[u8]>,
     /// Blob origin; a peer replaces it with its bound second listener.
@@ -93,6 +94,7 @@ pub struct Config {
 /// All retained tables and transient input/output are bounded here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Limits {
+    pub deliveries: crate::delivery::Limits,
     /// HTTP framing and per-connection input/output bounds.
     pub http: skein_http::server::Limits,
     /// The dialect's document and target bounds; inner caps repository rows.
@@ -119,6 +121,7 @@ pub enum Problem {
 
 /// One request above HTTP parsing. Debug never exposes the credential or body.
 pub struct Request<'a> {
+    pub validator: Option<&'a [u8]>,
     /// HTTP method.
     pub method: request::Method,
     /// Canonical dialect target, including paging where required.
@@ -135,6 +138,7 @@ pub struct Request<'a> {
 impl core::fmt::Debug for Request<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Request")
+            .field("validator", &self.validator)
             .field("method", &self.method)
             .field("target_bytes", &self.target.len())
             .field("authorized", &self.authorization.is_some())
@@ -165,6 +169,7 @@ impl ContentType {
 }
 /// An encoded document, with no HTTP framing. Debug redacts minted tokens.
 pub struct Response {
+    pub etag: Option<Box<[u8]>>,
     /// GitHub status.
     pub status: u16,
     /// Media type of this route's body.
@@ -179,6 +184,7 @@ pub struct Response {
 impl core::fmt::Debug for Response {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Response")
+            .field("etag", &self.etag)
             .field("status", &self.status)
             .field("content_type", &self.content_type)
             .field("link", &self.link)
@@ -212,6 +218,8 @@ pub(crate) enum PendingKind {
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
 pub struct Service {
+    pub(crate) deliveries: crate::delivery::Store,
+    pub(crate) key_revoked: bool,
     pub(crate) base: Box<[u8]>,
     pub(crate) logs: crate::logs::Store,
     pub(crate) app: App,
@@ -284,6 +292,8 @@ impl Service {
                 limits.blob_records,
                 seed,
             ),
+            deliveries: crate::delivery::Store::new(config.deliveries, limits.deliveries, seed),
+            key_revoked: false,
             base: config.base,
             app: config.app,
             app_facts: config.app_facts,
@@ -303,6 +313,36 @@ impl Service {
             installations: Installations::new(&limits.installations, seed),
             limits: *limits,
         })
+    }
+    /// Scenario access to the delivery engine. No endpoint records a failed 502.
+    pub fn release(
+        &mut self,
+        payload: github::delivery::Delivery,
+        installation: Option<u64>,
+        now: Wall,
+    ) -> Result<(u64, Option<crate::delivery::Post>), Problem> {
+        self.deliveries.record(payload, installation, now, &self.app.webhook, &self.limits.github, None)
+    }
+    pub fn redeliver(&mut self, id: u64, now: Wall) -> Result<(u64, Option<crate::delivery::Post>), Problem> {
+        let (payload, installation, guid) = self.deliveries.redelivery(id).ok_or(Problem::Config)?;
+        self.deliveries.record(payload, installation, now, &self.app.webhook, &self.limits.github, Some(guid))
+    }
+    pub fn delivered(&mut self, id: u64, status: u16) {
+        self.deliveries.complete(id, status);
+    }
+    pub fn revoke_key(&mut self) {
+        self.key_revoked = true;
+    }
+    #[must_use]
+    pub fn endpoint(&self) -> Option<&crate::delivery::Endpoint> {
+        self.deliveries.endpoint()
+    }
+    pub fn poll(&mut self, now: Wall) {
+        self.deliveries.poll(now);
+    }
+    #[must_use]
+    pub fn next_deadline(&self) -> Option<Wall> {
+        self.deliveries.next_deadline()
     }
     /// Scenario access to the bounded store, without touching the domain.
     pub fn installations_mut(&mut self) -> &mut Installations {
@@ -330,6 +370,7 @@ impl Service {
     /// Checks User-Agent, version, route, credential, installation state/reach,
     /// then the body. Every refusal precedes a domain call.
     pub fn request(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
+        self.deliveries.poll(now);
         let outcome = self.request_inner(request, now, reply_to);
         self.local_links(outcome)
     }
@@ -367,7 +408,7 @@ impl Service {
         match route {
             routes::Route::Conversion(_) | routes::Route::BotUser(_) => Outcome::Reply(answers::failed()),
             routes::Route::App(route) => {
-                if app::check(bearer, &self.app, now).is_err() {
+                if self.key_revoked || app::check(bearer, &self.app, now).is_err() {
                     return Outcome::Reply(answers::unauthorized(limits));
                 }
                 Outcome::Reply(self.app_route(route, request, now))
@@ -508,12 +549,18 @@ impl Service {
                         answers::refusal(413, b"Payload Too Large", &self.limits)
                     }
                 }
-                routes::App::Identity | routes::App::Hook | routes::App::Installations(_) => {
-                    answers::refusal(413, b"Payload Too Large", &self.limits)
-                }
+                routes::App::Identity
+                | routes::App::Hook
+                | routes::App::Installations(_)
+                | routes::App::LogPage { .. }
+                | routes::App::LogDelivery(_) => answers::refusal(413, b"Payload Too Large", &self.limits),
             };
         }
         match route {
+            routes::App::LogPage { ask, per_page } => {
+                self.deliveries.page(&ask, per_page, request.validator, &self.base, &self.limits)
+            }
+            routes::App::LogDelivery(id) => self.deliveries.get(id, &self.limits),
             routes::App::Identity => self.app_identity(),
             routes::App::Hook => answers::response(200, &Body::Hook(&d::Hook { url: self.hook.clone() }), &self.limits),
             routes::App::SetHook => self.set_hook(request.body),
@@ -526,6 +573,7 @@ impl Service {
             routes::App::Uninstall(id) => {
                 if self.installations.remove(id) {
                     Response {
+                        etag: None,
                         content_type: ContentType::Json,
                         status: 204,
                         link: None,
@@ -706,6 +754,9 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     }
     let mut bytes = crate::server::worst_case(limits)?
         .checked_add(List::<u32>::worst_case(limits.installations.listed)?)?
+        .checked_add(List::<github::log::Row>::worst_case(limits.github.inner.min(100))?)?
+        .checked_add(u64::from(limits.github.inner.min(100)).checked_mul(128)?)?
+        .checked_add(crate::delivery::worst_case(&config.deliveries, limits.deliveries, limits.github.string_bytes)?)?
         .checked_add(u64::from(limits.github.target_bytes))?
         .checked_add(pages::worst_case(limits)?)?
         .checked_add(crate::logs::worst_case(limits)?)?

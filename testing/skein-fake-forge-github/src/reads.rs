@@ -371,7 +371,14 @@ pub(crate) fn finish(
             if body.len() > usize::try_from(limits.response).expect("response bound") {
                 return answers::failed();
             }
-            Response { content_type: service::ContentType::Octets, status: 200, link: None, location: None, body }
+            Response {
+                etag: None,
+                content_type: service::ContentType::Octets,
+                status: 200,
+                link: None,
+                location: None,
+                body,
+            }
         }
         Pending::Issues { target, page, size } => issues::items(answer, &target, page, size, limits),
         Pending::Issue => issues::item(answer, limits),

@@ -181,6 +181,7 @@ impl Fake {
         }
         let mut outcome = self.service.request(
             &service::Request {
+                validator: None,
                 method: github::request::Method::Get,
                 target,
                 authorization,
@@ -302,6 +303,7 @@ fn github_service(page: u32) -> service::Service {
         .push(service::Account { id: 22, login: Box::from(b"acme".as_slice()), organization: true })
         .expect("account");
     let limits = service::Limits {
+        deliveries: skein_fake_forge_github::delivery::Limits { entries: 64, payload_bytes: 32768 },
         http: skein_http::server::Limits {
             head: 4096,
             headers: 16,
@@ -320,6 +322,7 @@ fn github_service(page: u32) -> service::Service {
     };
     service::Service::new(
         service::Config {
+            deliveries: skein_fake_forge_github::delivery::Config::standard(),
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(b"http://logs.example.test".as_slice()),
             third_origin: None,

@@ -80,6 +80,7 @@ fn github_fake_repository_reads_outside_reach_are_404() {
     ] {
         let outcome = h.service.request(
             &Request {
+                validator: None,
                 method: Method::Get,
                 target,
                 authorization: Some(token.expose()),
@@ -144,6 +145,7 @@ fn github_fake_branches_page_with_link() {
 fn pending(h: &mut Harness, target: &[u8], token: &[u8]) -> Pending {
     let outcome = h.service.request(
         &Request {
+            validator: None,
             method: Method::Get,
             target,
             authorization: Some(token),
@@ -211,6 +213,7 @@ fn github_fake_read_continuations_reject_wrong_answers() {
     {
         let outcome = h.service.request(
             &Request {
+                validator: None,
                 method: Method::Get,
                 target,
                 authorization: Some(token.expose()),

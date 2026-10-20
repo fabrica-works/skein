@@ -46,6 +46,7 @@ pub fn config() -> Config {
         accounts.push(Account { login: boxed(login), id, organization }).expect("fixture accounts");
     }
     Config {
+        deliveries: crate::delivery::Config::standard(),
         base: boxed(b"http://127.0.0.1:3000"),
         blob: boxed(b"http://logs.example.test"),
         third_origin: None,
@@ -67,6 +68,7 @@ pub fn config() -> Config {
 }
 pub fn limits() -> Limits {
     Limits {
+        deliveries: crate::delivery::Limits { entries: 64, payload_bytes: 32768 },
         http: skein_http::server::Limits {
             head: 4096,
             headers: 16,
@@ -206,6 +208,7 @@ impl Harness {
     pub fn ask(&mut self, method: Method, target: &[u8], authorization: Option<&[u8]>, body: &[u8]) -> Response {
         let outcome = self.service.request(
             &Request {
+                validator: None,
                 method,
                 target,
                 authorization,
@@ -474,6 +477,7 @@ pub fn page_refusal(h: &Harness, answer: crate::pages::Answer, status: u16, mess
     refusal(
         h,
         &Response {
+            etag: None,
             content_type: service::ContentType::Json,
             status: answer.status,
             body: answer.body,

@@ -67,7 +67,14 @@ impl Service {
     }
 }
 pub(crate) fn empty() -> Response {
-    Response { status: 204, content_type: ContentType::Json, link: None, location: None, body: Box::new([]) }
+    Response {
+        status: 204,
+        content_type: ContentType::Json,
+        link: None,
+        location: None,
+        etag: None,
+        body: Box::new([]),
+    }
 }
 pub(crate) fn reachable(service: &Service, page: u32, access: Access, request: &Request<'_>) -> Outcome {
     Outcome::Reply(match access {

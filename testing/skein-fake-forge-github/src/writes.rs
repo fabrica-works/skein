@@ -391,6 +391,7 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             Response {
+                etag: None,
                 content_type: crate::service::ContentType::Json,
                 status: 204,
                 link: None,

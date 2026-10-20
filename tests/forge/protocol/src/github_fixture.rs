@@ -41,6 +41,7 @@ pub(crate) fn service(seed: u64, key: &'static [u8]) -> Service {
     accounts.push(Account { login: Box::from(b"acme".as_slice()), id: 22, organization: true }).expect("one account");
     let documents = fixtures::fake_limits().documents;
     let limits = Limits {
+        deliveries: skein_fake_forge_github::delivery::Limits { entries: 64, payload_bytes: 32768 },
         http: fixtures::fake_limits().http,
         github: skein_forge::github::limits::Limits {
             json: documents.json,
@@ -59,6 +60,7 @@ pub(crate) fn service(seed: u64, key: &'static [u8]) -> Service {
     };
     let mut service = Service::new(
         Config {
+            deliveries: skein_fake_forge_github::delivery::Config::standard(),
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(b"http://logs.example.test".as_slice()),
             third_origin: None,

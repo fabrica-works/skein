@@ -79,6 +79,7 @@ impl Fake {
             Box::from([])
         };
         let config = Config {
+            deliveries: skein_fake_forge_github::delivery::Config::standard(),
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(BLOB_ORIGIN),
             third_origin: third_origin.map(Box::from),
@@ -106,6 +107,7 @@ impl Fake {
             person: Box::from(b"alice".as_slice()),
         };
         let limits = Limits {
+            deliveries: skein_fake_forge_github::delivery::Limits { entries: 64, payload_bytes: 32768 },
             http: skein_http::server::Limits {
                 head: 4096,
                 headers: 16,
@@ -311,7 +313,7 @@ fn parse(request: &[u8]) -> Request<'_> {
             agent = true;
         }
     }
-    Request { method, target, authorization, version, agent, body: &request[end + 4..] }
+    Request { validator: None, method, target, authorization, version, agent, body: &request[end + 4..] }
 }
 
 fn response_head(status: u16, wall: Wall, media: Option<&str>) -> Vec<u8> {

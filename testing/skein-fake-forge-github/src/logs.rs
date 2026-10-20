@@ -203,7 +203,14 @@ fn verify(key: &Secret, target: &[u8], now: Wall) -> Option<(u32, u64, u32)> {
     Some((repository, job, attempt))
 }
 pub(crate) fn empty(status: u16) -> Response {
-    Response { status, content_type: ContentType::Plaintext, link: None, location: None, body: Box::new([]) }
+    Response {
+        etag: None,
+        status,
+        content_type: ContentType::Plaintext,
+        link: None,
+        location: None,
+        body: Box::new([]),
+    }
 }
 pub(crate) fn finish(result: Result<a::Answer, a::Error>, limits: &Limits) -> Response {
     let Ok(answer) = result else {

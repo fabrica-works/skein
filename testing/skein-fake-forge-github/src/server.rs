@@ -94,8 +94,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     http::worst_case(&limits.http)?
         .checked_add(Queue::<http::Event>::worst_case(4)?)?
         .checked_add(Queue::<http::Request>::worst_case(4)?)?
-        // One Respond owns at most Link, Location and Content-Type descriptors.
-        .checked_add(List::<Header>::worst_case(3)?)?
+        // One Respond owns at most ETag, Link, Location and Content-Type descriptors.
+        .checked_add(List::<Header>::worst_case(4)?)?
         // A call moves from events into call; its redacted clone lives in head.
         // One exchange at a time and take_head before reuse allow two field lists
         // and two copies of their target/name/value bytes, each within http.head.
@@ -117,7 +117,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.response).checked_mul(2)?)?
         // Link (4), Content-Type (12), application/octet-stream (24): header
         // names and media values; Location (8) plus text/html (9) fits too.
-        .checked_add(40)?
+        // ETag adds four name bytes and at most 128 value bytes.
+        .checked_add(172)?
         // One outstanding body demand: one queued/local Body(Bytes) delivery.
         .checked_add(u64::from(limits.http.read))?
         // One reply room grant: one copied chunk in requests' Reply(Send).
@@ -399,12 +400,13 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
         respond(
             server,
             &env.limits,
-            Response { status: page.status, link: None, location: None, body: page.body, content_type },
+            Response { etag: None, status: page.status, link: None, location: None, body: page.body, content_type },
             page.location,
         );
     } else {
         let outcome = service.request(
             &Request {
+                validator: call.header(b"if-none-match"),
                 method,
                 target: &call.target,
                 body: &body,
@@ -442,7 +444,10 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
         reply = answers::failed();
         location = None;
     }
-    let mut headers = List::with_capacity(3);
+    let mut headers = List::with_capacity(4);
+    if let Some(etag) = reply.etag {
+        headers.push(Header { name: bytes::copy_of(b"ETag"), value: etag }).expect("etag slot");
+    }
     if let Some(link) = reply.link {
         headers.push(Header { name: bytes::copy_of(b"Link"), value: link }).expect("link slot");
     }

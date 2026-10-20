@@ -64,5 +64,20 @@ revocation, byte faults, browser flows and signed logs have focused tests.
 
 The layer displays `Config::required_signatures`. Git pushes go directly to
 the domain, whose `Rejected` is the only push refusal. A GitHub `GH013` adapter
-and its unrecorded P10 text are deferred. Delivery logs, rates and conditional
-requests are described separately in the design and are not implemented here.
+and its unrecorded P10 text are deferred. Rates are described separately in the design.
+`Config::deliveries` controls the optional numeric loopback endpoint, log
+visibility delay (1.5–2.2 seconds), retention (three days), capacity and a
+text-payload size for oversize stories. `Limits::deliveries` bounds entries
+and encoded payloads. Invalid choices are refused before stores are created.
+Without an endpoint, a release records status 502. Worlds feed the forge's
+clock; no clock read or socket operation occurs inside the layer.
+
+The App JWT reads `/app/hook/deliveries` and an individual delivery. Pages
+honor `per_page`, use opaque cursors, and list visible entries newest first.
+The first page has an ETag and supports empty 304 responses. Retention and
+capacity remove the oldest entries; redelivery adds a newer entry carrying
+the same guid. `revoke_key` refuses subsequent App requests with 401.
+
+GitHub wire documents are encoded through `skein_forge::github::server`.
+Payloads carry seeded UUIDs and HMAC-SHA256 signatures. The layer's
+`worst_case` includes the bounded log and encoding scratch.

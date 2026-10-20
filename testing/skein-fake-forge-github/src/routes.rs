@@ -16,6 +16,8 @@ pub(crate) enum Route {
 }
 #[derive(Debug)]
 pub(crate) enum App {
+    LogPage { ask: skein_forge::github::log::Ask, per_page: u32 },
+    LogDelivery(u64),
     Identity,
     Hook,
     SetHook,
@@ -68,6 +70,8 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
     Some(match server::route(method, target, limits)? {
         Request::BotUser { slug } => Route::BotUser(slug),
         Request::Conversion { code } => Route::Conversion(skein_lib::Secret::new(code)),
+        Request::LogPage { ask, per_page } => Route::App(App::LogPage { ask, per_page }),
+        Request::LogDelivery { id, .. } => Route::App(App::LogDelivery(id)),
         Request::App => Route::App(App::Identity),
         Request::HookConfig => Route::App(App::Hook),
         Request::SetHook { .. } => Route::App(App::SetHook),
@@ -197,8 +201,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::RulesForBranch { .. }
         | Request::Collaborators { .. }
         | Request::Enqueue { .. }
-        | Request::LogPage { .. }
-        | Request::LogDelivery { .. }
         | Request::PullGraphql { .. } => return None,
     })
 }

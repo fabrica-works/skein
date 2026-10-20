@@ -108,7 +108,15 @@ fn github_fake_conversion_is_an_api_route_without_a_credential() {
         (true, Some(b"wrong".as_slice()), 400, b"Invalid API version"),
     ] {
         let outcome = h.service.request(
-            &Request { method: Method::Post, target: &target, authorization: None, version, agent, body: b"" },
+            &Request {
+                validator: None,
+                method: Method::Post,
+                target: &target,
+                authorization: None,
+                version,
+                agent,
+                body: b"",
+            },
             h.now,
             ReplyTo::new(Token::new(77)),
         );
@@ -160,6 +168,7 @@ fn github_fake_conversion_secrets_stay_out_of_debug() {
     let target = f::conversion_target(&code);
     let route = routes::decode(Method::Post, &target, &h.limits.github).expect("conversion route");
     let request = Request {
+        validator: None,
         method: Method::Post,
         target: &target,
         authorization: None,

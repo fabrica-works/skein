@@ -320,6 +320,7 @@ impl Github {
             skein_http::Method::Head | skein_http::Method::Options => panic!("API method"),
         };
         let request = ApiRequest {
+            validator: call.header(b"If-None-Match"),
             method,
             target: &call.target,
             authorization: call.header(b"Authorization"),

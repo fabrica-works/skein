@@ -843,6 +843,16 @@ These are small, and they land after forge-kit's steps on the fakes:
 
 ### 10.3 Deliveries and their log
 
+Built in the GitHub layer: the bounded signed-delivery store, seeded UUIDs
+and increasing 19-digit ids, visibility delay, retention and capacity
+removal, cursor pages honoring `per_page`, whole-delivery reads, redelivery,
+first-page ETag/304, and key revocation. The server-side route decoder and
+log encoders live in `skein_forge::github::server`. The scenario's
+`Config::deliveries` and `Limits::deliveries` admit these bounds before
+allocation. `payload_size` enlarges text-bearing issue, comment and review
+payloads to exercise consumers' oversize refusal.
+
+
 - **Every delivery is logged.** A domain hook is rendered as GitHub's
   payload, with `X-GitHub-Event`, `X-GitHub-Delivery` (a UUID drawn from
   the seed) and `X-Hub-Signature-256`, and is entered in the layer's log.

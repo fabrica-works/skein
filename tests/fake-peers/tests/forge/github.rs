@@ -46,6 +46,7 @@ const RESPONSE_BYTES: u32 = 8192;
 
 fn limits() -> fake::Limits {
     fake::Limits {
+        deliveries: fake::delivery::Limits { entries: 64, payload_bytes: 32768 },
         http: skein_http::server::Limits {
             head: 4096,
             headers: 16,
@@ -88,6 +89,7 @@ fn config() -> fake::Config {
         accounts.push(Account { login: f::boxed(login), id, organization }).expect("account row fits");
     }
     fake::Config {
+        deliveries: fake::delivery::Config::standard(),
         base: f::boxed(b"http://127.0.0.1:1"),
         blob: f::boxed(b"http://logs.example.test"),
         third_origin: None,

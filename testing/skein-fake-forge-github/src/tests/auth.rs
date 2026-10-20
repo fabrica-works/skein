@@ -356,6 +356,7 @@ fn matrix_request(h: &mut f::Harness, method: Method, target: &[u8], body: &[u8]
     ] {
         let outcome = h.service.request(
             &Request {
+                validator: None,
                 method,
                 target,
                 body,
