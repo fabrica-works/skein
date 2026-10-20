@@ -1,6 +1,6 @@
 //! Every page of the App's installations (forge-github.md, 8.3).
-use super::{Event, State, Step, add, api, capacity, document, plan};
-use crate::github::{pin, plans::Heard, request::Request};
+use super::{Event, State, Step, api, capacity, document, keep_installation, plan};
+use crate::github::{plans::Heard, request::Request};
 use alloc::boxed::Box;
 use skein_lib::List;
 
@@ -53,25 +53,8 @@ impl Listing {
         match self.state.hear(heard, 200)? {
             None => Ok(None),
             Some(Event::Row(row)) => {
-                let row = match row {
-                    document::Row::Installation(row) => row,
-                    document::Row::Reachable(_)
-                    | document::Row::Branch(_)
-                    | document::Row::Issue(_)
-                    | document::Row::Pull(_)
-                    | document::Row::Context(_)
-                    | document::Row::Run(_)
-                    | document::Row::Comment(_) => return Err(api::Error::InvalidAnswer),
-                };
-                self.count = self.count.checked_add(1).ok_or(api::Error::TooLarge)?;
-                if self.count > pin::PAGE_CAP || self.rows.len() >= bounds.rows {
-                    return Err(api::Error::TooLarge);
-                }
-                self.bytes = add(self.bytes, &row.login, b"", bounds)?;
-                match self.rows.push(row) {
-                    Ok(()) => Ok(None),
-                    Err(_) => Err(api::Error::TooLarge),
-                }
+                keep_installation(row, &mut self.rows, &mut self.bytes, &mut self.count, bounds)?;
+                Ok(None)
             }
             Some(Event::Done { document, next }) => match document {
                 document::Document::Rows => {

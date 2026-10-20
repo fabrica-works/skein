@@ -11,7 +11,7 @@ use skein_forge::{
         plans::{
             Body, Failure, Heard,
             plan::{Bounds, Exchange},
-            start::{Identity, Listing, Minting, Page, Reachable, Step},
+            start::{Identity, InstallationPage, Installations, Listing, Minting, Page, Reachable, Step},
         },
         request::{self, Auth, Method, Request, Scope},
         server,
@@ -162,6 +162,15 @@ fn response(status: u16, next: bool, request: &Request) -> Heard {
 fn listing_head(plan: &mut Listing, next: bool, bounds: Bounds) {
     assert_eq!(plan.heard(response(200, next, &Request::Installations { page: 1 }), bounds), Ok(None));
 }
+fn installations_head(plan: &mut Installations, next: bool, bounds: Bounds) {
+    assert_eq!(plan.heard(response(200, next, &Request::Installations { page: 2 }), bounds), Ok(None));
+}
+fn installations_plan(next: bool, bounds: Bounds) -> Installations {
+    let mut plan = Installations::new(2);
+    plan.begin(bounds).unwrap();
+    installations_head(&mut plan, next, bounds);
+    plan
+}
 fn reachable_head(plan: &mut Reachable, next: bool, bounds: Bounds) {
     let request = Request::Reachable { page: 2, per_page: bounds.page_size };
     assert_eq!(plan.heard(response(200, next, &request), bounds), Ok(None));
@@ -171,6 +180,20 @@ fn listing_page(
     ids: &[u64],
     bounds: Bounds,
 ) -> Result<Option<Step<Box<[document::Installation]>>>, api::Error> {
+    let (rows, body) = installation_page(ids);
+    for row in rows.into_boxed() {
+        let result = plan.heard(Heard::Row(row), bounds);
+        if result != Ok(None) {
+            return result;
+        }
+    }
+    plan.heard(Heard::Done(body), bounds)
+}
+fn installations_page(
+    plan: &mut Installations,
+    ids: &[u64],
+    bounds: Bounds,
+) -> Result<Option<Step<InstallationPage>>, api::Error> {
     let (rows, body) = installation_page(ids);
     for row in rows.into_boxed() {
         let result = plan.heard(Heard::Row(row), bounds);
@@ -194,13 +217,15 @@ fn picker_page(plan: &mut Reachable, ids: &[u64], bounds: Bounds) -> Result<Opti
 // Failure and ordering tables erase only successful payloads, not plan events.
 #[derive(Debug)]
 enum TestPlan {
+    Installations(Installations),
     Listing(Listing),
     Minting(Minting),
     Identity(Identity),
     Reachable(Reachable),
 }
-fn plans() -> [TestPlan; 4] {
+fn plans() -> [TestPlan; 5] {
     [
+        TestPlan::Installations(Installations::new(2)),
         TestPlan::Listing(Listing::new()),
         TestPlan::Minting(Minting::new(INSTALLATION, Scope::Full)),
         TestPlan::Identity(Identity::new()),
@@ -224,6 +249,7 @@ fn erase_heard<T>(result: Result<Option<Step<T>>, api::Error>) -> Result<Option<
 impl TestPlan {
     fn begin(&mut self) -> Result<Step<()>, api::Error> {
         match self {
+            Self::Installations(plan) => Ok(erase(plan.begin(bounds())?)),
             Self::Listing(plan) => Ok(erase(plan.begin(bounds())?)),
             Self::Minting(plan) => Ok(erase(plan.begin(bounds())?)),
             Self::Identity(plan) => Ok(erase(plan.begin(bounds())?)),
@@ -232,6 +258,7 @@ impl TestPlan {
     }
     fn heard(&mut self, heard: Heard) -> Result<Option<Step<()>>, api::Error> {
         match self {
+            Self::Installations(plan) => erase_heard(plan.heard(heard, bounds())),
             Self::Listing(plan) => erase_heard(plan.heard(heard, bounds())),
             Self::Minting(plan) => erase_heard(plan.heard(heard, bounds())),
             Self::Identity(plan) => erase_heard(plan.heard(heard, bounds())),
@@ -241,7 +268,7 @@ impl TestPlan {
     fn status(&self) -> u16 {
         match self {
             Self::Minting(_) => 201,
-            Self::Listing(_) | Self::Identity(_) | Self::Reachable(_) => 200,
+            Self::Installations(_) | Self::Listing(_) | Self::Identity(_) | Self::Reachable(_) => 200,
         }
     }
     fn head(&mut self) {
@@ -250,6 +277,7 @@ impl TestPlan {
     }
     fn pending(&mut self) -> Option<Exchange> {
         match self {
+            Self::Installations(plan) => plan.pending(),
             Self::Listing(plan) => plan.pending(),
             Self::Minting(plan) => plan.pending(),
             Self::Identity(plan) => plan.pending(),
@@ -258,6 +286,7 @@ impl TestPlan {
     }
     fn set_pending(&mut self, exchange: Exchange) {
         match self {
+            Self::Installations(plan) => plan.set_pending(exchange),
             Self::Listing(plan) => plan.set_pending(exchange),
             Self::Minting(plan) => plan.set_pending(exchange),
             Self::Identity(plan) => plan.set_pending(exchange),
@@ -332,6 +361,119 @@ fn github_start_listing_bound_by_rows() {
         assert_eq!(plan.heard(Heard::Row(row.clone()), roomy), Ok(None));
     }
     assert_eq!(plan.heard(Heard::Row(row), roomy), Ok(Some(Step::Done(Err(api::Error::TooLarge)))));
+}
+
+#[test]
+fn github_start_installations_one_page() {
+    for next in [true, false] {
+        let bounds = Bounds { rows: 2, ..bounds() };
+        let mut plan = Installations::new(2);
+        let request = Request::Installations { page: 2 };
+        assert_eq!(plan.begin(bounds), Ok(Step::send(request.clone())));
+        let encoded = request::encode(&request, &limits()).unwrap();
+        assert_eq!(encoded.target.as_ref(), b"/app/installations?per_page=100&page=2");
+        assert_eq!(encoded.auth, Auth::App);
+        assert_eq!(server::route(encoded.method, &encoded.target, &limits()), Some(request));
+        installations_head(&mut plan, next, bounds);
+        assert_eq!(
+            installations_page(&mut plan, &[INSTALLATION, INSTALLATION + 1], bounds),
+            Ok(Some(Step::Done(Ok(InstallationPage {
+                rows: Box::from([installation(INSTALLATION), installation(INSTALLATION + 1)]),
+                next,
+            }))))
+        );
+        assert_eq!(plan.heard(Heard::Done(installation_page(&[]).1), bounds), Err(api::Error::InvalidAnswer));
+    }
+}
+
+#[test]
+fn github_start_installations_empty() {
+    for bounds in [bounds(), Bounds { rows: 0, answer_bytes: 0, ..bounds() }] {
+        for next in [true, false] {
+            let mut plan = installations_plan(next, bounds);
+            assert_eq!(
+                installations_page(&mut plan, &[], bounds),
+                Ok(Some(Step::Done(Ok(InstallationPage { rows: Box::from([]), next }))))
+            );
+        }
+    }
+}
+
+#[test]
+fn github_start_installations_refuses_page_zero() {
+    let mut plan = Installations::new(0);
+    assert_eq!(plan.begin(bounds()), Err(api::Error::Refused));
+    assert_eq!(plan.pending(), None);
+    assert_eq!(plan.heard(Heard::Failed(Failure::Unseen), bounds()), Err(api::Error::InvalidAnswer));
+}
+
+#[test]
+fn github_start_installations_bound_by_rows() {
+    let bounds = Bounds { rows: 1, ..bounds() };
+    let mut plan = installations_plan(false, bounds);
+    assert_eq!(
+        installations_page(&mut plan, &[INSTALLATION, INSTALLATION + 1], bounds),
+        Ok(Some(Step::Done(Err(api::Error::TooLarge))))
+    );
+}
+
+#[test]
+fn github_start_installations_first_row_exceeds_zero_bounds() {
+    for bounds in [Bounds { rows: 0, ..bounds() }, Bounds { answer_bytes: 0, ..bounds() }] {
+        let mut plan = installations_plan(false, bounds);
+        assert_eq!(
+            installations_page(&mut plan, &[INSTALLATION], bounds),
+            Ok(Some(Step::Done(Err(api::Error::TooLarge))))
+        );
+    }
+}
+
+#[test]
+fn github_start_installations_bound_by_page_cap() {
+    // The fixed page cap is independent of the total answer bound.
+    let roomy = Bounds { rows: pin::PAGE_CAP + 1, answer_bytes: DOCUMENT_BYTES, ..bounds() };
+    let mut plan = installations_plan(false, roomy);
+    let row = Row::Installation(installation(INSTALLATION));
+    for _ in 0..pin::PAGE_CAP {
+        assert_eq!(plan.heard(Heard::Row(row.clone()), roomy), Ok(None));
+    }
+    assert_eq!(plan.heard(Heard::Row(row), roomy), Ok(Some(Step::Done(Err(api::Error::TooLarge)))));
+}
+
+#[test]
+fn github_start_installations_answer_bytes_bound() {
+    // Two acme logins, with one STRING_BYTES overhead per row.
+    let page_bytes = (u32::try_from(measure::STRING_BYTES).unwrap() + 4) * 2;
+    for (answer_bytes, expected) in [
+        (
+            page_bytes,
+            Ok(InstallationPage {
+                rows: Box::from([installation(INSTALLATION), installation(INSTALLATION + 1)]),
+                next: false,
+            }),
+        ),
+        (page_bytes - 1, Err(api::Error::TooLarge)),
+    ] {
+        let bounds = Bounds { answer_bytes, ..bounds() };
+        let mut plan = installations_plan(false, bounds);
+        assert_eq!(
+            installations_page(&mut plan, &[INSTALLATION, INSTALLATION + 1], bounds),
+            Ok(Some(Step::Done(expected)))
+        );
+    }
+}
+
+#[test]
+fn github_start_installations_rejects_reachable_row() {
+    let mut plan = installations_plan(false, bounds());
+    let row = Row::Reachable(repository(INSTALLATION));
+    assert_eq!(plan.heard(Heard::Row(row), bounds()), Ok(Some(Step::Done(Err(api::Error::InvalidAnswer)))));
+}
+
+#[test]
+fn github_start_installations_rejects_non_rows_document() {
+    let mut plan = installations_plan(false, bounds());
+    assert_eq!(plan.heard(Heard::Done(viewer_body()), bounds()), Ok(Some(Step::Done(Err(api::Error::InvalidAnswer)))));
 }
 
 #[test]

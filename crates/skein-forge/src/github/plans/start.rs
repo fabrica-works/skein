@@ -11,12 +11,15 @@ use crate::{
     measure,
 };
 use alloc::boxed::Box;
+use skein_lib::List;
 
 mod identity;
+mod installations;
 mod listing;
 mod minting;
 mod reachable;
 pub use identity::Identity;
+pub use installations::Installations;
 pub use listing::Listing;
 pub use minting::Minting;
 pub use reachable::Reachable;
@@ -50,6 +53,13 @@ impl<T> Step<T> {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Page {
     pub rows: Box<[document::Reachable]>,
+    pub next: bool,
+}
+
+/// One page of the App's installations; only a new plan may ask for the next page.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct InstallationPage {
+    pub rows: Box<[document::Installation]>,
     pub next: bool,
 }
 
@@ -172,6 +182,34 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
         | Body::Raw { .. }
         | Body::Empty
         | Body::Malformed(_) => None,
+    }
+}
+
+fn keep_installation(
+    row: Row,
+    rows: &mut List<document::Installation>,
+    bytes: &mut u32,
+    count: &mut u32,
+    bounds: plan::Bounds,
+) -> Result<(), api::Error> {
+    let row = match row {
+        Row::Installation(row) => row,
+        Row::Reachable(_)
+        | Row::Branch(_)
+        | Row::Issue(_)
+        | Row::Pull(_)
+        | Row::Context(_)
+        | Row::Run(_)
+        | Row::Comment(_) => return Err(api::Error::InvalidAnswer),
+    };
+    *count = count.checked_add(1).ok_or(api::Error::TooLarge)?;
+    if *count > crate::github::pin::PAGE_CAP || rows.len() >= bounds.rows {
+        return Err(api::Error::TooLarge);
+    }
+    *bytes = add(*bytes, &row.login, b"", bounds)?;
+    match rows.push(row) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(api::Error::TooLarge),
     }
 }
 
