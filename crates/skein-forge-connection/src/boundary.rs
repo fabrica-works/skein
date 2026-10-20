@@ -35,6 +35,12 @@ pub struct Answered {
     pub call: Token,
     /// The requests the call wrote, cache fills included; 0 for a call that wrote none.
     pub cost: u32,
+    /// How many of the call's `cost` requests the forge answered `304`;
+    /// its rate does not count them. Zero until a call's read takes a validator.
+    pub free: u32,
+    /// The latest window reported by an answer of the call, per installation on
+    /// GitHub. None when no answer reported one (forge-connection.md, 4.1).
+    pub rate: Option<api::Rate>,
     pub result: Result<api::Answer, api::Error>,
 }
 

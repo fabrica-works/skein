@@ -38,12 +38,14 @@ impl Component {
     ) {
         let waiting = self.waiting.get(id).expect("indexed call");
         let cost = waiting.cost;
+        let free = waiting.free;
+        let rate = waiting.rate;
         if let Some(token) = waiting.connection {
             let _holder = self.holders.remove(&token);
         }
         self.waiting.retire(id);
         let _call = self.calls.remove(&call);
-        up.push(Event::Answered(Answered { call, cost, result }));
+        up.push(Event::Answered(Answered { call, cost, free, rate, result }));
     }
     pub(super) fn drive_calls(
         &mut self,
@@ -331,7 +333,7 @@ impl Component {
                 waiting.charged = true;
             }
             if let Some(heard) = c.heard() {
-                let heard = call_heard(heard, &mut self.diagnostics);
+                let heard = call_heard(heard, waiting, &mut self.diagnostics);
                 let (step, cut) = match waiting.plan.as_mut().expect("call plan") {
                     CallPlan::Forgejo(plan) => {
                         let step = plan.heard(
@@ -418,11 +420,15 @@ impl Component {
     }
 }
 
-fn call_heard(heard: connection::Heard, diagnostics: &mut super::Diagnostics) -> Heard {
+fn call_heard(heard: connection::Heard, waiting: &mut Waiting, diagnostics: &mut super::Diagnostics) -> Heard {
     let heard = match heard {
         connection::Heard::Forgejo(heard) => heard,
         connection::Heard::GitHub(_) => unreachable!("Forgejo call has a Forgejo connection"),
     };
+    match &heard {
+        Heard::Head { status, .. } => waiting.answered_head(*status, None),
+        Heard::Done(_) | Heard::Row(_) | Heard::Failed(_) => {}
+    }
     if skein_forge::forgejo::plans::reads::keep::long(&heard) {
         diagnostics.long_bodies = diagnostics.long_bodies.saturating_add(1);
     }

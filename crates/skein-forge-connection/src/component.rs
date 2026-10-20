@@ -56,6 +56,8 @@ pub(crate) struct Waiting {
     pub page_size: u32,
     pub connection: Option<Token>,
     pub cost: u32,
+    pub free: u32,
+    pub rate: Option<api::Rate>,
     pub charged: bool,
     pub revoked: bool,
     pub deadline: Time,
@@ -72,9 +74,19 @@ impl Waiting {
             page_size: 1,
             connection: None,
             cost: 0,
+            free: 0,
+            rate: None,
             charged: false,
             revoked: false,
             deadline,
+        }
+    }
+    fn answered_head(&mut self, status: u16, rate: Option<api::Rate>) {
+        if status == 304 {
+            self.free = self.free.checked_add(1).expect("bounded exchanges");
+        }
+        if let Some(rate) = rate {
+            self.rate = Some(rate);
         }
     }
 }

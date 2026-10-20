@@ -560,8 +560,8 @@ impl World {
                 event: Event::Answered {
                     call: pending.client,
                     cost: answer.cost,
-                    free: 0,
-                    rate: None,
+                    free: answer.free,
+                    rate: answer.rate,
                     result: answer.result,
                 },
                 write: pending.write,

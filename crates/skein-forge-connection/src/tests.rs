@@ -2,6 +2,7 @@ mod connection;
 mod contents;
 mod dialects;
 pub(crate) mod fixtures;
+mod free_rate;
 mod github_calls;
 mod github_files;
 mod github_installation_loss;
@@ -119,7 +120,7 @@ fn a_call_waiting_for_its_forge_is_unavailable_at_its_deadline() {
     h.run(Duration::from_secs(1));
     assert_eq!(
         h.answered(1),
-        Some(&Answered { call: Token::new(1), cost: 0, result: Err(api::Error::Unavailable) }),
+        Some(&Answered { call: Token::new(1), cost: 0, free: 0, rate: None, result: Err(api::Error::Unavailable) }),
         "at deadline"
     );
     h.run(Duration::from_secs(1));
@@ -131,7 +132,7 @@ fn a_call_waiting_for_its_forge_is_unavailable_at_its_deadline() {
 #[test]
 fn refused_answers_are_offered_once_and_returned_answers_stay_until_close() {
     let mut h = fixtures::Harness::new(fixtures::settings());
-    let answer = Answered { call: Token::new(1), cost: 0, result: Err(api::Error::Unavailable) };
+    let answer = Answered { call: Token::new(1), cost: 0, free: 0, rate: None, result: Err(api::Error::Unavailable) };
     h.send(Request::Refused(answer.clone()));
     h.send(Request::Offer);
     let Some(Event::Answered(offered)) = h.up.pop() else {
@@ -300,7 +301,7 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 }
 
 // Complete Forgejo fixture (forge-connection.md, 7.5), in bytes on the
-// landed 64-bit layout. Decoder = 32*128 + 8*(3*128 + 2*48 + 2*16)
+// 64-bit layout. Decoder = 32*128 + 8*(3*128 + 2*48 + 2*16)
 // + 2*1042 + 16*128 + 4096 + size_of::<forgejo::client::Decoder>() (248)
 // = 16_668. Socket = 32768 + 4096 + 32768 + 4*16 = 69_696.
 // Each of two pooled connections = HTTP 44_032 + TLS 456_809 + tokenizer
@@ -309,9 +310,9 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 // Four hooks = 4*(HTTP 18_418 + tokenizer 2082 + decoder 16_668
 // + socket 69_696 + HMAC 208 + hint 88 + text/body 1170 + queues 368
 // + head 8192 + chunks 2048) + hook slab/index 4832 = 480_584.
-// Common calls = 2*520 (Waiting slab slots) + 288 (holders tree)
+// Common calls = 2*544 (Waiting slab slots) + 288 (holders tree)
 // + 2*16 (drive list) + 288 (call index) + 2*3*512 (operation copies)
-// + 2488 (held tree) + 2*65536 (held answers) = 138_280.
+// + 2752 (held tree) + 2*65536 (held answers) = 138_592.
 // Forgejo's call payload = read/write boxes 1208+408, staging 64*8
 // + 72*16 + 72*128, answer 65536, ChangedFile rows 8*40 + 8*2*128,
 // File/Commit rows 8*48 + 8*32, texts 4*128 + 13*128 and users 8*48
@@ -320,10 +321,10 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 // Configured lists = 2*(Forge 136 + Start 24 + optional GitHub box 8
 // + optional token 16 + optional OwnPlan 344) = 1056. Each forge's
 // common credential/secret/send/TLS = 64 + 128 + 32768 + 456_809 = 489_769.
-// Owner/framing/answer = 2*16 + (3+9) + 16 + Answered 200 = 260.
+// Owner/framing/answer = 2*16 + (3+9) + 16 + Answered 224 = 284.
 // Total = 2*765459 + connection index 288 + slab 2*1400 + 480584
-// + 138280 + 2*83600 + 3800 + 1056 + 489769 + 260 = 2_814_955.
-const FIXTURE_HEAP: u64 = 2_814_955;
+// + 138592 + 2*83600 + 3800 + 1056 + 489769 + 284 = 2_815_291.
+const FIXTURE_HEAP: u64 = 2_815_291;
 
 // Complete GitHub fixture: the same common limits and owned bytes. Its
 // decoder's fixed size is 1952, including the 96-byte GraphQL pull builder,
@@ -338,10 +339,10 @@ const FIXTURE_HEAP: u64 = 2_814_955;
 // + 2*552 (accepted accounts) + 464 (missing accounts) + 3*200 (id sets)
 // + 2*3*8 (id lists) + 2*100*48 (installation pages) + 2*100*128
 // + 3*(6*128+64) (row accounts/tokens) + 7*64 (token handoffs)
-// + Event 200 + 3*128 (cursor/event accounts) = 44_184. Per-scope clocks,
+// + Event 224 + 3*128 (cursor/event accounts) = 44_208. Per-scope clocks,
 // eligibility/Full revisions, retries, held Contents and old/new Full
 // handoffs coexist with staging and pages; the GitHub box itself is 464.
-// Key/JWT = 1200+512, so each GitHub forge's App share is 46_360.
+// Key/JWT = 1200+512, so each GitHub forge's App share is 46_384.
 // GitHub's tables are 3888; discovery's one-row tables are 2056.
 // Call payload = 2*1352 (probe/original read boxes) + write box 480
 // + staging 2056 + 3*24 (revision-bearing candidates) + 3*65536
@@ -355,18 +356,18 @@ const FIXTURE_HEAP: u64 = 2_814_955;
 // decoded reviewer ids 8*8 and pull/GraphQL/error text 6*128 = 960.
 // Login text shares the answer envelopes; the retained arrays and box, ids,
 // row/request texts and enqueue id are counted once above.
-// Call payload = 210_018. The two slots add 1920 to 57b's 3_895_946.
+// Call payload = 210_018.
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
-// Total = 3*767923 + index 288 + slab 3*1400 + 489960 + 138280
-// + 2*210018 + 3888 + 1056 + 489769 + 46360 + 260 = 3_897_866.
-const GITHUB_FIXTURE_HEAP: u64 = 3_897_866;
+// Total = 3*767923 + index 288 + slab 3*1400 + 489960 + 138592
+// + 2*210018 + 3888 + 1056 + 489769 + 46384 + 284 = 3_898_226.
+const GITHUB_FIXTURE_HEAP: u64 = 3_898_226;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
-// slab 520 + drive-list pair 16 + 3*512 operation copies + 65536 held
+// slab 544 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
-const FORGEJO_CALL_SLOT: u64 = 151_208; // 520 + 16 + 1536 + 65536 + 83600.
-const GITHUB_CALL_SLOT: u64 = 277_626; // 520 + 16 + 1536 + 65536 + 210018.
+const FORGEJO_CALL_SLOT: u64 = 151_232; // 544 + 16 + 1536 + 65536 + 83600.
+const GITHUB_CALL_SLOT: u64 = 277_650; // 544 + 16 + 1536 + 65536 + 210018.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
 const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };
@@ -583,7 +584,13 @@ fn many_held_answers_keep_the_offer_output_bound() {
     let shared = crate::Shared { calls: 20, ..shared };
     let mut h = fixtures::Harness::with(limits, shared, fixtures::settings());
     for call in 0..20 {
-        h.send(Request::Refused(Answered { call: Token::new(call), cost: 0, result: Err(api::Error::Unavailable) }));
+        h.send(Request::Refused(Answered {
+            call: Token::new(call),
+            cost: 0,
+            free: 0,
+            rate: None,
+            result: Err(api::Error::Unavailable),
+        }));
     }
     for (name, count) in [("first batch", 16), ("second batch", 4), ("empty", 0)] {
         h.send(Request::Offer);

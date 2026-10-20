@@ -378,7 +378,10 @@ impl Component {
             Heard::Done(_) | Heard::Row(_) | Heard::Failed(_) => false,
         };
         match &heard {
-            Heard::Head { status, .. } => waiting.route.as_mut().expect("sent route").status = Some(*status),
+            Heard::Head { status, head } => {
+                waiting.answered_head(*status, github::header::rate(head));
+                waiting.route.as_mut().expect("sent route").status = Some(*status);
+            }
             Heard::Done(Body::Malformed(_)) => {
                 self.diagnostics.malformed = self.diagnostics.malformed.saturating_add(1);
             }

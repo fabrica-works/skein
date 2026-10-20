@@ -238,6 +238,8 @@ fn items_list_since_with_leastupdate_and_an_explicit_page() {
         Some(&crate::Answered {
             call: skein_lib::Token::new(1),
             cost: 1,
+            free: 0,
+            rate: None,
             result: Ok(Answer::Items {
                 items: Box::new([summary()]),
                 more: false,

@@ -419,7 +419,13 @@ fn start_retry_after_wins_over_the_backoff_cap() {
     h.run(Duration::from_nanos(1));
     assert_eq!(
         h.answered(1),
-        Some(&Answered { call: skein_lib::Token::new(1), cost: 0, result: Err(api::Error::Unavailable) })
+        Some(&Answered {
+            call: skein_lib::Token::new(1),
+            cost: 0,
+            free: 0,
+            rate: None,
+            result: Err(api::Error::Unavailable)
+        })
     );
     assert_eq!(h.answers.len(), 1);
     h.run(Duration::from_nanos(9_999_999_999));
@@ -464,7 +470,13 @@ fn an_unconfigured_forge_is_unavailable_at_zero_cost() {
     h.run(Duration::ZERO);
     assert_eq!(
         h.answered(1),
-        Some(&crate::Answered { call: skein_lib::Token::new(1), cost: 0, result: Err(api::Error::Unavailable) })
+        Some(&crate::Answered {
+            call: skein_lib::Token::new(1),
+            cost: 0,
+            free: 0,
+            rate: None,
+            result: Err(api::Error::Unavailable)
+        })
     );
     assert_eq!((h.answers.len(), h.connections_opened()), (1, 0));
 }
@@ -486,6 +498,8 @@ fn a_stopped_forge_does_not_stop_another() {
         Some(&crate::Answered {
             call: skein_lib::Token::new(1),
             cost: 2,
+            free: 0,
+            rate: None,
             result: Ok(api::Answer::Commit(fixtures::BRANCH_HEAD)),
         })
     );
@@ -518,6 +532,8 @@ fn an_idle_connection_is_reassigned_to_another_forge() {
         Some(&crate::Answered {
             call: skein_lib::Token::new(2),
             cost: 2,
+            free: 0,
+            rate: None,
             result: Ok(api::Answer::Commit(fixtures::BRANCH_HEAD)),
         })
     );
