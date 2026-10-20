@@ -4,6 +4,7 @@ mod check;
 mod fixtures;
 mod github_fixtures;
 mod github_given;
+mod github_manifest;
 mod github_picker;
 mod given;
 mod hooks;

@@ -40,6 +40,8 @@ pub enum Need {
 pub enum Outcome {
     /// Nothing to serve or show.
     Nothing,
+    /// The browser page and the host-given state it was made for (5.1).
+    Manifest { state: Box<[u8]>, page: Box<[u8]> },
     /// The user a connected Forgejo's tokens belong to (4.6).
     Identity { id: u64, login: Box<[u8]> },
     /// One page of repositories for the picker (4.8).

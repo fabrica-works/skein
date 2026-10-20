@@ -23,6 +23,8 @@ pub const URL_BYTES: usize = 1024;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Place {
     Word,
+    Target,
+    State,
     Web,
     Url,
     RedirectUrl,

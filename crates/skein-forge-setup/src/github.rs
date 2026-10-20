@@ -2,3 +2,4 @@
 pub(crate) mod app;
 pub mod given;
 pub mod limits;
+pub mod manifest;
