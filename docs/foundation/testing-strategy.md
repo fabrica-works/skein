@@ -1,6 +1,6 @@
 # Testing strategy
 
-Provisional, 2026-10-03, revised 2026-10-18. How code in skein and in
+Provisional, 2026-10-03, revised 2026-10-21. How code in skein and in
 every service built on it is tested. Read it with programming-model.md,
 whose terms it uses, before writing or reviewing tests.
 
@@ -507,16 +507,15 @@ copy of skein or smith beside the gate's would also be built again at
 each repin and kept in the build cache. A per-crate override
 (`[profile.dev.package.<crate>]`) is allowed for one hot leaf crate
 alone: a profile must show a cost no test can avoid, and the user, or
-the director for them (development.md, 2.7), signs it off; a comment
-beside the override cites both.
+the director for them, signs it off; a comment beside the override
+cites both.
 
 A fuzzy test lives beside its world and uses that world's settings,
 random ones included. When a fuzzy seed fails, the bug is fixed and the
 seed kept: as a scenario if it shows behaviour worth naming, or among the
 sweep's pinned seeds. A finding that cannot be fixed yet is replayed by
-an ignored test until it is: the ruling that ignores it names the step
-that fixes it, and each hourly check runs it until then (development.md,
-section 5.5).
+an ignored test until it is: its `#[ignore]` reason names the work that
+fixes it, and its owner runs it until then.
 
 ## 9. Where a failure is fixed
 
@@ -536,8 +535,7 @@ section 5.5).
 ## 10. A test's shape
 
 How a test is written, at every tier. Each rule has a name, by which a
-plan, a steer or a review cites it, and no plan, steer or review
-restates it (development.md, sections 5.2, 5.6 and 14.3).
+design, a task or a review cites it, and none of them restates it.
 
 - **One behaviour per test.** A test is named for what it shows, in
   about eight words, and its expected value is a literal or a named
@@ -570,7 +568,7 @@ restates it (development.md, sections 5.2, 5.6 and 14.3).
   number counts a path (a size in bytes, a worst case, a length) lays
   each path it uses at its bound, or measures it at its bound, so that
   the number is the same in every checkout, at any depth. In temper's
-  forge-setup run, the owned example's minima moved with the scratch
+  forge-setup, the owned example's minima moved with the scratch
   directory: 32 bytes in one worktree, 8 in another.
 - **A bound's two sides.** A limit is tested at the bound, which holds,
   and one past it, which does not, each in a test or a row of its own.
@@ -581,8 +579,8 @@ restates it (development.md, sections 5.2, 5.6 and 14.3).
   changes nothing and says nothing.
 
 A rule of this section that a script can test becomes a check in the
-repository's gate when an hourly check sends it a second time
-(development.md, section 14.4), and the check's message names the rule.
-In hearth's render run, constant-index reads, one-row tables,
+repository's gate when an owner's check of a diff finds it broken a
+second time, and the check's message names the rule. In hearth's
+render, constant-index reads, one-row tables,
 `let [x] = … else { panic!(…) }`, `.first().expect` and the names
 `actual` and `observed` were each a grep.

@@ -53,6 +53,6 @@ checkout's absolute path, without its leading `/` and with each `/` a
 `-`: `realpath ~/src/rust/<repository> | sed 's|^/||; s|/|-|g'` prints
 it. Pass that name to each graph call. The index covers `main`, never a
 worktree, and may lag behind it: check each name the graph gives with
-`rg` in your worktree before relying on it. Indexing is the director's
-and the runs' supervisors': never call `index_repository` or
-`delete_project` otherwise.
+`rg` in your worktree before relying on it. Indexing is the
+director's: never call `index_repository` or `delete_project`
+otherwise.

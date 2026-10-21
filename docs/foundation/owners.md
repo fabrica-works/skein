@@ -1,12 +1,8 @@
 # Owners
 
-Experiment, 2026-10-19. How a draft reaches `main` through an owner:
-one session that designs the draft and implements it, instead of
-development.md's designer, planner, supervisor and coordinator. Runs
-started before 2026-10-19 finish under development.md. Designs and plans
-landed by then stay, and those not yet run may be carried out by an
-owner. If the experiment fails, this file goes and development.md
-stands.
+Provisional, 2026-10-19, revised 2026-10-21. How a draft reaches
+`main` through an owner: one session that designs the draft and
+implements it.
 
 **What an owner reads:** its brief, this file, and section 1, "In one
 page", of [programming-model.md](programming-model.md) and
@@ -16,15 +12,12 @@ read when the work touches it (a new protocol, a world's checks, a
 memory bound), and [notes.md](notes.md), the reasons and open questions
 behind the rules, when a rule's reason matters. The repository's
 `AGENTS.md` loads on its own.
-The rest of this directory (development.md, implementer.md,
-supervisor.md) belongs to the runs started before 2026-10-19: an owner
-needs none of it.
 
 ## 1. In one page
 
 - **The input is a draft** that the user wrote and reviewed: the goal,
-  the constraints, the expectations. A landed design or plan not yet run
-  can stand in for it.
+  the constraints, the expectations. A landed design not yet built can
+  stand in for it.
 - **The director** knows every draft and the
   direction. It starts one owner per draft, gives the final call on what
   owners escalate, and asks the user only what it can't reasonably
@@ -60,7 +53,7 @@ needs none of it.
   or the commit. This file is guidelines: good practice for the owner
   to apply with judgement, case by case, as the work goes, partly,
   later, or not at all where it doesn't pay. None of it is upfront work
-  to complete before starting, as the old designer's and planner's was.
+  to complete before starting.
   What the tools enforce holds: `land` and its gate, `heavy`, the disk
   floor.
 
@@ -79,8 +72,8 @@ needs none of it.
 - **An advisor.** An owner below xhigh may start an advisor, a session
   at xhigh under the same discipline (notes, compaction), and consult
   it on what it judges delicate. Sparingly: tokens count.
-- **Its brief** names the input (draft sections, designs, a plan, a
-  README to grow), its parent and how to reach it, its machine, its notes
+- **Its brief** names the input (draft sections, designs, a README to
+  grow), its parent and how to reach it, its machine, its notes
   directory, and anything the parent knows that bears on it: other
   owners' footprints, budgets, dates.
 - **Its notes** are in `~/src/rust/tmp/owners/<name>/`:
@@ -147,8 +140,8 @@ After the green light, the owner implements directly what is small.
 Otherwise it breaks the work into tasks, all upfront, as it goes, or
 both, and prepares the next tasks while implementers work.
 
-What the old planners learned serves its tasks, as guidelines (section
-1), applied as the work goes and where they pay:
+These guidelines (section 1) serve its tasks, applied as the work goes
+and where they pay:
 - **Settle first** what the tasks rest on: the scope, the APIs that may
   break and who repairs them, credentials and live services, the
   interface sketches.
@@ -361,5 +354,5 @@ directory, in at most half a page:
 - what went well and what didn't, in this process.
 
 It reports to its parent, which folds the note into its own. The
-director compares the notes with the old process's runs to judge the
-experiment.
+director compares the notes across owners, to judge what in this file
+pays and what to change.

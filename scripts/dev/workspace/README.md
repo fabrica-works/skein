@@ -14,18 +14,7 @@ Codex profile into the workspace, sets up the queue, and names what is
 still missing (pueue, kache, jq, cargo-nextest, and cargo's `[net]
 git-fetch-with-cli = true` in `~/.cargo/config.toml`).
 
-## New work
+## Work
 
-New work goes through owners: skein's `docs/foundation/owners.md`. The
+Work goes through owners: skein's `docs/foundation/owners.md`. The
 director starts them; their notes are in `tmp/owners/<name>/`.
-
-## Runs started before 2026-10-19
-
-They finish under skein's `docs/foundation/development.md`, with `plan`:
-- `plan status` shows this machine's run; `plan attach supervisor` and
-  `plan attach coordinator` reach its roles; `plan resume` after a
-  restart of the machine.
-- A run's state is in `tmp/<repository>/<plan>/`, its `status.md` first,
-  and `tmp/active-plan` names this machine's run.
-- After a run, the supervisor starts its retrospective (`plan retro`),
-  and the user decides each proposal in its section 10.
