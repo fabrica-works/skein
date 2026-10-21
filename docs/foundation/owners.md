@@ -42,7 +42,8 @@ behind the rules, when a rule's reason matters. The repository's
 - **The flow:** the milestone plan, its check by the parent; then for
   each milestone: design, report, a brief check by the parent, its
   green light, implementation with the QA passes the owner chooses,
-  landings, a report at its end; at the last, a closing note.
+  landings, a report at its end and the owner's handover to a fresh
+  session; at the last, a closing note.
 - **Claude for taste, Codex for the rest.** Claude's tokens are the
   scarce ones; Codex's are ample, and throughput grows with what moves
   there. The owner spends Claude on what needs taste: the design, the
@@ -98,9 +99,26 @@ behind the rules, when a rule's reason matters. The repository's
     implementers' sessions and Codex threads, each landing's commit, and
     the start and end times, its own and each milestone's. The director
     computes the cost from it.
+  - `handover.md`: the last handover (below), replaced at the next.
   - `inbox/`: its children's reports and questions.
 - **After a compaction or a restart,** it reads its brief and its notes
   first.
+- **A fresh session at each milestone's end.** An owner with more than
+  one milestone hands over to a new session at each milestone's end but
+  the last, so that each milestone starts on a fresh context. The
+  outgoing session brings `notes.md`, `milestones.md` and the ledger up
+  to date, and writes `handover.md` with what only it holds: what is in
+  flight (the ended milestone's QA pass, its sub-owner still at work),
+  what waits on other owners or the director, and its read of the next
+  milestone. It starts the new session with the same name and command
+  (above), prompted "Read <brief>, then the notes and handover.md in
+  <notes directory>, and go on.", records its id in the ledger, sends
+  its parent the milestone's report (3.1) naming the new session, and
+  ends its turn. The new session reads the brief, the notes and the
+  handover, stops the old one once its turn has ended (`claude stop
+  <full id>`), so that one session answers to the name, and starts the
+  next milestone's sub-owner (3.1). Its children's messages to
+  `o/<name>` reach it.
 - **Its context is the scarce thing.** It reads code through Codex
   surveys (short reports) and the code graph, and a Codex task's report,
   never its log. It ends its turn while
@@ -134,20 +152,20 @@ behind the rules, when a rule's reason matters. The repository's
   (3.3). With a single milestone, the plan is a line of the design's
   report.
 - **Who drives.** With one milestone, the owner drives it. With more,
-  each goes to a sub-owner, started with a brief once the milestone
-  before has ended (below). The owner keeps the plan and the whole
-  draft's picture: it checks each milestone's design, answers its
-  sub-owner, and reports to its parent. A sub-owner starts no
-  sub-owner of its own, and no two milestones are designed or
-  implemented at once. A parent keeps its children on its own machine,
-  where SendMessage reaches them.
+  each goes to a sub-owner, started with a brief by the owner's fresh
+  session once the milestone before has ended (below, and section 2).
+  The owner keeps the plan and the whole draft's picture: it checks
+  each milestone's design, answers its sub-owner, and reports to its
+  parent. A sub-owner starts no sub-owner of its own, and no two
+  milestones are designed or implemented at once. A parent keeps its
+  children on its own machine, where SendMessage reaches them.
 - **Parallel within.** Inside a milestone, whatever can run in parallel
   does (4.1): that is where an owner finds its throughput.
 - **The plan moves** as the work teaches. Most often, a milestone
-  turns out too large or too long, from a finding or a change not known
-  before, and is split. A sub-owner that sees its milestone won't fit the cap asks
-  its parent for the split early, rather than run into the cap. The
-  owner changes the plan, and says so in its next report.
+  turns out too large or too long, from a finding or a change not
+  known before, and is split. A sub-owner that sees its milestone won't
+  fit the cap asks its parent for the split early, rather than run into
+  the cap. The owner changes the plan, and says so in its next report.
 - **The cap, a rule: 4 hours.** No milestone runs past 4 hours of wall
   time, from its start, its design included, to its end, as the ledger
   records them. Milestones are planned at 2 to 3 hours, so that the cap
@@ -163,10 +181,12 @@ behind the rules, when a rule's reason matters. The repository's
     most 10 lines: what the MVP now does, the commits, its time against
     the cap, and what comes next. The owner passes it on to the
     director;
+  - the owner hands over to a fresh session (section 2), which starts
+    the next milestone at once;
   - a QA pass on what has landed may start (4.6), beside the next
-    milestone, which starts at once. The ended milestone's sub-owner
-    judges the pass and lands its fixes, then writes its closing note
-    (section 6).
+    milestone. The ended milestone's sub-owner stays on for it: it
+    judges the pass and lands its fixes, reporting to the owner's new
+    session, then writes its closing note (section 6).
 
 ### 3.2 Designing a milestone
 

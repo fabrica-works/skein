@@ -193,7 +193,8 @@ runs.
 
 - **A plan or a design report** gets owners.md 3.3's brief check, and
   a green light or the amendments. A milestone's end updates the
-  owner's row in `notes/owners.md`.
+  owner's row in `notes/owners.md`, its new session among it (owners.md
+  2).
 - **A milestone at its cap** waits, paused (owners.md 3.1), for an
   answer decided like any question's: a split, more time, or a change
   of course. Whether the user hears of it is section 8's call.
