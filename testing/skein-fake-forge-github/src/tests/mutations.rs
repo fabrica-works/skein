@@ -9,7 +9,7 @@ use skein_lib::{List, Secret};
 
 const CREATE: &[u8] = b"/repos/acme/widgets/rulesets";
 const DELETE: &[u8] = b"/repos/acme/widgets/rulesets/12345678";
-const RULE: &str = r#"{"name":"probe","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/trunk"],"exclude":[]}},"bypass_actors":[{"actor_id":7,"actor_type":"Integration","bypass_mode":"always"}],"rules":[{"parameters":{"required_approving_review_count":2,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false},"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ci"}]}},{"type":"merge_queue"}]}"#;
+const RULE: &str = r#"{"name":"probe","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/trunk"],"exclude":[]}},"bypass_actors":[{"actor_id":7,"actor_type":"Integration","bypass_mode":"always"}],"rules":[{"parameters":{"required_approving_review_count":2,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false},"type":"pull_request"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ci"}],"strict_required_status_checks_policy":false}},{"type":"merge_queue","parameters":{"check_response_timeout_minutes":60,"grouping_strategy":"ALLGREEN","max_entries_to_build":5,"max_entries_to_merge":5,"merge_method":"MERGE","min_entries_to_merge":1,"min_entries_to_merge_wait_minutes":0}}]}"#;
 
 fn harness() -> f::Harness {
     let mut config = f::config();
@@ -107,4 +107,47 @@ fn github_fake_pull_request_rules_require_each_of_the_five_parameters() {
         );
         assert!(h.domain.inspect_repository_protection(b"acme/widgets").is_none());
     }
+}
+
+#[test]
+fn github_fake_status_and_queue_rules_require_each_parameter_at_its_rule_index() {
+    for (index, member) in [
+        (1_u32, "\"strict_required_status_checks_policy\":false"),
+        (2, "\"check_response_timeout_minutes\":60"),
+        (2, "\"grouping_strategy\":\"ALLGREEN\""),
+        (2, "\"max_entries_to_build\":5"),
+        (2, "\"max_entries_to_merge\":5"),
+        (2, "\"merge_method\":\"MERGE\""),
+        (2, "\"min_entries_to_merge\":1"),
+        (2, "\"min_entries_to_merge_wait_minutes\":0"),
+    ] {
+        let mut h = harness();
+        let first = alloc::fmt::format(format_args!("{member},"));
+        let last = alloc::fmt::format(format_args!(",{member}"));
+        let body = RULE.replace(&first, "").replace(&last, "");
+        assert_ne!(body, RULE);
+        let response = ask(&mut h, Method::Post, CREATE, body.as_bytes());
+        let message = alloc::fmt::format(format_args!(
+            "Invalid request.\n\nInvalid property /rules/{index}: data matches no possible input. See `documentation_url`."
+        ));
+        f::refusal(&h, &response, 422, message.as_bytes());
+        assert!(h.domain.inspect_repository_protection(b"acme/widgets").is_none());
+    }
+}
+#[test]
+fn github_fake_merge_queue_rules_require_an_organization() {
+    let mut config = f::config();
+    for index in 0..config.repositories.len() {
+        let row = config.repositories.get_mut(index).unwrap();
+        if row.id == 2 {
+            row.organization = false;
+        }
+    }
+    config.tokens = List::with_capacity(1);
+    config.tokens.push((Secret::new(f::boxed(b"invented-person")), 31, None)).unwrap();
+    let mut h = f::Harness::with_domain(f::limits(), config, r::domain_config());
+    fake::grant(&mut h.domain, b"acme/widgets", 31, a::Permission::Admin);
+    let response = ask(&mut h, Method::Post, CREATE, RULE.as_bytes());
+    f::refusal(&h, &response, 422, b"Validation Failed");
+    assert!(h.domain.inspect_repository_protection(b"acme/widgets").is_none());
 }

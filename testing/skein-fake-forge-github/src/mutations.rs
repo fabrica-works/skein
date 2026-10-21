@@ -12,6 +12,21 @@ use skein_json::Token;
 use skein_lib::{List, ReplyTo, bytes};
 
 const PULL_REQUEST_FIELDS: u32 = 1 | 2 | 4 | 8 | 16;
+const STATUS_CONTEXTS: u32 = 32;
+const STATUS_STRICT: u32 = 64;
+const STATUS_FIELDS: u32 = STATUS_CONTEXTS | STATUS_STRICT;
+const QUEUE_TIMEOUT: u32 = 128;
+const QUEUE_GROUPING: u32 = 256;
+const QUEUE_BUILD: u32 = 512;
+const QUEUE_MERGE: u32 = 1024;
+const QUEUE_METHOD: u32 = 2048;
+const QUEUE_MIN: u32 = 4096;
+const QUEUE_WAIT: u32 = 8192;
+const QUEUE_FIELDS: u32 =
+    QUEUE_TIMEOUT | QUEUE_GROUPING | QUEUE_BUILD | QUEUE_MERGE | QUEUE_METHOD | QUEUE_MIN | QUEUE_WAIT;
+const QUEUE_TIMEOUT_MAX: u64 = 360;
+const QUEUE_ENTRIES_MAX: u64 = 100;
+const QUEUE_WAIT_MAX: u64 = 360;
 
 #[derive(Debug)]
 pub(crate) enum Route {
@@ -46,29 +61,44 @@ pub(crate) fn call(service: &Service, route: Route, access: Access, body: &[u8],
         Route::DeleteRules { repository, id } => (repository, false, id),
     };
     let mut found = false;
+    let mut organization = false;
     for (_, row) in &service.repositories {
         if let Some(full) = reads::full(row)
             && full == repository
         {
             found = true;
+            organization = row.organization;
         }
     }
     if !found || id != service.ruleset_id {
         return Outcome::Reply(answers::missing(&service.limits));
     }
     let protection = if creating {
-        let mut missing_parameters = false;
+        let mut missing_parameters = None;
         let Some(rule) = protection(service, body, &mut missing_parameters) else {
-            return Outcome::Reply(answers::refusal(
-                422,
-                if missing_parameters {
-                    b"Invalid request.\n\nInvalid property /rules/0: data matches no possible input. See `documentation_url`."
-                } else {
-                    b"Validation Failed"
-                },
-                &service.limits,
-            ));
+            let message = match missing_parameters {
+                Some(index) => {
+                    let index = skein_lib::Decimal::of(u64::from(index));
+                    let Some(prefix) =
+                        crate::service::joined(b"Invalid request.\n\nInvalid property /rules/", index.as_bytes())
+                    else {
+                        return Outcome::Reply(answers::failed());
+                    };
+                    let Some(message) =
+                        crate::service::joined(&prefix, b": data matches no possible input. See `documentation_url`.")
+                    else {
+                        return Outcome::Reply(answers::failed());
+                    };
+                    message
+                }
+                None => bytes::copy_of(b"Validation Failed"),
+            };
+            return Outcome::Reply(answers::refusal(422, &message, &service.limits));
         };
+        if rule.queue && !organization {
+            // Inferred: merge queues require an organization; live's refusal text is unknown.
+            return Outcome::Reply(answers::refusal(422, b"Validation Failed", &service.limits));
+        }
         Some(rule)
     } else {
         if !body.is_empty() {
@@ -169,8 +199,8 @@ fn once(seen: &mut u32, bit: u32) -> Option<()> {
     *seen |= bit;
     Some(())
 }
-// Inferred request subset from GitHub docs; live sessions did not record a request body.
-fn protection(service: &Service, body: &[u8], missing: &mut bool) -> Option<a::Protection> {
+// Request subset from the documented repository-ruleset schema (fake-forge.md, 10.1).
+fn protection(service: &Service, body: &[u8], missing: &mut Option<u32>) -> Option<a::Protection> {
     if !service.body_fits(body) {
         return None;
     }
@@ -279,10 +309,10 @@ fn actors(c: &mut Cursor, service: &Service) -> Option<Box<[u64]>> {
     }
     None
 }
-fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32, missing: &mut bool) -> Option<()> {
+fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32, missing: &mut Option<u32>) -> Option<()> {
     c.want(&Token::ArrayStart)?;
     let mut seen = 0_u32;
-    for _ in 0..c.tokens.len() {
+    for index in 0..c.tokens.len() {
         if c.tokens.get(c.at)? == &Token::ArrayEnd {
             c.want(&Token::ArrayEnd)?;
             return Some(());
@@ -297,27 +327,29 @@ fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32, missing: &mut boo
                 _ => return None,
             }
         }
-        match (kind?.as_ref(), parameters) {
-            (b"pull_request", Some(Parameter::Approvals(count, fields))) => {
-                if fields != PULL_REQUEST_FIELDS {
-                    *missing = true;
-                    return None;
-                }
-                once(&mut seen, 1)?;
-                rule.approvals = count;
-            }
-            (b"pull_request", None) => {
-                *missing = true;
-                return None;
-            }
-            (b"required_status_checks", Some(Parameter::Contexts(contexts))) => {
-                once(&mut seen, 2)?;
-                rule.contexts = contexts;
-            }
-            (b"merge_queue", None) => {
-                once(&mut seen, 4)?;
-                rule.queue = true;
-            }
+        let kind = kind?;
+        let (bit, required) = match kind.as_ref() {
+            b"pull_request" => (1, PULL_REQUEST_FIELDS),
+            b"required_status_checks" => (2, STATUS_FIELDS),
+            b"merge_queue" => (4, QUEUE_FIELDS),
+            _ => return None,
+        };
+        let Some(parameters) = parameters else {
+            *missing = Some(index);
+            return None;
+        };
+        if parameters.fields & required != required {
+            *missing = Some(index);
+            return None;
+        }
+        if parameters.fields != required {
+            return None;
+        }
+        once(&mut seen, bit)?;
+        match kind.as_ref() {
+            b"pull_request" => rule.approvals = parameters.approvals,
+            b"required_status_checks" => rule.contexts = parameters.contexts?,
+            b"merge_queue" => rule.queue = true,
             _ => return None,
         }
     }
@@ -325,21 +357,21 @@ fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32, missing: &mut boo
 }
 
 #[derive(Debug)]
-enum Parameter {
-    Approvals(u32, u32),
-    Contexts(Box<[Box<[u8]>]>),
+struct Parameter {
+    fields: u32,
+    approvals: u32,
+    contexts: Option<Box<[Box<[u8]>]>>,
 }
 fn parameter(c: &mut Cursor, bound: u32) -> Option<Parameter> {
     c.want(&Token::ObjectStart)?;
-    let mut seen = 0;
-    let mut count = None;
-    let mut contexts = None;
+    let mut result = Parameter { fields: 0, approvals: 0, contexts: None };
     for _ in 0..c.tokens.len() {
         let Key::Name(key) = c.key()? else { break };
         match key.as_ref() {
             b"required_approving_review_count" => {
-                once(&mut seen, 1)?;
-                count = Some(u32::try_from(c.number()?).ok()?);
+                once(&mut result.fields, 1)?;
+                let count = c.number()?;
+                result.approvals = u32::try_from(count).ok()?;
             }
             b"dismiss_stale_reviews_on_push"
             | b"require_code_owner_review"
@@ -352,31 +384,70 @@ fn parameter(c: &mut Cursor, bound: u32) -> Option<Parameter> {
                     b"required_review_thread_resolution" => 16,
                     _ => return None,
                 };
-                once(&mut seen, bit)?;
+                once(&mut result.fields, bit)?;
                 c.want(&Token::False)?;
             }
             b"required_status_checks" => {
-                once(&mut seen, 32)?;
-                c.want(&Token::ArrayStart)?;
-                let mut names = List::with_capacity(bound);
-                for _ in 0..c.tokens.len() {
-                    if c.tokens.get(c.at)? == &Token::ArrayEnd {
-                        break;
-                    }
-                    c.want(&Token::ObjectStart)?;
-                    c.want(&Token::Key(bytes::copy_of(b"context")))?;
-                    names.push(c.text()?).ok()?;
-                    c.want(&Token::ObjectEnd)?;
+                once(&mut result.fields, STATUS_CONTEXTS)?;
+                result.contexts = Some(contexts(c, bound)?);
+            }
+            b"strict_required_status_checks_policy" => {
+                once(&mut result.fields, STATUS_STRICT)?;
+                c.want(&Token::False)?;
+            }
+            b"check_response_timeout_minutes" => {
+                once(&mut result.fields, QUEUE_TIMEOUT)?;
+                let value = c.number()?;
+                if value == 0 || value > QUEUE_TIMEOUT_MAX {
+                    return None;
                 }
-                c.want(&Token::ArrayEnd)?;
-                contexts = Some(names.into_boxed());
+            }
+            b"max_entries_to_build"
+            | b"max_entries_to_merge"
+            | b"min_entries_to_merge"
+            | b"min_entries_to_merge_wait_minutes" => {
+                let (bit, max) = match key.as_ref() {
+                    b"max_entries_to_build" => (QUEUE_BUILD, QUEUE_ENTRIES_MAX),
+                    b"max_entries_to_merge" => (QUEUE_MERGE, QUEUE_ENTRIES_MAX),
+                    b"min_entries_to_merge" => (QUEUE_MIN, QUEUE_ENTRIES_MAX),
+                    b"min_entries_to_merge_wait_minutes" => (QUEUE_WAIT, QUEUE_WAIT_MAX),
+                    _ => return None,
+                };
+                once(&mut result.fields, bit)?;
+                if c.number()? > max {
+                    return None;
+                }
+            }
+            b"grouping_strategy" => {
+                once(&mut result.fields, QUEUE_GROUPING)?;
+                if ![b"ALLGREEN".as_slice(), b"HEADGREEN"].contains(&c.text()?.as_ref()) {
+                    return None;
+                }
+            }
+            b"merge_method" => {
+                once(&mut result.fields, QUEUE_METHOD)?;
+                if ![b"MERGE".as_slice(), b"SQUASH", b"REBASE"].contains(&c.text()?.as_ref()) {
+                    return None;
+                }
             }
             _ => return None,
         }
     }
-    match (seen, count, contexts) {
-        (fields, count, None) if fields < 32 => Some(Parameter::Approvals(count.unwrap_or(0), fields)),
-        (32, None, Some(contexts)) => Some(Parameter::Contexts(contexts)),
-        _ => None,
+    Some(result)
+}
+
+fn contexts(c: &mut Cursor, bound: u32) -> Option<Box<[Box<[u8]>]>> {
+    c.want(&Token::ArrayStart)?;
+    let mut names = List::with_capacity(bound);
+    for _ in 0..c.tokens.len() {
+        if c.tokens.get(c.at)? == &Token::ArrayEnd {
+            break;
+        }
+        c.want(&Token::ObjectStart)?;
+        c.want(&Token::Key(bytes::copy_of(b"context")))?;
+        names.push(c.text()?).ok()?;
+        c.want(&Token::ObjectEnd)?;
     }
+    c.want(&Token::ArrayEnd)?;
+    Some(names.into_boxed())
 }

@@ -136,6 +136,10 @@ fn minted_json(
             json.string(permission.access.text());
         }
     }
+    if scope == crate::installations::Scope::Contents {
+        json.key(b"metadata");
+        json.string(b"read");
+    }
     json.object_end();
     json.object_end();
 }

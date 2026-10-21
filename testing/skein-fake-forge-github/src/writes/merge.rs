@@ -63,11 +63,11 @@ pub(super) fn finish(
             let a::Answer::Pull(pull) = answer else {
                 return Outcome::Reply(answers::failed());
             };
-            if reads::commit(pull.commit) != head {
-                return Outcome::Reply(answers::refusal(409, texts::MERGE_STALE, limits));
-            }
             if let Some(commit) = pull.merged {
                 return Outcome::Reply(answers::response(200, &Body::Merged(&reads::commit(commit)), limits));
+            }
+            if reads::commit(pull.commit) != head {
+                return Outcome::Reply(answers::refusal(409, texts::MERGE_STALE, limits));
             }
             // forge-github.md, 7: a move is Conflict until mergeability settles.
             if pull.checking {

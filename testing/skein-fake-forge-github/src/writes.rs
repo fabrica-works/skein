@@ -129,10 +129,9 @@ impl Route {
     }
     fn contents(&self) -> bool {
         match self {
-            Self::CreateBranch { .. } | Self::DeleteBranch { .. } | Self::CreateIssue { .. } | Self::Edit { .. } => {
-                true
-            }
+            Self::CreateBranch { .. } | Self::DeleteBranch { .. } | Self::CreateIssue { .. } => true,
             Self::Merge { .. }
+            | Self::Edit { .. }
             | Self::Status { .. }
             | Self::OpenPull { .. }
             | Self::Update { .. }
@@ -206,12 +205,6 @@ pub(crate) fn call(service: &Service, route: Route, grant: &Access, body: &[u8],
     let Some(request) = server::write_body(route.request(), body, &service.limits.github) else {
         return Outcome::Reply(answers::refusal(422, b"Validation Failed", &service.limits));
     };
-    // The issue PATCH route also carries state changes, which remain scope refusals.
-    if grant.contents()
-        && let Request::Close { .. } | Request::Reopen { .. } = &request
-    {
-        return Outcome::Reply(answers::refusal(403, texts::INTEGRATION, &service.limits));
-    }
     let (stage, op) = match operation(service, request, grant) {
         Ok(value) => value,
         Err(response) => return Outcome::Reply(response),

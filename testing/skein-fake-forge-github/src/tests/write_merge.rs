@@ -238,3 +238,17 @@ fn github_fake_merge_waits_for_head_or_base_settle_and_stale_sha_keeps_precedenc
         assert!(pull.merged.is_some());
     }
 }
+
+#[test]
+fn github_fake_merged_pull_accepts_repeat_merges_with_any_sha() {
+    let mut h = w::harness();
+    let (number, head) = r::pull(&mut h);
+    let token = r::token(&mut h);
+    let first = w::ask(&mut h, &token, &request(number, head, Method::Squash));
+    assert_eq!(first.status, 200);
+    for sha in [head, 0, h.first] {
+        let repeat = w::ask(&mut h, &token, &request(number, sha, Method::Squash));
+        assert_eq!(repeat.status, 200);
+        assert_eq!(repeat.body, first.body);
+    }
+}
