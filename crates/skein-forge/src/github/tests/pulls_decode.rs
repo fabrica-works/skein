@@ -27,7 +27,11 @@ fn github_pull_document_round_trips() {
             pull.mergeable = mergeable;
             let mut out = Writer::new(4096);
             server::pull(&pull, &mut out).unwrap();
-            assert_decode(Kind::Pull, &bytes(out), Document::Pull(pull.clone()), &[]);
+            let wire = bytes(out);
+            assert!(skein_lib::bytes::find(&wire, b"merge_commit_sha").is_none());
+            let mut expected = pull.clone();
+            expected.merge_commit = None;
+            assert_decode(Kind::Pull, &wire, Document::Pull(expected), &[]);
             let mut small = Writer::new(1);
             assert_eq!(server::pull(&pull, &mut small), Err(Overflow));
             assert_eq!(small.written(), 0);
@@ -37,6 +41,15 @@ fn github_pull_document_round_trips() {
     pull.mergeable = None;
     pull.reviewers = Box::from([]);
     assert_decode(Kind::Pull, PULL.as_bytes(), Document::Pull(pull.clone()), &[]);
+    for (prefix, merge_commit) in [
+        (r#"{"merge_commit_sha":null,"#, None),
+        (r#"{"merge_commit_sha":"abcdef0123456789abcdef0123456789abcdef01","#, Some(pull.base_commit)),
+    ] {
+        let present = PULL.replacen('{', prefix, 1);
+        let mut expected = pull.clone();
+        expected.merge_commit = merge_commit;
+        assert_decode(Kind::Pull, present.as_bytes(), Document::Pull(expected), &[]);
+    }
     let absent = PULL.replace(r#","mergeable":null"#, "");
     assert_decode(Kind::Pull, absent.as_bytes(), Document::Pull(pull.clone()), &[]);
     let reordered = PULL.replace(r#""head":{"ref":"feature","sha":"0123456789abcdef0123456789abcdef01234567","repo":null},"base":{"ref":"main","sha":"abcdef0123456789abcdef0123456789abcdef01"}"#,

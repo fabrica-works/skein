@@ -296,7 +296,13 @@ fn github_pull_merged_and_closed() {
         let mut call = started(api::Read::Pull { number: 5 });
         assert_eq!(call.pull(&pull), Some(Step::send(combined_request(1, 1))));
         assert_eq!(call.combined(api::Check::Pending, 0, &[], false), Some(Step::send(runs_request(1, 8))));
-        let pull = pull_answer(call.runs(&[], false));
+        let answer = call.runs(&[], false);
+        let pull = if merged {
+            assert_eq!(answer, Some(Step::send(graphql_request())));
+            pull_answer(call.graphql(&graphql_row()))
+        } else {
+            pull_answer(answer)
+        };
         assert_eq!((pull.state, pull.merged), (state, expected));
     }
 }
@@ -616,7 +622,7 @@ fn github_pull_queue_graphql() {
     }
 }
 #[test]
-fn github_pull_merged_null_graphql_fallback() {
+fn github_pull_merged_absent_graphql_fallback() {
     for organization in [false, true] {
         for read in [api::Read::Pull { number: 5 }, pull_for()] {
             let row = document::PullGraphql { queued: None, dequeued: None, ..graphql_row() };
@@ -675,7 +681,7 @@ fn github_pull_graphql_plan_failures() {
 }
 
 #[test]
-fn github_pull_graphql_skipped_for_closed_organization_pulls() {
+fn github_pull_closed_organization_uses_graphql_only_when_merged() {
     for merged in [false, true] {
         let mut call = Call::new(api::Read::Pull { number: 5 }, bounds(), false);
         let mut repository = repository();
@@ -688,7 +694,14 @@ fn github_pull_graphql_skipped_for_closed_organization_pulls() {
         pull.merge_commit = Some(pull.base_commit);
         assert_eq!(call.pull(&pull), Some(Step::send(combined_request(1, 1))));
         assert_eq!(call.combined(api::Check::Pending, 0, &[], false), Some(Step::send(runs_request(1, 8))));
-        let answer = pull_answer(call.runs(&[], false));
+        let step = call.runs(&[], false);
+        let answer = if merged {
+            assert_eq!(step, Some(Step::send(graphql_request())));
+            let row = document::PullGraphql { queued: None, dequeued: None, ..graphql_row() };
+            pull_answer(call.graphql(&row))
+        } else {
+            pull_answer(step)
+        };
         assert_eq!(answer.merged, if merged { pull.merge_commit } else { None });
         assert_eq!(answer.queued, None);
         assert_eq!(answer.dequeued, None);

@@ -198,11 +198,6 @@ fn pull_json(row: &document::Pull, merged: bool, json: &mut Encoder) -> Result<(
         json.key(b"merged");
         json.boolean(row.merged);
     }
-    json.key(b"merge_commit_sha");
-    match &row.merge_commit {
-        Some(commit) => json.string(&id::write_commit(commit).ok_or(Overflow)?),
-        None => json.null(),
-    }
     json.key(b"mergeable");
     match row.mergeable {
         Some(mergeable) => json.boolean(mergeable),
