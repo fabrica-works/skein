@@ -1,9 +1,121 @@
 use super::fixtures;
 use crate::{
-    Limits, Shared, Unusable,
+    Component, Event, Limits, Request, Shared, Unusable,
     limits::{self, Stacked},
 };
-use skein_lib::Secret;
+use skein_lib::{Env, Queue, Secret, Time, Token, Wall};
+
+const LISTENER: Token = Token::new(90);
+// Repeat the failure to check that it is announced once.
+const LISTENER_FAILURES: u32 = 2;
+const BOUND: skein_io::Addr =
+    skein_io::Addr::Ip(core::net::SocketAddr::V4(core::net::SocketAddrV4::new(core::net::Ipv4Addr::LOCALHOST, 54321)));
+
+struct Listening {
+    component: Component,
+    env: Env<Limits>,
+    up: Queue<Event>,
+    io: Queue<skein_io::Request>,
+    owner: Token,
+}
+impl Listening {
+    fn new() -> Self {
+        let requested = skein_io::Addr::Ip(([127, 0, 0, 1], 0).into());
+        let mut settings = fixtures::settings();
+        settings.forges.clear();
+        settings.webhooks = Some(crate::hooks::Webhooks { listener: requested });
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: fixtures::limits() };
+        let mut component = Component::new(settings, &env.limits, &fixtures::shared()).expect("listener limits");
+        let mut up = Queue::with_capacity(crate::MAX_OUT.above);
+        let mut io = Queue::with_capacity(crate::MAX_OUT.below);
+        component.begin(&env, &mut up, &mut io);
+        assert!(up.is_empty());
+        let owner = match io.pop().expect("listen request") {
+            skein_io::Request::Listen { owner, addr } => {
+                assert_eq!(addr, requested);
+                owner
+            }
+            other @ (skein_io::Request::Connect { .. }
+            | skein_io::Request::Bind { .. }
+            | skein_io::Request::Reject { .. }
+            | skein_io::Request::Stream { .. }
+            | skein_io::Request::Output { .. }
+            | skein_io::Request::Spawn { .. }
+            | skein_io::Request::Signal { .. }
+            | skein_io::Request::Usage { .. }
+            | skein_io::Request::Window { .. }
+            | skein_io::Request::Close { .. }
+            | skein_io::Request::Abort { .. }) => panic!("listen request: {other:?}"),
+        };
+        assert!(io.is_empty());
+        Self { component, env, up, io, owner }
+    }
+    fn bound(&mut self) {
+        self.component.up(
+            &self.env,
+            skein_io::Event::Listening { owner: self.owner, listener: LISTENER, addr: BOUND },
+            &mut self.up,
+            &mut self.io,
+        );
+    }
+}
+
+#[test]
+fn the_webhooks_listener_says_its_bound_address_once() {
+    let mut h = Listening::new();
+    h.bound();
+    match h.up.pop() {
+        Some(Event::Listening { addr }) => assert_eq!(addr, BOUND),
+        other => panic!("bound address: {other:?}"),
+    }
+    assert!(h.up.is_empty());
+    assert!(h.io.is_empty());
+    h.component.fire(&h.env, &mut h.up, &mut h.io);
+    assert!(h.up.is_empty(), "the bind is announced once");
+    assert!(h.io.is_empty());
+}
+
+#[test]
+fn a_bound_webhooks_listener_still_says_listener_lost_once() {
+    let mut h = Listening::new();
+    h.bound();
+    match h.up.pop() {
+        Some(Event::Listening { addr }) => assert_eq!(addr, BOUND),
+        other => panic!("bound address: {other:?}"),
+    }
+    for _ in 0..LISTENER_FAILURES {
+        h.component.up(
+            &h.env,
+            skein_io::Event::Failed { owner: h.owner, error: skein_io::Error::Refused },
+            &mut h.up,
+            &mut h.io,
+        );
+    }
+    match h.up.pop() {
+        Some(Event::ListenerLost) => {}
+        other => panic!("listener lost: {other:?}"),
+    }
+    assert!(h.up.is_empty(), "the failure is announced once");
+    match h.io.pop() {
+        Some(skein_io::Request::Close { entity }) => assert_eq!(entity, LISTENER),
+        other => panic!("close listener: {other:?}"),
+    }
+    assert!(h.io.is_empty());
+}
+
+#[test]
+fn a_webhooks_listener_bound_while_closing_is_closed_without_an_announcement() {
+    let mut h = Listening::new();
+    h.component.down(&h.env, Request::Close, &mut h.up, &mut h.io);
+    h.bound();
+    assert!(h.up.is_empty());
+    match h.io.pop() {
+        Some(skein_io::Request::Close { entity }) => assert_eq!(entity, LISTENER),
+        other => panic!("close listener: {other:?}"),
+    }
+    assert!(h.io.is_empty());
+}
+
 #[test]
 fn a_hook_secret_past_its_bound_is_unusable_naming_the_forge() {
     let mut settings = fixtures::hook_settings();

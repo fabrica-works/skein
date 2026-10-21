@@ -491,6 +491,7 @@ fn discovery_shares_remaining_output_with_installation_changes_and_git_tokens() 
         | Event::Fact { .. }
         | Event::Answered(_)
         | Event::Hint(_)
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Connected { .. }
         | Event::Stopped { .. }
@@ -505,6 +506,7 @@ fn discovery_shares_remaining_output_with_installation_changes_and_git_tokens() 
         | Event::Fact { .. }
         | Event::Answered(_)
         | Event::Hint(_)
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Connected { .. }
         | Event::Stopped { .. }

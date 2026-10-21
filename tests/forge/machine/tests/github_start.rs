@@ -53,6 +53,7 @@ fn a_github_forge_connects_through_listing_minting_and_identity() {
         | Event::Hint(_)
         | Event::Connected { .. }
         | Event::Stopped { .. }
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Closed => panic!("token collection"),
     }

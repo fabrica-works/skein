@@ -80,6 +80,7 @@ fn expiry(h: &Harness, index: usize) -> Wall {
         | Event::Fact { .. }
         | Event::Answered(_)
         | Event::Hint(_)
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Connected { .. }
         | Event::Stopped { .. }
@@ -588,6 +589,7 @@ fn renewed_contents_shares_output_and_resumes_once() {
         | Event::Fact { .. }
         | Event::Answered(_)
         | Event::Hint(_)
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Connected { .. }
         | Event::Stopped { .. }

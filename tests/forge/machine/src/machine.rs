@@ -544,6 +544,7 @@ impl Machine {
                 Event::Answered(_) => "answered",
                 Event::Stopped { .. } => "stopped",
                 Event::Hint(_) => "hint",
+                Event::Listening { .. } => "listening",
                 Event::ListenerLost => "lost",
                 Event::Closed => "closed",
                 Event::Connected { .. } => unreachable!("connected taken"),
@@ -575,7 +576,7 @@ impl Machine {
                     assert!(self.fake.is_some(), "GitHub log fixture");
                     self.hints.push(hint);
                 }
-                Event::ListenerLost => panic!("webhooks absent"),
+                Event::Listening { .. } | Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => {
                     assert!(!self.closed, "one close");
                     self.closed = true;

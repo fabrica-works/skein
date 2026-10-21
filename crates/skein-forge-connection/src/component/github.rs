@@ -1086,6 +1086,7 @@ mod tests {
             | Event::GitToken { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. }
@@ -1106,6 +1107,7 @@ mod tests {
                     | Event::GitToken { .. }
                     | Event::Answered(_)
                     | Event::Hint(_)
+                    | Event::Listening { .. }
                     | Event::ListenerLost
                     | Event::Stopped { .. }
                     | Event::Closed => unreachable!("change output"),
@@ -1151,6 +1153,7 @@ mod tests {
             | Event::GitToken { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. }
@@ -1175,6 +1178,7 @@ mod tests {
             | Event::GitToken { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. } => unreachable!("Closed last"),
@@ -1299,6 +1303,7 @@ mod tests {
             | Event::GitToken { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. }

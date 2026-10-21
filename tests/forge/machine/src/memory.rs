@@ -375,7 +375,7 @@ impl World {
                     self.seen.held_hints = self.seen.held_hints.max(self.hints);
                 }
                 Event::Connected { .. } => self.seen.forges += 1,
-                Event::Installation { .. } | Event::Fact { .. } => {}
+                Event::Installation { .. } | Event::Fact { .. } | Event::Listening { .. } => {}
                 Event::GitToken { token, .. } => {
                     assert_eq!(token.len(), usize::try_from(self.env.limits.token_bytes).expect("token"));
                     // The scripted mint records Full separately; this proves Contents crossed the boundary.

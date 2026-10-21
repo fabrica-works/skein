@@ -52,7 +52,12 @@ impl Hooks {
     }
     pub fn up(&mut self, env: &Env<Limits>, event: skein_io::Event, up: &mut Queue<Event>) {
         match event {
-            skein_io::Event::Listening { listener, .. } => self.listener = Some(listener),
+            skein_io::Event::Listening { listener, addr, .. } => {
+                self.listener = Some(listener);
+                if !self.closing {
+                    up.push(Event::Listening { addr });
+                }
+            }
             skein_io::Event::Accepted { socket, .. } => self.waiting = Some((socket, env.now)),
             skein_io::Event::Stream { owner, up } => {
                 if let Some(id) = self.connections.get(&owner) {

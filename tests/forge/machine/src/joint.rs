@@ -390,6 +390,7 @@ impl Joint {
                     assert!(self.github.is_some(), "Forgejo fixture");
                     self.git_tokens.push(event);
                 }
+                Event::Listening { .. } => {}
                 Event::ListenerLost => panic!("hook listener lost"),
                 Event::Connected { .. } => self.connected += 1,
                 Event::Closed => self.closed = true,

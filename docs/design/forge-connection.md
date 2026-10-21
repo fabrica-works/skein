@@ -75,9 +75,10 @@ accepted (4.4); and the **close**, its last act.
 
 Up, to the owner: **answered**, a call's one terminal with its token,
 cost and result; a **hint**, after its delivery's response is queued
-(6.2) or as its log's row is read (6.5); **listener lost** (6.4);
-**connected**, a forge's start done (3.3); **stopped**, a forge's access
-refused, at most once per connect; an **installation**'s change (4.4); a
+(6.2) or as its log's row is read (6.5); **listening**, the webhooks
+listener's bound address (6.4); **listener lost** (6.4); **connected**,
+a forge's start done (3.3); **stopped**, a forge's access refused, at
+most once per connect; an **installation**'s change (4.4); a
 **git token**, an installation's for git (5.3); a **fact**, a
 diagnostic for the owner's log; and **closed**, the last event (8.5).
 
@@ -594,9 +595,11 @@ not read within `hook_deadline` closes with no answer.
 Connections (`hooks`), the head (`hook_head_bytes`), the body
 (`hook_body_bytes`) and a request's time (`hook_deadline`) are capped; a
 full listener accepts no more until one closes. A push payload's commit
-list is skipped by the decoder, not held. A listener that fails while
-the component runs is said once, as `listener lost`, and it and its
-connections close. What the owner does is its own.
+list is skipped by the decoder, not held. The listener's bound address
+goes up once as `listening`, so an owner that gave port 0 learns its
+port. A listener that fails while the component runs is said once, as
+`listener lost`, and it and its connections close. What the owner does
+is its own.
 
 ### 6.5 A GitHub App's delivery log
 

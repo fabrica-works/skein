@@ -272,7 +272,7 @@ impl Github {
                 Event::Installation { .. } | Event::GitToken { .. } | Event::Fact { .. } => {}
                 Event::Stopped { why, .. } => panic!("GitHub stopped: {why:?}, seed {}", self.seed),
                 Event::Hint(hint) => self.hints.push(hint),
-                Event::ListenerLost => panic!("GitHub has no listener"),
+                Event::Listening { .. } | Event::ListenerLost => panic!("GitHub has no listener"),
             }
         }
         while let Some(observation) = self.domain.pop_observation() {

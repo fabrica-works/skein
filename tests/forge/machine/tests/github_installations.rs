@@ -42,6 +42,7 @@ fn changes(world: &Machine) -> Vec<InstallationChange<'_>> {
             | Event::Hint(_)
             | Event::Connected { .. }
             | Event::Stopped { .. }
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Closed => panic!("installation collection"),
         })
@@ -119,6 +120,7 @@ fn overflow_keeps_a_later_accepted_installation() {
         | Event::Hint(_)
         | Event::Connected { .. }
         | Event::Stopped { .. }
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Closed => panic!("fact collection"),
     }

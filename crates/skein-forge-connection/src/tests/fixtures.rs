@@ -225,7 +225,7 @@ impl Harness {
                     self.git_tokens.as_mut().expect("GitHub fixture").push(event).expect("fixture tokens fit");
                 }
                 Event::Hint(hint) => self.hints.push(hint).expect("fixture hints fit"),
-                Event::ListenerLost => panic!("webhooks absent"),
+                Event::Listening { .. } | Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => {
                     assert!(!self.closed, "closed once");
                     self.closed = true;
@@ -935,6 +935,7 @@ impl HookHarness {
                     | Event::Connected { .. }
                     | Event::Answered(_)
                     | Event::Stopped { .. }
+                    | Event::Listening { .. }
                     | Event::ListenerLost
                     | Event::Closed => {
                         unreachable!("hook emits hints")

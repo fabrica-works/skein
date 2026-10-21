@@ -297,6 +297,7 @@ impl Listener {
                         self.hint_count += 1;
                         self.event_order.push("hint");
                     }
+                    Event::Listening { .. } => {}
                     Event::ListenerLost => {
                         self.lost += 1;
                         self.event_order.push("lost");

@@ -299,7 +299,7 @@ impl Host for Hosted {
                 Event::Stopped { why, .. } => {
                     assert!(self.stopped.replace(why).is_none(), "one stop");
                 }
-                Event::Hint(_) | Event::ListenerLost => panic!("webhooks absent"),
+                Event::Hint(_) | Event::Listening { .. } | Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => self.closed = true,
             }
         }

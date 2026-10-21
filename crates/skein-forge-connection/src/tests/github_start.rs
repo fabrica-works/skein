@@ -182,6 +182,7 @@ fn github_starts_list_mint_both_scopes_then_check_identity() {
         | Event::Fact { .. }
         | Event::Answered(_)
         | Event::Hint(_)
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Connected { .. }
         | Event::Stopped { .. }

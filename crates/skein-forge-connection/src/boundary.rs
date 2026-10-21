@@ -94,6 +94,8 @@ pub enum Event {
     GitToken { forge: u16, installation: u64, account: Account, token: Secret, expires: Wall },
     /// A verified webhook after its response, or a delivery read from the log.
     Hint(crate::hooks::Hinted),
+    /// The webhooks listener bound, with its actual address, once per bind.
+    Listening { addr: skein_io::Addr },
     /// The webhooks listener failed to bind or was lost.
     ListenerLost,
     /// A forge's start is done: at most once per configured-access or connect generation.

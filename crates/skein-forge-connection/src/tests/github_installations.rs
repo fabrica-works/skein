@@ -49,6 +49,7 @@ fn changes(h: &mut Harness) -> Box<[(u64, Option<Account>, Change)]> {
             | Event::GitToken { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. }

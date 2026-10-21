@@ -532,6 +532,7 @@ fn ready_jobs_share_output_room() {
             Event::Fact { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. }

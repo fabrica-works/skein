@@ -46,6 +46,7 @@ fn changes(gh: &mut GitHub) -> List<(u64, Option<Account>, Change)> {
                 | Event::GitToken { .. }
                 | Event::Answered(_)
                 | Event::Hint(_)
+                | Event::Listening { .. }
                 | Event::ListenerLost
                 | Event::Connected { .. }
                 | Event::Stopped { .. }
@@ -76,6 +77,7 @@ fn fact(gh: &mut GitHub) -> Option<Fact> {
             | Event::GitToken { .. }
             | Event::Answered(_)
             | Event::Hint(_)
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Connected { .. }
             | Event::Stopped { .. }

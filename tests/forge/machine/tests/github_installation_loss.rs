@@ -48,6 +48,7 @@ fn changes(world: &Machine) -> Vec<(u64, Change)> {
             | Event::Hint(_)
             | Event::Connected { .. }
             | Event::Stopped { .. }
+            | Event::Listening { .. }
             | Event::ListenerLost
             | Event::Closed => panic!("installation history"),
         })
@@ -80,6 +81,7 @@ fn acceptance_after_empty_start_checks_identity_without_reconnecting() {
         | Event::Hint(_)
         | Event::Connected { .. }
         | Event::Stopped { .. }
+        | Event::Listening { .. }
         | Event::ListenerLost
         | Event::Closed => panic!("token history"),
     }
