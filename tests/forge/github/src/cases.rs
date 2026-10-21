@@ -677,18 +677,40 @@ fn queue_head(r: &mut Runner<'_>, index: usize, commit: api::Commit) -> Result<b
         None => Ok(false),
     }
 }
+// At most thirteen branch reads, five seconds apart: sixty seconds live.
+const GROUP_POLL_SECONDS: u64 = 5;
+const GROUP_POLL_READS: usize = 13;
+const BRANCHES_PAGE_SIZE: usize = 100;
+fn queue_group_branch(r: &mut Runner<'_>, index: usize, reads: &mut usize) -> Result<Option<Box<[u8]>>> {
+    for attempt in 1..=GROUP_POLL_READS {
+        *reads = attempt;
+        let Some(branches) =
+            queue_plan(r, index, api::Op::Read(api::Read::Branches), false, "queue branches read failed")?
+        else {
+            return Ok(None);
+        };
+        let api::Answer::Branches(branches) = branches else {
+            return Err("branches answer invalid".into());
+        };
+        if branches.len() >= BRANCHES_PAGE_SIZE {
+            r.fact(r.case, false, "queue branches listing full");
+            return Ok(None);
+        }
+        if let Some(group) = branches.iter().find(|b| b.starts_with(b"gh-readonly-queue/")) {
+            return Ok(Some(group.clone()));
+        }
+        if attempt < GROUP_POLL_READS {
+            r.wait(GROUP_POLL_SECONDS);
+        }
+    }
+    r.fact(r.case, false, "queue group branch absent");
+    Ok(None)
+}
 fn queue_group(r: &mut Runner<'_>, index: usize) -> Result<Option<api::Commit>> {
-    let Some(branches) = queue_plan(r, index, api::Op::Read(api::Read::Branches), false, "queue branches read failed")?
-    else {
-        return Ok(None);
-    };
-    let api::Answer::Branches(branches) = branches else {
-        return Err("branches answer invalid".into());
-    };
-    let Some(group) = branches.iter().find(|b| b.starts_with(b"gh-readonly-queue/")) else {
-        r.fact(r.case, false, "queue group branch absent");
-        return Ok(None);
-    };
+    let mut reads = 0;
+    let group = queue_group_branch(r, index, &mut reads);
+    r.provenance.push(format!("# queue-dequeued-delivered group branch reads {reads}"));
+    let Some(group) = group? else { return Ok(None) };
     let Some(answer) = queue_plan(
         r,
         index,

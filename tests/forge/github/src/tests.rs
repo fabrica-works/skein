@@ -63,6 +63,9 @@ fn scan(dir: &Path, secrets: &Secrets) {
 }
 #[test]
 fn github_conformance_holds_every_fact_on_the_fake() {
+    // Live omits fourteen fake-only bootstrap, manifest, rename-log and
+    // lifecycle requests from the full fake run.
+    const FAKE_ONLY_REQUESTS: usize = 14;
     let out = Temp::new("whole");
     let report = run_fake(&out.0).expect("whole hosted fake run");
     assert_eq!(report.facts.len(), cases::NAMES.len());
@@ -86,10 +89,13 @@ fn github_conformance_holds_every_fact_on_the_fake() {
         })
         .count();
     // Extend both four-poll head waits to seven, the four-poll group wait
-    // and merge wait to eleven, and the listing to three tries. Retain all
-    // fake-only lifecycle requests as slack in this live upper bound.
-    let extra_polls = 2 * 2 * 3 + 2 * 7 + 7 + 2;
-    assert!(report.requests + 4 * commits + 6 * 4 + extra_polls <= 400, "live request upper bound");
+    // and merge wait to eleven, the listing to three tries, and the group
+    // branch lookup from one read to thirteen.
+    let extra_polls = 2 * 2 * 3 + 2 * 7 + 7 + 2 + 12;
+    let projected_live_requests = report.requests + 4 * commits + 6 * 4 + extra_polls - FAKE_ONLY_REQUESTS;
+    assert!(projected_live_requests <= 400, "live request upper bound: {projected_live_requests}");
+    let facts = fs::read_to_string(out.0.join("facts.txt")).expect("recorded facts");
+    assert!(facts.lines().any(|line| line == "# queue-dequeued-delivered group branch reads 1"));
     assert!(report.leftover_mints.is_empty());
 }
 #[test]
@@ -157,6 +163,12 @@ fn github_conformance_queue_refusals_fail_one_fact() {
         }
         let fact = r.facts.iter().find(|fact| fact.name == case).unwrap_or_else(|| panic!("{row}: refusal fact"));
         assert_eq!(fact.outcome, Outcome::Fails(reason.into()), "{row}");
+        if kind == "branches" || kind == "group" {
+            assert!(
+                r.provenance.iter().any(|line| line == "# queue-dequeued-delivered group branch reads 1"),
+                "{row}: group branch read count recorded on refusal"
+            );
+        }
         assert!(r.cleanup, "{row}: cleanup ran");
         assert!(r.journal.pending.is_empty(), "{row}: all journal intentions cleaned up");
         assert!(r.tokens.is_empty(), "{row}: all minted tokens revoked");

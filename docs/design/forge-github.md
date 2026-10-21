@@ -727,8 +727,13 @@ temper's draft section 11.
   runs. REST omits merge_commit_sha and the dialect reads the merged commit
   through GQ. The dequeue case sends a SQUASH ruleset and creates two commits
   with passing messages, putting FAIL only in the pull title. It records the
-  repository's squash title setting and the group commit's message. A setting
-  other than COMMIT_OR_PR_TITLE, or a passing group check, makes that fact
+  repository's squash title setting and the group commit's message. The group
+  branch appears asynchronously after enqueue; the case polls its branch
+  listing at most thirteen times, five seconds apart (sixty seconds), and
+  records the number of reads. A listing with 100 or more branches fails the
+  fact as queue branches listing full; an exhausted poll fails it as queue
+  group branch absent. A setting other than COMMIT_OR_PR_TITLE, or a passing
+  group check, makes that fact
   unchecked: the title-driven group failure remains unconfirmed live. A failed
   group check must produce a dequeued delivery. Head and group checks and
   merge reads are polled every 15 seconds. Each wait expiry names the head ci,
