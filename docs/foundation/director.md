@@ -51,13 +51,15 @@ doing now is in its notes (section 3), never here.
     2-hour check: section 7 of skein's docs/foundation/director.md.";
   - the watcher, `tmp/director/watch.sh`, as a background task, started
     again after each wake (section 5).
-- **Its context** is capped at 150k. It aims at one compaction every
-  two hours at most, on average, and at most four before a fresh
-  context (below):
+- **Its context** compacts by itself at Claude Code's autocompact
+  trigger, the window `session.sh` reports. It aims at one compaction
+  every two hours at most, on average; their number never ends a
+  context, the clock does (below):
   - each check starts with `tmp/director/session.sh`, one line with the
     context's size, compactions and checks since it began, and a
-    verdict. At "compact first", from 120k, it compacts before the
-    check: it stops the watcher, deletes the cron, runs
+    verdict. At "compact first", about 30k below the trigger (a
+    check's reading), it compacts before the check: it stops the
+    watcher, deletes the cron, runs
     `tmp/director/context.sh compact "<what to keep>"` and ends its
     turn. The script waits for the session to be idle, which it never
     is while a cron or a background task is registered, types
@@ -67,18 +69,18 @@ doing now is in its notes (section 3), never here.
     which runs the check on the fresh context, after its notes and the
     timers (section 3). Should the script fail, it types the failure
     into the session;
-  - crossing 150k between checks compacts there, by itself;
+  - crossing the trigger between checks compacts there, by itself;
   - compacting more often than every two hours means it reads too
     much: Codex reads for it (section 9).
 - **One director only.** Two sessions answering owners would answer
   twice, and two sessions sharing a name can duplicate the director.
   After x1 restarts, `claude agents` may list an auto-resumed copy of
   an old director: stop it.
-- **A fresh context at the third check,** about six hours in, or at
-  once after a fourth compaction: `session.sh` says "hand over". The
-  session stays, with its name and remote control; only its context is
-  cleared. The director brings `notes/` up to date (the owners, the
-  direction, the budgets, what waits on the user), writes
+- **A fresh context at the third check,** about six hours in,
+  however many compactions came before: `session.sh` says "hand
+  over". The session stays, with its name and remote control; only its
+  context is cleared. The director brings `notes/` up to date (the
+  owners, the direction, the budgets, what waits on the user), writes
   `notes/handover.md` with what only it holds (what is in flight, what
   is held, the items between owners), logs the handover, stops the
   watcher, deletes the cron, runs `tmp/director/context.sh clear` and
@@ -123,8 +125,7 @@ runs.
   `notes/owners.md`, `notes/decisions-live.md`, the decisions newer
   than that digest, the last entries of `log.md`, and `handover.md`
   while it exists. Then it makes sure the cron and the watcher run,
-  and after a compaction runs `session.sh`: a fourth means a handover
-  (section 2).
+  and after a compaction runs `session.sh` (section 2).
 
 ## 4. Starting an owner
 
