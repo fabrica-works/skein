@@ -17,4 +17,5 @@ cargo-nextest, and cargo's `[net] git-fetch-with-cli = true` in
 ## Work
 
 Work goes through owners: skein's `docs/foundation/owners.md`. The
-director starts them; their notes are in `tmp/owners/<name>/`.
+director starts them (`docs/foundation/director.md`); their notes are
+in `tmp/owners/<name>/`, and the director's in `tmp/director/`.

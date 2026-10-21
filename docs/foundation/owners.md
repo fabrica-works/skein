@@ -21,7 +21,7 @@ behind the rules, when a rule's reason matters. The repository's
 - **The director** knows every draft and the
   direction. It starts one owner per draft, gives the final call on what
   owners escalate, and asks the user only what it can't reasonably
-  decide.
+  decide. Its role is [director.md](director.md).
 - **An owner** (Claude Code, Opus 5.5) designs its draft, or its part
   of one, and then implements it. A large scope is split into parts,
   each given to a sub-owner, a session like itself (section 3). Its

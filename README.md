@@ -54,7 +54,9 @@ follows, and the tools of its development process.
 - [`docs/design/STATUS.md`](docs/design/STATUS.md): how far the code is
   from the design.
 - [`docs/foundation/owners.md`](docs/foundation/owners.md):
-  how work goes from a draft to `main`, here and downstream.
+  how work goes from a draft to `main`, here and downstream;
+  [`director.md`](docs/foundation/director.md): the director, who runs
+  the owners.
 
 Before changing code, read [`AGENTS.md`](AGENTS.md). `main` moves only
 through `land`, which runs the gate, `scripts/check.sh`.
