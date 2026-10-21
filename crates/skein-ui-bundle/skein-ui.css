@@ -50,3 +50,8 @@
     scroll-behavior: auto;
   }
 }
+
+label[for^="skein-ui-label-"]:has(+ input:not([type="radio"], [type="checkbox"])) {
+  display: block;
+  font-size: small;
+}

@@ -225,11 +225,16 @@ impl Mounted {
     fn register(&self, node: NodeId, element: &Element) {
         let mut roots: Vec<Node> = vec![element.clone().into()];
         if let Some(id) = element.get_attribute("id") {
-            if id.starts_with("skein-ui-label-")
-                && let Some(label) = element.next_element_sibling()
-                && label.get_attribute("for").as_ref() == Some(&id)
-            {
-                roots.push(label.into());
+            if id.starts_with("skein-ui-label-") {
+                if let Some(label) = element.previous_element_sibling()
+                    && label.get_attribute("for").as_ref() == Some(&id)
+                {
+                    roots.insert(0, label.into());
+                } else if let Some(label) = element.next_element_sibling()
+                    && label.get_attribute("for").as_ref() == Some(&id)
+                {
+                    roots.push(label.into());
+                }
             }
             if id.starts_with("skein-ui-menu-")
                 && let Some(button) = element.previous_element_sibling()

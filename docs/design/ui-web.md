@@ -422,7 +422,7 @@ the host tests (section 14).
 | term, description | `role="term"`, `role="definition"` |
 | button | `<button type="button">` |
 | link | `<a href="<path>">`; a checked external Markdown link, `<a href="<url>" rel="noopener noreferrer" target="_blank">` |
-| text field | `<input>`, its `type` by its entry kind: `text`, `number`, `email`, `tel` for a telephone, `url`, `date`, `time`, `password` for a secret |
+| text field | a visible `<label for>` before a named `<input>`, its `type` by its entry kind: `text`, `number`, `email`, `tel` for a telephone, `url`, `date`, `time`, `password` for a secret |
 | text area | `<textarea>` |
 | choice, choice group | `<input type="radio">` with its label, `role="radiogroup"` |
 | check | `<input type="checkbox">` with its label |
@@ -451,7 +451,10 @@ the host tests (section 14).
 - **Attributes:**
   - *a name* is `aria-label` where the element's own text does not give
     it; a button, a tab, a menu item and an option show their name as
-    their text;
+    their text; a named text field has a visible `<label>` just before
+    its input, linked by `for` to `id="skein-ui-label-<node id>"`, as a
+    choice or check is linked to its label. The label supplies the name
+    once, with no `aria-label` on the input; an unnamed field has no label;
   - *a description* is `aria-describedby`, naming an element of the page
     part's that holds its words as text, shown beside the node's
     element: after it; inside it, last, for an item, a cell and a

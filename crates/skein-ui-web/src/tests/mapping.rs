@@ -361,3 +361,18 @@ fn an_override_keeps_the_nodes_role_and_name() {
         r#"<article data-node="1" role="region" aria-label="Groceries" class="test-mark"></article>"#
     );
 }
+
+#[test]
+fn named_fields_use_a_visible_label_and_text_areas_keep_their_aria_label() {
+    for (role, expected) in [
+        (
+            Role::TextField,
+            r#"<label for="skein-ui-label-1">Words &amp; &lt;b&gt;</label><input data-node="1" type="text" id="skein-ui-label-1">"#,
+        ),
+        (Role::TextArea, r#"<textarea data-node="1" aria-label="Words &amp; &lt;b&gt;"></textarea>"#),
+    ] {
+        let mut made = fixtures::made(role);
+        property(&mut made, Property::Name);
+        assert_eq!(dom::print(&mapping::element(&made, &fixtures::look(), b"/", Primary::Control)), expected);
+    }
+}

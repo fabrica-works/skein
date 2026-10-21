@@ -653,6 +653,36 @@ fn a_nested_tree_set_size_is_derived_from_its_group() {
 }
 
 #[test]
+fn a_field_name_patch_adds_changes_and_removes_its_visible_label() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    for (revision, name) in
+        [None, Some(b"Title".as_slice()), Some(b"Changed & <name>".as_slice()), None].iter().enumerate()
+    {
+        let patches = fixtures::patches(&mut view, u64::try_from(revision).unwrap(), |b| {
+            main(b);
+            b.open(Role::TextField);
+            if let Some(name) = name {
+                b.name(name);
+            }
+            b.value(b"kept", 0);
+            b.close();
+            end(b);
+        });
+        let mut ops = Vec::new();
+        page.apply(&patches, &mut ops);
+        let html = page.html();
+        assert!(!html.contains("aria-label"));
+        assert_eq!(html.matches("<label ").count(), usize::from(name.is_some()));
+        if revision > 0 {
+            assert!(ops.iter().any(|op| matches!(op, Op::Attributes { node: NodeId(3), element } if crate::dom::print(element).contains("<label ") == name.is_some())));
+        }
+        if revision == 2 {
+            assert!(html.contains("<label for=\"skein-ui-label-3\">Changed &amp; &lt;name&gt;</label><input"));
+        }
+    }
+}
+
+#[test]
 fn slots_paragraphs_statuses_and_lists_split_tree_item_runs() {
     let (mut page, mut view) = (page(), View::new(&LIMITS));
     page.apply(

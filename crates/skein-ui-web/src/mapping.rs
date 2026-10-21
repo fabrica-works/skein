@@ -100,19 +100,8 @@ fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -
             e.set("aria-valuetext", &text);
         }
     }
-    if a.role == Role::Choice || a.role == Role::Check {
-        let id = format!("skein-ui-label-{}", made.id.0);
-        e.remove("aria-label");
-        e.set("id", &id);
-        let mut label = Element::new("label");
-        label.set("for", &id);
-        if let Some(name) = &a.name {
-            label.text(name);
-        }
-        let mut pair = Element::new("");
-        pair.append(e);
-        pair.append(label);
-        return pair;
+    if a.role == Role::Choice || a.role == Role::Check || (a.role == Role::TextField && a.name.is_some()) {
+        return labelled(e, made);
     }
     if a.role == Role::Menu {
         let id = format!("skein-ui-menu-{}", made.id.0);
@@ -132,6 +121,26 @@ fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -
         return pair;
     }
     e
+}
+
+fn labelled(mut e: Element, made: &Made) -> Element {
+    let id = format!("skein-ui-label-{}", made.id.0);
+    e.remove("aria-label");
+    e.set("id", &id);
+    let mut label = Element::new("label");
+    label.set("for", &id);
+    if let Some(name) = &made.attribute.name {
+        label.text(name);
+    }
+    let mut pair = Element::new("");
+    if made.attribute.role == Role::TextField {
+        pair.append(label);
+        pair.append(e);
+    } else {
+        pair.append(e);
+        pair.append(label);
+    }
+    pair
 }
 
 fn collection(e: &mut Element, made: &Made) {
