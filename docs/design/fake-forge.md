@@ -697,7 +697,11 @@ below are tracked in STATUS.md.
   refused as GitHub refuses it (`400`, `403`). Pages are GitHub's: up to
   `per_page` rows, at most 100, with `Link` next while more remain.
   Issues and pull requests share one numbering, and the issues' listing
-  holds pull requests, each with its `pull_request` member.
+  holds pull requests, each with its `pull_request` member. An absent `since`
+  lists all rows; otherwise the bound is inclusive (`updated_at >= since`).
+  A `since` before `1971-01-01T00:00:00Z` answers `200 []`. The named
+  `ISSUES_SINCE_MIN` bound in the GitHub reads layer is the earliest observed
+  nonempty bound; the intervening dates were not probed further.
 - **GraphQL at `POST /graphql`.** The layer answers the dialect's three
   documents, matched byte for byte against its constants (`viewer`,
   `pull`, `enqueue`), each with its variables. Any other document is
@@ -758,9 +762,10 @@ below are tracked in STATUS.md.
   A person's `PUT` or `DELETE /user/installations/<id>/repositories/<repo>`
   checks that user's domain admin permission and answers `204` when it changes
   the selection. The repository must belong to the installation's account.
-  Removing from an all-repositories installation, or removing the last
-  listed repository, is `422` "Validation Failed" without changing reach.
-  These two refusal texts are docs-derived and unchecked live. `PUT` on
+  Removing from an all-repositories installation is `422` "Validation Failed",
+  a docs-derived text unchecked live. Removing the last listed repository is
+  `422` "Cannot remove the last repository from this installation.", checked
+  live on both fixture installations. Neither changes reach. `PUT` on
   an all-repositories installation is `204` without changing reach.
 - **Ruleset mutations.** A person's `POST /repos/<o>/<n>/rulesets`
   replaces the domain's repository protection, requiring admin permission;
@@ -786,11 +791,13 @@ below are tracked in STATUS.md.
   an inferred `403` "Resource not accessible by integration".
 - **Comment edits.** `PATCH /repos/<o>/<n>/issues/comments/<id>` takes
   exactly `{"body": "..."}` and calls the domain's `EditComment` write.
-  Either a person or a full installation token may edit as the domain's
-  authorship and write permission allow; installation reach still applies.
+  A full installation token may edit as the domain's authorship and write
+  permission allow; installation reach still applies. Fixture person tokens
+  receive `403` "Resource not accessible by personal access token".
   It answers `200` with one comment from the server's comment encoder,
   including its updated timestamp. Unknown or duplicate fields are `422`.
-  Both the request and answer shapes are inferred, unrecorded live.
+  The person-token refusal is checked live. The installation-token edit and
+  its advancing updated timestamp remain unconfirmed live.
 - **The browser's pages, as plain HTTP** (seams S4), at the `web`
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and
@@ -822,11 +829,27 @@ below are tracked in STATUS.md.
   The keys an App can get are the layer's fixed test keys (`KEYS`,
   2048-bit, made for the fake and public). The conversion hands them out
   in turn.
+- **Status posts.** `POST /repos/<o>/<n>/statuses/<sha>` refuses installation
+  tokens with `403` "Resource not accessible by integration", including an
+  App advertising statuses write. Fixture person tokens receive `403`
+  "Resource not accessible by personal access token". Both are checked live.
+- **Pull creation refusals.** No commits and an existing pull answer `422`
+  with top-level message "Validation Failed" and one errors object with
+  resource "PullRequest", code "custom", and message "No commits between
+  <base> and <head>" or "A pull request already exists for <owner>:<head>.".
+  These forms are checked live; the dialect reads errors[].message.
 - **Checks.** The domain's CI statuses for a commit are rendered as the
   `github-actions` App's check runs, one per context. The run is the
   domain's `Run`, the job its `Job`, and the attempt the job's. Statuses
   that people report stay statuses. The combined status is `pending`
-  with `total_count` 0 when there are none.
+  with `total_count` 0 when there are none. The conformance fixture configures
+  `ci.rs`, `actions.rs`, and `Cue::Message` to stand for its repositories'
+  `.github/workflows/ci.yml`: push, pull opening/head movement, and merge
+  groups run `ci` on their head commit. It is in_progress for 45 fake seconds,
+  then completed with failure when that commit's message contains FAIL,
+  success otherwise. The run and job use the same ids and logs as other
+  Actions cases; the GitHub layer renders them in `reads/checks.rs`. CI runs
+  once per commit and repository, coalescing overlapping fixture triggers.
 - **A job's log** is a `302` to the blob origin: a second listener of
   the peer, the origin `http://<blob>`. The target is a path signed for
   600 seconds on the forge's clock. The blob listener serves the job's
@@ -947,7 +970,12 @@ These are small, and they land after forge-kit's steps on the fakes:
   head, as a merge does. An entry's group commit is the squash of its
   head onto the base's tip, or onto the entry ahead of it. That commit
   becomes the head of `gh-readonly-queue/<base>/pr-<n>-<head>`, so the
-  domain's CI runs on it as on any head:
+  domain's CI runs on it as on any head. Every queue group is modelled as
+  a squash, regardless of merge_method. Its message follows
+  COMMIT_OR_PR_TITLE: one commit relative to the pull's base uses that
+  commit's message, more than one uses the pull's title. The GitHub
+  repository response advertises squash_merge_commit_title as
+  COMMIT_OR_PR_TITLE, and branch reads expose the stored commit message:
   - when it passes, the base moves to it and the pull request is merged;
   - when it fails, the entry leaves with the reason `CI_FAILURE`;
   - entries behind a failed one are built again.
@@ -1078,11 +1106,14 @@ masking and refusal of leaked secrets are section 7's.
   - `person-<owner>.token`: one fine-grained token per owner, for any
     number of owners, found by name. Each is limited to that owner's
     probe repositories.
-- **The fixtures:** the probe App `temper-probe-d0fc06`, installed on
-  `freeekanayaka/temper-probe` and `fabrig-ai/temper-probe`. The spare,
-  `freeekanayaka/temper-probe-2`, is not granted: a run adds it to the
-  installation and removes it again. Each probe repository's `ci`
-  workflow fails a head whose message holds `FAIL`.
+- **The fixtures:** an App installed on a user-owned and an organization-owned
+  probe repository, plus an initially ungranted spare. A run adds the spare
+  to the installation and removes it again. Each probe repository carries
+  the ci workflow specified in forge-github.md, section 16: push, pull_request
+  and merge_group triggers, job ci, 45 seconds, and a FAIL head-message cue.
+  The dequeue case requires COMMIT_OR_PR_TITLE and two passing head commits
+  with FAIL only in the title; it reads and records the repository setting
+  and changes no repository setting.
 - **Queue installation discovery.** Before minting or repository changes,
   the startup repository reads select the first installation whose probe
   has `owner.type: Organization`. Every queue case uses its probe repository,

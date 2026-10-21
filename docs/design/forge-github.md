@@ -154,7 +154,7 @@ the call fails `TooLarge` when a 50th page still has a next.
 
 | Call | Requests | Answer from |
 |---|---|---|
-| `Read::Items { since, page, kind }` | `GET R/issues?state=all&since=<since>&sort=updated&direction=asc&per_page=<size>&page=<page>` | each row a `Summary`: `number`; a `pull_request` member makes it a pull, and its `merged_at` makes one closed merged; `state`; `user.id`; `labels[].name`; `updated_at`; `title`; `body` (null as empty) and its key. A row of the other kind than the call's is skipped, and counts toward the page. Rows of one second are put in order of number before the page answers. `more` from `Link`; `now` from `Date` |
+| `Read::Items { since, page, kind }` | `GET R/issues?state=all[&since=<since>]&sort=updated&direction=asc&per_page=<size>&page=<page>` | omit `since` at zero: an epoch `since` lists nothing; otherwise send the UTC bound, inclusive. Each row a `Summary`: `number`; a `pull_request` member makes it a pull, and its `merged_at` makes one closed merged; `state`; `user.id`; `labels[].name`; `updated_at`; `title`; `body` (null as empty) and its key. A row of the other kind than the call's is skipped, and counts toward the page. Rows of one second are put in order of number before the page answers. `more` from `Link`; `now` from `Date` |
 | `Read::Item { number, after }` | `GET R/issues/<number>`; `GET R/issues/<number>/comments?per_page=<size>&page=<n>` from page 1, until the answer is full or a page has no next | the issue as a `Summary`; its comments with ids above `after`, oldest first, as forge.md 5.2's: `id`, `user.id`, `created_at`, `body` and its key, provenance, revision; `more` when one is left |
 | `Read::Pull { number }` | `GET R/pulls/<number>`; `GET R/commits/<head.sha>/status?per_page=1`; `GET R/commits/<head.sha>/check-runs?filter=latest&per_page=<size>&page=<n>`, every page; `GQ pull` when the pull is open and the repository's owner an organization, or merged (`merge_commit_sha` is absent at the pin) | `number`; `state`, `merged` making it merged; `head.ref`, `base.ref`, `head.sha`, `base.sha`; `merged` from `merge_commit_sha`, else `mergeCommit.oid`; `mergeable`, null as false; `requested_reviewers[].id`; `queued` from `mergeQueueEntry.position`; `dequeued` from the last `RemovedFromMergeQueueEvent`'s `reason`; `Ci` from both (4.4) |
 | `Read::PullFor { head, base }` | `GET R/pulls?state=open&head=<owner>:<head>&base=<base>&per_page=1`; when none, `GET R/pulls?state=all&head=<owner>:<head>&base=<base>&sort=created&direction=asc&per_page=1`; then as `Pull` for the number found | the open pull request for the head and base, else the oldest; `Missing` when there is none. `<owner>` is the repository's own: a fork's head is not followed (temper's draft 18) |
@@ -213,11 +213,12 @@ looks for a branch it dropped (`Read::Branches`, 5.3's row).
 - **Opening asks GitHub,** which refuses a head with nothing to merge
   and a second open pull request itself, each with its own message: one
   request, where Forgejo's compares first (forge.md, 5.2).
-- **A status needs `statuses` write,** which the App's permissions in
-  temper's draft section 5 do not take: there `Status` answers
-  `Forbidden`, GitHub's `403` "Resource not accessible by integration".
-  This is the call GitHub answers otherwise than Forgejo (forge.md,
-  3.7).
+- **A status needs `statuses` write.** The fixture App's installation token
+  receives `Forbidden`, GitHub's `403` "Resource not accessible by integration";
+  the fixture person tokens receive `403` "Resource not accessible by personal
+  access token". The queue cases use the fixture workflow's check run instead
+  (section 16). This is the call GitHub answers otherwise than Forgejo
+  (forge.md, 3.7).
 - **Keys and markers** are as Forgejo's (forge.md, section 6).
 
 ### 4.3 The GraphQL documents
@@ -698,7 +699,9 @@ temper's draft section 11.
 - **The log:** `log-lists-failed-deliveries`, `log-cursor-in-link`,
   `log-ids-19-digits`, `log-delivery-whole`,
   `log-installation-events-unscoped` (P7);
-  `installation-target-in-log` (an App not subscribed to it).
+  `installation-target-in-log` (an App not subscribed to it). The fake checks
+  an account rename; live records it unchecked because the run renames no
+  account, so the event remains unobserved live.
 - **Rules and the queue:** `approve-own-422`, `ruleset-approval-405`,
   `bypass-always-merges` (P8); `queue-direct-merge-405`,
   `enqueue-stale-unprocessable`, `enqueue-pending-check-protected`,
@@ -716,30 +719,48 @@ temper's draft section 11.
   One entry and no batching wait keep single-pull cases immediate; the
   check timeout is a ceiling, not a mandatory delay. Queue cases and their
   rulesets use an organization's repository and its matching tokens.
-  The pending-check fact approves the pull and posts pending ci before
-  testing Merge as Protected and raw enqueue as UNPROCESSABLE with the
-  required-check prefix. Both queue completion cases pass ci on the head
-  before enqueue. The merge case then finds the gh-readonly-queue/ group
-  commit, posts ci success there and polls within the CI wait until the
-  pull reads merged, with REST omitting merge_commit_sha and the dialect
-  reading the merged commit through GQ. The dequeue case posts ci failure
-  on the group commit and expects its delivery. Approval, admission,
-  branches or group read, and status plan refusals fail their fact with
-  the error; a raw enqueue refusal includes its GraphQL errors message.
-  A merge wait that expires fails the fact; later cases still run.
+  The pending-check fact approves the pull while its head workflow is still
+  in progress, tests Merge as Protected, and tests raw enqueue as UNPROCESSABLE
+  with the required-check prefix. No case posts commit statuses. The merge
+  case waits up to 90 seconds for the head's ci to pass, admits through Merge
+  as Queued, and polls the pull up to 150 seconds while the group's own ci
+  runs. REST omits merge_commit_sha and the dialect reads the merged commit
+  through GQ. The dequeue case sends a SQUASH ruleset and creates two commits
+  with passing messages, putting FAIL only in the pull title. It records the
+  repository's squash title setting and the group commit's message. A setting
+  other than COMMIT_OR_PR_TITLE, or a passing group check, makes that fact
+  unchecked: the title-driven group failure remains unconfirmed live. A failed
+  group check must produce a dequeued delivery. Head and group checks and
+  merge reads are polled every 15 seconds. Each wait expiry names the head ci,
+  group ci, or merge wait in a failed fact. Approval, admission, branch and
+  check read refusals fail their fact; a raw enqueue refusal includes its GQ
+  message. Later cases still run.
 - **Repositories and issues:** `installation-repositories-at-once`
   (P12); `issues-list-pulls`, `new-issue-may-miss-listing` (P13).
-- **Not yet probed,** first held by the conformance:
+  The pull listing gets three tries, two seconds apart, without since.
+  The new-issue fact records immediate visibility in an unfiltered listing;
+  either visibility is valid. `issues-since-epoch-empty` requires raw epoch
+  since to answer 200 with an empty array, the unfiltered listing to contain
+  the made issue, and the dialect's zero-time Items read to contain it.
+  `installation-repository-removal-refusals` expects 422, "Cannot remove the
+  last repository from this installation.", from each fixture installation.
+- **Additional protocol facts:**
   `branch-with-slash-reads`, `issues-since-inclusive`,
   `user-by-id-reads`, `repository-allows-shown`,
   `pulls-422-no-commits`, `pulls-422-exists`, `refs-422-exists`,
   `refs-delete-missing-422`, `update-conflict-422`,
   `compare-files-capped-300`,
-  `comment-updated-at-on-edit`; for setup and the component
+  `comment-updated-at-on-edit`. The inclusive-since case takes a settled
+  row's updated_at from an unfiltered listing and finds that row when since
+  equals it. Both pull-creation 422 cases read errors[].message beneath
+  "Validation Failed", in a PullRequest resource object with code custom:
+  "No commits between main and <head>" or "A pull request already exists for
+  <owner>:<head>." The comment edit uses the App's installation token and
+  requires updated_at to advance. For setup and the component
   (forge-setup.md and forge-connection.md cite them):
   `inactive-hook-visible`, and `manifest-hook-invalid-host-accepted`
   (an App hook at `https://<name>.invalid/`; the draft's Setup probe
-  saw `https://hooks.temper-probe.invalid/github` taken), both
+  saw `https://hooks.example-app.invalid/github` taken), both
   `unchecked` on github.com and held on the fake alone, since a live
   run changes nothing of the App (fake-forge.md, section 11); and
   `job-log-host-per-owner` (whether the log's redirect host differs
@@ -815,3 +836,17 @@ before any write. The fake's `acme` is a user and `globex` an organization.
 The plan's marker word is the tool's own `b"conformance"` constant, checked
 with `marker::valid_word` in `Runner::start` before any request. It is
 independent of the App's slug, which names the bot and appears in provenance.
+
+Each live fixture repository must carry `.github/workflows/ci.yml`, triggered
+by `push`, `pull_request`, and `merge_group`, with job and check run named
+`ci`. It runs for about 45 seconds. It reads the message at
+`pull_request.head.sha`, else `merge_group.head_sha`, else the pushed sha,
+and fails when that message contains `FAIL`; otherwise it succeeds. The
+queue ruleset requires this check. The conformance fake uses the shared
+domain's CI, runs, jobs and message cue with 45 fake seconds of latency.
+
+The repository's `squash_merge_commit_title` must be `COMMIT_OR_PR_TITLE`
+for the title-driven dequeue probe: one commit uses that commit's message,
+more than one uses the pull's title. The case reads and records the setting;
+it changes no repository setting. Its two head commits pass, while its
+`FAIL` pull title is intended to fail the squash group's workflow.
