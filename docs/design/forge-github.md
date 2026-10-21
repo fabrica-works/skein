@@ -156,7 +156,7 @@ the call fails `TooLarge` when a 50th page still has a next.
 |---|---|---|
 | `Read::Items { since, page, kind }` | `GET R/issues?state=all&since=<since>&sort=updated&direction=asc&per_page=<size>&page=<page>` | each row a `Summary`: `number`; a `pull_request` member makes it a pull, and its `merged_at` makes one closed merged; `state`; `user.id`; `labels[].name`; `updated_at`; `title`; `body` (null as empty) and its key. A row of the other kind than the call's is skipped, and counts toward the page. Rows of one second are put in order of number before the page answers. `more` from `Link`; `now` from `Date` |
 | `Read::Item { number, after }` | `GET R/issues/<number>`; `GET R/issues/<number>/comments?per_page=<size>&page=<n>` from page 1, until the answer is full or a page has no next | the issue as a `Summary`; its comments with ids above `after`, oldest first, as forge.md 5.2's: `id`, `user.id`, `created_at`, `body` and its key, provenance, revision; `more` when one is left |
-| `Read::Pull { number }` | `GET R/pulls/<number>`; `GET R/commits/<head.sha>/status?per_page=1`; `GET R/commits/<head.sha>/check-runs?filter=latest&per_page=<size>&page=<n>`, every page; `GQ pull` when the pull is open and the repository's owner an organization, or merged with `merge_commit_sha` null | `number`; `state`, `merged` making it merged; `head.ref`, `base.ref`, `head.sha`, `base.sha`; `merged` from `merge_commit_sha`, else `mergeCommit.oid`; `mergeable`, null as false; `requested_reviewers[].id`; `queued` from `mergeQueueEntry.position`; `dequeued` from the last `RemovedFromMergeQueueEvent`'s `reason`; `Ci` from both (4.4) |
+| `Read::Pull { number }` | `GET R/pulls/<number>`; `GET R/commits/<head.sha>/status?per_page=1`; `GET R/commits/<head.sha>/check-runs?filter=latest&per_page=<size>&page=<n>`, every page; `GQ pull` when the pull is open and the repository's owner an organization, or merged (`merge_commit_sha` is absent at the pin) | `number`; `state`, `merged` making it merged; `head.ref`, `base.ref`, `head.sha`, `base.sha`; `merged` from `merge_commit_sha`, else `mergeCommit.oid`; `mergeable`, null as false; `requested_reviewers[].id`; `queued` from `mergeQueueEntry.position`; `dequeued` from the last `RemovedFromMergeQueueEvent`'s `reason`; `Ci` from both (4.4) |
 | `Read::PullFor { head, base }` | `GET R/pulls?state=open&head=<owner>:<head>&base=<base>&per_page=1`; when none, `GET R/pulls?state=all&head=<owner>:<head>&base=<base>&sort=created&direction=asc&per_page=1`; then as `Pull` for the number found | the open pull request for the head and base, else the oldest; `Missing` when there is none. `<owner>` is the repository's own: a fork's head is not followed (temper's draft 18) |
 | `Read::Reviews { number, page }` | `GET R/pulls/<number>/reviews?per_page=<size>&page=<page>` | as forge.md 5.2; `state` mapped `APPROVED` to `Approve`, `CHANGES_REQUESTED` to `RequestChanges`, `COMMENTED` and `DISMISSED` to `Comment`; `PENDING` and a null `submitted_at` skipped, counting toward the page; `commit_id`; `official` when `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR` (section 15) |
 | `Read::Statuses { commit, page }` | `GET R/commits/<commit>/status?per_page=<size>&page=<page>` | `Ci` from `state` and `total_count`, 0 being `None`; each `statuses[]` row: `updated_at`, `context`, `state`, `description`, `target_url`; no job; `more` from `Link` |
@@ -290,9 +290,10 @@ Batched reads are later (temper's draft 18).
   client's to show; the plan never takes it for GitHub's answer.
 - **A repeat merge on a merged pull** answers `200`, `merged: true`, with
   the same merge sha, even when the supplied head sha differs. A REST pull
-  read immediately afterwards may still have null `merge_commit_sha` and
-  mergeability; the conformance polls within its four-second wait before
-  comparing the read-back sha with the PUTs.
+  read omits `merge_commit_sha` at the pinned 2026-03-10 version, for open
+  and merged pulls alike; 2022-11-28 sends it. Every merged `Read::Pull`
+  therefore costs the additional `GQ pull` read for `mergeCommit.oid`.
+  The conformance compares that plan answer with both PUTs' sha.
 - **An open pull's moved head is `Stale`** on both routes: `409` "Head branch was
   modified. Review and try the merge again." at the merge, and
   `UNPROCESSABLE` "... expected head oid does not match the current head
@@ -683,8 +684,9 @@ temper's draft section 11.
   The Range fact expects 206 and Content-Range. The ETag fact reads an
   unchanging repository with an installation token, and expects 304 with
   the same remaining rate. `merge-repeat-idempotent` expects 200, merged
-  true and the same merge sha for a repeat with the same sha, then polls
-  merge_commit_sha until it is a string within four seconds before comparing.
+  true and the same merge sha for a repeat with the same sha, then compares
+  both PUTs with the merged commit of the dialect's pull answer. At the pin,
+  REST omits merge_commit_sha, so this answer reads mergeCommit.oid through GQ.
   `merge-repeat-any-sha-200` expects 200 and merged true for a repeat with a
   different sha on a merged pull; an open pull's stale sha remains 409.
 - **The log:** `log-lists-failed-deliveries`, `log-cursor-in-link`,
@@ -791,3 +793,7 @@ use that installation's token and its owner's person token where a person
 acts. The fixture document needs no account-type field. If none qualifies,
 startup stops with "no organization installation for the merge-queue cases"
 before any write. The fake's `acme` is a user and `globex` an organization.
+
+The plan's marker word is the tool's own `b"conformance"` constant, checked
+with `marker::valid_word` in `Runner::start` before any request. It is
+independent of the App's slug, which names the bot and appears in provenance.

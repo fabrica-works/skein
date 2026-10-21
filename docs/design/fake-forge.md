@@ -882,8 +882,10 @@ below are tracked in STATUS.md.
     1917 records this for 1; other counts use the shared sentence.
 
   The layer's `pull` document answers `mergeQueueEntry` and
-  `mergeCommit` from the domain. The REST pull of a pull request merged
-  by the queue has `merge_commit_sha` null, as on github.com.
+  `mergeCommit.oid` from the domain for queued, direct and repeated merges.
+  Every REST pull object omits `merge_commit_sha`, as at the pinned
+  2026-03-10 version, whether open or merged. Every merged pull read
+  therefore costs the additional GQ read.
 - **Rulesets and classic protection.** The scenario says how the
   domain's protection shows (`Shown::{Ruleset, Classic, Both}`):
   - as a ruleset, with its id and the App's `current_user_can_bypass`;
