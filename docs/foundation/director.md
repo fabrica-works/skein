@@ -136,6 +136,16 @@ runs.
   waiting only where its landings overlap theirs. The pace is set by
   the machines and the churn; the user's word in `direction.md`
   says whether the subscriptions' usage pace limits it too.
+- **Roadmaps.** A roadmap the user has agreed is the go for its
+  missions: the director starts each one when its turn comes, and tells
+  the user as it starts. A side roadmap, a lower-priority track, runs on
+  what the main one leaves free. Its mission starts when three things
+  hold. A machine is free once the main missions are staffed. The
+  user's inputs for it are in. Its landings stay off a running main
+  mission's files, a soft rule weighed by what the conflicts would cost
+  to resolve. It yields to the main roadmap at a milestone's end. Its
+  order is priority, not a gate: a mission that needs nothing earlier
+  may run first.
 - **Missions** (owners.md 1 and 3.1). The director cuts each draft into
   missions of at most four milestones, each ending where something
   works on its own, and starts a fresh owner for each, the
