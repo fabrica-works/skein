@@ -188,7 +188,13 @@ fn a_rename_across_filesystems_is_other_not_an_escape() {
     fs::write(here.path().join("a"), b"a").unwrap();
     let mut world = World::new(4);
     let (from, to) = (root(here.path()), root(there.path()));
-    let rename = Op::Rename { from_dir: from, from: Box::from(&b"a"[..]), to_dir: to, to: Box::from(&b"b"[..]) };
+    let rename = Op::Rename {
+        from_dir: from,
+        from: Box::from(&b"a"[..]),
+        to_dir: to,
+        to: Box::from(&b"b"[..]),
+        no_replace: false,
+    };
     assert_eq!(world.run(rename).result, Err(Error::Other(libc::EXDEV)));
     world.close(from);
     world.close(to);
@@ -216,7 +222,13 @@ fn an_open_through_dot_dot_racing_renames_is_submitted_again() {
     let rename = |n: usize, flipped: bool| {
         let (from, to) = if flipped { ("b", "a") } else { ("a", "b") };
         let (from, to) = (format!("{from}{n}"), format!("{to}{n}"));
-        Op::Rename { from_dir: dir, from: from.into_bytes().into(), to_dir: dir, to: to.into_bytes().into() }
+        Op::Rename {
+            from_dir: dir,
+            from: from.into_bytes().into(),
+            to_dir: dir,
+            to: to.into_bytes().into(),
+            no_replace: false,
+        }
     };
     // A create is not tried inline, but in the ring's workers, beside the
     // renames: a read is, and io_uring itself retries one that raced there.

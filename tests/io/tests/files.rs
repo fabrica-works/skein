@@ -106,7 +106,8 @@ fn absent_conflicts_with_an_unreadable_target_and_digest_reports_its_read_fault(
             | Story::Link
             | Story::Unreadable
             | Story::AbsentDangling
-            | Story::Dangling => unreachable!("selected unreadable stories"),
+            | Story::Dangling
+            | Story::Absent => unreachable!("selected unreadable stories"),
         }
         assert_eq!(outcome.machine.names(), vec![b"record".to_vec()]);
         outcome.machine.finish();
@@ -128,7 +129,8 @@ fn absent_conflicts_with_a_dangling_link_while_any_replaces_its_name() {
             | Story::Link
             | Story::Unreadable
             | Story::AbsentUnreadable
-            | Story::DigestUnreadable => unreachable!("selected link stories"),
+            | Story::DigestUnreadable
+            | Story::Absent => unreachable!("selected link stories"),
         }
         assert_eq!(outcome.machine.names(), vec![b"record".to_vec()]);
         outcome.machine.finish();
@@ -206,4 +208,53 @@ fn a_store_replays_to_the_same_files_digest_at_its_end() {
     let digest = first.state_digests().machine;
     assert!(digest.is_some());
     assert_eq!(digest, second.state_digests().machine);
+}
+
+#[test]
+fn racing_absent_creators_have_one_durable_winner_and_one_conflict() {
+    use skein_io::digest::digest;
+    for reverse in [false, true] {
+        let mut outcome = skein_io_world::files::racing_absent(reverse).run();
+        let mut replay = skein_io_world::files::racing_absent(reverse).run();
+        assert_eq!(outcome.trace, replay.trace, "barrier order replays exactly");
+        for (owner, replayed) in outcome.procs.iter().zip(&replay.procs) {
+            assert_eq!(owner.events, replayed.events, "terminals replay");
+        }
+        replay.machine.finish();
+        assert_eq!(outcome.machine.missing_checks, 2);
+        assert_eq!(outcome.machine.rename_commits, 2);
+        assert_eq!(outcome.machine.rename_results, [Some(Ok(())), Some(Err(Error::Exists))]);
+        let mut winners = 0;
+        let mut losers = 0;
+        for (owner, bytes) in outcome.procs.iter().zip([NEW, OTHER]) {
+            assert_eq!(owner.events.len(), 3, "store, load and close each have one terminal");
+            if let Event::Stored { digest: actual, .. } = &owner.events[0] {
+                winners += 1;
+                assert_eq!(*actual, digest(bytes));
+                assert_eq!(outcome.machine.bytes(b"record"), bytes);
+            } else {
+                losers += 1;
+                assert_eq!(owner.events[0], Event::Conflict { owner: owner.events[0].owner(), now: None });
+            }
+        }
+        assert_eq!((winners, losers), (1, 1));
+        assert_eq!(outcome.machine.names(), vec![b"record".to_vec()], "no temporary remains");
+        assert!(outcome.heap.as_ref().expect("checked memory").iter().all(|(peak, bound)| peak <= bound));
+        outcome.machine.finish();
+    }
+}
+
+#[test]
+fn an_unsupported_absent_commit_fails_named_without_replacing_fallback() {
+    let mut files = FileSystem::new(Story::Absent, None);
+    files.unsupported_rename = true;
+    let mut outcome = world_with_files(53, Config::calm(), Story::Absent, 3, files).run();
+    assert_eq!(outcome.machine.missing_checks, 1);
+    assert_eq!(outcome.machine.rename_commits, 1, "one final rename, no retry");
+    assert!(matches!(
+        outcome.procs[0].events[0],
+        Event::Failed { error: Error::InvalidArgument, committed: false, residue: None, .. }
+    ));
+    assert_eq!(outcome.machine.names(), Vec::<Vec<u8>>::new(), "temporary cleaned, target never created");
+    outcome.machine.finish();
 }

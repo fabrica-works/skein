@@ -143,9 +143,10 @@
 //! - **`Stat`** answers the [`Kind`], size and permission bits of what is
 //!   open on its descriptor: for a file, its length in bytes; for anything
 //!   else, whatever its filesystem says.
-//! - **`Rename` is atomic:** `to` names the old entry or the moved one,
-//!   never neither and never a mix. It replaces a file with a file, and an
-//!   empty directory with a directory; one entry renamed over another that
+//! - **`Rename` is atomic:** with `no_replace`, any existing target fails
+//!   with `Exists`, and neither entry is moved. Otherwise `to` names the
+//!   old entry or the moved one, never neither and never a mix. It replaces
+//!   a file with a file, and an empty directory with a directory; one entry renamed over another that
 //!   is the same file is left as it is. A directory never moves beneath
 //!   itself. A symbolic link at `to` is replaced, not followed. Hence the
 //!   idiom that replaces a file whole: `Stat` the old one for its mode,
@@ -217,7 +218,7 @@
 //! | `Sync` | `NoSpace` |
 //! | `Stat` | none |
 //! | `Lock` | `Busy` |
-//! | `Rename` | `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
+//! | `Rename` | `Exists` (only with `no_replace`), `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
 //! | `Remove` | `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `ReadOnly`, `NameTooLong` |
 //! | `MakeDirectory` | `NotFound`, `Exists`, `NotADirectory`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
 //! | `List` | `NotFound`, `NotADirectory`, `NameTooLong` |
@@ -456,12 +457,14 @@ pub enum Op {
         fd: Fd,
     },
     /// Moves the entry `from` of the directory open on `from_dir` to the
-    /// name `to` in the one open on `to_dir`, replacing what `to` named.
+    /// name `to` in the one open on `to_dir`. With `no_replace`, an existing
+    /// target fails with `Exists`; otherwise it replaces what `to` named.
     Rename {
         from_dir: Fd,
         from: Box<[u8]>,
         to_dir: Fd,
         to: Box<[u8]>,
+        no_replace: bool,
     },
     /// Removes the entry `name` of the directory open on `dir`: with
     /// `directory`, an empty directory; without, anything else.
@@ -854,7 +857,8 @@ pub enum Error {
     /// does not exist. `Open`, `MakeDirectory`, `List`, `Rename`, `Remove`:
     /// the directory was removed while open (`ENOENT`).
     NotFound,
-    /// `Open` with `Create`, `MakeDirectory`: the name is taken (`EEXIST`).
+    /// `Open` with `Create`, `MakeDirectory`, `Rename` with `no_replace`:
+    /// the name is taken (`EEXIST`).
     Exists,
     /// `Open`: the root, or a name the path goes through, is not a
     /// directory; or it names something else `Directory` opens. `Rename`,
@@ -905,9 +909,10 @@ pub enum Error {
     NotAFile,
     /// Any operation: the record was one the kernel refuses, such as `Listen`
     /// on a connected socket, or a `Rename` of a directory beneath itself
-    /// (`EINVAL`, `EAFNOSUPPORT`). A bug in io, reported rather than
-    /// asserted, since the kernel judged it. On a `Cancel`, the backend
-    /// could not submit it, and the target was not stopped.
+    /// (`EINVAL`, `EAFNOSUPPORT`), or the filesystem rejected a no-replace
+    /// rename flag (`EINVAL`). Reported rather than asserted, since the
+    /// kernel judged it. On a `Cancel`, the backend could not submit it,
+    /// and the target was not stopped.
     InvalidArgument,
     /// Anything else, with the backend's own code, for diagnostics only. On a
     /// `Cancel`, the backend could not submit it, and the target was not
@@ -926,6 +931,7 @@ enum Files {
     Stat,
     Lock,
     Rename,
+    RenameNoReplace,
     Remove,
     MakeDirectory,
     List,
@@ -1095,7 +1101,8 @@ impl Op {
             Op::Sync { .. } => Some(Files::Sync),
             Op::Lock { .. } => Some(Files::Lock),
             Op::Stat { .. } => Some(Files::Stat),
-            Op::Rename { .. } => Some(Files::Rename),
+            Op::Rename { no_replace: false, .. } => Some(Files::Rename),
+            Op::Rename { no_replace: true, .. } => Some(Files::RenameNoReplace),
             Op::Remove { .. } => Some(Files::Remove),
             Op::MakeDirectory { .. } => Some(Files::MakeDirectory),
             Op::List { .. } => Some(Files::List),
@@ -1312,22 +1319,44 @@ fn fails_on_files(op: Files, error: Error) -> bool {
         Error::NoBufferSpace | Error::InvalidArgument | Error::Other(_) => true,
         Error::Busy => op == Files::Lock,
         Error::TooManyOpenFiles | Error::Escape | Error::NotAFile => op == Files::Open,
-        Error::NotFound | Error::NotADirectory | Error::NameTooLong => {
-            among(op, &[Files::Open, Files::Rename, Files::Remove, Files::MakeDirectory, Files::List])
+        Error::NotFound | Error::NotADirectory | Error::NameTooLong => among(
+            op,
+            &[Files::Open, Files::Rename, Files::RenameNoReplace, Files::Remove, Files::MakeDirectory, Files::List],
+        ),
+        Error::Exists => among(op, &[Files::Open, Files::MakeDirectory, Files::RenameNoReplace]),
+        Error::IsADirectory => {
+            among(op, &[Files::Open, Files::Read, Files::Rename, Files::RenameNoReplace, Files::Remove])
         }
-        Error::Exists => among(op, &[Files::Open, Files::MakeDirectory]),
-        Error::IsADirectory => among(op, &[Files::Open, Files::Read, Files::Rename, Files::Remove]),
-        Error::NotEmpty => among(op, &[Files::Rename, Files::Remove]),
-        Error::Permission => {
-            among(op, &[Files::Truncate, Files::Open, Files::Rename, Files::Remove, Files::MakeDirectory])
-        }
-        Error::NoSpace => {
-            among(op, &[Files::Truncate, Files::Open, Files::Write, Files::Sync, Files::Rename, Files::MakeDirectory])
-        }
-        Error::ReadOnly => {
-            among(op, &[Files::Truncate, Files::Open, Files::Write, Files::Rename, Files::Remove, Files::MakeDirectory])
-        }
-        Error::TooManyLinks => among(op, &[Files::Open, Files::Rename, Files::MakeDirectory]),
+        Error::NotEmpty => among(op, &[Files::Rename, Files::RenameNoReplace, Files::Remove]),
+        Error::Permission => among(
+            op,
+            &[Files::Truncate, Files::Open, Files::Rename, Files::RenameNoReplace, Files::Remove, Files::MakeDirectory],
+        ),
+        Error::NoSpace => among(
+            op,
+            &[
+                Files::Truncate,
+                Files::Open,
+                Files::Write,
+                Files::Sync,
+                Files::Rename,
+                Files::RenameNoReplace,
+                Files::MakeDirectory,
+            ],
+        ),
+        Error::ReadOnly => among(
+            op,
+            &[
+                Files::Truncate,
+                Files::Open,
+                Files::Write,
+                Files::Rename,
+                Files::RenameNoReplace,
+                Files::Remove,
+                Files::MakeDirectory,
+            ],
+        ),
+        Error::TooManyLinks => among(op, &[Files::Open, Files::Rename, Files::RenameNoReplace, Files::MakeDirectory]),
         Error::Refused
         | Error::Reset
         | Error::BrokenPipe

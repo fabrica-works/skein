@@ -13,9 +13,9 @@ use skein_lib::Token;
 pub enum Expect {
     /// The owner permits replacing any target, without reading its content.
     Any,
-    /// The owner permits creating a target only when its name is absent.
+    /// The final rename atomically creates the target only if its name is absent.
     Absent,
-    /// The owner permits replacing only the target with this content digest.
+    /// Recheck this digest before a replacing rename; an outside writer can race it.
     Digest(Digest),
 }
 
@@ -241,7 +241,8 @@ pub enum Event {
         owner: Token,
         digest: Digest,
     },
-    /// The target did not have the expected content version at the recheck.
+    /// The expectation failed at the recheck, or an `Absent` target existed
+    /// at the atomic final rename.
     Conflict {
         owner: Token,
         now: Option<Digest>,

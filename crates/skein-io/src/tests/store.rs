@@ -117,7 +117,7 @@ fn a_new_file_is_written_synced_rechecked_renamed_and_synced() {
     assert_eq!(*how, OpenHow::ReadNoFollow);
     rig.complete(check, Err(Error::NotFound));
     let rename = rig.take();
-    let Op::Rename { from_dir, from, to_dir, to } = &rename.kind else { panic!("rename") };
+    let Op::Rename { from_dir, from, to_dir, to, no_replace: true } = &rename.kind else { panic!("rename") };
     assert_eq!(
         (*from_dir, from.as_ref(), *to_dir, to.as_ref()),
         (PARENT, temporary.as_ref(), PARENT, b"file".as_slice())
@@ -240,7 +240,7 @@ fn an_existing_file_keeps_its_mode_and_matching_content_version() {
     let close = rig.take();
     rig.complete(close, Ok(Done::Nothing));
     let rename = rig.take();
-    let Op::Rename { .. } = &rename.kind else { panic!("matching version renames") };
+    let Op::Rename { no_replace: false, .. } = &rename.kind else { panic!("matching version renames") };
     rig.complete(rename, Ok(Done::Nothing));
     let sync = rig.take();
     rig.complete(sync, Ok(Done::Nothing));
@@ -617,8 +617,8 @@ fn an_unconditional_store_uses_default_mode_without_reading_unreadable_or_linked
         rig.complete(old, Err(error));
         rig.make_and_sync_temp();
         let rename = rig.take();
-        let Op::Rename { .. } = &rename.kind else {
-            panic!("Any proceeds to rename without a recheck");
+        let Op::Rename { no_replace: false, .. } = &rename.kind else {
+            panic!("Any proceeds to replacing rename without a recheck");
         };
         rig.complete(rename, Ok(Done::Nothing));
         let sync = rig.take();

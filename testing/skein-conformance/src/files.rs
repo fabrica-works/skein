@@ -330,6 +330,98 @@ impl Check for Renames {
     }
 }
 
+/// A no-replace commit, its losing creator, and Linux's lookup and refusal order.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct NoReplace {
+    pub commits: [Result<Done, Error>; 2],
+    pub contents: [Result<Vec<u8>, Error>; 3],
+    pub refusals: Vec<(Result<Done, Error>, Error)>,
+    pub unreadable_mode: Result<u32, Error>,
+    pub dangling: Result<(), Error>,
+}
+
+#[must_use]
+pub fn no_replace<B: Backend>(backend: &mut B) -> NoReplace {
+    let tree = [
+        Item::file(b"first", b"winner"),
+        Item::file(b"second", b"loser"),
+        Item::hard_link(b"alias", b"second"),
+        Item::file(b"unreadable", b"kept").mode(0),
+        Item::link(b"dangling", b"missing"),
+        Item::directory(b"dir"),
+        Item::file(b"dir/child", b"child"),
+        Item::directory(b"no-write").mode(0o555),
+        Item::file(b"no-write/target", b"kept"),
+        Item::directory(b"no-search").mode(0o600),
+        Item::file(b"no-search/target", b"kept"),
+    ];
+    let mut run = Run::new(backend);
+    let process = run.process();
+    let root = run.root(process, &tree);
+    let dir = run.open(process, root, b"dir", OpenHow::Directory).expect("searchable directory");
+    let no_write = run.open(process, root, b"no-write", OpenHow::Directory).expect("readable directory");
+    let no_search = run.open(process, root, b"no-search", OpenHow::Directory).expect("readable directory");
+    let commits = [
+        run.rename_absent(process, (root, b"first"), (root, b"target")),
+        run.rename_absent(process, (root, b"second"), (root, b"target")),
+    ];
+    let long = too_long();
+    let mut refusals = Vec::new();
+    for (from_dir, from, to_dir, to, error) in [
+        (root, b"target".as_slice(), root, b"target".as_slice(), Error::Exists),
+        (root, b"second", root, b"alias", Error::Exists),
+        (root, b"second", root, b"unreadable", Error::Exists),
+        (root, b"second", root, b"dangling", Error::Exists),
+        (root, b"second", root, b"dir", Error::Exists),
+        (root, b"dir", root, b"second", Error::Exists),
+        (root, b"missing", root, b"target", Error::NotFound),
+        (root, b"missing", root, &long, Error::NotFound),
+        (root, &long, root, b"target", Error::NameTooLong),
+        (root, b"second", no_write, b"target", Error::Exists),
+        (root, b"second", no_write, b"missing", Error::Permission),
+        (no_write, b"target", root, b"second", Error::Exists),
+        (no_write, b"target", root, b"missing", Error::Permission),
+        (root, b"missing", no_search, b"target", Error::Permission),
+        (no_search, b"target", root, b"target", Error::Permission),
+        (root, b"dir", dir, b"child", Error::Exists),
+        (dir, b"child", root, b"dir", Error::Exists),
+        (root, b"dir", dir, b"missing", Error::InvalidArgument),
+    ] {
+        refusals.push((run.rename_absent(process, (from_dir, from), (to_dir, to)), error));
+    }
+    let contents = [
+        run.contents(process, root, b"target"),
+        run.contents(process, root, b"second"),
+        run.contents(process, root, b"first"),
+    ];
+    let unreadable =
+        run.open(process, root, b"unreadable", OpenHow::PathNoFollow).expect("path-only open needs no read permission");
+    let unreadable_mode = run.stat(process, unreadable).map(|stat| stat.mode);
+    run.close(process, unreadable);
+    let dangling = opens(&mut run, process, root, b"dangling", OpenHow::PathNoFollow);
+    for fd in [dir, no_write, no_search, root] {
+        run.close(process, fd);
+    }
+    run.finish();
+    NoReplace { commits, contents, refusals, unreadable_mode, dangling }
+}
+
+impl Check for NoReplace {
+    fn check(&self) {
+        assert_eq!(self.commits, [NOTHING, Err(Error::Exists)], "one no-replace commit wins");
+        assert_eq!(
+            self.contents,
+            [file(b"winner"), file(b"loser"), Err(Error::NotFound)],
+            "winner and losing source preserved"
+        );
+        for (index, (seen, error)) in self.refusals.iter().enumerate() {
+            assert_eq!(*seen, Err(*error), "Linux no-replace refusal order, case {index}");
+        }
+        assert_eq!(self.unreadable_mode, Ok(0), "unreadable entry kept");
+        assert_eq!(self.dangling, Ok(()), "dangling entry kept");
+    }
+}
+
 /// Removes: a file, twice; a directory, as one and not; a full one; a file
 /// as a directory; a symbolic link, its target kept; a file open; a name
 /// too long.

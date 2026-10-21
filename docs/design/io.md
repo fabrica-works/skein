@@ -734,9 +734,11 @@ pub enum Request {
   directory, with those bits; `Write` it all; `Sync` it; `Close` it;
   `Rename` it over the target; `Sync` the directory. A reader sees the old
   file or the new, never part of either, and after the last `Sync` the
-  new one survives a crash (kernel.md, 6.1). Before the rename, io
-  rechecks the target against the stated expectation (5.2); a recheck is
-  not a lock, so an outside writer could still race with the rename.
+  new one survives a crash (kernel.md, 6.1). `Absent` uses an atomic
+  no-replace rename: any entry at the target makes it fail with `Conflict`.
+  `Any` skips the conditional recheck and uses a replacing rename.
+  `Digest` rechecks the target before a replacing rename (5.2); a recheck
+  is not a lock, so an outside writer can still race with that rename.
   `Stored` carries the new content's digest.
   - The temporary is named `<target>.skein-<16 hex>`: the target's name
     (its first 230 bytes), `.skein-`, and 16 lowercase hex digits drawn
@@ -872,14 +874,23 @@ run by io.
   stated:
   - `Any`: replace whatever is there, or nothing. No read of the old file
     is needed, so a target io cannot read is replaced all the same;
-  - `Absent`: there must be no target. One that exists, readable or not,
-    is answered `Conflict`;
+  - `Absent`: there must be no target at the final rename. Any entry
+    there, including an unreadable file, a dangling link or a directory,
+    is answered `Conflict` without replacing it;
   - `Digest`: the target must hold exactly the content with this digest.
 
-  io checks it once more, just before the rename. A target that changed,
-  or one io cannot read for `Digest`, is answered with nothing replaced:
-  `Conflict` or the read's fault. So two writers of one file do not lose
-  each other's updates in silence.
+  `Any` skips the conditional recheck; opening the old file for its mode
+  still applies. For `Absent` and `Digest`, io checks once more before
+  the rename. A failed expectation, or a target io cannot read for
+  `Digest`, is answered with nothing replaced: `Conflict` or the read's
+  fault. `Absent` also commits with `RENAME_NOREPLACE`: even when two
+  creators both rechecked a missing target, only one can create it; the
+  other answers `Conflict` and cleans its temporary before that terminal.
+  A filesystem that rejects the flag with `EINVAL` answers `Failed` with
+  `InvalidArgument`, uncommitted, after temporary cleanup; io never
+  retries with a replacing rename. `Digest` uses a replacing rename after
+  its optimistic recheck: a recheck is not a lock, and an outside writer
+  can change the target between that check and the rename.
 - **The mode** is the old file's, or `0o600` for a private file (5.3).
 - **Its deadline** is the owner's, as for every whole-file operation. A
   replace that fails or times out before its rename removes its

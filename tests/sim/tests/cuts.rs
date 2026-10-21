@@ -56,7 +56,8 @@ fn a_cut_before_each_durable_replace_operation_recovers_old_or_new_whole() {
                                         from_dir: root,
                                         from: Box::from(b"temporary".as_slice()),
                                         to_dir: root,
-                                        to: Box::from(b"record".as_slice())
+                                        to: Box::from(b"record".as_slice()),
+                                        no_replace: false
                                     }
                                 )
                                 .result,

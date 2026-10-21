@@ -514,9 +514,17 @@ impl Machine {
     }
 
     /// Moves the entry `from` of the directory `from_dir` has open to the
-    /// name `to` in `to_dir`'s, replacing what `to` named, in the order
+    /// name `to` in `to_dir`'s, refusing a taken target with `no_replace`,
+    /// otherwise replacing what `to` named, in the order
     /// Linux checks (`renameat2`).
-    pub fn rename(&mut self, from_dir: Opened, from: &[u8], to_dir: Opened, to: &[u8]) -> Result<(), Refusal> {
+    pub fn rename(
+        &mut self,
+        from_dir: Opened,
+        from: &[u8],
+        to_dir: Opened,
+        to: &[u8],
+        no_replace: bool,
+    ) -> Result<(), Refusal> {
         let (from_dir, to_dir) = (self.handle(from_dir).node, self.handle(to_dir).node);
         // Both directories are walked to (`filename_parentat`), then the
         // source is looked up, then the target.
@@ -524,6 +532,11 @@ impl Machine {
         self.searchable(to_dir)?;
         let source = self.look_up(from_dir, from)?.ok_or(Refusal::NotFound)?;
         let target = self.look_up(to_dir, to)?;
+        // Linux checks RENAME_NOREPLACE after both lookups, before the
+        // ancestor, same-inode, write-permission and replacement checks.
+        if no_replace && target.is_some() {
+            return Err(Refusal::Exists);
+        }
         if self.is_directory(source) && self.within(to_dir, source) {
             return Err(Refusal::Beneath);
         }

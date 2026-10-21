@@ -110,7 +110,8 @@ fn workload(seed: u64) -> World {
             let _ = settle(&mut world, pid, Op::Stat { fd: file });
             let _ = settle(&mut world, pid, Op::Close { fd: file });
         }
-        let rename = Op::Rename { from_dir: root, from: name(b'f', n), to_dir: root, to: name(b'g', n) };
+        let rename =
+            Op::Rename { from_dir: root, from: name(b'f', n), to_dir: root, to: name(b'g', n), no_replace: false };
         let _ = settle(&mut world, pid, rename);
         let _ = settle(&mut world, pid, Op::MakeDirectory { dir: root, name: name(b'd', n), mode: 0o777 });
     }

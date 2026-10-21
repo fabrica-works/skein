@@ -290,7 +290,11 @@ fn rename(io: &mut FileIo, mut store: Store, subs: &mut Queue<Submit>) {
     let dir = parent(&store);
     let from = store.temp_name.as_ref().expect("a temporary was created").clone();
     let to = store.target.clone();
-    issue(io, store, Op::Rename { from_dir: dir, from, to_dir: dir, to }, subs);
+    let no_replace = match store.expected {
+        Expect::Absent => true,
+        Expect::Any | Expect::Digest(_) => false,
+    };
+    issue(io, store, Op::Rename { from_dir: dir, from, to_dir: dir, to, no_replace }, subs);
 }
 
 fn read_check(io: &mut FileIo, mut store: Store, subs: &mut Queue<Submit>) {
@@ -504,13 +508,19 @@ fn failed_operation(
             store.parent = None;
             fail(io, store, Failure::Kernel(error), events, subs);
         }
+        Phase::Renaming => {
+            let failure = match store.expected {
+                Expect::Absent if error == Error::Exists => Failure::Conflict { now: None },
+                Expect::Any | Expect::Absent | Expect::Digest(_) => Failure::Kernel(error),
+            };
+            fail(io, store, failure, events, subs);
+        }
         Phase::ParentOpening
         | Phase::OldStating
         | Phase::TempWriting
         | Phase::TempSyncing
         | Phase::CheckStating
         | Phase::CheckReading
-        | Phase::Renaming
         | Phase::DirectorySyncing => fail(io, store, Failure::Kernel(error), events, subs),
         Phase::CleanupCheck | Phase::CleanupOld | Phase::CleanupTemp | Phase::CleanupRemove | Phase::CleanupParent => {
             unreachable!("cleanup completion handled separately")

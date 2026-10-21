@@ -84,8 +84,9 @@ pub enum Ask {
     Sync { file: Handle },
     /// [`Reply::Stat`].
     Stat { file: Handle },
-    /// [`Reply::Done`].
-    Rename { from_dir: Handle, from: Box<[u8]>, to_dir: Handle, to: Box<[u8]> },
+    /// Moves the entry atomically; with `no_replace`, a taken target
+    /// answers `Exists`, otherwise it replaces it: [`Reply::Done`].
+    Rename { from_dir: Handle, from: Box<[u8]>, to_dir: Handle, to: Box<[u8]>, no_replace: bool },
     /// [`Reply::Done`].
     Remove { dir: Handle, name: Box<[u8]>, directory: bool },
     /// [`Reply::Done`].

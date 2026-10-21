@@ -42,10 +42,10 @@ use skein_lib::{Duration, Queue, Time};
 
 pub use cuts::{Cutting, cutting};
 pub use files::{
-    Appending, Entries, Escapes, FileLifecycle, FileMetadata, Listing, MakeDirectories, Nested, OpenLimit,
+    Appending, Entries, Escapes, FileLifecycle, FileMetadata, Listing, MakeDirectories, Nested, NoReplace, OpenLimit,
     PathMetadata, Permissions, Removes, Renames, Shortness, appending, cancel_append, cancel_read, escapes,
-    file_lifecycle, file_metadata, list, make_directory, nested_roots, open_past_the_descriptor_limit, path_metadata,
-    permissions, remove, rename,
+    file_lifecycle, file_metadata, list, make_directory, nested_roots, no_replace, open_past_the_descriptor_limit,
+    path_metadata, permissions, remove, rename,
 };
 pub use locks::{Locks, lock};
 pub use processes::{Groups, Processes, ResourcesCheck, groups, processes, usage};

@@ -24,7 +24,7 @@ fn a_rename_names_the_directory_it_leaves_and_the_one_it_lands_in() {
         &mut subs,
     );
     let submit = subs.pop().expect("one rename");
-    assert_eq!(submit.kind, Op::Rename { from_dir: STAGING, from, to_dir: CACHE, to });
+    assert_eq!(submit.kind, Op::Rename { from_dir: STAGING, from, to_dir: CACHE, to, no_replace: false });
     complete(&mut io, submit, Ok(Done::Nothing), &mut events, &mut subs);
     assert_eq!(events.pop(), Some(Event::Renamed { owner: OWNER }));
 }

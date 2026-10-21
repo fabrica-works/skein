@@ -54,8 +54,13 @@ fn a_file_is_made_written_read_listed_renamed_and_removed_through_the_machine() 
     let expected = [(b"a.txt".to_vec(), Kind::File), (b"d".to_vec(), Kind::Directory), (b"new".to_vec(), Kind::File)];
     assert_eq!(listed, expected);
     assert_eq!(world.list(pid, root, 8), Ok(Vec::new()), "then the end of the directory");
-    let rename =
-        Op::Rename { from_dir: root, from: Box::from(&b"new"[..]), to_dir: root, to: Box::from(&b"a.txt"[..]) };
+    let rename = Op::Rename {
+        from_dir: root,
+        from: Box::from(&b"new"[..]),
+        to_dir: root,
+        to: Box::from(&b"a.txt"[..]),
+        no_replace: false,
+    };
     assert_eq!(world.call(pid, rename).result, Ok(Done::Nothing));
     assert_eq!(world.open(pid, root, b"new", OpenHow::Read), Err(Error::NotFound));
     let remove = Op::Remove { dir: root, name: Box::from(&b"a.txt"[..]), directory: false };
@@ -322,7 +327,13 @@ fn a_list_of_a_file_opened_to_create() {
 fn a_cancel_of_an_operation_on_files_that_completes_promptly() {
     let (mut world, pid, root) = rooted();
     world.serving = false;
-    let rename = Op::Rename { from_dir: root, from: Box::from(&b"a.txt"[..]), to_dir: root, to: Box::from(&b"b"[..]) };
+    let rename = Op::Rename {
+        from_dir: root,
+        from: Box::from(&b"a.txt"[..]),
+        to_dir: root,
+        to: Box::from(&b"b"[..]),
+        no_replace: false,
+    };
     let rename = world.submit(pid, rename);
     world.submit(pid, Op::Cancel { target: rename });
 }
@@ -344,7 +355,13 @@ fn a_close_of_either_directory_of_a_rename_in_flight() {
     world.serving = false;
     world.submit(
         pid,
-        Op::Rename { from_dir: root, from: Box::from(&b"a.txt"[..]), to_dir: dir, to: Box::from(&b"b"[..]) },
+        Op::Rename {
+            from_dir: root,
+            from: Box::from(&b"a.txt"[..]),
+            to_dir: dir,
+            to: Box::from(&b"b"[..]),
+            no_replace: false,
+        },
     );
     world.submit(pid, Op::Close { fd: dir });
 }

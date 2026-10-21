@@ -51,8 +51,8 @@ pub fn step(machine: &mut Machine, call: Call, answers: &mut Queue<Answer>) {
         }
         Ask::Lock { file } => done(machine.lock(opened(file))),
         Ask::Stat { file } => Ok(Reply::Stat(stat(machine.stat(opened(file))))),
-        Ask::Rename { from_dir, from, to_dir, to } => {
-            done(machine.rename(opened(from_dir), &from, opened(to_dir), &to))
+        Ask::Rename { from_dir, from, to_dir, to, no_replace } => {
+            done(machine.rename(opened(from_dir), &from, opened(to_dir), &to, no_replace))
         }
         Ask::Remove { dir, name, directory } => done(machine.remove(opened(dir), &name, directory)),
         Ask::MakeDirectory { dir, name, mode } => done(machine.make_directory(opened(dir), &name, mode)),

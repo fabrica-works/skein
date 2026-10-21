@@ -630,7 +630,17 @@ impl<B: Backend> Run<'_, B> {
         (from_dir, from): (Fd, &[u8]),
         (to_dir, to): (Fd, &[u8]),
     ) -> Result<Done, Error> {
-        let op = Op::Rename { from_dir, from: Box::from(from), to_dir, to: Box::from(to) };
+        let op = Op::Rename { from_dir, from: Box::from(from), to_dir, to: Box::from(to), no_replace: false };
+        self.call(process, op).result
+    }
+
+    pub(crate) fn rename_absent(
+        &mut self,
+        process: B::Process,
+        (from_dir, from): (Fd, &[u8]),
+        (to_dir, to): (Fd, &[u8]),
+    ) -> Result<Done, Error> {
+        let op = Op::Rename { from_dir, from: Box::from(from), to_dir, to: Box::from(to), no_replace: true };
         self.call(process, op).result
     }
 
@@ -737,7 +747,7 @@ enum Summary {
     Sync { fd: Fd },
     Stat { fd: Fd },
     Lock { fd: Fd },
-    Rename { from_dir: Fd, from: usize, to_dir: Fd, to: usize },
+    Rename { from_dir: Fd, from: usize, to_dir: Fd, to: usize, no_replace: bool },
     Remove { dir: Fd, name: usize, directory: bool },
     MakeDirectory { dir: Fd, name: usize },
     List { fd: Fd, entries: usize, names: usize },
@@ -772,9 +782,13 @@ impl Summary {
             Op::Sync { fd } => Summary::Sync { fd: *fd },
             Op::Lock { fd } => Summary::Lock { fd: *fd },
             Op::Stat { fd } => Summary::Stat { fd: *fd },
-            Op::Rename { from_dir, from, to_dir, to } => {
-                Summary::Rename { from_dir: *from_dir, from: from.len(), to_dir: *to_dir, to: to.len() }
-            }
+            Op::Rename { from_dir, from, to_dir, to, no_replace } => Summary::Rename {
+                from_dir: *from_dir,
+                from: from.len(),
+                to_dir: *to_dir,
+                to: to.len(),
+                no_replace: *no_replace,
+            },
             Op::Remove { dir, name, directory } => {
                 Summary::Remove { dir: *dir, name: name.len(), directory: *directory }
             }

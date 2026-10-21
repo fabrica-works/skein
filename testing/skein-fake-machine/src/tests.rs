@@ -33,7 +33,7 @@ fn a_file_renamed_over_goes_unless_open() {
     let (mut machine, root) = machine(&[Item::file(b"a", b"new"), Item::file(b"b", b"old")]);
     let laid = machine.nodes.len();
     let old = machine.open(root, b"b", How::Read).unwrap();
-    machine.rename(root, b"a", root, b"b").unwrap();
+    machine.rename(root, b"a", root, b"b", false).unwrap();
     assert_eq!(machine.nodes.len(), laid, "the old file kept while open");
     assert_eq!(machine.read(old, 0, 8).unwrap(), b"old");
     machine.close(old);
@@ -107,12 +107,12 @@ fn a_listing_resumes_after_the_last_name_it_handed_back() {
 fn a_moved_directory_finds_its_new_parent_by_dot_dot() {
     let (mut machine, root) =
         machine(&[Item::directory(b"from"), Item::directory(b"to"), Item::file(b"to/mark", b"here")]);
-    machine.rename(root, b"from", root, b"moved").unwrap();
+    machine.rename(root, b"from", root, b"moved", false).unwrap();
     let to = machine.open(root, b"to", How::Directory).unwrap();
-    machine.rename(root, b"moved", to, b"inner").unwrap();
+    machine.rename(root, b"moved", to, b"inner", false).unwrap();
     let mark = machine.open(root, b"to/inner/../mark", How::Read).unwrap();
     assert_eq!(machine.read(mark, 0, 8).unwrap(), b"here");
-    assert_eq!(machine.rename(root, b"to", to, b"x"), Err(Refusal::Beneath));
+    assert_eq!(machine.rename(root, b"to", to, b"x", false), Err(Refusal::Beneath));
 }
 
 /// A device opens as no file, as on a filesystem not mounted `nodev`, and
@@ -277,7 +277,7 @@ fn replacing_one_hard_link_leaves_the_other_name_and_open_descriptor_intact() {
         Item::file(b"new", b"new bytes"),
     ]);
     let old = machine.open(root, b"old", How::Read).unwrap();
-    machine.rename(root, b"new", root, b"old").unwrap();
+    machine.rename(root, b"new", root, b"old", false).unwrap();
     assert_eq!(machine.stat(old).links, 1);
     let alias = machine.open(root, b"alias", How::Read).unwrap();
     assert_eq!(machine.read(alias, 0, 16).unwrap(), b"old bytes");
@@ -314,7 +314,7 @@ fn directory_links_count_children_across_moves_and_removal() {
     assert_eq!(machine.stat(root).links, 3);
     assert_eq!(machine.stat(dir).links, 3);
     assert_eq!(machine.stat(child).links, 2);
-    machine.rename(dir, b"child", root, b"child").unwrap();
+    machine.rename(dir, b"child", root, b"child", false).unwrap();
     assert_eq!(machine.stat(root).links, 4);
     assert_eq!(machine.stat(dir).links, 2);
     machine.remove(root, b"child", true).unwrap();
@@ -366,7 +366,7 @@ fn moved_after_crash(seed: u64, sync_source: bool, sync_destination: bool) -> bo
     ]);
     let staging = machine.open(root, b"staging", How::Directory).unwrap();
     let cache = machine.open(root, b"cache", How::Directory).unwrap();
-    machine.rename(staging, b"index", cache, b"index").unwrap();
+    machine.rename(staging, b"index", cache, b"index", false).unwrap();
     if sync_source {
         machine.sync(staging);
     }
@@ -446,7 +446,7 @@ fn a_directory_moved_across_recovers_the_parent_it_lands_in() {
             ]);
             let left = machine.open(root, b"left", How::Directory).unwrap();
             let right = machine.open(root, b"right", How::Directory).unwrap();
-            machine.rename(left, b"child", right, b"child").unwrap();
+            machine.rename(left, b"child", right, b"child", false).unwrap();
             if let Some(destination) = sync {
                 machine.sync(if destination { right } else { left });
             }

@@ -270,9 +270,9 @@ impl Sim {
             Op::Sync { fd } => (Ask::Sync { file: self.handle(pid, *fd) }, 0),
             Op::Lock { fd } => (Ask::Lock { file: self.handle(pid, *fd) }, 0),
             Op::Stat { fd } => (Ask::Stat { file: self.handle(pid, *fd) }, 0),
-            Op::Rename { from_dir, from, to_dir, to } => {
+            Op::Rename { from_dir, from, to_dir, to, no_replace } => {
                 let (from_dir, to_dir) = (self.handle(pid, *from_dir), self.handle(pid, *to_dir));
-                (Ask::Rename { from_dir, from: from.clone(), to_dir, to: to.clone() }, 0)
+                (Ask::Rename { from_dir, from: from.clone(), to_dir, to: to.clone(), no_replace: *no_replace }, 0)
             }
             Op::Remove { dir, name, directory } => {
                 (Ask::Remove { dir: self.handle(pid, *dir), name: name.clone(), directory: *directory }, 0)

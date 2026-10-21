@@ -93,7 +93,7 @@ pub enum Op {
     Sync          { fd: Fd },
     Stat          { fd: Fd },
     StatEntry     { dir: Fd, name: Box<[u8]> },                  // the entry itself, never a link's target
-    Rename        { from_dir: Fd, from: Box<[u8]>, to_dir: Fd, to: Box<[u8]> },
+    Rename        { from_dir: Fd, from: Box<[u8]>, to_dir: Fd, to: Box<[u8]>, no_replace: bool },
     Remove        { dir: Fd, name: Box<[u8]>, directory: bool },
     MakeDirectory { dir: Fd, name: Box<[u8]>, mode: u32 },     // less the umask (io.md, 5.3)
     List          { fd: Fd, entries: Box<[Entry]>, names: Box<[u8]> },  // synchronous
@@ -371,7 +371,14 @@ documentation, with each operation's errors; the decisions behind it:
   symbolic link, a character or a block device, a FIFO, a socket. `Other`
   is left for a `List` entry whose kind neither its directory nor a stat
   of it told, because it went in between.
-- **`Rename` is the atomic step.** It replaces its target whole, so the
+- **`Rename` is the atomic step.** With `no_replace: false`, it replaces
+  its target whole. With `no_replace: true`, it uses `RENAME_NOREPLACE`
+  through the ring's `RenameAt.flags` and fails with `Exists` if any entry
+  names the target, including a dangling link, an unreadable file or a
+  directory. The check and move are one atomic operation, including for
+  the same name or two names of one inode: those fail with `Exists` too.
+  A filesystem rejecting the flag with `EINVAL` answers `InvalidArgument`;
+  there is no fallback to a replacing rename. With replacement, the
   idiom that replaces a file is: `Stat` the old file for its permission
   bits, `Create` a temporary in the same directory with them, `Write` it,
   `Sync` it, `Close` it, `Rename` it over the old name, `Sync` the
@@ -446,8 +453,9 @@ documentation, with each operation's errors; the decisions behind it:
   never answers a file's. The same number means different things per
   operation: `EXDEV` is `Escape` on an `Open` and `Other` on a `Rename`
   (two filesystems); `ENOENT` is `NotFound` on a file and `TooLate` on a
-  cancel; `EEXIST` is `Exists` on a `Create` and `NotEmpty` on a `Rename`
-  over a directory; `EINVAL` is `NotALink` on a `ReadLink` and
+  cancel; `EEXIST` is `Exists` on a `Create` or a no-replace `Rename`,
+  and `NotEmpty` on a replacing `Rename` over a directory; `EINVAL` is
+  `NotALink` on a `ReadLink` and
   `InvalidArgument` elsewhere; `ENOTTY` is `NotSupported` on a btrfs
   record, off btrfs.
 - **Modes are backend defaults,** as socket options are, but for the one

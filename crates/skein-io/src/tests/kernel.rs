@@ -37,7 +37,7 @@ fn complete(kind: Op, result: Result<Done, Error>) -> Complete {
 
 /// One of every operation, valid. A new operation makes the match in
 /// `documented` fail to build until it is added there, and here.
-fn every_op() -> [Op; 29] {
+fn every_op() -> [Op; 30] {
     [
         Op::Socket { family: Family::Ipv4 },
         Op::Bind { fd: FD, addr: v4() },
@@ -55,7 +55,8 @@ fn every_op() -> [Op; 29] {
         Op::Truncate { fd: FD, length: 4 },
         Op::Sync { fd: FD },
         Op::Stat { fd: FD },
-        Op::Rename { from_dir: FD, from: name(b"a"), to_dir: NEW, to: name(b"b") },
+        Op::Rename { from_dir: FD, from: name(b"a"), to_dir: NEW, to: name(b"b"), no_replace: false },
+        Op::Rename { from_dir: FD, from: name(b"a"), to_dir: NEW, to: name(b"b"), no_replace: true },
         Op::Remove { dir: FD, name: name(b"a"), directory: false },
         Op::MakeDirectory { dir: FD, name: name(b"a"), mode: 0o777 },
         list(2),
@@ -160,6 +161,7 @@ fn the_shapes_are_as_the_table_on_op_says() {
         sync,
         stat,
         rename,
+        rename_no_replace,
         remove,
         make_directory,
         list,
@@ -187,7 +189,20 @@ fn the_shapes_are_as_the_table_on_op_says() {
     for op in [recv, send, read, write, append, list] {
         assert_eq!(op.shape(), Shape::Count);
     }
-    for op in [listen, connect, shutdown, close, truncate, sync, rename, remove, make_directory, cancel, lock] {
+    for op in [
+        listen,
+        connect,
+        shutdown,
+        close,
+        truncate,
+        sync,
+        rename,
+        rename_no_replace,
+        remove,
+        make_directory,
+        cancel,
+        lock,
+    ] {
         assert_eq!(op.shape(), Shape::Nothing);
     }
 }
@@ -311,7 +326,19 @@ fn named(op: &Op) -> &'static [Error] {
         Op::Write { .. } | Op::Append { .. } => &[Error::NoSpace, Error::ReadOnly],
         Op::Truncate { .. } => &[Error::Permission, Error::NoSpace, Error::ReadOnly],
         Op::Sync { .. } => &[Error::NoSpace],
-        Op::Rename { .. } => &[
+        Op::Rename { no_replace: true, .. } => &[
+            Error::Exists,
+            Error::NotFound,
+            Error::NotADirectory,
+            Error::IsADirectory,
+            Error::NotEmpty,
+            Error::Permission,
+            Error::NoSpace,
+            Error::ReadOnly,
+            Error::TooManyLinks,
+            Error::NameTooLong,
+        ],
+        Op::Rename { no_replace: false, .. } => &[
             Error::NotFound,
             Error::NotADirectory,
             Error::IsADirectory,
@@ -475,7 +502,7 @@ fn an_operation_on_sockets_never_answers_a_files_error() {
 fn the_operations_on_files_are_those_on_names_beneath_a_root() {
     let files = [
         false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true,
-        true, true, true, false, false, false, false, false, false, false, false, true,
+        true, true, true, true, false, false, false, false, false, false, false, false, true,
     ];
     assert_eq!(every_op().len(), files.len(), "the classification table covers every fixture");
     for (op, file) in every_op().into_iter().zip(files) {
@@ -495,8 +522,13 @@ fn a_name_is_one_entry_of_a_directory_and_nothing_more() {
     assert!(op(b"fine").is_valid());
     assert!(!op(b"../out").is_valid(), "no lookup beyond the entry");
     assert!(!Op::Remove { dir: FD, name: name(b".."), directory: true }.is_valid());
-    let rename =
-        |from: &[u8], to: &[u8]| Op::Rename { from_dir: FD, from: Box::from(from), to_dir: FD, to: Box::from(to) };
+    let rename = |from: &[u8], to: &[u8]| Op::Rename {
+        from_dir: FD,
+        from: Box::from(from),
+        to_dir: FD,
+        to: Box::from(to),
+        no_replace: false,
+    };
     assert!(rename(b"a", b"b").is_valid());
     assert!(!rename(b"a", b"x/b").is_valid());
     assert!(!rename(b".", b"b").is_valid());
@@ -613,7 +645,7 @@ fn a_stat_answers_any_kind_and_size() {
 
 #[test]
 fn an_error_hands_every_buffer_and_path_back_too() {
-    let rename = || Op::Rename { from_dir: FD, from: name(b"a"), to_dir: NEW, to: name(b"b") };
+    let rename = || Op::Rename { from_dir: FD, from: name(b"a"), to_dir: NEW, to: name(b"b"), no_replace: false };
     let answer = complete(rename(), Err(Error::NotFound));
     assert!(answer.is_valid());
     assert_eq!(answer.kind, rename());

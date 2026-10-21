@@ -315,3 +315,8 @@ fn a_write_open_finds_what_exists_and_truncate_sets_its_length() {
 fn a_directory_lock_is_busy_through_a_second_open_until_the_first_closes() {
     calm_and_chaos(|world| skein_conformance::lock(world, b"process_fixture"));
 }
+
+#[test]
+fn no_replace_commits_and_linux_refusal_order() {
+    calm_and_chaos(skein_conformance::no_replace);
+}

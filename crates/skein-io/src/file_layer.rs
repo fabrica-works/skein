@@ -594,7 +594,7 @@ fn down_inner(io: &mut FileIo, request: Request, events: &mut Queue<Event>, subs
                 return;
             }
             io.pending = Some(Pending::Rename { owner });
-            io.issue(Op::Rename { from_dir: from_root, from, to_dir: to_root, to }, subs);
+            io.issue(Op::Rename { from_dir: from_root, from, to_dir: to_root, to, no_replace: false }, subs);
         }
         Request::Remove { owner, root, name, directory } => {
             if !crate::kernel::is_name(&name) {

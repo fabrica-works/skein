@@ -127,6 +127,7 @@ pub enum Summary {
         from: Text,
         to_dir: Fd,
         to: Text,
+        no_replace: bool,
     },
     Remove {
         dir: Fd,
@@ -233,9 +234,13 @@ impl Summary {
             Op::Sync { fd } => Summary::Sync { fd: *fd },
             Op::Lock { fd } => Summary::Lock { fd: *fd },
             Op::Stat { fd } => Summary::Stat { fd: *fd },
-            Op::Rename { from_dir, from, to_dir, to } => {
-                Summary::Rename { from_dir: *from_dir, from: Text::of(from), to_dir: *to_dir, to: Text::of(to) }
-            }
+            Op::Rename { from_dir, from, to_dir, to, no_replace } => Summary::Rename {
+                from_dir: *from_dir,
+                from: Text::of(from),
+                to_dir: *to_dir,
+                to: Text::of(to),
+                no_replace: *no_replace,
+            },
             Op::Remove { dir, name, directory } => {
                 Summary::Remove { dir: *dir, name: Text::of(name), directory: *directory }
             }

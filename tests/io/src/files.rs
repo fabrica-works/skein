@@ -31,6 +31,7 @@ pub enum Story {
     DigestUnreadable,
     AbsentDangling,
     Dangling,
+    Absent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +52,7 @@ pub struct Owner {
     root: Token,
     story: Story,
     max: u32,
+    bytes: &'static [u8],
     phase: Phase,
     pub events: Vec<Event>,
     completions: Queue<Complete>,
@@ -69,6 +71,7 @@ impl Owner {
             root,
             story,
             max,
+            bytes: NEW,
             phase: Phase::Store,
             events: Vec::with_capacity(3),
             completions: Queue::with_capacity(4),
@@ -127,10 +130,10 @@ impl Host for Owner {
                         Expect::Digest(digest(OLD))
                     }
                     Story::Unreadable | Story::Dangling => Expect::Any,
-                    Story::AbsentUnreadable | Story::AbsentDangling => Expect::Absent,
+                    Story::AbsentUnreadable | Story::AbsentDangling | Story::Absent => Expect::Absent,
                 };
                 let bytes = if self.max == 3 {
-                    Box::from(NEW)
+                    Box::from(self.bytes)
                 } else {
                     vec![b'n'; usize::try_from(self.max).expect("bounded file")].into_boxed_slice()
                 };
@@ -212,6 +215,12 @@ pub struct FileSystem {
     calls: usize,
     pub failed: bool,
     change_at_sync: bool,
+    rename_barrier: Option<bool>,
+    waiting_rename: Option<Call>,
+    pub missing_checks: usize,
+    pub rename_commits: usize,
+    pub rename_results: [Option<Result<(), Error>>; 2],
+    pub unsupported_rename: bool,
 }
 
 impl FileSystem {
@@ -225,9 +234,23 @@ impl FileSystem {
                 vec![Item { mode: 0, ..Item::file(b"record", OLD) }]
             }
             Story::AbsentDangling | Story::Dangling => vec![Item::link(b"record", b"missing")],
+            Story::Absent => vec![],
         };
         let root = files.lay(&items);
-        Self { files, root, fail_at, calls: 0, failed: false, change_at_sync: matches!(story, Story::Conflict) }
+        Self {
+            files,
+            root,
+            fail_at,
+            calls: 0,
+            failed: false,
+            change_at_sync: matches!(story, Story::Conflict),
+            rename_barrier: None,
+            waiting_rename: None,
+            missing_checks: 0,
+            rename_commits: 0,
+            rename_results: [None; 2],
+            unsupported_rename: false,
+        }
     }
     #[must_use]
     pub fn startup(&mut self) -> Handle {
@@ -262,8 +285,36 @@ impl FileSystem {
     }
 
     pub fn finish(&mut self) {
+        assert!(self.waiting_rename.is_none(), "both final commits reached the barrier");
         self.files.close(self.root);
         assert_eq!(self.files.open_handles(), 0, "all owner and observer handles released");
+    }
+}
+
+impl FileSystem {
+    fn answer(&mut self, call: Call, answers: &mut Queue<Answer>) {
+        let check = matches!(&call.ask, Ask::Open { path, how: skein_io::kernel::OpenHow::ReadNoFollow, .. } if path.as_ref() == b"record");
+        let rename = matches!(call.ask, Ask::Rename { .. });
+        let mut observed = Queue::with_capacity(1);
+        if self.unsupported_rename && rename {
+            assert!(matches!(call.ask, Ask::Rename { no_replace: true, .. }), "no replacing fallback");
+            observed.push(Answer { ticket: call.ticket, result: Err(Error::InvalidArgument) });
+        } else {
+            skein_fake_machine::step(&mut self.files, call, &mut observed);
+        }
+        let answer = observed.pop().expect("one filesystem answer");
+        if check && answer.result == Err(Error::NotFound) {
+            self.missing_checks += 1;
+        }
+        if rename {
+            if self.rename_barrier.is_some() {
+                assert_eq!(self.missing_checks, 2, "both rechecks saw missing before either commit");
+            }
+            assert!(self.rename_commits < self.rename_results.len(), "bounded final commits, no fallback");
+            self.rename_results[self.rename_commits] = Some(answer.result.as_ref().map(|_| ()).map_err(|error| *error));
+            self.rename_commits += 1;
+        }
+        answers.push(answer);
     }
 }
 
@@ -291,8 +342,17 @@ impl Machine for FileSystem {
                 assert_eq!(answer.ticket, ticket);
             }
             answers.push(Answer { ticket, result: Err(Error::Other(5)) });
+        } else if matches!(call.ask, Ask::Rename { .. }) && self.rename_barrier.is_some() {
+            if let Some(waiting) = self.waiting_rename.take() {
+                let reverse = self.rename_barrier.expect("race barrier");
+                let (first, second) = if reverse { (call, waiting) } else { (waiting, call) };
+                self.answer(first, answers);
+                self.answer(second, answers);
+            } else {
+                self.waiting_rename = Some(call);
+            }
         } else {
-            skein_fake_machine::step(&mut self.files, call, answers);
+            self.answer(call, answers);
         }
     }
 }
@@ -304,16 +364,18 @@ pub struct Judge;
 impl Referee<Owner> for Judge {
     fn act(&mut self, _now: Time, _procs: &mut [Owner]) {}
     fn observe(&mut self, _now: Time, procs: &[Owner]) {
-        for event in &procs[0].events {
-            if let Event::Loaded { bytes, .. } = event {
-                assert!(
-                    bytes.as_ref() == OLD
-                        || bytes.as_ref() == NEW
-                        || (bytes.as_ref() == OTHER && matches!(procs[0].story, Story::Conflict))
-                        || (bytes.len() == usize::try_from(procs[0].max).expect("bounded file")
-                            && bytes.iter().all(|byte| *byte == b'n')),
-                    "whole old or new file"
-                );
+        for proc in procs {
+            for event in &proc.events {
+                if let Event::Loaded { bytes, .. } = event {
+                    assert!(
+                        bytes.as_ref() == OLD
+                            || bytes.as_ref() == NEW
+                            || (bytes.as_ref() == OTHER && matches!(proc.story, Story::Conflict | Story::Absent))
+                            || (bytes.len() == usize::try_from(proc.max).expect("bounded file")
+                                && bytes.iter().all(|byte| *byte == b'n')),
+                        "whole old or new file"
+                    );
+                }
             }
         }
     }
@@ -352,5 +414,23 @@ pub fn world_with_files(
     let root = files.startup();
     let mut world = World::new(seed, config, Judge, Memory::Checked).with_machine(files);
     world.spawn_root(root, |fd| Owner::new(fd, story, max));
+    world
+}
+
+/// Both owners reach their final rename before either is delivered to the filesystem.
+#[must_use]
+pub fn racing_absent(reverse: bool) -> World<Owner, Judge, FileSystem> {
+    let mut files = FileSystem::new(Story::Absent, None);
+    files.rename_barrier = Some(reverse);
+    let roots = [files.startup(), files.startup()];
+    let mut world = World::new(47, Config::calm(), Judge, Memory::Checked).with_machine(files);
+    for (root, seed, bytes) in [(roots[0], 123, NEW), (roots[1], 456, OTHER)] {
+        world.spawn_root(root, |fd| {
+            let mut owner = Owner::new(fd, Story::Absent, 3);
+            owner.io.seed_randomness(seed);
+            owner.bytes = bytes;
+            owner
+        });
+    }
     world
 }

@@ -824,11 +824,12 @@ fn prepare(
             .flags(libc::AT_EMPTY_PATH)
             .mask(libc::STATX_TYPE | libc::STATX_SIZE | libc::STATX_MODE | libc::STATX_UID | libc::STATX_NLINK)
             .build(),
-        Op::Rename { from_dir, from, to_dir, to } => {
+        Op::Rename { from_dir, from, to_dir, to, no_replace } => {
             *path = c_path(from);
             *to_path = c_path(to);
             let (from_dir, to_dir) = (types::Fd(from_dir.raw()), types::Fd(to_dir.raw()));
-            opcode::RenameAt::new(from_dir, path.as_ptr().cast(), to_dir, to_path.as_ptr().cast()).build()
+            let flags = if *no_replace { libc::RENAME_NOREPLACE } else { 0 };
+            opcode::RenameAt::new(from_dir, path.as_ptr().cast(), to_dir, to_path.as_ptr().cast()).flags(flags).build()
         }
         Op::Remove { dir, name, directory } => {
             *path = c_path(name);
@@ -1159,10 +1160,11 @@ fn file_error(kind: &Op, errno: i32) -> Error {
         },
         Op::Stat { .. } => None,
         // EXDEV here is two filesystems, not an escape: Other.
-        Op::Rename { .. } => match errno {
+        Op::Rename { no_replace, .. } => match errno {
             libc::ENOENT => Some(Error::NotFound),
             libc::ENOTDIR => Some(Error::NotADirectory),
             libc::EISDIR => Some(Error::IsADirectory),
+            libc::EEXIST if *no_replace => Some(Error::Exists),
             libc::ENOTEMPTY | libc::EEXIST => Some(Error::NotEmpty),
             libc::EACCES | libc::EPERM => Some(Error::Permission),
             libc::ENOSPC | libc::EDQUOT => Some(Error::NoSpace),
