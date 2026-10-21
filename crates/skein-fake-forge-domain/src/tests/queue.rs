@@ -393,3 +393,44 @@ fn removal_reason_survives_reads_until_another_admission() {
     assert_eq!(h.pull(number).dequeued, None);
     assert_eq!(crate::api::QueueRemoval::MergeConflict.github(), b"MERGE_CONFLICT");
 }
+
+#[test]
+fn squash_group_message_uses_one_commit_or_the_multi_commit_pull_title() {
+    for (commits, expected, dequeued) in [(1_u32, b"green head".as_slice(), false), (2, b"FAIL title".as_slice(), true)]
+    {
+        let mut h = queue_harness(false);
+        let id = h.domain.id(REPOSITORY);
+        h.domain.repositories.get_mut(id).unwrap().checks.cue = Some(Cue::Message { fail: copy_of(b"FAIL") });
+        let mut head = FIRST;
+        for count in 0..commits {
+            head = crate::commit(
+                &mut h.domain,
+                &h.env.limits,
+                head,
+                files(&[(b"src", if count == 0 { b"one" } else { b"two" })]),
+                b"green head",
+            )
+            .unwrap()
+            .unwrap();
+        }
+        h.push(ENGINE, b"alice", head).unwrap();
+        h.open(b"alice").unwrap();
+        h.ok(ENGINE, write(Write::EditItem { number: 1, title: Some(copy_of(b"FAIL title")), body: None }));
+        h.settle();
+        let Answer::Statuses(statuses) = h.ok(ENGINE, Op::Read(Read::Statuses { commit: head })) else {
+            panic!("head statuses")
+        };
+        assert_eq!(statuses.first().unwrap().state, Check::Passed);
+        h.ok(ENGINE, write(Write::Enqueue { number: 1, head }));
+        let group = h.pull(1).group.unwrap();
+        assert_eq!(h.domain.object(group).unwrap().message.as_ref(), expected);
+        h.settle();
+        let pull = h.pull(1);
+        assert_eq!(pull.dequeued, if dequeued { Some(crate::api::QueueRemoval::CiFailure) } else { None });
+        assert_eq!(pull.merged, if dequeued { None } else { Some(group) });
+        let Answer::Statuses(statuses) = h.ok(ENGINE, Op::Read(Read::Statuses { commit: group })) else {
+            panic!("group statuses")
+        };
+        assert_eq!(statuses.first().unwrap().state, if dequeued { Check::Failed } else { Check::Passed });
+    }
+}

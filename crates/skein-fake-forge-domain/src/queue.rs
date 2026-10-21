@@ -156,7 +156,19 @@ fn make(
     let pull = repository.item(entry.number)?.pull.as_ref().expect("queued pull");
     let name = branch(&pull.base, entry, env.limits.limits.name_bytes)?;
     let by = pull.queued_by;
-    let commit = git::store(domain, Object { parent: Some(parent), merge_parent: None, tree, message: Box::new([]) })?;
+    // fake-forge.md, 10.2: COMMIT_OR_PR_TITLE uses the sole commit's
+    // message, otherwise the pull's title, relative to the pull's base.
+    let base = repository.branches.get(&*pull.base).copied().ok_or(Error::Missing(What::Branch))?;
+    let head = domain.commits.get(&entry.head).expect("queued head");
+    let sole = match head.parent {
+        Some(parent) => git::is_ancestor(domain, parent, base),
+        None => false,
+    } && match head.merge_parent {
+        Some(parent) => git::is_ancestor(domain, parent, base),
+        None => true,
+    };
+    let message = if sole { copy_of(&head.message) } else { copy_of(&repository.item(entry.number)?.title) };
+    let commit = git::store(domain, Object { parent: Some(parent), merge_parent: None, tree, message })?;
     let repository = domain.repositories.get_mut(id).expect("queue repository");
     repository.has.insert(commit).expect("room for every store commit");
     repository.branches.insert(copy_of(&name), commit).expect("group branch room checked");
