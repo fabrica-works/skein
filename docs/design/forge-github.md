@@ -389,6 +389,7 @@ bound, revisions, markers and malformed answers; and GitHub's:
 | `405` on `Merge`, "Repository rule violations found" and any other line | `Protected` |
 | `405` on `Merge`, "... merges are not allowed on this repository." | `Refused`, the row dropped |
 | GraphQL `UNPROCESSABLE`, "... expected head oid does not match the current head oid" | `Stale` |
+| GraphQL `UNPROCESSABLE`, "Pull request Required status check ..." on `enqueue` | `Protected` |
 | any other GraphQL error on `enqueue` | `Refused` |
 | `422` on `Update`, "expected head sha didn’t match current head ref." | `Stale` |
 | `422` on `Update`, "merge conflict between base and head" | `Conflict` |
@@ -405,13 +406,17 @@ bound, revisions, markers and malformed answers; and GitHub's:
 - **The message is matched whole,** by line: GitHub's `message`, and a
   `422`'s string entries in `errors` or objects' `errors[].message`,
   against the texts the conformance records
-  (section 13). A rule violation's message is a first line,
+  (section 13). Enqueue's required-check refusal matches the prefix
+  "Pull request Required status check " only for `UNPROCESSABLE`.
+  A rule violation's message is a first line,
   "Repository rule violations found", then one line per rule. An
   unknown message is `Refused` on a write, `InvalidAnswer` on a read.
-- **A `405` "not mergeable" just after a move** is GitHub computing
-  (`merge-after-move-405-not-mergeable`): the dialect says `Conflict`,
-  and the client reads the pull again within `settle` before it takes
-  it for one (forge-client.md, section 5).
+- **A merge just after a move** may answer `405` "Pull Request is not
+  mergeable" while GitHub computes, or `409` "Head branch was modified.
+  Review and try the merge again." (`merge-after-move-not-merged`). The
+  dialect says `Conflict` for the former and `Stale` for the latter; the
+  owner reads the pull again. The client reads again within `settle`
+  before taking the former for a conflict (forge-client.md, section 5).
 - **A `401` on the JSON Web Token** is the App's key refused (deleted,
   or a clock more than a minute off): `Forbidden`, which the component
   takes to stop the forge (forge-connection.md, section 5).
@@ -677,12 +682,13 @@ temper's draft section 11.
 - **Pull requests and CI:** `mergeable-null-then-settles`,
   `combined-pending-with-no-status`, `job-log-302-blob`,
   `job-log-range-honoured` (P4); `merge-stale-409`,
-  `merge-after-move-405-not-mergeable`, `merge-unheld-by-ci`,
+  `merge-after-move-not-merged`, `merge-unheld-by-ci`,
   `update-stale-422`, `update-202-later` (P5); `etag-304-free` (P6).
   Mergeability is null in the create response or a read soon after a head
   move, then boolean within the wait; the first read may already be boolean.
-  The Range fact expects 206 and Content-Range. The ETag fact reads an
-  unchanging repository with an installation token, and expects 304 with
+  The move fact requires either the recorded 405 or 409 and a pull read
+  that is not merged. The Range fact expects 206 and Content-Range.
+  The ETag fact reads an unchanging repository with an installation token, and expects 304 with
   the same remaining rate. `merge-repeat-idempotent` expects 200, merged
   true and the same merge sha for a repeat with the same sha, then compares
   both PUTs with the merged commit of the dialect's pull answer. At the pin,
@@ -695,7 +701,8 @@ temper's draft section 11.
   `installation-target-in-log` (an App not subscribed to it).
 - **Rules and the queue:** `approve-own-422`, `ruleset-approval-405`,
   `bypass-always-merges` (P8); `queue-direct-merge-405`,
-  `enqueue-stale-unprocessable`, `queue-merged-no-merge-commit-sha`,
+  `enqueue-stale-unprocessable`, `enqueue-pending-check-protected`,
+  `queue-merged-no-merge-commit-sha`,
   `queue-dequeued-delivered` (P9); `signatures-push-gh013` (P10);
   `rules-branches-current-user-can-bypass`,
   `classic-protection-404-under-rulesets` (P11). Own approval is 422 with
@@ -709,6 +716,17 @@ temper's draft section 11.
   One entry and no batching wait keep single-pull cases immediate; the
   check timeout is a ceiling, not a mandatory delay. Queue cases and their
   rulesets use an organization's repository and its matching tokens.
+  The pending-check fact approves the pull and posts pending ci before
+  testing Merge as Protected and raw enqueue as UNPROCESSABLE with the
+  required-check prefix. Both queue completion cases pass ci on the head
+  before enqueue. The merge case then finds the gh-readonly-queue/ group
+  commit, posts ci success there and polls within the CI wait until the
+  pull reads merged, with REST omitting merge_commit_sha and the dialect
+  reading the merged commit through GQ. The dequeue case posts ci failure
+  on the group commit and expects its delivery. Approval, admission,
+  branches or group read, and status plan refusals fail their fact with
+  the error; a raw enqueue refusal includes its GraphQL errors message.
+  A merge wait that expires fails the fact; later cases still run.
 - **Repositories and issues:** `installation-repositories-at-once`
   (P12); `issues-list-pulls`, `new-issue-may-miss-listing` (P13).
 - **Not yet probed,** first held by the conformance:

@@ -879,7 +879,17 @@ below are tracked in STATUS.md.
     `data.enqueuePullRequest` null and one `UNPROCESSABLE` error.
     Its message is `Pull request ` followed by the approval sentence,
     without trailing blank lines, and nothing is queued. Live session
-    1917 records this for 1; other counts use the shared sentence.
+    1917 records this for 1; other counts use the shared sentence;
+  - after approvals, enqueue requires every queue ruleset check to have
+    passed on the pull's head. An unmet check answers HTTP `200`, null
+    `data.enqueuePullRequest` and one `UNPROCESSABLE` error with message
+    `Pull request Required status check "<name>" is in progress.`; no
+    entry is admitted. Missing, pending and failed head checks use this
+    refusal. Group CI is separate: after admission, a status posted on
+    the `gh-readonly-queue/` commit is accepted, and ci success lets the
+    queue merge. The GitHub layer checks admission before the shared
+    domain's enqueue; the domain's own queue admission remains its
+    approval check.
 
   The layer's `pull` document answers `mergeQueueEntry` and
   `mergeCommit.oid` from the domain for queued, direct and repeated merges.
@@ -997,7 +1007,8 @@ the fake.
   and a queue's group is built from the entry ahead, not batched.
   While a head or base move is still checking mergeability, the GitHub
   route answers `405` "Pull Request is not mergeable"
-  (`merge-after-move-405-not-mergeable`, forge-github.md, section 7).
+  (`merge-after-move-not-merged`, forge-github.md, section 7); GitHub
+  may also answer the recorded 409 just after a move, with no merge.
   An open pull's stale supplied SHA keeps its `409` precedence. A merged
   pull's repeat merge answers `200` for any supplied SHA.
 - **Ids** are the domain's numbers, small and sequential. Deliveries'
