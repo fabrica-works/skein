@@ -1,8 +1,9 @@
 # Owners
 
 Provisional, 2026-10-19, revised 2026-10-21. How a draft reaches
-`main` through an owner: one session that takes the draft there in
-milestones, each designed and then implemented.
+`main` through owners: each a session with one mission, the draft or a
+part of it, that it takes there in a few milestones, each designed and
+then implemented.
 
 **What an owner reads:** its brief, this file, and section 1, "In one
 page", of [programming-model.md](programming-model.md) and
@@ -18,21 +19,27 @@ behind the rules, when a rule's reason matters. The repository's
 - **The input is a draft** that the user wrote and reviewed: the goal,
   the constraints, the expectations. A landed design not yet built can
   stand in for it.
+- **A mission** is what one owner takes to `main`: a draft, or a part
+  of one, with a defined end, in at most four milestones (section 3.1),
+  so about 16 hours at most. A larger draft is reached by missions one
+  after another, each by a fresh owner, so that each keeps its context
+  and its focus on one end. No owner is standing: recurring work
+  (hygiene, QA) is given as missions too, such as `o/hygiene-<what>`.
 - **The director** knows every draft and the
-  direction. It starts one owner per draft, gives the final call on what
-  owners escalate, and asks the user only what it can't reasonably
+  direction. It starts one owner per mission, gives the final call on
+  what owners escalate, and asks the user only what it can't reasonably
   decide. Its role is [director.md](director.md).
 - **An owner** (Claude Code, Opus 5.5) designs and implements its
-  part: its draft, or one milestone of it. Its effort is its parent's
+  part: its mission, or one milestone of it. Its effort is its parent's
   choice (section 2). An owner whose part needs little taste (tooling,
   hygiene, optimization) is a Codex session instead, under this same
   file, and brings its significant code and test decisions to its
   parent.
-- **Milestones.** A draft is reached through one or more milestones,
+- **Milestones.** A mission is reached through one to four milestones,
   one after another, each an MVP built on the one before: something
   meaningful that works on its own. The owner drives a single milestone
   itself; with more, it gives each to a sub-owner, a session like
-  itself, and holds the whole draft's plan (section 3.1). No milestone
+  itself, and holds the whole mission's plan (section 3.1). No milestone
   runs past 4 hours. Milestones never run in parallel; within one,
   whatever can run in parallel does.
 - **The design is the blueprint.** A repository's `docs/design/`
@@ -43,7 +50,7 @@ behind the rules, when a rule's reason matters. The repository's
   each milestone: design, report, a brief check by the parent, its
   green light, implementation with the QA passes the owner chooses,
   landings, a report at its end and the owner's handover to a fresh
-  session; at the last, a closing note.
+  session; at the last, a closing note, and the owner stops.
 - **Claude for taste, Codex for the rest.** Claude's tokens are the
   scarce ones; Codex's are ample, and throughput grows with what moves
   there. The owner spends Claude on what needs taste: the design, the
@@ -130,18 +137,29 @@ behind the rules, when a rule's reason matters. The repository's
 
 ### 3.1 Milestones
 
-- **One or more, in sequence.** The owner reaches its draft through
-  milestones, one after another, each an MVP on the one before: a
-  piece of the draft's goal that means something on its own and works,
-  shown by a story that runs it. Wherever a meaningful piece can be
-  delivered alone, there is a candidate milestone, and the draft's end
-  is reached through a series of them.
+- **One or more, in sequence.** The owner reaches its mission's end
+  through milestones, one after another, each an MVP on the one
+  before: a piece of the draft's goal that means something on its own
+  and works, shown by a story that runs it. Wherever a meaningful piece
+  can be delivered alone, there is a candidate milestone, and the
+  draft's end is reached through a series of them, across missions
+  where it takes more than four.
+- **At most four, a rule.** A mission holds at most four milestones:
+  at 2 to 3 hours each under the cap (below), it ends within about 16
+  hours. Its end is the brief's. Where reaching it takes more
+  milestones, the plan's report proposes a nearer end, and the mission
+  stops there. A split later that would make a fifth milestone sends
+  the rest to the next mission: a mission never grows. The next mission
+  gets a fresh owner, whose brief carries this one's notes and closing
+  note.
 - **The draft's own.** When the draft lists its milestones, they are
   adopted. The owner may split one; merging, reordering or changing
   what one delivers changes the draft's expectations, and goes to its
   parent (section 5).
 - **The plan,** in `milestones.md` in the owner's notes, before the
-  first milestone: a rough design of the whole draft, and the
+  first milestone: a rough design of the whole mission, reaching into
+  the rest of the draft where it settles what later missions build
+  on, and the
   milestones, each with the MVP it delivers and the story that shows
   it, the design documents it adds or changes, and its rough size. The
   rough design settles early what would be hard to reverse (a stored
@@ -154,7 +172,7 @@ behind the rules, when a rule's reason matters. The repository's
 - **Who drives.** With one milestone, the owner drives it. With more,
   each goes to a sub-owner, started with a brief by the owner's fresh
   session once the milestone before has ended (below, and section 2).
-  The owner keeps the plan and the whole draft's picture: it checks
+  The owner keeps the plan and the whole mission's picture: it checks
   each milestone's design, answers its sub-owner, and reports to its
   parent. A sub-owner starts no sub-owner of its own, and no two
   milestones are designed or implemented at once. A parent keeps its
@@ -459,9 +477,11 @@ Continuous QA, agents using a running build (temper's draft
 
 ## 6. The closing note
 
-When its work has landed, the owner writes `closing.md` in its notes
-directory, in at most half a page:
+When its mission has landed, the owner writes `closing.md` in its
+notes directory, in at most half a page:
 - what landed, with its commits;
+- what is left of the draft past the mission's end, for the next
+  mission's brief;
 - the wall time from its start to its last landing, and its ledger's
   sessions;
 - with more than one milestone, each one's time against the cap, and
@@ -470,6 +490,6 @@ directory, in at most half a page:
 - its QA passes: how many, what they found, and the tests left ignored;
 - what went well and what didn't, in this process.
 
-It reports to its parent, which folds the note into its own. The
-director compares the notes across owners, to judge what in this file
+It reports to its parent, which folds the note into its own, and the
+owner's session ends. The director compares the notes across owners, to judge what in this file
 pays and what to change.

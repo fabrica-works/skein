@@ -17,7 +17,7 @@ doing now is in its notes (section 3), never here.
 - **One session at a time,** on x1, started by the user, its context
   cleared about every six hours (section 2). Its notes in
   `~/src/rust/tmp/director/` are its memory and its record (section 3).
-- **It starts the owners,** one per draft: which work, when, where, a
+- **It starts the owners,** one per mission: which work, when, where, a
   Claude or a Codex owner, at what effort, with a brief (section 4).
   Then it answers them: their design reports, their questions, and the
   order of what they share (section 6).
@@ -136,6 +136,13 @@ runs.
   waiting only where its landings overlap theirs. The pace is set by
   the machines and the churn; the user's word in `direction.md`
   says whether the subscriptions' usage pace limits it too.
+- **Missions** (owners.md 1 and 3.1). The director cuts each draft into
+  missions of at most four milestones, each ending where something
+  works on its own, and starts a fresh owner for each, the
+  next one's brief carrying the last one's notes and closing note. No
+  owner stays on past its mission: recurring work (hygiene, QA,
+  findings) waits in the director's notes until there is a mission's
+  worth, then gets one, `o/<area>-<what>`.
 - **Claude or Codex** (owners.md, 1). A Claude owner is started on its
   machine as owners.md 2 says, over ssh for another machine, at the
   effort the part's difficulty asks. A Codex owner runs through
@@ -153,12 +160,14 @@ runs.
   this order:
   - who it is: its part, its machine, "the owners' way";
   - what to read first: owners.md, then section 1 of the two rules;
-  - its input: the draft with its commit, what the draft names, what
-    is adopted and what is left open, the scope;
+  - its mission: the draft with its commit, the part of it this
+    mission reaches and its end, what the draft names, what is adopted
+    and what is left open, and for a later mission the notes and
+    closing note of the one before;
   - why it matters, in the user's words where there are some;
-  - how to start: the milestone plan, with the draft's milestones
-    where it lists them (owners.md 3.1), then the first milestone's
-    design, the report in parts where that is faster;
+  - how to start: the milestone plan, at most four, with the draft's
+    milestones where it lists them (owners.md 3.1), then the first
+    milestone's design, the report in parts where that is faster;
   - who is near: the other owners' footprints, and that repins and API
     breaks go through the director;
   - how it spends: Claude for taste, Codex for the rest, with the
