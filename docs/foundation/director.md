@@ -134,11 +134,14 @@ runs.
   already working, and the churn between them (rebases, repins in
   turn, shared files). An owner runs beside the others by footprint,
   waiting only where its landings overlap theirs. The pace is set by
-  the machines and the churn; the user's word in `direction.md`
-  says whether the subscriptions' usage pace limits it too.
+  what each mission needs and how long its work takes, as parallel as
+  that allows; the user's word in `direction.md` says whether the
+  subscriptions' usage pace limits it too. Where machines or seats
+  hold the pace back, the director asks the user for more.
 - **Roadmaps.** A roadmap the user has agreed is the go for its
-  missions: the director starts each one when its turn comes, and tells
-  the user as it starts. A side roadmap, a lower-priority track, runs on
+  missions: the director starts each one as soon as what it needs is
+  in, not when the wave before it ends, and tells the user as it
+  starts. It also pauses, resumes and wraps up owners. A side roadmap, a lower-priority track, runs on
   what the main one leaves free. Its mission starts when three things
   hold. A machine is free once the main missions are staffed. The
   user's inputs for it are in. Its landings stay off a running main
@@ -306,9 +309,9 @@ is mechanical, and Codex reads what needs reading.
 
 - **What goes to the user:** what has long-term consequences that would
   be hard to change, what the user's rules keep theirs (budgets,
-  sign-ins and credentials, subscriptions, pausing and resuming
-  owners), and what the director can't reasonably decide (owners.md,
-  5).
+  sign-ins and credentials, subscriptions), what more machines or
+  seats the pace needs, and what the director can't reasonably decide
+  (owners.md, 5).
 - **How:** a push, with the recommendation first so that "yes" answers
   it. A longer matter goes as a note in `for-user/`, sent as a file.
   Before telling the user something an owner said, check it against the
