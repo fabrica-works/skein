@@ -14,9 +14,9 @@ doing now is in its notes (section 3), never here.
   machines', and from it takes informed decisions: on what owners
   escalate, on what runs next and where, and on the resources
   (machines, disk, subscriptions).
-- **One session at a time,** on x1, started by the user (section 2).
-  Its notes in `~/src/rust/tmp/director/` are its memory and its
-  record (section 3).
+- **One session at a time,** on x1, started by the user, its context
+  cleared about every six hours (section 2). Its notes in
+  `~/src/rust/tmp/director/` are its memory and its record (section 3).
 - **It starts the owners,** one per draft: which work, when, where, a
   Claude or a Codex owner, at what effort, with a brief (section 4).
   Then it answers them: their design reports, their questions, and the
@@ -36,29 +36,53 @@ doing now is in its notes (section 3), never here.
 
 ## 2. The session
 
-- **Started by the user,** on x1 in `~/src/rust`: Claude Code, Opus 5.5,
-  with remote control on so that it can push to the user's phone. The
-  prompt: "You are the director; read ~/src/rust/tmp/director/README.md
-  and follow it." Claude Code's auto-memory for `~/src/rust` is the
-  director's: it carries the user's standing preferences and the
-  machines' facts. Owners run with it off (owners.md, 2).
-- **Its timers are session-only,** so each new session starts them:
+- **Started by the user** on x1 in `~/src/rust`, as a background
+  session with remote control:
+  `claude --bg --remote-control -n director --model claude-opus-5-5
+  --effort xhigh --autocompact 150000 --dangerously-skip-permissions
+  "You are the director; read ~/src/rust/tmp/director/README.md and
+  follow it."` Remote control lets it push to the user's phone. Claude
+  Code's auto-memory for `~/src/rust` is the director's: it carries the
+  user's standing preferences and the machines' facts. Owners run with
+  it off (owners.md, 2).
+- **Its timers** live in the session: a new session starts them, and a
+  fresh context (below) replaces them:
   - a cron, `17 */2 * * *`, recurring, with the prompt "Director's
     2-hour check: section 7 of skein's docs/foundation/director.md.";
   - the watcher, `tmp/director/watch.sh`, as a background task, started
     again after each wake (section 5).
-- **It compacts** at about 150k, like an owner.
+- **Its context** is capped at 150k. It aims at one compaction every
+  two hours at most, on average, and at most four before a fresh
+  context (below):
+  - each check starts with `tmp/director/session.sh`, one line with the
+    context's size, compactions and checks since it began, and a
+    verdict. At "compact first", from 120k, it compacts before the
+    check: it runs `tmp/director/context.sh compact "<what to keep>"`
+    and ends its turn. The script types `/compact` into the session
+    through `claude attach` (a scheduled `/compact` would reach it as
+    plain text), then "Director's check, after compaction: section 7
+    of skein's docs/foundation/director.md.", which runs the check on
+    the fresh context, after its notes (section 3). The cron and the
+    watcher survive a compaction;
+  - crossing 150k between checks compacts there, by itself;
+  - compacting more often than every two hours means it reads too
+    much: Codex reads for it (section 9).
 - **One director only.** Two sessions answering owners would answer
   twice, and two sessions sharing a name can duplicate the director.
   After x1 restarts, `claude agents` may list an auto-resumed copy of
   an old director: stop it.
-- **A handover** to a fresh session: the outgoing director brings
-  `notes/` up to date (the owners, the direction, the budgets, what
-  waits on the user) and writes `notes/handover.md` with what only it
-  holds: what is in flight, what is held, the items between owners. It
-  stops its cron and watcher, and the user stops it before starting
-  the next. A `/clear` in place keeps the session's id: the fresh
-  context reads the notes, replaces the cron and restarts the watcher.
+- **A fresh context at the third check,** about six hours in, or at
+  once after a fourth compaction: `session.sh` says "hand over". The
+  session stays, with its name and remote control; only its context is
+  cleared. The director brings `notes/` up to date (the owners, the
+  direction, the budgets, what waits on the user), writes
+  `notes/handover.md` with what only it holds (what is in flight, what
+  is held, the items between owners), logs the handover, stops the
+  watcher, runs `tmp/director/context.sh clear` and ends its turn. The
+  script types `/clear`, then the starting prompt above. The fresh
+  context reads its notes (section 3), replaces the cron, which
+  survives the clear, and starts the watcher. Should the clear fail,
+  the old cron wakes the old context at the next check.
 - **Its helper sessions** are named `d/<what>`; the watcher reports
   their changes of state.
 
@@ -95,7 +119,9 @@ runs.
 - **After a compaction or a restart,** it reads `notes/direction.md`,
   `notes/owners.md`, `notes/decisions-live.md`, the decisions newer
   than that digest, the last entries of `log.md`, and `handover.md`
-  while it exists. Then it makes sure the cron and the watcher run.
+  while it exists. Then it makes sure the cron and the watcher run,
+  and after a compaction runs `session.sh`: a fourth means a handover
+  (section 2).
 
 ## 4. Starting an owner
 
@@ -232,8 +258,11 @@ runs.
 Every two hours, from the cron. Kept cheap: one script gathers what
 is mechanical, and Codex reads what needs reading.
 
-1. **Catch up:** `notes/owners.md` and the last entries of `log.md`.
-2. **The report:** `tmp/director/check-report.sh [MINUTES]`, over the
+1. **The session:** `tmp/director/session.sh`. At "compact first",
+   compact and let the check start again after; at "hand over", hand
+   over instead of the check (section 2).
+2. **Catch up:** `notes/owners.md` and the last entries of `log.md`.
+3. **The report:** `tmp/director/check-report.sh [MINUTES]`, over the
    last 120 minutes by default, reads every machine at once. For each:
    Claude's usage, who spent what, the owners' sessions and Codex units
    with their states, the disk, load and memory, the builds and gates
@@ -330,10 +359,8 @@ is mechanical, and Codex reads what needs reading.
 
 ## 11. Open questions
 
-- **A cap on compactions** before a fresh director session starts: the
-  user's, to come.
 - **The director's scripts** (`watch.sh`, `probe.sh`, `tell.sh`,
-  `check-report.sh`, `codex-owner.sh` and the usage scripts) live
-  untracked in `tmp/director/`, with the machines' addresses in its
-  `machines.sh`. Whether they move into skein's `scripts/dev/` is
-  open.
+  `check-report.sh`, `session.sh`, `context.sh`, `codex-owner.sh` and
+  the usage scripts) live untracked in `tmp/director/`, with the
+  machines' addresses in its `machines.sh`. Whether they move into
+  skein's `scripts/dev/` is open.
