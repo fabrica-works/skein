@@ -15,6 +15,15 @@ use skein_forge_conformance::{
     json,
 };
 
+#[derive(Debug)]
+struct Absent(&'static str);
+impl std::fmt::Display for Absent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "input absent: {}", self.0)
+    }
+}
+impl std::error::Error for Absent {}
+
 pub(crate) const NAMES: &[&str] = &[
     "token-expires-in-an-hour",
     "token-narrowed-creates-not-edits",
@@ -74,19 +83,22 @@ pub(crate) const NAMES: &[&str] = &[
     "installation-repository-removal-refusals",
 ];
 fn case(r: &mut Runner<'_>, name: &'static str, run: impl FnOnce(&mut Runner<'_>) -> Result<bool>) -> Result<()> {
-    observation(r, name, |r| run(r).map(|holds| (holds, "wire observation differs from the fact")))
+    observation(r, name, |r| {
+        let holds = run(r)?;
+        r.fact(name, holds, "wire observation differs from the fact");
+        Ok(())
+    })
 }
-fn observation(
-    r: &mut Runner<'_>,
-    name: &'static str,
-    run: impl FnOnce(&mut Runner<'_>) -> Result<(bool, &'static str)>,
-) -> Result<()> {
+fn observation(r: &mut Runner<'_>, name: &'static str, run: impl FnOnce(&mut Runner<'_>) -> Result<()>) -> Result<()> {
     r.next(name)?;
     match run(r) {
-        Ok((holds, why)) => r.fact(name, holds, why),
+        Ok(()) => {}
         Err(error) => match r.wire.take() {
             Some(text) => r.fact(name, false, &format!("wire: {text}")),
-            None => return Err(error),
+            None => match error.downcast_ref::<Absent>() {
+                Some(absent) => r.fact(name, false, &absent.to_string()),
+                None => return Err(error),
+            },
         },
     }
     Ok(())
@@ -319,7 +331,7 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
             .get("expires_at")
             .str()
             .and_then(|s| skein_forge::forgejo::time::read(s.as_bytes()))
-            .ok_or("mint expiry absent")?;
+            .ok_or(Absent("mint expiry"))?;
         Ok(response.status == 201 && expires.as_nanos().abs_diff(before + 3_600_000_000_000) < 2_000_000_000)
     })?;
     case(r, "token-narrowed-creates-not-edits", |r| {
@@ -338,7 +350,7 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
         if response.status != 201 {
             return Ok(false);
         }
-        let number = response.json()?.root().get("number").u64().ok_or("created issue number absent")?;
+        let number = response.json()?.root().get("number").u64().ok_or(Absent("created issue number"))?;
         let body = json::object(&[("title", &format!("{title}-edited"))])?;
         let edited = r.raw(Method::Patch, format!("/repos/{repo}/issues/{number}"), &token, &body)?;
         r.provenance.push(format!("# token-narrowed-creates-not-edits issue title PATCH status {}", edited.status));
@@ -445,7 +457,7 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
         let token = r.token(0)?;
         let target = format!("/repos/{repo}");
         let first = r.raw(Method::Get, &target, &token, b"")?;
-        let tag = first.header("etag").ok_or("repository ETag absent")?.to_owned();
+        let tag = first.header("etag").ok_or(Absent("repository ETag"))?.to_owned();
         let mut request = Request::new(Method::Get, target, Some(&token), b"");
         request.headers.push(("If-None-Match".into(), tag));
         let second = r.ask(&request)?;
@@ -569,7 +581,7 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
             b"",
         )?;
         let answer = r.plan(0, api::Op::Read(api::Read::Protection { branch: fake::boxed(base.as_bytes()) }))?;
-        let id = response.json()?.root().nth(0).get("ruleset_id").u64().ok_or("branch ruleset id absent")?;
+        let id = response.json()?.root().nth(0).get("ruleset_id").u64().ok_or(Absent("branch ruleset id"))?;
         let detail = r.raw(Method::Get, format!("/repos/{repo}/rulesets/{id}"), &token, b"")?;
         Ok(response.status == 200
             && detail.status == 200
@@ -617,7 +629,7 @@ pub(crate) fn queue(r: &mut Runner<'_>) -> Result<()> {
     })?;
     queue_pending(r, index, n, &sha)?;
     queue_merged(r, index, n, &sha)?;
-    queue_dequeued(r, index)?;
+    observation(r, "queue-dequeued-delivered", |r| queue_dequeued(r, index))?;
     Ok(())
 }
 fn queue_plan(
@@ -743,7 +755,7 @@ fn queue_group(r: &mut Runner<'_>, index: usize) -> Result<Option<api::Commit>> 
         let response = r.raw(Method::Get, target, &token, b"")?;
         let document = response.json()?;
         let message =
-            document.root().get("commit").get("commit").get("message").str().ok_or("queue group message absent")?;
+            document.root().get("commit").get("commit").get("message").str().ok_or(Absent("queue group message"))?;
         r.provenance.push(format!("# queue-dequeued-delivered group commit message {message:?}"));
     }
     Ok(Some(commit))
@@ -813,7 +825,6 @@ fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Res
     Ok(())
 }
 fn queue_dequeued(r: &mut Runner<'_>, index: usize) -> Result<()> {
-    r.next("queue-dequeued-delivered")?;
     let repo = r.repo(index)?;
     let token = r.token(index)?;
     let repository = r.raw(Method::Get, format!("/repos/{repo}"), &token, b"")?.json()?;
@@ -938,8 +949,8 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
             .iter()
             .find(|row| row.get("number").u64() == Some(pull))
             .copied()
-            .ok_or("settled pull absent")?;
-        let since = row.get("updated_at").str().ok_or("issue time absent")?.to_owned();
+            .ok_or(Absent("settled pull"))?;
+        let since = row.get("updated_at").str().ok_or(Absent("issue time"))?.to_owned();
         let issue = pull;
         let response = r.raw(
             Method::Get,
@@ -974,7 +985,8 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
         }
         r.provenance.push(format!("# issues-since-epoch-empty listing reads {reads}"));
         if !found {
-            return Ok((false, "made issue absent from listing"));
+            r.fact(r.case, false, "made issue absent from listing");
+            return Ok(());
         }
         let epoch = r.raw(
             Method::Get,
@@ -988,7 +1000,8 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
             r.plan(0, api::Op::Read(api::Read::Items { since: skein_lib::Time::ZERO, page: 1, kind: None }))?;
         let listed =
             matches!(answer, Ok(api::Answer::Items { items, .. }) if items.iter().any(|row| row.number == issue));
-        Ok((empty && listed, "wire observation differs from the fact"))
+        r.fact(r.case, empty && listed, "wire observation differs from the fact");
+        Ok(())
     })?;
     case(r, "branch-with-slash-reads", |r| {
         let first = r.base(0)?;
@@ -1005,7 +1018,8 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
     case(r, "user-by-id-reads", |r| {
         let viewer =
             r.raw(Method::Post, "/graphql", &token, br#"{"query":"query { viewer { login databaseId } }"}"#)?;
-        let user = viewer.json()?.root().get("data").get("viewer").get("databaseId").u64().ok_or("viewer id absent")?;
+        let user =
+            viewer.json()?.root().get("data").get("viewer").get("databaseId").u64().ok_or(Absent("viewer id"))?;
         let response = r.raw(Method::Get, format!("/user/{user}"), &token, b"")?;
         Ok(response.status == 200 && response.json()?.root().get("id").u64() == Some(user))
     })?;
@@ -1073,7 +1087,7 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
         let response =
             r.raw(Method::Post, format!("/repos/{repo}/issues/{issue}/comments"), &token, br#"{"body":"before"}"#)?;
         let j = response.json()?;
-        let id = j.root().get("id").u64().ok_or("comment id absent")?;
+        let id = j.root().get("id").u64().ok_or(Absent("comment id"))?;
         let listed = r
             .raw(Method::Get, format!("/repos/{repo}/issues/{issue}/comments?per_page=100&page=1"), &token, b"")?
             .json()?;
@@ -1083,7 +1097,7 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
             .iter()
             .find(|row| row.get("id").u64() == Some(id))
             .and_then(|row| row.get("updated_at").str())
-            .ok_or("comment update time absent")?
+            .ok_or(Absent("comment update time"))?
             .to_owned();
         r.wait(2);
         let response =
@@ -1106,9 +1120,9 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
             if response.status != 302 {
                 return Ok(false);
             }
-            let location = response.header("location").ok_or("job log redirect absent")?;
+            let location = response.header("location").ok_or(Absent("job log redirect"))?;
             let (_, tail) = location.split_once("://").ok_or("job log redirect invalid")?;
-            hosts.push(tail.split('/').next().ok_or("job log host absent")?.to_owned());
+            hosts.push(tail.split('/').next().ok_or(Absent("job log host"))?.to_owned());
         }
         r.provenance.push(format!(
             "# job-log-host-per-owner redirect hosts {}",
@@ -1116,11 +1130,10 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
         ));
         Ok(hosts.iter().all(|host| !host.is_empty()))
     })?;
-    access(r)?;
+    observation(r, "installation-repository-removal-refusals", access)?;
     Ok(())
 }
 fn access(r: &mut Runner<'_>) -> Result<()> {
-    r.next("installation-repository-removal-refusals")?;
     let mut holds = true;
     for index in 0..2 {
         let installation = r.fixtures.installations[index].id;
@@ -1133,7 +1146,7 @@ fn access(r: &mut Runner<'_>) -> Result<()> {
             .root()
             .get("id")
             .u64()
-            .ok_or("repository id absent")?;
+            .ok_or(Absent("repository id"))?;
         r.before(Made::Access { installation, repository: id, owner, add: true })?;
         let person = r.person(index)?;
         let response =
@@ -1193,7 +1206,7 @@ fn logs(r: &mut Runner<'_>) -> Result<()> {
     })?;
     case(r, "log-delivery-whole", |r| {
         let response = r.app(Method::Get, "/app/hook/deliveries?per_page=1", b"")?;
-        let id = response.json()?.root().nth(0).get("id").u64().ok_or("delivery id absent")?;
+        let id = response.json()?.root().nth(0).get("id").u64().ok_or(Absent("delivery id"))?;
         let response = r.app(Method::Get, format!("/app/hook/deliveries/{id}"), b"")?;
         let json = response.json()?;
         Ok(response.status == 200
@@ -1206,7 +1219,7 @@ fn logs(r: &mut Runner<'_>) -> Result<()> {
         let spare = r.fixtures.spare.clone();
         let person = r.person(0)?;
         let repo = r.raw(Method::Get, format!("/repos/{spare}"), &person, b"")?;
-        let id = repo.json()?.root().get("id").u64().ok_or("spare id absent")?;
+        let id = repo.json()?.root().get("id").u64().ok_or(Absent("spare id"))?;
         let installation = r.fixtures.installations[0].id;
         let owner = r.fixtures.installations[0].owner.clone();
         r.before(Made::Access { installation, repository: id, owner, add: false })?;

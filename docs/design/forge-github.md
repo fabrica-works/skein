@@ -778,9 +778,12 @@ A fact's texts (each refusal's message) are the conformance's
 transcripts, and the decoders' tests take them (section 14). A response
 framing, length or parse error preserves the masked request and received
 response head and fails that fact; later cases run, while guard, budget,
-journal and cleanup errors stop the run. Close-delimited responses are read
-to stream end within the 4 MiB bound on a connection used for one request,
-and each records its case and status in provenance.
+journal and cleanup errors stop the run. A missing input from an earlier
+response fails only its own fact; later cases run.
+The runner re-signs the App JWT at half its 600-second life before an App
+request. Close-delimited responses are read to stream end within the 4 MiB
+bound on a connection used for one request, and each records its case and
+status in provenance.
 
 ## 14. Verification
 

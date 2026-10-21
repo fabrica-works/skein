@@ -100,6 +100,57 @@ fn github_conformance_holds_every_fact_on_the_fake() {
     assert!(report.leftover_mints.is_empty());
 }
 #[test]
+fn github_conformance_renews_the_app_jwt_at_half_life() {
+    for (seconds, renewed) in [(299, false), (300, true), (601, true)] {
+        let out = Temp::new(&format!("jwt-age-{seconds}"));
+        let mut r = runner(&out.0);
+        r.start().expect("start fake run");
+        let old = r.jwt.clone();
+        r.wait(seconds);
+        let requests = r.requests;
+        let response = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"").expect("App request");
+        assert_eq!(response.status, 200);
+        assert_eq!(r.jwt != old, renewed, "renewal after {seconds} seconds");
+        assert_eq!(r.requests, requests + 1, "renewal adds no request");
+        if seconds > 600 {
+            let expired = r.raw(Method::Get, "/app/hook/deliveries?per_page=100", &old, b"").expect("old JWT request");
+            assert!(expired.is(401, "Bad credentials"), "fake refuses the expired JWT");
+        }
+        r.finish().expect("cleanup");
+        scan(&out.0, &r.secrets);
+        shutdown(&mut r);
+    }
+}
+#[test]
+fn github_conformance_missing_delivery_fails_only_its_fact() {
+    let out = Temp::new("missing-delivery");
+    let mut r = runner(&out.0);
+    r.start().expect("start fake run");
+    r.response_override = Some((
+        "log-delivery-whole",
+        "/app/hook/deliveries?per_page=1",
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n[]".to_vec(),
+    ));
+    let run = cases::run(&mut r);
+    r.complete(run).expect("missing input permits later cases and cleanup");
+    assert!(r.response_override.is_none(), "empty listing exercised");
+    assert_eq!(r.facts.len(), cases::NAMES.len());
+    for fact in &r.facts {
+        match fact.name {
+            "log-delivery-whole" => assert_eq!(fact.outcome, Outcome::Fails("input absent: delivery id".into())),
+            "signatures-push-gh013" => match &fact.outcome {
+                Outcome::Unchecked(_) => {}
+                Outcome::Holds | Outcome::Observed(_) | Outcome::Fails(_) => panic!("signature fact must be unchecked"),
+            },
+            _ => assert_eq!(fact.outcome, Outcome::Holds, "earlier and later fact {}", fact.name),
+        }
+    }
+    assert!(r.cleanup && r.journal.pending.is_empty());
+    assert!(r.tokens.is_empty() && r.leftover_mints.is_empty());
+    scan(&out.0, &r.secrets);
+    shutdown(&mut r);
+}
+#[test]
 fn github_conformance_response_framing_records_the_exchange_and_continues() {
     let rows = [
         (

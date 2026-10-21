@@ -17,9 +17,12 @@ use skein_forge_conformance::{
     json,
     write::{self, SecretKind, Secrets},
 };
-use skein_lib::Wall;
+use skein_lib::{Duration, Wall};
 use std::{fmt::Write as _, fs, path::Path};
 const WORD: &[u8] = b"conformance";
+// Keep the App JWT's ten-minute life and renew at half life before an App request.
+const JWT_LIFE: Duration = Duration::from_secs(600);
+const JWT_HALF_LIFE: Duration = Duration::from_secs(300);
 
 #[derive(Debug)]
 pub struct Report {
@@ -60,6 +63,7 @@ pub(crate) struct Runner<'a> {
     pub case_limit: usize,
     pub cleanup: bool,
     pub jwt: String,
+    jwt_signed_at: Option<Wall>,
     pub tokens: Vec<Token>,
     pub facts: Vec<Fact>,
     pub provenance: Vec<String>,
@@ -116,6 +120,7 @@ impl<'a> Runner<'a> {
             case_limit: 320,
             cleanup: false,
             jwt: String::new(),
+            jwt_signed_at: None,
             tokens: vec![],
             facts: vec![],
             provenance: vec![],
@@ -339,6 +344,13 @@ impl<'a> Runner<'a> {
         self.ask(&Request::new(method, target, (!token.is_empty()).then_some(token), body))
     }
     pub fn app(&mut self, method: Method, target: impl Into<String>, body: &[u8]) -> Result<Response> {
+        let renew = match self.jwt_signed_at {
+            Some(at) => self.now().as_nanos().saturating_sub(at.as_nanos()) >= JWT_HALF_LIFE.as_nanos(),
+            None => true,
+        };
+        if renew {
+            self.sign()?;
+        }
         let token = self.jwt.clone();
         self.raw(method, target, &token, body)
     }
@@ -392,12 +404,13 @@ impl<'a> Runner<'a> {
     pub fn sign(&mut self) -> Result<()> {
         let now = self.now();
         let input =
-            github::jwt::signing_input(self.fixtures.app, now, Wall::from_nanos(now.as_nanos() + 600_000_000_000))
+            github::jwt::signing_input(self.fixtures.app, now, Wall::from_nanos(now.as_nanos() + JWT_LIFE.as_nanos()))
                 .ok_or("JWT window invalid")?;
         let signature = skein_tls::sign_rs256(&self.fixtures.key, &input).ok_or("JWT signing failed")?;
         let token = github::jwt::token(&input, &signature).ok_or("JWT encoding failed")?;
         self.jwt = String::from_utf8(token.expose().to_vec())?;
         crate::live::register(&mut self.secrets, SecretKind::Jwt, &self.jwt);
+        self.jwt_signed_at = Some(now);
         Ok(())
     }
     pub fn start(&mut self) -> Result<()> {
