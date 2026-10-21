@@ -97,6 +97,30 @@ fn github_fake_graphql_pull_has_stable_identity_and_domain_merge_commit() {
     assert_eq!(landed.merge_commit, Some(r::object(merged)));
     assert_eq!(landed.queued, None);
     assert_eq!(landed.dequeued, None);
+    let digits = skein_lib::Decimal::of(number);
+    let target = f::parts(&[b"/repos/acme/widgets/pulls/", digits.as_bytes()]);
+    let response = h.ask(Method::Get, &target, Some(token.expose()), b"");
+    assert!(skein_lib::bytes::find(&response.body, b"merge_commit_sha").is_none());
+    let api::Answer::Pull(readback) = r::read(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+        panic!("merged pull plan")
+    };
+    assert_eq!(readback.merged, Some(r::object(merged)));
+    let target = f::parts(&[&target, b"/merge"]);
+    let response = h.ask(
+        Method::Put,
+        &target,
+        Some(token.expose()),
+        br#"{"sha":"0000000000000000000000000000000000000000","merge_method":"rebase"}"#,
+    );
+    assert_eq!(response.status, 200);
+    let (_, Document::Merge(repeated)) = h.decode(Kind::Merge, &response) else { panic!("repeat merge") };
+    assert_eq!(repeated, r::object(merged));
+    let response = query(&mut h, &token, b"widgets", number);
+    assert_eq!(pull(&h, &response).merge_commit, Some(repeated));
+    let api::Answer::Pull(readback) = r::read(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+        panic!("repeat merged pull plan")
+    };
+    assert_eq!(readback.merged, Some(repeated));
     let response = query(&mut h, &token, b"widgets", 999);
     f::refusal(&h, &response, 404, b"Not Found");
     let calls = h.calls;

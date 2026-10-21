@@ -359,6 +359,7 @@ fn merge_plan_queues_then_pull_plan_reads_the_landed_graphql_commit() {
     let group = admitted.group.unwrap();
     advance_queue(&mut h);
     let rest = ask(&mut h, &token, &Request::Pull { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number });
+    assert!(skein_lib::bytes::find(&rest.body, b"merge_commit_sha").is_none());
     let (_, github::document::Document::Pull(rest)) = h.decode(github::document::Kind::Pull, &rest) else {
         panic!("REST pull")
     };
