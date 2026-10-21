@@ -10,6 +10,7 @@ use crate::{
 use skein_forge::{
     api,
     github::{self, request::Method},
+    marker,
 };
 use skein_forge_conformance::{
     facts::{Fact, Outcome},
@@ -18,6 +19,8 @@ use skein_forge_conformance::{
 };
 use skein_lib::Wall;
 use std::{fmt::Write as _, fs, path::Path};
+const WORD: &[u8] = b"conformance";
+
 #[derive(Debug)]
 pub struct Report {
     pub facts: Vec<Fact>,
@@ -317,6 +320,9 @@ impl<'a> Runner<'a> {
         Ok(())
     }
     pub fn start(&mut self) -> Result<()> {
+        if !marker::valid_word(WORD) {
+            return Err("conformance marker word invalid".into());
+        }
         self.sign()?;
         self.provenance = vec![
             format!("# target {}", if self.fake() { "fake" } else { "github.com" }),
@@ -362,7 +368,7 @@ impl<'a> Runner<'a> {
         {
             self.phase = "setup-lifecycle";
         }
-        let manifest=br#"{"name":"example-app","url":"https://example-app.invalid/","redirect_url":"http://127.0.0.1/callback","setup_url":"http://127.0.0.1/setup","public":true,"hook_attributes":{"url":"https://example-app.invalid/","active":false},"default_permissions":{"contents":"write","issues":"write","pull_requests":"write","checks":"read","statuses":"write","administration":"write","actions":"read","metadata":"read"},"default_events":["push","pull_request","issues","issue_comment","pull_request_review","check_run","merge_group"]}"#;
+        let manifest=br#"{"name":"example-app-conformance","url":"https://example-app.invalid/","redirect_url":"http://127.0.0.1/callback","setup_url":"http://127.0.0.1/setup","public":true,"hook_attributes":{"url":"https://example-app.invalid/","active":false},"default_permissions":{"contents":"write","issues":"write","pull_requests":"write","checks":"read","statuses":"write","administration":"write","actions":"read","metadata":"read"},"default_events":["push","pull_request","issues","issue_comment","pull_request_review","check_run","merge_group"]}"#;
         let form = format!("manifest={}", percent(manifest));
         let r = self.raw(Method::Post, "/settings/apps/new?state=example-state", "", form.as_bytes())?;
         let at = r.body.windows(6).position(|b| b == b"?code=").ok_or("bootstrap code absent")? + 6;
@@ -376,7 +382,7 @@ impl<'a> Runner<'a> {
         for (account, query) in [("acme", "&repository_ids=2"), ("globex", "")] {
             let r = self.raw(
                 Method::Get,
-                format!("/apps/example-app/installations/new?state=install-state&account={account}{query}"),
+                format!("/apps/{}/installations/new?state=install-state&account={account}{query}", self.fixtures.slug),
                 "",
                 b"",
             )?;
@@ -472,7 +478,7 @@ impl<'a> Runner<'a> {
     pub fn base(&mut self, index: usize) -> Result<String> {
         let answer = self
             .plan(index, api::Op::Read(api::Read::Branch { branch: fake::boxed(b"main") }))?
-            .map_err(|_| "default branch plan failed")?;
+            .map_err(|e| format!("default branch plan failed: {e:?}"))?;
         let api::Answer::Commit(commit) = answer else {
             return Err("default branch plan answer invalid".into());
         };
@@ -492,7 +498,7 @@ impl<'a> Runner<'a> {
                 }),
                 person,
             )?
-            .map_err(|_| "pull plan failed")?;
+            .map_err(|e| format!("pull plan failed: {e:?}"))?;
         let api::Answer::Created(number) = answer else {
             return Err("pull plan answer invalid".into());
         };
@@ -511,7 +517,7 @@ impl<'a> Runner<'a> {
                     body: fake::boxed(title.as_bytes()),
                 }),
             )?
-            .map_err(|_| "issue plan failed")?;
+            .map_err(|e| format!("issue plan failed: {e:?}"))?;
         let api::Answer::Created(number) = answer else {
             return Err("issue plan answer invalid".into());
         };
@@ -528,7 +534,7 @@ impl<'a> Runner<'a> {
                 commit: github::id::commit(parent.as_bytes()).ok_or("invalid base oid")?,
             }),
         )?
-        .map_err(|_| "base branch plan failed")?;
+        .map_err(|e| format!("base branch plan failed: {e:?}"))?;
         Ok(name)
     }
     pub fn advance(
@@ -594,15 +600,14 @@ impl<'a> Runner<'a> {
         };
         let mut plan = Plan::new(api::Repository { forge: 1, repository: u32::try_from(located)? }, op);
         let bounds = Bounds { inner: 512, page_size: 100, rows: 512, answer_bytes: 1_048_576, body_bytes: 524_288 };
-        let mut step = plan
-            .begin(bounds, self.fixtures.slug.as_bytes(), &mut self.tables)
-            .map_err(|_| "dialect plan refused to begin")?;
+        let mut step =
+            plan.begin(bounds, WORD, &mut self.tables).map_err(|e| format!("dialect plan refused to begin: {e:?}"))?;
         for _ in 0..64 {
             let events = match step {
                 Step::Done(result) => return Ok(result),
                 Step::Send(exchange) => {
                     let encoded = github::request::encode(&exchange.request, &fake::bounds())
-                        .map_err(|_| "dialect request exceeds bounds")?;
+                        .map_err(|e| format!("dialect request exceeds bounds: {e:?}"))?;
                     let mut request = Request::new(
                         encoded.method,
                         String::from_utf8(encoded.target.into_vec())?,
@@ -663,8 +668,8 @@ impl<'a> Runner<'a> {
             let mut next = None;
             for event in events {
                 if let Some(s) = plan
-                    .heard(event, bounds, self.fixtures.slug.as_bytes(), &mut self.tables)
-                    .map_err(|_| "dialect plan rejected response")?
+                    .heard(event, bounds, WORD, &mut self.tables)
+                    .map_err(|e| format!("dialect plan rejected response: {e:?}"))?
                 {
                     next = Some(s);
                     break;
@@ -935,7 +940,7 @@ fn decode(
     let mut above = Queue::with_capacity(1);
     let mut below = Queue::with_capacity(1);
     let mut intake = Intake::with_capacity(bounds.writer.length);
-    intake.append(bytes).map_err(|_| "dialect intake bound")?;
+    intake.append(bytes).map_err(|e| format!("dialect intake bound: {e:?}"))?;
     let mut rows = vec![];
     tokenizer::down(&mut tokenizer, &env, tokenizer::Request::Next, &mut above, &mut below);
     for _ in 0..bytes.len() * 8 + 64 {

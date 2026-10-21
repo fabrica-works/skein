@@ -197,7 +197,7 @@ impl World {
             blob_redirect: None,
             app: fake::app::App {
                 id: 7,
-                slug: boxed(b"example-app"),
+                slug: boxed(b"example-app-conformance"),
                 owner: PERSON,
                 permissions: Box::new([]),
                 events: Box::new([]),
@@ -425,7 +425,7 @@ impl World {
         let pem = String::from_utf8(fake::keys::pem(&key).ok_or("fixture PEM")?.into_vec())?;
         Ok(Fixtures {
             app: 8,
-            slug: "example-app".into(),
+            slug: "example-app-conformance".into(),
             version: skein_forge::github::pin::API_VERSION.into(),
             key,
             pem,

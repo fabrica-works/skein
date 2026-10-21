@@ -88,17 +88,14 @@ fn pull_doc(r: &mut Runner<'_>, index: usize, number: u64) -> Result<crate::wire
     let token = r.token(index)?;
     r.raw(Method::Get, format!("/repos/{repo}/pulls/{number}"), &token, b"")
 }
-fn merged_sha(r: &mut Runner<'_>, index: usize, number: u64) -> Result<Option<String>> {
-    for attempt in 0..=4 {
-        let response = pull_doc(r, index, number)?;
-        if let Some(sha) = response.json()?.root().get("merge_commit_sha").str() {
-            return Ok(Some(sha.to_owned()));
-        }
-        if attempt < 4 {
-            r.wait(1);
-        }
-    }
-    Ok(None)
+fn merged_commit(r: &mut Runner<'_>, index: usize, number: u64) -> Result<Option<api::Commit>> {
+    let answer = r
+        .plan(index, api::Op::Read(api::Read::Pull { number }))?
+        .map_err(|e| format!("merged pull plan failed: {e:?}"))?;
+    let api::Answer::Pull(pull) = answer else {
+        return Err("merged pull plan answer invalid".into());
+    };
+    Ok(pull.merged)
 }
 fn merge(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<crate::wire::Response> {
     let repo = r.repo(index)?;
@@ -431,7 +428,7 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
     case(r, "merge-repeat-idempotent", |r| {
         let first = merge(r, 0, n, &moved)?;
         let second = merge(r, 0, n, &moved)?;
-        let landed = merged_sha(r, 0, n)?;
+        let landed = merged_commit(r, 0, n)?.and_then(|commit| github::id::write_commit(&commit));
         Ok(first.status == 200
             && second.status == 200
             && first.json()?.root().get("merged").bool() == Some(true)
@@ -439,7 +436,7 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
             && second.json()?.root().get("message").is("Pull Request successfully merged")
             && first.json()?.root().get("sha").str() == second.json()?.root().get("sha").str()
             && landed.is_some()
-            && first.json()?.root().get("sha").str() == landed.as_deref())
+            && first.json()?.root().get("sha").str() == landed.as_ref().and_then(|sha| std::str::from_utf8(sha).ok()))
     })?;
     case(r, "merge-repeat-any-sha-200", |r| {
         let response = merge(r, 0, n, "0000000000000000000000000000000000000000")?;
@@ -616,7 +613,7 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
         "queue-merged-no-merge-commit-sha",
         matches!(queued, Ok(api::Answer::Queued))
             && response.json()?.root().get("merged").bool() == Some(true)
-            && response.json()?.root().get("merge_commit_sha").kind() == Some(skein_json::Kind::Null)
+            && response.json()?.root().get("merge_commit_sha").kind().is_none()
             && matches!(merged,Ok(api::Answer::Pull(p)) if p.merged.is_some()),
         "queue merge did not use GraphQL for the merged commit",
     );
