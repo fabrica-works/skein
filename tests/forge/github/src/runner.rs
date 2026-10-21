@@ -143,7 +143,7 @@ impl<'a> Runner<'a> {
         }
     }
     pub fn wait_ci(&mut self) {
-        self.wait(if self.fake() { 4 } else { 55 });
+        self.wait(55);
     }
     pub fn ask(&mut self, request: &Request) -> Result<Response> {
         let restore: usize = self
@@ -400,7 +400,7 @@ impl<'a> Runner<'a> {
             return Err("bootstrap conversion refused".into());
         }
         self.fixtures.webhook = r.json()?.root().get("webhook_secret").str().ok_or("bootstrap webhook absent")?.into();
-        for (account, query) in [("acme", "&repository_ids=2"), ("globex", "")] {
+        for (account, query) in [("acme", "&repository_ids=2"), ("globex", "&repository_ids=4")] {
             let r = self.raw(
                 Method::Get,
                 format!("/apps/{}/installations/new?state=install-state&account={account}{query}", self.fixtures.slug),
@@ -609,7 +609,7 @@ impl<'a> Runner<'a> {
             let operation = match &op {
                 api::Op::Write(api::Write::Review { .. }) => "approval",
                 api::Op::Write(api::Write::Merge { .. }) => "enqueue",
-                api::Op::Write(api::Write::Status { .. }) => "status",
+                api::Op::Read(api::Read::Checks { .. }) => "checks",
                 api::Op::Read(api::Read::Branches) => "branches",
                 api::Op::Read(api::Read::Branch { branch }) if branch.starts_with(b"gh-readonly-queue/") => "group",
                 api::Op::Read(api::Read::Pull { .. }) => "pull",
@@ -827,7 +827,7 @@ impl<'a> Runner<'a> {
                     let mut found = false;
                     loop {
                         let target = format!(
-                            "/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page={page}"
+                            "/repos/{repo}/issues?state=all&sort=updated&direction=asc&per_page=100&page={page}"
                         );
                         let response = self.raw(Method::Get, target, &token, b"")?;
                         if response.status != 200 {

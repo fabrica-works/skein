@@ -11,7 +11,7 @@ use skein_fake_forge_github::{
 };
 use skein_fake_peers::forge::{Forge, Peer};
 use skein_io::kernel::{Complete, Done, Family, Op, Submit};
-use skein_lib::{Duration, Env, List, Queue, ReplyTo, Secret, Token, Wall, bytes};
+use skein_lib::{Duration, Env, List, Queue, ReplyTo, Secret, Time, Token, Wall, bytes};
 use skein_shell::Host;
 use skein_sim::{Pid, Sim};
 use std::{cell::RefCell, rc::Rc};
@@ -136,8 +136,8 @@ impl World {
                     labels: Box::new([]),
                     checks: a::Checks {
                         contexts: Box::new([boxed(b"ci")]),
-                        latency_min: Duration::from_secs(3),
-                        latency_max: Duration::from_secs(3),
+                        latency_min: Duration::from_secs(45),
+                        latency_max: Duration::from_secs(45),
                         silent: 0,
                         passes: 1000,
                         reruns: 0,
@@ -244,6 +244,8 @@ impl World {
         let peer = Peer::github(addr, addr, peer_limits, cfg, limits(), Rc::clone(&forge), 23)
             .map_err(|_| "fake fixture limits refused")?;
         let mut sim = Sim::new(23, skein_sim::Config::calm());
+        // Item timestamps use the domain clock; keep them above the observed since cutoff.
+        sim.advance_to(Time::from_nanos(31_536_000_000_000_000));
         let peer_pid = sim.spawn_process();
         let client_pid = sim.spawn_process();
         let mut w = Self {

@@ -56,6 +56,7 @@ pub(crate) const NAMES: &[&str] = &[
     "new-issue-may-miss-listing",
     "branch-with-slash-reads",
     "issues-since-inclusive",
+    "issues-since-epoch-empty",
     "user-by-id-reads",
     "repository-allows-shown",
     "pulls-422-no-commits",
@@ -226,7 +227,7 @@ fn rule(r: &mut Runner<'_>, index: usize, base: &str, approvals: u64, queue: boo
         out.object_end();
         out.object_end();
         if queue {
-            queue_rules(out);
+            queue_rules(out, r.case == "queue-dequeued-delivered");
         }
         out.array_end();
         out.object_end();
@@ -238,7 +239,7 @@ fn rule(r: &mut Runner<'_>, index: usize, base: &str, approvals: u64, queue: boo
     }
     Ok(())
 }
-fn queue_rules(out: &mut skein_json::writer::Encoder) {
+fn queue_rules(out: &mut skein_json::writer::Encoder, squash: bool) {
     out.object_start();
     out.key(b"type");
     out.string(b"required_status_checks");
@@ -274,7 +275,7 @@ fn queue_rules(out: &mut skein_json::writer::Encoder) {
     out.key(b"grouping_strategy");
     out.string(b"ALLGREEN");
     out.key(b"merge_method");
-    out.string(b"MERGE");
+    out.string(if squash { b"SQUASH" } else { b"MERGE" });
     out.object_end();
     out.object_end();
 }
@@ -637,15 +638,44 @@ fn queue_approval(r: &mut Runner<'_>, index: usize, number: u64) -> Result<bool>
     )?
     .is_some())
 }
-fn queue_status(r: &mut Runner<'_>, index: usize, commit: api::Commit, check: api::Check) -> Result<bool> {
-    Ok(queue_plan(
-        r,
-        index,
-        api::Op::Write(api::Write::Status { commit, context: fake::boxed(b"ci"), check }),
-        false,
-        "queue status refused",
-    )?
-    .is_some())
+// At most seven head reads in 90 seconds and eleven group reads in 150.
+const CI_POLL_SECONDS: u64 = 15;
+fn queue_ci(
+    r: &mut Runner<'_>,
+    index: usize,
+    commit: api::Commit,
+    seconds: u64,
+    head: bool,
+) -> Result<Option<api::Check>> {
+    for attempt in 0..=seconds / CI_POLL_SECONDS {
+        let Some(answer) =
+            queue_plan(r, index, api::Op::Read(api::Read::Checks { commit }), false, "queue ci read failed")?
+        else {
+            return Ok(None);
+        };
+        let api::Answer::Checks(checks) = answer else { return Err("queue ci answer invalid".into()) };
+        if let Some(ci) = checks.iter().find(|check| check.context.as_ref() == b"ci") {
+            match ci.check {
+                api::Check::Passed | api::Check::Failed => return Ok(Some(ci.check)),
+                api::Check::Pending => {}
+            }
+        }
+        if attempt < seconds / CI_POLL_SECONDS {
+            r.wait(CI_POLL_SECONDS);
+        }
+    }
+    r.fact(r.case, false, if head { "queue head ci wait expired" } else { "queue group ci wait expired" });
+    Ok(None)
+}
+fn queue_head(r: &mut Runner<'_>, index: usize, commit: api::Commit) -> Result<bool> {
+    match queue_ci(r, index, commit, 90, true)? {
+        Some(api::Check::Passed) => Ok(true),
+        Some(api::Check::Pending | api::Check::Failed) => {
+            r.fact(r.case, false, "queue head ci did not pass");
+            Ok(false)
+        }
+        None => Ok(false),
+    }
 }
 fn queue_group(r: &mut Runner<'_>, index: usize) -> Result<Option<api::Commit>> {
     let Some(branches) = queue_plan(r, index, api::Op::Read(api::Read::Branches), false, "queue branches read failed")?
@@ -659,7 +689,7 @@ fn queue_group(r: &mut Runner<'_>, index: usize) -> Result<Option<api::Commit>> 
         r.fact(r.case, false, "queue group branch absent");
         return Ok(None);
     };
-    let Some(group) = queue_plan(
+    let Some(answer) = queue_plan(
         r,
         index,
         api::Op::Read(api::Read::Branch { branch: group.clone() }),
@@ -669,14 +699,24 @@ fn queue_group(r: &mut Runner<'_>, index: usize) -> Result<Option<api::Commit>> 
     else {
         return Ok(None);
     };
-    let api::Answer::Commit(commit) = group else {
+    let api::Answer::Commit(commit) = answer else {
         return Err("queue group oid absent".into());
     };
+    if r.case == "queue-dequeued-delivered" {
+        let repo = r.repo(index)?;
+        let token = r.token(index)?;
+        let target = format!("/repos/{repo}/branches/{}", percent(group.as_ref()).replace("%2F", "/"));
+        let response = r.raw(Method::Get, target, &token, b"")?;
+        let document = response.json()?;
+        let message =
+            document.root().get("commit").get("commit").get("message").str().ok_or("queue group message absent")?;
+        r.provenance.push(format!("# queue-dequeued-delivered group commit message {message:?}"));
+    }
     Ok(Some(commit))
 }
 fn queue_pending(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<()> {
     r.next("enqueue-pending-check-protected")?;
-    if !queue_approval(r, index, number)? || !queue_status(r, index, oid(sha)?, api::Check::Pending)? {
+    if !queue_approval(r, index, number)? {
         return Ok(());
     }
     let answer = r.plan(index, api::Op::Write(api::Write::Merge { number, head: oid(sha)? }))?;
@@ -697,7 +737,7 @@ fn queue_pending(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Re
 }
 fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<()> {
     r.next("queue-merged-no-merge-commit-sha")?;
-    if !queue_approval(r, index, number)? || !queue_status(r, index, oid(sha)?, api::Check::Passed)? {
+    if !queue_approval(r, index, number)? || !queue_head(r, index, oid(sha)?)? {
         return Ok(());
     }
     let Some(queued) = queue_plan(
@@ -714,13 +754,8 @@ fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Res
         r.fact(r.case, false, "queue merge did not answer Queued");
         return Ok(());
     }
-    let Some(commit) = queue_group(r, index)? else { return Ok(()) };
-    if !queue_status(r, index, commit, api::Check::Passed)? {
-        return Ok(());
-    }
-    // Poll within the same CI wait budget used by the other cases.
-    let until = r.now().as_nanos() + if r.fake() { 4 } else { 55 } * 1_000_000_000;
-    loop {
+    // The group's own workflow must finish before the queue can merge it.
+    for attempt in 0..=150 / CI_POLL_SECONDS {
         let response = pull_doc(r, index, number)?;
         if response.json()?.root().get("merged").bool() == Some(true) {
             let Some(merged) =
@@ -736,19 +771,39 @@ fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Res
             );
             return Ok(());
         }
-        if r.now().as_nanos() >= until {
-            r.fact(r.case, false, "queue merge wait expired before the pull read merged");
-            return Ok(());
+        if attempt < 150 / CI_POLL_SECONDS {
+            r.wait(CI_POLL_SECONDS);
         }
-        r.wait(2);
     }
+    r.fact(r.case, false, "queue merge wait expired before the pull read merged");
+    Ok(())
 }
 fn queue_dequeued(r: &mut Runner<'_>, index: usize) -> Result<()> {
     r.next("queue-dequeued-delivered")?;
-    let (base, _head, sha, n) = scenario(r, index, "queue-failure")?;
+    let repo = r.repo(index)?;
+    let token = r.token(index)?;
+    let repository = r.raw(Method::Get, format!("/repos/{repo}"), &token, b"")?.json()?;
+    let setting = repository.root().get("squash_merge_commit_title").str().unwrap_or("absent");
+    r.provenance.push(format!("# queue-dequeued-delivered squash_merge_commit_title {setting}"));
+    if setting != "COMMIT_OR_PR_TITLE" {
+        r.facts.push(Fact {
+            name: r.case,
+            outcome: Outcome::Unchecked("repository squash title setting is not COMMIT_OR_PR_TITLE".into()),
+        });
+        return Ok(());
+    }
+    let first = r.base(index)?;
+    let base = r.copy_branch(index, &first)?;
+    let (_intermediate, parent) = r.branch(index, &first, "queue first", files("first.txt", "first"))?;
+    let (head, sha) = r.branch(index, &parent, "queue second", files("second.txt", "second"))?;
+    let n = r.pull(index, &head, &base, false)?;
+    let title =
+        api::Op::Write(api::Write::Edit { number: n, title: Some(fake::boxed(b"FAIL queue title")), body: None });
+    if queue_plan(r, index, title, false, "queue title edit refused")?.is_none() {
+        return Ok(());
+    }
     rule(r, index, &base, 1, true, false)?;
-    r.wait(4);
-    if !queue_approval(r, index, n)? || !queue_status(r, index, oid(&sha)?, api::Check::Passed)? {
+    if !queue_approval(r, index, n)? || !queue_head(r, index, oid(&sha)?)? {
         return Ok(());
     }
     let response = enqueue(r, index, n, &sha)?;
@@ -766,10 +821,20 @@ fn queue_dequeued(r: &mut Runner<'_>, index: usize) -> Result<()> {
         return Ok(());
     }
     let Some(commit) = queue_group(r, index)? else { return Ok(()) };
-    if !queue_status(r, index, commit, api::Check::Failed)? {
-        return Ok(());
+    match queue_ci(r, index, commit, 150, false)? {
+        Some(api::Check::Passed) => {
+            r.facts.push(Fact {
+                name: r.case,
+                outcome: Outcome::Unchecked(
+                    "squash group's ci passed; title-driven failure is unconfirmed live".into(),
+                ),
+            });
+            return Ok(());
+        }
+        Some(api::Check::Failed) => {}
+        Some(api::Check::Pending) | None => return Ok(()),
     }
-    r.wait(4);
+    r.wait(5);
     let log = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;
     let rows = log.json()?;
     r.fact(
@@ -797,31 +862,32 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
     })?;
     r.next("issues-list-pulls")?;
     let (_base, _head, _sha, pull) = scenario(r, 0, "listing")?;
-    r.wait(3);
     let token = r.token(0)?;
     let repo = r.repo(0)?;
-    let response = r.raw(
-        Method::Get,
-        format!("/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page=1"),
-        &token,
-        b"",
-    )?;
-    r.fact(
-        "issues-list-pulls",
-        response.status == 200
+    let listing = format!("/repos/{repo}/issues?state=all&sort=updated&direction=asc&per_page=100&page=1");
+    let mut found = false;
+    for attempt in 0..3 {
+        let response = r.raw(Method::Get, listing.clone(), &token, b"")?;
+        found = response.status == 200
             && response
                 .json()?
                 .root()
                 .items()
                 .iter()
-                .any(|row| row.get("number").u64() == Some(pull) && row.get("pull_request").kind().is_some()),
-        "issues listing omitted a pull request",
-    );
+                .any(|row| row.get("number").u64() == Some(pull) && row.get("pull_request").kind().is_some());
+        if found {
+            break;
+        }
+        if attempt < 2 {
+            r.wait(2);
+        }
+    }
+    r.fact("issues-list-pulls", found, "issues listing omitted a pull request after three tries");
     case(r, "new-issue-may-miss-listing", |r| {
         let issue = r.issue(0)?;
         let response = r.raw(
             Method::Get,
-            format!("/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page=1"),
+            format!("/repos/{repo}/issues?state=all&sort=updated&direction=asc&per_page=100&page=1"),
             &token,
             b"",
         )?;
@@ -831,10 +897,16 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
         Ok(issue > 0 && response.status == 200 && listed.root().array().is_some())
     })?;
     case(r, "issues-since-inclusive", |r| {
-        let issue = r.issue(0)?;
-        r.wait(2);
-        let response = r.raw(Method::Get, format!("/repos/{repo}/issues/{issue}"), &token, b"")?;
-        let since = response.json()?.root().get("updated_at").str().ok_or("issue time absent")?.to_owned();
+        let settled = r.raw(Method::Get, listing.clone(), &token, b"")?.json()?;
+        let row = settled
+            .root()
+            .items()
+            .iter()
+            .find(|row| row.get("number").u64() == Some(pull))
+            .copied()
+            .ok_or("settled pull absent")?;
+        let since = row.get("updated_at").str().ok_or("issue time absent")?.to_owned();
+        let issue = pull;
         let response = r.raw(
             Method::Get,
             format!(
@@ -849,6 +921,24 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
         Ok(response.status == 200
             && response.json()?.root().items().iter().any(|row| row.get("number").u64() == Some(issue))
             && answer.is_ok())
+    })?;
+    case(r, "issues-since-epoch-empty", |r| {
+        let issue = r.issue(0)?;
+        r.wait(3);
+        let epoch = r.raw(
+            Method::Get,
+            listing.replace("?state=all", "?state=all&since=1970-01-01T00%3A00%3A00Z"),
+            &token,
+            b"",
+        )?;
+        let unfiltered = r.raw(Method::Get, listing.clone(), &token, b"")?;
+        let answer =
+            r.plan(0, api::Op::Read(api::Read::Items { since: skein_lib::Time::ZERO, page: 1, kind: None }))?;
+        Ok(epoch.status == 200
+            && epoch.json()?.root().array().is_some_and(|rows| rows.is_empty())
+            && unfiltered.status == 200
+            && unfiltered.json()?.root().items().iter().any(|row| row.get("number").u64() == Some(issue))
+            && matches!(answer, Ok(api::Answer::Items { items, .. }) if items.iter().any(|row| row.number == issue)))
     })?;
     case(r, "branch-with-slash-reads", |r| {
         let first = r.base(0)?;
@@ -886,7 +976,13 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
         let body = json::object(&[("base", &"main"), ("body", &""), ("head", &copy), ("title", &"empty")])?;
         let response = r.raw(Method::Post, format!("/repos/{repo}/pulls"), &token, &body)?;
         Ok(response.status == 422
-            && response.json()?.root().get("message").str().is_some_and(|m| m.starts_with("No commits between ")))
+            && response
+                .json()?
+                .root()
+                .get("errors")
+                .items()
+                .iter()
+                .any(|e| e.get("message").str().is_some_and(|m| m.starts_with("No commits between "))))
     })?;
     case(r, "pulls-422-exists", |r| {
         let (base, head, _sha, _pull) = scenario(r, 0, "duplicate")?;
@@ -896,9 +992,10 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
             && response
                 .json()?
                 .root()
-                .get("message")
-                .str()
-                .is_some_and(|m| m.starts_with("A pull request already exists for ")))
+                .get("errors")
+                .items()
+                .iter()
+                .any(|e| e.get("message").str().is_some_and(|m| m.starts_with("A pull request already exists for "))))
     })?;
     case(r, "refs-422-exists", |r| {
         let first = r.base(0)?;
@@ -939,9 +1036,8 @@ fn repositories(r: &mut Runner<'_>) -> Result<()> {
             .ok_or("comment update time absent")?
             .to_owned();
         r.wait(2);
-        let person = r.person(0)?;
         let response =
-            r.raw(Method::Patch, format!("/repos/{repo}/issues/comments/{id}"), &person, br#"{"body":"after"}"#)?;
+            r.raw(Method::Patch, format!("/repos/{repo}/issues/comments/{id}"), &token, br#"{"body":"after"}"#)?;
         let edited = response.json()?;
         Ok(response.status == 200
             && edited.root().get("body").is("after")
@@ -992,31 +1088,36 @@ fn access(r: &mut Runner<'_>) -> Result<()> {
         let person = r.person(index)?;
         let response =
             r.raw(Method::Delete, format!("/user/installations/{installation}/repositories/{id}"), &person, b"")?;
-        holds &= response.is(422, "Validation Failed");
+        holds &= response.is(422, "Cannot remove the last repository from this installation.");
     }
     r.fact(
         "installation-repository-removal-refusals",
         holds,
-        "last or all-repository removal differed from the documented refusal",
+        "last-repository removal differed from the observed refusal",
     );
     Ok(())
 }
 fn logs(r: &mut Runner<'_>) -> Result<()> {
-    case(r, "installation-target-in-log", |r| {
-        if let Target::Fake(world) = &mut r.target
-            && !world.peer.rename_github_installation(1, b"acme-renamed")
-        {
-            return Err("installed account rename failed".into());
-        }
-        r.wait(4);
-        let response = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;
-        let holds = response.status == 200
-            && response.json()?.root().items().iter().any(|row| row.get("event").is("installation_target"));
-        if let Target::Fake(world) = &mut r.target {
-            world.peer.rename_github_installation(1, b"acme");
-        }
-        Ok(holds)
-    })?;
+    if r.fake() {
+        case(r, "installation-target-in-log", |r| {
+            if let Target::Fake(world) = &mut r.target
+                && !world.peer.rename_github_installation(1, b"acme-renamed")
+            {
+                return Err("installed account rename failed".into());
+            }
+            r.wait(4);
+            let response = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;
+            let holds = response.status == 200
+                && response.json()?.root().items().iter().any(|row| row.get("event").is("installation_target"));
+            if let Target::Fake(world) = &mut r.target {
+                world.peer.rename_github_installation(1, b"acme");
+            }
+            Ok(holds)
+        })?;
+    } else {
+        r.next("installation-target-in-log")?;
+        r.facts.push(Fact { name: r.case, outcome: Outcome::Unchecked("the live run renames no account".into()) });
+    }
     case(r, "log-lists-failed-deliveries", |r| {
         r.wait(3);
         let response = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;

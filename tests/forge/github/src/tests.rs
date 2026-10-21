@@ -74,6 +74,22 @@ fn github_conformance_holds_every_fact_on_the_fake() {
         }
     }
     assert!(report.requests <= 400);
+    // Fake commit creation uses the domain directly. Live creates each recorded
+    // commit with four HTTP calls; four head advances also create a temporary
+    // branch, patch the head and later delete that temporary branch (six each).
+    let journal = fs::read_to_string(out.0.join("made.txt")).expect("invented journal");
+    let commits = journal
+        .lines()
+        .filter(|line| {
+            let fields: Vec<_> = line.split('\t').collect();
+            matches!(fields.as_slice(), ["make", _, "branch", _, name] if name.starts_with("conformance-branch-"))
+        })
+        .count();
+    // Extend both four-poll head waits to seven, the four-poll group wait
+    // and merge wait to eleven, and the listing to three tries. Retain all
+    // fake-only lifecycle requests as slack in this live upper bound.
+    let extra_polls = 2 * 2 * 3 + 2 * 7 + 7 + 2;
+    assert!(report.requests + 4 * commits + 6 * 4 + extra_polls <= 400, "live request upper bound");
     assert!(report.leftover_mints.is_empty());
 }
 #[test]
@@ -101,19 +117,18 @@ fn github_conformance_null_merged_commit_fails_the_fact_and_continues() {
 #[test]
 fn github_conformance_queue_refusals_fail_one_fact() {
     let rows = [
+        ("enqueue-pending-check-protected", "approval", 0, "queue approval refused: Forbidden"),
         ("queue-merged-no-merge-commit-sha", "approval", 0, "queue approval refused: Forbidden"),
-        ("queue-merged-no-merge-commit-sha", "status", 0, "queue status refused: Forbidden"),
+        ("queue-merged-no-merge-commit-sha", "checks", 0, "queue ci read failed: Forbidden"),
         ("queue-merged-no-merge-commit-sha", "enqueue", 0, "queue admission refused: Forbidden"),
-        ("queue-merged-no-merge-commit-sha", "branches", 0, "queue branches read failed: Forbidden"),
-        ("queue-merged-no-merge-commit-sha", "group", 0, "queue group read failed: Forbidden"),
-        ("queue-merged-no-merge-commit-sha", "status", 1, "queue status refused: Forbidden"),
         ("queue-merged-no-merge-commit-sha", "pull", 0, "merged pull read failed: Forbidden"),
         ("queue-dequeued-delivered", "approval", 0, "queue approval refused: Forbidden"),
-        ("queue-dequeued-delivered", "status", 0, "queue status refused: Forbidden"),
+        ("queue-dequeued-delivered", "checks", 0, "queue ci read failed: Forbidden"),
         ("queue-dequeued-delivered", "raw enqueue", 0, "queue admission refused: invented queue admission refusal"),
         ("queue-dequeued-delivered", "branches", 0, "queue branches read failed: Forbidden"),
         ("queue-dequeued-delivered", "group", 0, "queue group read failed: Forbidden"),
-        ("queue-dequeued-delivered", "status", 1, "queue status refused: Forbidden"),
+        // Four head polls cover 45 seconds; the next checks read is the group's.
+        ("queue-dequeued-delivered", "checks", 4, "queue ci read failed: Forbidden"),
     ];
     let queue_facts = [
         "queue-direct-merge-405",
@@ -548,7 +563,16 @@ fn github_conformance_clean_finishes_a_run_stopped_partway() {
         .expect("branches document");
     assert_eq!(branches.root().items().len(), 1);
     assert!(branches.root().nth(0).get("name").is("main"));
-    let issues = r.raw(Method::Get, format!("/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page=1"), &person, b"").expect("active objects").json().expect("document");
+    let issues = r
+        .raw(
+            Method::Get,
+            format!("/repos/{repo}/issues?state=all&sort=updated&direction=asc&per_page=100&page=1"),
+            &person,
+            b"",
+        )
+        .expect("active objects")
+        .json()
+        .expect("document");
     assert!(issues.root().items().iter().all(|row| row.get("state").is("closed")));
     let protection = r
         .plan_as(0, api::Op::Read(api::Read::Protection { branch: crate::fake::boxed(b"main") }), true)
