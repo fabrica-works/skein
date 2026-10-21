@@ -162,7 +162,8 @@ runs.
   After a first change it looks once more four minutes later, so that
   one wake carries what arrived meanwhile, then exits with its report.
   `watch-state/` keeps the last state seen, so a restart reports only
-  real changes, and `hw.log` takes its hardware samples. Each wake
+  real changes; `hw.log` takes its hardware samples, and `usage.log`
+  the subscriptions' week. Each wake
   re-reads the director's whole context: a trigger is only for what
   the director must act on.
 - **On each wake,** it reads the newest headers of every machine's
@@ -221,21 +222,22 @@ runs.
 
 ## 7. The check
 
-Every two hours, from the cron. Kept cheap: plain shell first, and
-Codex for what needs reading.
+Every two hours, from the cron. Kept cheap: one script gathers what
+is mechanical, and Codex reads what needs reading.
 
 1. **Catch up:** `notes/owners.md` and the last entries of `log.md`.
-2. **Usage:** `claude -p /usage --output-format json | jq -r .result`
-   on each machine, since machines may be on different accounts (it
-   costs nothing), and `codex-usage.sh`. Each pace against the
-   sustainable one: the week's remainder divided by the days to its
-   reset. `burn.sh 120` on each machine: who spent what.
-   `hw-report.sh 2`: load per core, memory, disk and the build queue
-   per machine, from the watcher's samples; which machine is short,
-   and of what.
-3. **Owners:** on each owner's machine, its `notes.md` (its state and
-   questions), and that its session or unit is alive. A report or a
-   question in an inbox gets its answer (section 6).
+2. **The report:** `tmp/director/check-report.sh [MINUTES]`, over the
+   last 120 minutes by default, reads every machine at once. For each:
+   Claude's usage, who spent what, the owners' sessions and Codex units
+   with their states, the disk, load and memory, the builds and gates
+   finished with their waits, and the inbox files and owners' notes
+   that changed. Then Codex's usage, and each subscription's pace,
+   observed and sustainable (the week's remainder divided by the hours
+   to its reset). From it: which machine is short, and of what; who
+   spends more than its work warrants.
+3. **Owners:** each inbox entry and owner's notes that changed (their
+   state and questions), and each owner the report doesn't show alive.
+   A report or a question gets its answer (section 6).
 4. **Next:** which work in `notes/direction.md` gets an owner, and
    where (section 4). Act.
 5. **Record:** update `notes/`, add to `decisions.md` and `log.md`,
@@ -324,7 +326,7 @@ Codex for what needs reading.
 - **A cap on compactions** before a fresh director session starts: the
   user's, to come.
 - **The director's scripts** (`watch.sh`, `probe.sh`, `tell.sh`,
-  `codex-owner.sh` and the usage scripts) live untracked in
-  `tmp/director/`, with the machines' addresses in them. Whether they
-  move into skein's `scripts/dev/`, with the addresses in a machine
-  file, is open.
+  `check-report.sh`, `codex-owner.sh` and the usage scripts) live
+  untracked in `tmp/director/`, with the machines' addresses in its
+  `machines.sh`. Whether they move into skein's `scripts/dev/` is
+  open.
