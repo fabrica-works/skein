@@ -511,6 +511,11 @@ at each mint.
 - **The owner drops it** at the installation's `Deleted` or `Suspended`,
   and at an `installations` that no longer accepts it. The component
   mints none for those.
+- **GitHub doesn't fully honour the narrowing:** a contents-only git
+  token can still open issues as the bot for its hour, though it is
+  refused an edit (observed 2026-10-20, `token-narrowed-creates-not-edits`,
+  forge-github.md, section 8.2). The narrowing stays; a second App would
+  close the gap, and that is the user's call.
 - **Forgejo has none:** its git token is the owner's, set up beside the
   API's (forge-setup.md, section 4.3).
 

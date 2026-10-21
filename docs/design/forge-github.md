@@ -457,6 +457,10 @@ bound, revisions, markers and malformed answers; and GitHub's:
   `x-accepted-github-permissions: issues=write; pull_requests=write`
   (`token-narrowed-creates-not-edits`). The dialect mints the same tokens;
   its mint decoder reads token and expiry alone.
+- **So the git token is not a boundary:** for its hour it can open
+  issues as the bot, though it is refused an edit (observed 2026-10-20).
+  The narrowing stays; a second App would close the gap, and that is the
+  user's call (forge-connection.md, section 5.3).
 
 ### 8.3 Installations
 
