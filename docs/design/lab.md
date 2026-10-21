@@ -326,7 +326,8 @@ and an agent:
 - **`cost`** is a cost class of the lab's settings (6.5).
 - **`dirs`:** the run's directories, `{dir.D}`, created empty, `0700`.
 - **Members** are required, but `after` and `files` in a process, and
-  `stdin` in a command, which are empty when absent.
+  `stdin` in a command, which are empty when absent, and `cluster` in a
+  collection or a check, which is `"up"` when absent (4.5).
   `driver` may be null: an experiment with no agent. An unknown member
   is refused.
 
@@ -347,7 +348,7 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 | `{proc.P.dir}` | process P's scratch directory | everything |
 | `{proc.P.ready.C}` | capture C of P's ready lines | processes after P, transitively; seed actions, tools, collection, checks |
 | `{collect.dir}` | this collection's directory | a collection |
-| `{collected.N}` | collection N's directory | checks |
+| `{collected.N}` | collection N's directory | checks; a stopped collection's in stopped checks only (4.5) |
 
 ### 4.3 Processes
 
@@ -385,23 +386,74 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 
 ### 4.5 Commands: seed actions, collection and checks
 
-A command is `{"name", "argv", "env", "stdin"}`, run once, contained as
-a process is (5.2), within `command_seconds`; its stdin is the rendered
-`stdin`, kept as a file of the run's, or `/dev/null`, and its stdout and
-stderr are kept.
+A command is `{"name", "argv", "env", "stdin"}`, and a collection or a
+check has `cluster` too; it is run once, contained as a process is
+(5.2), within `command_seconds`; its stdin is the rendered `stdin`, kept
+as a file of the run's, or `/dev/null`, and its stdout and stderr are
+kept.
 
 - **Seed actions,** `actions`, in their order, once every process is
   ready: the state a story starts from (an account, a key, something
   adopted). Each must exit 0 (7.1).
-- **Collection,** `collect`, once the drive has ended, the cluster still
-  up: each writes what the checks and findings need into `{collect.dir}`,
-  which is evidence. `scan` lists the files in it that are logs, which
-  the panic check reads too (7.1). A collection that exits non-zero is
-  recorded; the checks that need its files say they could not judge.
-- **Checks,** `checks`, after collection, the cluster still up, by the
-  contract of 7.2.
+- **Live or stopped,** by a collection's or a check's `cluster`. `"up"`,
+  its default, runs it live, in phase 5, the cluster still up: for what
+  needs a process alive to ask (a fake's observations, from its
+  address). `"stopped"` runs it in phase 6, once every process's exit is
+  confirmed: for what reads a process's files at rest, no process being
+  left to ask (5.1). An exit is confirmed when the runner has reaped the
+  process it started and that process's tree is empty (5.2).
+- **Collection,** `collect`, in its order: the live collections once the
+  drive has ended, the stopped ones after the stop. Each writes what the
+  checks and findings need into `{collect.dir}`, made empty, `0700`,
+  before it starts, which is evidence. `scan` lists the files in it that
+  are logs, which the panic check reads too (7.1). A collection that
+  exits non-zero is recorded; the checks that need a live one's files
+  say they could not judge, and those that name a stopped one are not
+  run (below).
+- **Checks,** `checks`, in their order, by the contract of 7.2: the live
+  ones after the live collections, the stopped ones after the stopped
+  collections. A stopped check may name any collection, a live one only
+  a live collection (4.2).
+- **A mutable store is copied stopped.** A live file-by-file copy can
+  hold part of a commit and still open without refusing it. A check
+  that needs the store reads no live copy. A stopped collection copies
+  it once, after its writer's exit is confirmed:
+  `/bin/cp -R -- SOURCE/. {collect.dir}/.`, SOURCE being the directory
+  under `{proc.P.dir}` or a `{dir.D}` that holds them. However a process
+  ended (at its `SIGTERM`, killed past `stop_seconds`, by a fault or by
+  itself), its files are copied alike, and a kill or an early exit fails
+  as 7.1 says, whatever the copy's checks find.
+- **A stopped collection is usable only whole,** having exited 0: one
+  cut short holds part of what it read, which a check cannot tell from
+  the whole, and it is not run again. A stopped check is not run if a
+  stopped collection it names did not run or did not exit 0, if an exit
+  is not confirmed, or if the run is interrupted (5.1). A stopped check
+  not run is recorded as could not judge, in `undecided` (5.6), its
+  reason saying why.
+- **What is compared with a copy is collected no later than it:** a
+  peer's account of the run, such as a fake's observations, by a live
+  collection, or by a stopped one listed before the copy, so that all
+  it records happened before the files were copied.
 - **No survivors:** once a command's own process ends, whatever is left
   of its tree is killed and reported (7.1).
+
+The application's store copied at rest, with a check that reads it
+beside the backend's observations collected live, extends 4.1's example:
+
+```json
+{"collect": [
+   {"name": "app-state", "cluster": "stopped",
+    "argv": ["/bin/cp", "-R", "--", "{proc.app.dir}/state/.", "{collect.dir}/."],
+    "env": {"PATH": "/usr/bin:/bin"}, "scan": []}],
+ "checks": [
+   {"name": "state", "cluster": "stopped",
+    "argv": ["{experiment}/checks/state", "{collected.app-state}",
+             "{collected.observations}/observations.jsonl"],
+    "env": {"PATH": "/usr/bin:/bin"}}]}
+```
+
+Post-stop collection and checks are not yet implemented in `scripts/lab/`.
+For the attended prototype, its host performs this ordering.
 
 ### 4.6 Faults and planted failures
 
@@ -428,10 +480,12 @@ naming its member and why, and exit 2, starting nothing and making no
 run:
 
 - the format; a missing or unknown member; a wrong type; a name that
-  repeats or is not `[a-z][a-z0-9-]*`;
+  repeats or is not `[a-z][a-z0-9-]*`; a `cluster` neither `"up"` nor
+  `"stopped"`;
 - an `after`, a fault or a template naming no process, directory,
   artifact or collection; a cycle; a template name not yet known where
-  it is used (4.2); a capture no ready line declares;
+  it is used (4.2), a stopped collection's in a live check among them;
+  a capture no ready line declares;
 - a `from` missing from the experiment; a `path` absolute or climbing
   out; a program that is not an absolute path to an executable regular
   file;
@@ -461,16 +515,22 @@ run:
 3. **Seed:** the seed actions.
 4. **Drive:** the driver, until its host ends, a bound passes (6.5) or a
    process stops. Without a driver, nothing.
-5. **Collect,** then **check** (4.5), the cluster up.
-6. **Stop:** the processes, in reverse order of start (5.2).
+5. **Collect,** then **check** (4.5), the cluster up: the live
+   collections, then the live checks.
+6. **Stop:** the processes, in reverse order of start (5.2), until
+   every exit is confirmed (4.5); then, the cluster down, the stopped
+   collections, then the stopped checks.
 7. **Judge:** the runner's checks and the commands' results into the
    outcome (5.5); `run.json`, the evidence line, the findings'
    candidates and occurrences (9.2); the scratch removed if it passed.
 
 A process that stops (ends before phase 6) cuts the phase it ends in:
 no later process starts, no later seed action runs, the driver is ended.
-Collection and checks run on what is left, then phase 6. A run
-interrupted (`SIGINT`, `SIGTERM` to the runner) goes to phase 6 at once;
+The live collections and checks run on what is left, then phase 6 whole,
+its stopped commands included (4.5). A stop that cannot confirm an exit
+is containment's failure, an error (5.5), and runs no stopped command.
+A run interrupted (`SIGINT`, `SIGTERM` to the runner) goes to phase 6
+at once and runs no stopped command, ending any already running (5.2);
 its outcome is error, `interrupted`.
 
 ### 5.2 Containment and teardown
@@ -512,7 +572,7 @@ its outcome is error, `interrupted`.
   started, never to its group, since its own stop is under test; then
   at most `stop_seconds` for it to end; past them, `cgroup.kill` of its
   tree, recorded as killed (7.1). In reverse order of start, after a
-  pass, a failure, a cut or an interruption alike.
+  drive, a failure, a cut or an interruption alike.
 - **Commands, the driver host and each tool call** are contained the
   same way (6.3).
 
