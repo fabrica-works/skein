@@ -143,15 +143,17 @@
 //! - **`Stat`** answers the [`Kind`], size and permission bits of what is
 //!   open on its descriptor: for a file, its length in bytes; for anything
 //!   else, whatever its filesystem says.
-//! - **`Rename` is atomic:** with `no_replace`, any existing target fails
-//!   with `Exists`, and neither entry is moved. Otherwise `to` names the
+//! - **`Rename` is atomic:** with `no_replace`, once both directories are
+//!   searched and the source is found, any existing target fails with
+//!   `Exists`, and neither entry is moved. Otherwise `to` names the
 //!   old entry or the moved one, never neither and never a mix. It replaces
-//!   a file with a file, and an empty directory with a directory; one entry renamed over another that
-//!   is the same file is left as it is. A directory never moves beneath
-//!   itself. A symbolic link at `to` is replaced, not followed. Hence the
-//!   idiom that replaces a file whole: `Stat` the old one for its mode,
-//!   `Create` a new one with it beside the old, `Write` it, `Sync` it,
-//!   `Close` it, `Rename` it over the old, then `Sync` the directory.
+//!   a file with a file, and an empty directory with a directory; one
+//!   entry renamed over another that is the same file is left as it is.
+//!   A directory never moves beneath itself. A symbolic link at `to` is
+//!   replaced, not followed. Hence the idiom that replaces a file whole:
+//!   `Stat` the old one for its mode, `Create` a new one with it beside the
+//!   old, `Write` it, `Sync` it, `Close` it, `Rename` it over the old, then
+//!   `Sync` the directory.
 //! - **`List`** hands back the next entries of the directory open on `fd`,
 //!   from where the last `List` of that descriptor stopped (the start, once
 //!   opened), `.` and `..` left out: at most `entries.len()`, each with its
@@ -870,8 +872,8 @@ pub enum Error {
     /// `Remove` without `directory` of a directory; `Rename` of anything else
     /// over a directory (`EISDIR`).
     IsADirectory,
-    /// `Remove` with `directory`, `Rename`: the directory removed or renamed
-    /// over has entries (`ENOTEMPTY`, `EEXIST`).
+    /// `Remove` with `directory`, replacing `Rename`: the directory removed
+    /// or renamed over has entries (`ENOTEMPTY`, `EEXIST`).
     NotEmpty,
     /// `Open`: a directory on the path may not be searched, or what `Read`
     /// or `Directory` opens may not be read, or the directory `Create` makes

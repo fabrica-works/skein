@@ -276,6 +276,6 @@ fn a_directory_lock_is_busy_through_a_second_open_until_the_first_closes() {
 }
 
 #[test]
-fn no_replace_commits_and_linux_refusal_order() {
+fn a_no_replace_rename_refuses_a_taken_target_in_linux_order() {
     on_the_ring(skein_conformance::no_replace);
 }

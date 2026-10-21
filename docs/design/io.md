@@ -853,11 +853,13 @@ run by io.
 - **The rename is the commit.**
   - Before it, a failure, a deadline, a cancel or a `Conflict` found at
     the recheck removes the temporary before the one terminal, and the
-    old file is as it was. If the
-    temporary cannot be removed, as on a file system that has turned
-    read-only, the terminal says so and names it, and nothing waits on
-    it. The old file is still as it was, the next replace of the target
-    does not depend on the temporary, and a scan may remove it.
+    old file is as it was. So does a rename that does not commit: an
+    `Absent` one that finds the target taken, or one whose flag the
+    filesystem rejects. If the temporary cannot be removed, as on a file
+    system that has turned read-only, the terminal says so and names it,
+    and nothing waits on it. The old file is still as it was, the next
+    replace of the target does not depend on the temporary, and a scan
+    may remove it.
   - After it, the new file is in place. A failure of the directory's
     `Sync`, or its deadline, answers `Failed` saying that the replace
     committed: the new content is what a reader sees, and its durability

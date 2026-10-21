@@ -211,7 +211,7 @@ fn a_store_replays_to_the_same_files_digest_at_its_end() {
 }
 
 #[test]
-fn racing_absent_creators_have_one_durable_winner_and_one_conflict() {
+fn racing_absent_creators_have_one_durable_winner() {
     use skein_io::digest::digest;
     for reverse in [false, true] {
         let mut outcome = skein_io_world::files::racing_absent(reverse).run();

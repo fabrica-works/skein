@@ -303,6 +303,6 @@ fn a_directory_lock_under_chaos_keeps_the_contract() {
 }
 
 #[test]
-fn no_replace_commits_and_linux_refusal_order() {
+fn a_no_replace_rename_refuses_a_taken_target_in_linux_order() {
     chaos(skein_conformance::no_replace);
 }

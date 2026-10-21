@@ -373,10 +373,11 @@ documentation, with each operation's errors; the decisions behind it:
   of it told, because it went in between.
 - **`Rename` is the atomic step.** With `no_replace: false`, it replaces
   its target whole. With `no_replace: true`, it uses `RENAME_NOREPLACE`
-  through the ring's `RenameAt.flags` and fails with `Exists` if any entry
-  names the target, including a dangling link, an unreadable file or a
-  directory. The check and move are one atomic operation, including for
-  the same name or two names of one inode: those fail with `Exists` too.
+  through the ring's `RenameAt.flags` and, once both directories are
+  searched and the source is found, fails with `Exists` if any entry names
+  the target, including a dangling link, an unreadable file or a directory.
+  The check and move are one atomic operation, including for the same
+  name or two names of one inode: those fail with `Exists` too.
   A filesystem rejecting the flag with `EINVAL` answers `InvalidArgument`;
   there is no fallback to a replacing rename. With replacement, the
   idiom that replaces a file is: `Stat` the old file for its permission
@@ -455,9 +456,8 @@ documentation, with each operation's errors; the decisions behind it:
   (two filesystems); `ENOENT` is `NotFound` on a file and `TooLate` on a
   cancel; `EEXIST` is `Exists` on a `Create` or a no-replace `Rename`,
   and `NotEmpty` on a replacing `Rename` over a directory; `EINVAL` is
-  `NotALink` on a `ReadLink` and
-  `InvalidArgument` elsewhere; `ENOTTY` is `NotSupported` on a btrfs
-  record, off btrfs.
+  `NotALink` on a `ReadLink` and `InvalidArgument` elsewhere; `ENOTTY` is
+  `NotSupported` on a btrfs record, off btrfs.
 - **Modes are backend defaults,** as socket options are, but for the one
   a `Create` asks for: a new file is `0o666` unless asked otherwise, and a
   new directory `0o777`, less the process's umask, and every descriptor
@@ -911,9 +911,11 @@ for its backend.
   one Linux checks first: a removed directory before a name's length, a
   final `/` before the last name on a create, both directories of a
   `Rename` before its source, its source before its target, a name
-  looked up before its directory is written. The driver checks that every
-  path, name and buffer comes back in its `Box`, written only where the
-  count says.
+  looked up before its directory is written; a no-replace rename, once
+  both directories are searched and the source is found, checks for a
+  taken target before ancestor, same-inode and write-permission checks.
+  The driver checks that every path, name and buffer comes back in its
+  `Box`, written only where the count says.
 - **What only the simulator shows:** a disk beyond a healthy one (no
   space, a filesystem gone read-only, an I/O error) is the simulator's
   own tests' (simulator.md, 6), and an `Open` past the descriptor limit a
