@@ -412,6 +412,30 @@ pub(super) fn check() {
             b"enqueuePullRequest: expected head oid does not match the current head oid".as_slice(),
             api::Error::Stale,
         ),
+        (
+            "pending ci",
+            b"UNPROCESSABLE",
+            b"Pull request Required status check \"ci\" is in progress.",
+            api::Error::Protected,
+        ),
+        (
+            "pending build",
+            b"UNPROCESSABLE",
+            b"Pull request Required status check \"build\" is in progress.",
+            api::Error::Protected,
+        ),
+        (
+            "check wrong type",
+            b"FORBIDDEN",
+            b"Pull request Required status check \"ci\" is in progress.",
+            api::Error::Refused,
+        ),
+        (
+            "check not prefix",
+            b"UNPROCESSABLE",
+            b"other Pull request Required status check \"ci\" is in progress.",
+            api::Error::Refused,
+        ),
         ("unknown", b"UNPROCESSABLE", b"other refusal", api::Error::Refused),
         ("wrong type", b"FORBIDDEN", b"expected head oid does not match the current head oid", api::Error::Refused),
         (

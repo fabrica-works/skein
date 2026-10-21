@@ -8,7 +8,7 @@ pub const SECONDARY: &[u8] = b"You have exceeded a secondary rate limit";
 pub const INTEGRATION: &[u8] = b"Resource not accessible by integration";
 /// Moved head text, matched whole (merge-stale-409).
 pub const MERGE_STALE: &[u8] = b"Head branch was modified. Review and try the merge again.";
-/// Unmergeable text, matched whole (merge-after-move-405-not-mergeable).
+/// Unmergeable text, matched whole (merge-after-move-not-merged).
 pub const NOT_MERGEABLE: &[u8] = b"Pull Request is not mergeable";
 /// Rules message, matched whole (ruleset-approval-405).
 pub const RULES: &[u8] = b"Repository rule violations found";
@@ -18,6 +18,8 @@ pub const QUEUE: &[u8] = b"Changes must be made through the merge queue";
 pub const MERGE_METHOD: &[u8] = b"merges are not allowed on this repository.";
 /// Enqueue stale head suffix (enqueue-stale-unprocessable).
 pub const ENQUEUE_STALE: &[u8] = b"expected head oid does not match the current head oid";
+/// Required check prefix (enqueue-pending-check-protected).
+pub(crate) const ENQUEUE_CHECK: &[u8] = b"Pull request Required status check ";
 /// Update stale head, matched whole (update-stale-422).
 pub const UPDATE_STALE: &[u8] = "expected head sha didn’t match current head ref.".as_bytes();
 /// Update conflict, matched whole (update-conflict-422).
@@ -191,8 +193,16 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
 fn seconds(n: u64) -> Duration {
     Duration::from_nanos(n.saturating_mul(1_000_000_000))
 }
-/// Classifies GraphQL enqueue errors by type and whole-message suffix.
+/// Classifies GraphQL enqueue errors by type, stale suffix and required-check prefix.
 #[must_use]
 pub fn graphql(kind: &[u8], message: &[u8]) -> api::Error {
-    if kind == b"UNPROCESSABLE" && message.ends_with(ENQUEUE_STALE) { api::Error::Stale } else { api::Error::Refused }
+    if kind != b"UNPROCESSABLE" {
+        api::Error::Refused
+    } else if message.starts_with(ENQUEUE_CHECK) {
+        api::Error::Protected
+    } else if message.ends_with(ENQUEUE_STALE) {
+        api::Error::Stale
+    } else {
+        api::Error::Refused
+    }
 }
