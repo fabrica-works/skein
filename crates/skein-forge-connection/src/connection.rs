@@ -105,6 +105,13 @@ enum Receiving {
 // Host, User-Agent, Accept, pin, Authorization and Content-Type;
 // HTTP adds Content-Length outside this list.
 const GITHUB_HEADERS: u32 = 6;
+/// The body stream below the tokenizer, bounded by the existing read cap.
+struct JsonBody {
+    intake: Intake,
+    read: Option<Read>,
+    below: bool,
+    ended: bool,
+}
 /// One connection's machines, socket identity, request and pending output.
 pub(crate) struct Connection {
     pub(crate) forge: u16,
@@ -127,10 +134,7 @@ pub(crate) struct Connection {
     json_up: Queue<tokenizer::Event>,
     json_down: Queue<Down>,
     json_next: Option<tokenizer::Request>,
-    json_intake: Intake,
-    json_read: Option<Read>,
-    json_below: bool,
-    json_ended: bool,
+    json_body: JsonBody,
     heard: Queue<Heard>,
     request: Option<Request>,
     receive: Receiving,
@@ -187,10 +191,12 @@ impl Connection {
             json_up: Queue::with_capacity(8),
             json_down: Queue::with_capacity(8),
             json_next: None,
-            json_intake: Intake::with_capacity(l.chunk.max(5)),
-            json_read: None,
-            json_below: false,
-            json_ended: false,
+            json_body: JsonBody {
+                intake: Intake::with_capacity(l.chunk.max(5)),
+                read: None,
+                below: false,
+                ended: false,
+            },
             heard: Queue::with_capacity(16),
             request: None,
             receive: Receiving::Empty,
@@ -445,25 +451,25 @@ impl Connection {
         }
     }
     fn clear_json_body(&mut self) {
-        self.json_intake.clear();
-        self.json_read = None;
-        self.json_below = false;
-        self.json_ended = false;
+        self.json_body.intake.clear();
+        self.json_body.read = None;
+        self.json_body.below = false;
+        self.json_body.ended = false;
     }
     fn json_demand(&mut self, env: &Env<Limits>, down: Down) {
         match down {
             Down::Demand { read, room } => {
                 assert_eq!(room, 0, "JSON bodies only read");
                 if read == Read::Nothing {
-                    self.json_read = None;
-                    self.json_intake.clear();
-                    if self.json_below {
-                        self.json_below = false;
+                    self.json_body.read = None;
+                    self.json_body.intake.clear();
+                    if self.json_body.below {
+                        self.json_body.below = false;
                         self.http_down(env, http::Request::Body(Down::Demand { read, room: 0 }));
                     }
                 } else {
-                    assert!(self.json_read.is_none(), "one tokenizer demand at a time");
-                    self.json_read = Some(read);
+                    assert!(self.json_body.read.is_none(), "one tokenizer demand at a time");
+                    self.json_body.read = Some(read);
                 }
             }
             Down::Send(_) | Down::Finish => unreachable!("JSON bodies only read"),
@@ -471,25 +477,25 @@ impl Connection {
     }
     /// One local answer or refill is one of the pump's bounded movements.
     fn pump_json_body(&mut self, env: &Env<Limits>) -> bool {
-        let Some(read) = self.json_read else { return false };
-        let event = if let Some(bytes) = self.json_intake.meet(read) {
+        let Some(read) = self.json_body.read else { return false };
+        let event = if let Some(bytes) = self.json_body.intake.meet(read) {
             Up::Bytes(bytes)
-        } else if self.json_ended {
-            self.json_intake.clear();
+        } else if self.json_body.ended {
+            self.json_body.intake.clear();
             Up::End
         } else {
             // HTTP may already have its final Bytes, End and Done queued.
             // Consume those before asking its body stream for another read.
-            if self.json_below || !self.http_up.is_empty() {
+            if self.json_body.below || !self.http_up.is_empty() {
                 return false;
             }
-            let max = self.json_intake.room();
+            let max = self.json_body.intake.room();
             assert!(max > 0, "a full intake meets every tokenizer demand");
-            self.json_below = true;
+            self.json_body.below = true;
             self.http_down(env, http::Request::Body(Down::Demand { read: Read::Arrived { max }, room: 0 }));
             return true;
         };
-        self.json_read = None;
+        self.json_body.read = None;
         let j = Env { now: env.now, wall: env.wall, limits: self.json_limits };
         tokenizer::up(&mut self.json, &j, event, &mut self.json_up, &mut self.json_down);
         true
@@ -518,23 +524,26 @@ impl Connection {
             skein_tls::client::Event::Closed => {}
         }
     }
+    fn json_body_event(&mut self, event: Up) {
+        match event {
+            Up::Bytes(bytes) => {
+                assert!(self.json_body.below, "one answer to a JSON body refill");
+                self.json_body.below = false;
+                self.json_body.intake.append(&bytes).expect("refill fits the remaining intake room");
+            }
+            Up::End => {
+                self.json_body.below = false;
+                self.json_body.ended = true;
+            }
+            Up::Failed(_) => self.failed(Failure::Seen),
+            Up::Room => unreachable!("JSON bodies only read"),
+        }
+    }
     fn http_event(&mut self, env: &Env<Limits>, event: http::Event) {
         match event {
             http::Event::Response(response) => self.response(env, response),
             http::Event::Body(event) => match &mut self.receive {
-                Receiving::Json(_) => match event {
-                    Up::Bytes(bytes) => {
-                        assert!(self.json_below, "one answer to a JSON body refill");
-                        self.json_below = false;
-                        self.json_intake.append(&bytes).expect("refill fits the remaining intake room");
-                    }
-                    Up::End => {
-                        self.json_below = false;
-                        self.json_ended = true;
-                    }
-                    Up::Failed(_) => self.failed(Failure::Seen),
-                    Up::Room => unreachable!("JSON bodies only read"),
-                },
+                Receiving::Json(_) => self.json_body_event(event),
                 Receiving::Empty => {
                     drop(event);
                 }
@@ -937,7 +946,7 @@ impl Connection {
             || !self.json_down.is_empty()
             || !self.heard.is_empty()
             || self.json_next.is_some()
-            || (self.json_read.is_some() && !self.json_below)
+            || (self.json_body.read.is_some() && !self.json_body.below)
     }
     pub fn keep_after(&mut self, after: u64) {
         self.after = after;

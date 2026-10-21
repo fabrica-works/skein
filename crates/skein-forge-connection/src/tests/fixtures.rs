@@ -652,7 +652,7 @@ impl ConnectionHarness {
                 ended = true;
                 self.connection.stream(&self.env, Up::End);
             }
-            for _ in 0..16 {
+            for _ in 0_u32..16 {
                 let Some(event) = self.connection.heard() else { break };
                 heard.push(event).expect("fixture events fit");
             }

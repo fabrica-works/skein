@@ -676,7 +676,7 @@ fn json_body_demands_are_batched_across_bounded_pumps() {
     // Many structural bytes exceed one pump's 64 movements while the
     // whole body fits the local intake. Whitespace after the object must
     // be checked before the HTTP terminal is consumed.
-    let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(180, b' '), br#"]}"#]);
+    let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(180, b' '), b"]}"]);
     let response = fixtures::ok(&body);
     let mut h = fixtures::ConnectionHarness::new();
     h.connection
@@ -736,7 +736,7 @@ fn json_body_fragments_and_final_bytes_precede_end() {
 
 #[test]
 fn json_body_batches_cross_intake_boundaries_and_reuse_cleanly() {
-    let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(2500, b' '), br#"]}"#]);
+    let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(2500, b' '), b"]}"]);
     let response = fixtures::ok(&body);
     let mut h = fixtures::ConnectionHarness::new();
     user_request(&mut h);
@@ -786,7 +786,7 @@ fn json_body_intakes_fit_the_worst_case_and_release_on_teardown() {
         for _ in 0..fixtures::limits().connections {
             let mut h = fixtures::ConnectionHarness::new();
             user_request(&mut h);
-            let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(2500, b' '), br#"]}"#]);
+            let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(2500, b' '), b"]}"]);
             let response = fixtures::ok(&body);
             user_decoded(&h.buffered_answer(&response, response.len(), false));
             connections.push(h).expect("all configured connections");
