@@ -121,6 +121,11 @@ impl Peer {
         forge: Rc<RefCell<Forge>>,
         seed: u64,
     ) -> Result<Self, Error> {
+        // Port 0 may bind any u16 port; reserve its longest spelling at admission.
+        let origin = format!("http://{}", SocketAddr::new(address.ip(), u16::MAX));
+        if origin.len() > usize::try_from(protocol.documents.target_bytes).map_err(|_| Error::Limits)? {
+            return Err(Error::Limits);
+        }
         config.hooks = None;
         let protocol_bound = forgejo::worst_case(&protocol, &config).ok_or(Error::Limits)?;
         let service =
@@ -283,10 +288,17 @@ impl Peer {
                 assert_eq!(owner, LISTENER);
                 self.face.listener = Some(listener);
                 self.face.address = Some(addr.socket().expect("loopback socket address"));
-                if let protocol::Service::Github(service) = &mut self.service {
-                    // The listening event supplies the origin, including a kernel-selected port.
-                    let base = format!("http://{}", self.face.address.expect("bound address"));
-                    service.set_origin(base.into_bytes().into_boxed_slice()).expect("bounded local origin");
+                // The listening event supplies the origin, including a kernel-selected port.
+                let base = format!("http://{}", self.face.address.expect("bound address"));
+                match (&mut self.service, &self.protocol) {
+                    (protocol::Service::Forgejo(service), protocol::Limits::Forgejo(limits)) => {
+                        service.set_base(base.into_bytes().into_boxed_slice(), limits).expect("bounded local origin");
+                    }
+                    (protocol::Service::Github(service), protocol::Limits::Github(_)) => {
+                        service.set_origin(base.into_bytes().into_boxed_slice()).expect("bounded local origin");
+                    }
+                    (protocol::Service::Forgejo(_), protocol::Limits::Github(_))
+                    | (protocol::Service::Github(_), protocol::Limits::Forgejo(_)) => unreachable!("matching dialect"),
                 }
             }
             io::Event::Accepted { owner, socket, .. } => {

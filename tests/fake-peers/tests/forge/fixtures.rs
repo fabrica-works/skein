@@ -454,7 +454,7 @@ impl Refusal {
         }
     }
 }
-pub fn refusals() -> [Refusal; 9] {
+pub fn refusals() -> [Refusal; 10] {
     // Face's queue minimum is 64; one less cannot reserve a server pass.
     const SHORT_QUEUE: u32 = 63;
     // The protocol fixture admits four connections; five is one past it.
@@ -487,6 +487,17 @@ pub fn refusals() -> [Refusal; 9] {
         Refusal { limits: Limits { plaintext: SHORT_PLAINTEXT, ..limits() }, ..Refusal::new("wire") },
         Refusal { config: Config { base: Box::new([]), ..config() }, ..Refusal::new("config") },
         Refusal { shared: domain, ..Refusal::new("domain") },
+        Refusal {
+            // The configured base fits; a kernel-selected five-digit port needs one more byte.
+            protocol: skein_fake_forge_protocol::Limits {
+                documents: skein_forge::forgejo::limits::Limits {
+                    target_bytes: u32::try_from(b"http://127.0.0.1:65535".len()).expect("literal origin") - 1,
+                    ..protocol_limits().documents
+                },
+                ..protocol_limits()
+            },
+            ..Refusal::new("bound origin")
+        },
     ]
 }
 

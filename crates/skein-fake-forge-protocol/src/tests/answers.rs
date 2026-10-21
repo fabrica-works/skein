@@ -9,6 +9,40 @@ use skein_forge::forgejo::{
 use skein_lib::{Time, Wall, bytes};
 
 #[test]
+fn set_base_admits_the_constructors_origins_and_preserves_refusals() {
+    const BOUND: &[u8] = b"http://127.0.0.1:65535";
+    let mut limits = limits();
+    // The longest bound IPv4 origin is admitted at target_bytes exactly.
+    limits.documents.target_bytes = u32::try_from(BOUND.len()).expect("literal origin");
+    let mut service = crate::Service::new(config(), &limits, 3).expect("fixture config");
+    let settings = a::Settings { default: boxed(b"main"), merge: true, rebase: true, squash: true };
+    for (name, base, expected, html) in [
+        ("bound ip:port at cap", BOUND, Ok(()), b"http://127.0.0.1:65535/org/repo".as_slice()),
+        ("no scheme", b"127.0.0.1:65535", Err(crate::Error::Limits), b"http://127.0.0.1:3000/org/repo"),
+        ("empty authority", b"http://", Err(crate::Error::Limits), b"http://127.0.0.1:3000/org/repo"),
+        ("slash", b"http://127.0.0.1/", Err(crate::Error::Limits), b"http://127.0.0.1:3000/org/repo"),
+        ("below printable", b"http://127.0.0.1 ", Err(crate::Error::Limits), b"http://127.0.0.1:3000/org/repo"),
+        ("above printable", b"http://127.0.0.1\x7f", Err(crate::Error::Limits), b"http://127.0.0.1:3000/org/repo"),
+        ("one past cap", b"http://127.0.0.1:655350", Err(crate::Error::Limits), b"http://127.0.0.1:3000/org/repo"),
+    ] {
+        service.set_base(config().base, &limits).expect("reset origin");
+        let input = crate::Config { base: boxed(base), ..config() };
+        let admitted = match crate::Service::new(input, &limits, 3) {
+            Ok(_) => Ok(()),
+            Err(error) => Err(error),
+        };
+        assert_eq!(admitted, expected, "new: {name}");
+        assert_eq!(service.set_base(boxed(base), &limits), expected, "set_base: {name}");
+        let Answer::Repository(repository) =
+            answers::repository_document(&service.config, 2, b"org/repo", &settings).expect("repository")
+        else {
+            panic!("repository answer")
+        };
+        assert_eq!(repository.html_url.as_ref(), html, "{name}");
+    }
+}
+
+#[test]
 fn repositories_keep_the_scenarios_id_path_and_domain_settings() {
     let input =
         a::Answer::Settings(a::Settings { default: boxed(b"trunk"), merge: false, rebase: false, squash: true });

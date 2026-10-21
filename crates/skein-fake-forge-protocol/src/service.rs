@@ -31,22 +31,13 @@ impl Service {
             || config.max_response_items == 0
             || config.default_paging_num == 0
             || config.max_response_items > limits.documents.inner
-            || config.base.len() > usize::try_from(limits.documents.target_bytes).expect("u32 fits")
             || config.faults.reset > 1000
             || config.faults.drop > 1000
             || config.faults.server_error > 1000
         {
             return Err(Error::Limits);
         }
-        let authority = config.base.strip_prefix(b"http://").ok_or(Error::Limits)?;
-        if authority.is_empty() {
-            return Err(Error::Limits);
-        }
-        for byte in authority {
-            if *byte == b'/' || !(0x21..=0x7e).contains(byte) {
-                return Err(Error::Limits);
-            }
-        }
+        check_base(&config.base, limits)?;
         if config.users.len() > limits.documents.inner
             || config.repositories.len() > limits.documents.inner
             || config.tokens.len() > limits.documents.inner
@@ -86,6 +77,12 @@ impl Service {
         let tally = Tally::new(config.tokens.len().saturating_add(limits.documents.inner));
         let setup = crate::setup::Store::new(limits);
         Ok(Self { config, calls: Slab::with_capacity(limits.calls), rng: Rng::new(seed), tally, setup })
+    }
+    /// A host supplies its bound local origin before it accepts requests.
+    pub fn set_base(&mut self, base: Box<[u8]>, limits: &Limits) -> Result<(), Error> {
+        check_base(&base, limits)?;
+        self.config.base = base;
+        Ok(())
     }
     /// Returns the previous endpoint on admission; a refusal leaves the current endpoint unchanged.
     pub fn set_hooks(
@@ -193,6 +190,21 @@ impl Service {
         &self.setup
     }
 }
+fn check_base(base: &[u8], limits: &Limits) -> Result<(), Error> {
+    if base.len() > usize::try_from(limits.documents.target_bytes).expect("u32 fits") {
+        return Err(Error::Limits);
+    }
+    let authority = base.strip_prefix(b"http://").ok_or(Error::Limits)?;
+    if authority.is_empty() {
+        return Err(Error::Limits);
+    }
+    for byte in authority {
+        if *byte == b'/' || !(0x21..=0x7e).contains(byte) {
+            return Err(Error::Limits);
+        }
+    }
+    Ok(())
+}
 /// Tables and each connection's HTTP, JSON, request and encoded response ownership.
 #[must_use]
 pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
@@ -204,7 +216,8 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     {
         return None;
     }
-    let mut tables = u64::try_from(config.base.len()).ok()?;
+    // A host may replace the base with any origin admitted by set_base.
+    let mut tables = u64::from(limits.documents.target_bytes);
     if let Some(endpoint) = &config.hooks {
         tables = tables
             .checked_add(u64::try_from(endpoint.host.len()).ok()?)?

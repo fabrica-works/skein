@@ -37,6 +37,22 @@ fn forge_peer_publishes_its_bound_loopback_address() {
 }
 
 #[test]
+fn repository_urls_include_the_peers_bound_port() {
+    let mut world = World::new();
+    world.bind();
+    let bound = world.peer.address().expect("bound listener");
+    let html = format!("\"html_url\":\"http://{bound}/org/repo\"");
+    for target in [b"/api/v1/repos/org/repo".as_slice(), b"/api/v1/repositories/2"] {
+        let fd = world.open();
+        world.send(fd, &request(target));
+        let response = world.response(fd);
+        assert!(skein_lib::bytes::find(&response, html.as_bytes()).is_some(), "{target:?}");
+        world.close(fd);
+    }
+    world.settle();
+}
+
+#[test]
 fn a_second_fake_shares_names_replies_and_time() {
     let mut world = World::new();
     world.bind();
