@@ -489,9 +489,17 @@ Each is found in the semantic or accessibility APIs of two platforms
   view says them from tables that match its enums whole, so a new fact
   is a build error until it is said.
 - **A phrase** is an owner's name for a sentence its view says, with
-  typed holes: a number, an amount, a span, a wall time, a name, a
-  reference. Phrase ids are by owner (`PhraseId { owner, number }`), each
-  owner's a closed set.
+  typed holes: a number, an amount, a span, a wall time, a date, a
+  moment, a name, a reference. Phrase ids are by owner
+  (`PhraseId { owner, number }`), each owner's a closed set.
+- **Wall holes:** `Wall` uses the language's `WallFormat`: nanoseconds,
+  whole seconds since the Unix epoch, or the UTC `HH:MM` clock.
+  `Date` and `Moment` both take the same `Hole::Wall` value and ignore
+  that format. `Date` is the UTC Gregorian calendar date with an English
+  month abbreviation and unpadded day (`Oct 12`); `Moment` adds `, `
+  and the UTC clock (`Oct 12, 18:04`). They contain no year or time-zone
+  suffix and depend only on the supplied instant, with bounds of 6 and
+  13 bytes respectively.
 - **A reference hole** is a name with its owner's reference number,
   copied unchanged; the saying keeps its span, so the owner can build it
   as a link or a chip with a binding of its own.

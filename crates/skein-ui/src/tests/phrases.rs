@@ -237,3 +237,139 @@ fn shuffled_language(long: bool) -> Language {
         })),
     }
 }
+
+fn wall_shape(kind: HoleKind) -> Box<[PhraseShape]> {
+    Box::new([PhraseShape { id: ID, holes: Box::new([HoleShape { kind, bytes: 0 }]), plural: None }])
+}
+fn wall_language(kind: HoleKind, wall: WallFormat) -> Language {
+    Language {
+        plural: PluralRule::English,
+        span_unit: SpanUnit::Seconds,
+        wall,
+        phrases: Box::new([Phrase {
+            id: ID,
+            forms: Box::new([Form {
+                class: PluralClass::Other,
+                segments: Box::new([Segment::Hole { index: 0, kind }]),
+            }]),
+        }]),
+    }
+}
+fn wall_book(kind: HoleKind, format: WallFormat) -> Phrasebook {
+    Phrasebook::load(wall_shape(kind), Box::new([wall_language(kind, format)]), &LIMITS).unwrap()
+}
+
+#[test]
+fn dates_and_moments_use_utc_calendar_words_in_every_wall_format() {
+    let rows: &[(u64, &[u8], &[u8])] = &[
+        (0, b"Jan 1", b"Jan 1, 00:00"),
+        (951_847_440, b"Feb 29", b"Feb 29, 18:04"),
+        (1_767_225_540, b"Dec 31", b"Dec 31, 23:59"),
+        (4_107_542_400, b"Mar 1", b"Mar 1, 00:00"),
+        (13_574_563_200, b"Feb 29", b"Feb 29, 00:00"),
+        (1_791_828_240, b"Oct 12", b"Oct 12, 18:04"),
+    ];
+    for format in [WallFormat::Nanos, WallFormat::Seconds, WallFormat::Clock] {
+        let date = wall_book(HoleKind::Date, format);
+        let moment = wall_book(HoleKind::Moment, format);
+        assert_eq!(date.capacity(ID), Some(6));
+        assert_eq!(moment.capacity(ID), Some(13));
+        for (seconds, date_words, moment_words) in rows {
+            let wall = Wall::from_nanos(seconds.checked_mul(1_000_000_000).unwrap());
+            assert_eq!(date.say(0, ID, &[Hole::Wall(wall)]).unwrap().text.as_ref(), *date_words);
+            assert_eq!(moment.say(0, ID, &[Hole::Wall(wall)]).unwrap().text.as_ref(), *moment_words);
+        }
+        let largest = Wall::from_nanos(u64::MAX);
+        assert_eq!(date.say(0, ID, &[Hole::Wall(largest)]).unwrap().text.as_ref(), b"Jul 21");
+        assert_eq!(moment.say(0, ID, &[Hole::Wall(largest)]).unwrap().text.as_ref(), b"Jul 21, 23:34");
+    }
+}
+
+#[test]
+fn only_wall_values_fill_wall_date_and_moment_holes() {
+    for kind in [HoleKind::Wall, HoleKind::Date, HoleKind::Moment] {
+        let book = wall_book(kind, WallFormat::Clock);
+        let said = book.say(0, ID, &[Hole::Wall(Wall::EPOCH)]).unwrap();
+        assert_eq!(
+            said.text.as_ref(),
+            if kind == HoleKind::Wall {
+                b"00:00".as_slice()
+            } else if kind == HoleKind::Date {
+                b"Jan 1".as_slice()
+            } else {
+                b"Jan 1, 00:00".as_slice()
+            }
+        );
+        for wrong in [
+            Hole::Number(0),
+            Hole::Amount(0),
+            Hole::Span(Duration::ZERO),
+            Hole::Name(Box::new([])),
+            Hole::Reference { number: 0, name: Box::new([]) },
+        ] {
+            assert_eq!(book.say(0, ID, &[wrong]), Err(Invalid::Values { id: ID }));
+        }
+        for wrong in [HoleKind::Number, HoleKind::Amount, HoleKind::Span, HoleKind::Name, HoleKind::Reference] {
+            assert_eq!(
+                wall_book(wrong, WallFormat::Clock).say(0, ID, &[Hole::Wall(Wall::EPOCH)]),
+                Err(Invalid::Values { id: ID })
+            );
+        }
+        for other in [HoleKind::Wall, HoleKind::Date, HoleKind::Moment] {
+            if kind != other {
+                assert_eq!(
+                    Phrasebook::load(wall_shape(kind), Box::new([wall_language(other, WallFormat::Clock)]), &LIMITS)
+                        .unwrap_err(),
+                    Invalid::Holes { id: ID }
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn every_representable_wall_day_matches_gregorian_rollover() {
+    let book = wall_book(HoleKind::Date, WallFormat::Nanos);
+    let months: &[(&[u8], u64)] = &[
+        (b"Jan", 31),
+        (b"Feb", 28),
+        (b"Mar", 31),
+        (b"Apr", 30),
+        (b"May", 31),
+        (b"Jun", 30),
+        (b"Jul", 31),
+        (b"Aug", 31),
+        (b"Sep", 30),
+        (b"Oct", 31),
+        (b"Nov", 30),
+        (b"Dec", 31),
+    ];
+    let (mut year, mut month, mut day) = (1970_u64, 0, 1);
+    let last = Wall::from_nanos(u64::MAX).as_secs() / 86_400;
+    for elapsed in 0..=last {
+        let seconds = elapsed * 86_400;
+        let wall = Wall::from_nanos(seconds * 1_000_000_000);
+        let (name, days) = months[month];
+        let decimal = skein_lib::Decimal::of(day);
+        let mut expected = skein_lib::Writer::new(name.len() + 1 + decimal.as_bytes().len());
+        expected.put(name).unwrap();
+        expected.put(b" ").unwrap();
+        expected.put(decimal.as_bytes()).unwrap();
+        assert_eq!(
+            book.say(0, ID, &[Hole::Wall(wall)]).unwrap().text.as_ref(),
+            expected.finish().as_ref(),
+            "{year}-{month}-{day}"
+        );
+        let leap = month == 1 && year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        if day == days + u64::from(leap) {
+            day = 1;
+            month += 1;
+            if month == months.len() {
+                month = 0;
+                year += 1;
+            }
+        } else {
+            day += 1;
+        }
+    }
+}

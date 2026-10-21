@@ -25,6 +25,10 @@ pub enum HoleKind {
     Span,
     /// A wall-clock instant.
     Wall,
+    /// The UTC date, with an English month abbreviation and unpadded day.
+    Date,
+    /// The UTC date followed by a comma and the hour and minute.
+    Moment,
     /// A name copied unchanged.
     Name,
     /// A reference whose name is copied unchanged.
@@ -47,14 +51,18 @@ pub enum Hole {
     Reference { number: u64, name: Box<[u8]> },
 }
 impl Hole {
-    fn kind(&self) -> HoleKind {
-        match self {
+    fn has_kind(&self, kind: HoleKind) -> bool {
+        let own = match self {
             Hole::Number(_) => HoleKind::Number,
             Hole::Amount(_) => HoleKind::Amount,
             Hole::Span(_) => HoleKind::Span,
             Hole::Wall(_) => HoleKind::Wall,
             Hole::Name(_) => HoleKind::Name,
             Hole::Reference { .. } => HoleKind::Reference,
+        };
+        match kind {
+            HoleKind::Wall | HoleKind::Date | HoleKind::Moment => own == HoleKind::Wall,
+            HoleKind::Number | HoleKind::Amount | HoleKind::Span | HoleKind::Name | HoleKind::Reference => own == kind,
         }
     }
 }
@@ -344,7 +352,7 @@ impl Phrasebook {
         }
         for (index, value) in values.iter().enumerate() {
             let declared = shape.holes.get(index).expect("value count equals shape count");
-            if value.kind() != declared.kind {
+            if !value.has_kind(declared.kind) {
                 return Err(Invalid::Values { id });
             }
             match value {
@@ -383,8 +391,8 @@ impl Phrasebook {
         for segment in &form.segments {
             let bytes = match segment {
                 Segment::Text(bytes) => crate::tree::length(bytes),
-                Segment::Hole { index, .. } => {
-                    measure(values.get(usize::from(*index)).expect("hole was checked"), language)
+                Segment::Hole { index, kind } => {
+                    measure(values.get(usize::from(*index)).expect("hole was checked"), *kind, language)
                 }
             };
             size = size.checked_add(bytes).ok_or(Invalid::Overflow)?;
@@ -395,10 +403,10 @@ impl Phrasebook {
         for segment in &form.segments {
             match segment {
                 Segment::Text(bytes) => writer.put(bytes).expect("literal fits the measured saying"),
-                Segment::Hole { index, .. } => {
+                Segment::Hole { index, kind } => {
                     let value = values.get(usize::from(*index)).expect("hole was checked");
                     let start = u32::try_from(writer.written()).expect("saying size fits u32");
-                    write(value, language, &mut writer);
+                    write(value, *kind, language, &mut writer);
                     match value {
                         Hole::Reference { number, .. } => {
                             let end = u32::try_from(writer.written()).expect("saying size fits u32");
@@ -487,6 +495,8 @@ fn form_capacity(shape: &PhraseShape, language: &Language, form: &Form) -> Resul
                     HoleKind::Span => {
                         width(u64::MAX.checked_div(language.span_unit.divisor()).expect("duration unit is nonzero"))
                     }
+                    HoleKind::Date => 6,
+                    HoleKind::Moment => 13,
                     HoleKind::Wall => match language.wall {
                         WallFormat::Nanos => 20,
                         WallFormat::Seconds => width(Wall::from_nanos(u64::MAX).as_secs()),
@@ -499,16 +509,23 @@ fn form_capacity(shape: &PhraseShape, language: &Language, form: &Form) -> Resul
     }
     Ok(capacity)
 }
-fn measure(hole: &Hole, language: &Language) -> u32 {
+fn measure(hole: &Hole, kind: HoleKind, language: &Language) -> u32 {
     match hole {
         Hole::Number(value) | Hole::Amount(value) => width(*value),
         Hole::Span(value) => {
             width(value.as_nanos().checked_div(language.span_unit.divisor()).expect("duration unit is nonzero"))
         }
-        Hole::Wall(value) => match language.wall {
-            WallFormat::Nanos => width(value.as_nanos()),
-            WallFormat::Seconds => width(value.as_secs()),
-            WallFormat::Clock => 5,
+        Hole::Wall(value) => match kind {
+            HoleKind::Date => date_width(*value),
+            HoleKind::Moment => date_width(*value).checked_add(7).expect("moment width fits"),
+            HoleKind::Wall => match language.wall {
+                WallFormat::Nanos => width(value.as_nanos()),
+                WallFormat::Seconds => width(value.as_secs()),
+                WallFormat::Clock => 5,
+            },
+            HoleKind::Number | HoleKind::Amount | HoleKind::Span | HoleKind::Name | HoleKind::Reference => {
+                unreachable!("wall kind was checked")
+            }
         },
         Hole::Name(bytes) | Hole::Reference { name: bytes, .. } => crate::tree::length(bytes),
     }
@@ -516,44 +533,93 @@ fn measure(hole: &Hole, language: &Language) -> u32 {
 fn decimal(value: u64, writer: &mut Writer) {
     writer.put(Decimal::of(value).as_bytes()).expect("decimal fits the measured saying");
 }
-fn write(hole: &Hole, language: &Language, writer: &mut Writer) {
+fn write(hole: &Hole, kind: HoleKind, language: &Language, writer: &mut Writer) {
     match hole {
         Hole::Number(value) | Hole::Amount(value) => decimal(*value, writer),
         Hole::Span(value) => decimal(
             value.as_nanos().checked_div(language.span_unit.divisor()).expect("duration unit is nonzero"),
             writer,
         ),
-        Hole::Wall(value) => match language.wall {
-            WallFormat::Nanos => decimal(value.as_nanos(), writer),
-            WallFormat::Seconds => decimal(value.as_secs(), writer),
-            WallFormat::Clock => {
-                let hours = value
-                    .as_secs()
-                    .checked_div(3600)
-                    .expect("hour divisor is nonzero")
-                    .checked_rem(24)
-                    .expect("day divisor is nonzero");
-                let minutes = value
-                    .as_secs()
-                    .checked_div(60)
-                    .expect("minute divisor is nonzero")
-                    .checked_rem(60)
-                    .expect("hour divisor is nonzero");
-                if hours < 10 {
-                    writer.put(b"0").expect("hour fits");
-                }
-                decimal(hours, writer);
-                writer.put(b":").expect("separator fits");
-                if minutes < 10 {
-                    writer.put(b"0").expect("minute fits");
-                }
-                decimal(minutes, writer);
+        Hole::Wall(value) => match kind {
+            HoleKind::Date => date(*value, writer),
+            HoleKind::Moment => {
+                date(*value, writer);
+                writer.put(b", ").expect("moment separator fits");
+                clock(*value, writer);
+            }
+            HoleKind::Wall => match language.wall {
+                WallFormat::Nanos => decimal(value.as_nanos(), writer),
+                WallFormat::Seconds => decimal(value.as_secs(), writer),
+                WallFormat::Clock => clock(*value, writer),
+            },
+            HoleKind::Number | HoleKind::Amount | HoleKind::Span | HoleKind::Name | HoleKind::Reference => {
+                unreachable!("wall kind was checked")
             }
         },
         Hole::Name(bytes) | Hole::Reference { name: bytes, .. } => {
             writer.put(bytes).expect("name fits the measured saying");
         }
     }
+}
+
+fn clock(value: Wall, writer: &mut Writer) {
+    let hours = value
+        .as_secs()
+        .checked_div(3600)
+        .expect("hour divisor is nonzero")
+        .checked_rem(24)
+        .expect("day divisor is nonzero");
+    let minutes = value
+        .as_secs()
+        .checked_div(60)
+        .expect("minute divisor is nonzero")
+        .checked_rem(60)
+        .expect("hour divisor is nonzero");
+    if hours < 10 {
+        writer.put(b"0").expect("hour fits");
+    }
+    decimal(hours, writer);
+    writer.put(b":").expect("separator fits");
+    if minutes < 10 {
+        writer.put(b"0").expect("minute fits");
+    }
+    decimal(minutes, writer);
+}
+
+const MONTHS: [&[u8]; 12] =
+    [b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun", b"Jul", b"Aug", b"Sep", b"Oct", b"Nov", b"Dec"];
+
+// March-based Gregorian eras: each 400-year era has 146_097 days.
+// The offset maps the Unix epoch to this civil-day numbering.
+fn civil_date(value: Wall) -> Option<(&'static [u8], u64)> {
+    let days = value.as_secs().checked_div(86_400)?.checked_add(719_468)?;
+    let era_day = days.checked_rem(146_097)?;
+    let year = era_day
+        .checked_sub(era_day.checked_div(1_460)?)?
+        .checked_add(era_day.checked_div(36_524)?)?
+        .checked_sub(era_day.checked_div(146_096)?)?
+        .checked_div(365)?;
+    let year_day = era_day
+        .checked_sub(year.checked_mul(365)?.checked_add(year.checked_div(4)?)?.checked_sub(year.checked_div(100)?)?)?;
+    let march_month = year_day.checked_mul(5)?.checked_add(2)?.checked_div(153)?;
+    let day = year_day.checked_sub(march_month.checked_mul(153)?.checked_add(2)?.checked_div(5)?)?.checked_add(1)?;
+    let month = if march_month < 10 { march_month.checked_add(3)? } else { march_month.checked_sub(9)? };
+    let name = MONTHS.get(usize::try_from(month.checked_sub(1)?).ok()?)?;
+    Some((name, day))
+}
+fn date_width(value: Wall) -> u32 {
+    let (month, day) = civil_date(value).expect("Wall's civil date fits");
+    crate::tree::length(month)
+        .checked_add(1)
+        .expect("month width fits")
+        .checked_add(width(day))
+        .expect("date width fits")
+}
+fn date(value: Wall, writer: &mut Writer) {
+    let (month, day) = civil_date(value).expect("Wall's civil date fits");
+    writer.put(month).expect("month fits the measured saying");
+    writer.put(b" ").expect("date separator fits");
+    decimal(day, writer);
 }
 
 /// Loaded metadata, literal bytes, capacities and the largest saying's heap.
