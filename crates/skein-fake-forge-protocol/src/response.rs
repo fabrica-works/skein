@@ -1,5 +1,5 @@
 //! Per-route projections and post-write reads; one write precedes its readback.
-use crate::{Config, Limits, answers, errors, routes};
+use crate::{Config, Limits, answers, errors, routes, setup::Store};
 use alloc::boxed::Box;
 use skein_fake_forge_domain::api::{self as a, Answer};
 use skein_forge::forgejo::{
@@ -306,9 +306,15 @@ pub fn failure(limits: &Limits, failure: errors::Failure) -> Reply {
     }
     Reply { status: failure.status, body, headers: headers.into_boxed() }
 }
-fn document(config: &Config, request: &Request, select: &Select, answer: &Answer) -> Result<server::Answer, a::Error> {
+fn document(
+    config: &Config,
+    setup: &Store,
+    request: &Request,
+    select: &Select,
+    answer: &Answer,
+) -> Result<server::Answer, a::Error> {
     match answer {
-        Answer::Comment { comment, .. } => Ok(server::Answer::Comment(answers::comment(config, comment))),
+        Answer::Comment { comment, .. } => Ok(server::Answer::Comment(answers::comment(config, setup, comment))),
         Answer::Permission(permission) => {
             let user = match select {
                 Select::Permission(user) => *user,
@@ -321,7 +327,7 @@ fn document(config: &Config, request: &Request, select: &Select, answer: &Answer
             };
             Ok(server::Answer::Permission(d::CollaboratorPermission {
                 permission: answers::permission(*permission),
-                user: routes::user(config, user),
+                user: setup.resolve_user(config, user),
             }))
         }
         Answer::Commit(commit) => {
@@ -337,14 +343,14 @@ fn document(config: &Config, request: &Request, select: &Select, answer: &Answer
             Ok(server::Answer::Branch(answers::branch(config, request, name, *commit)))
         }
         Answer::Cloned { branches: values, .. } => branches(config, request, select, values),
-        Answer::Pull(pull) => pull_document(config, request, select, pull, answer),
+        Answer::Pull(pull) => pull_document(config, setup, request, select, pull, answer),
         Answer::Checks(checks) => match select {
             Select::Status(context) => {
                 for check in checks {
                     if check.status.context == *context {
                         return Ok(server::Answer::Status(d::CommitStatus {
                             creator: if check.link.is_empty() {
-                                Some(routes::user(config, check.status.author))
+                                Some(setup.resolve_user(config, check.status.author))
                             } else {
                                 None
                             },
@@ -358,7 +364,7 @@ fn document(config: &Config, request: &Request, select: &Select, answer: &Answer
                 }
                 Err(a::Error::Missing(a::What::Commit))
             }
-            Select::Document => answers::read(config, request, answer),
+            Select::Document => answers::read(config, setup, request, answer),
             Select::Permission(_) | Select::Branch(_) | Select::Branches(_) | Select::Review(_) | Select::Raw(_) => {
                 Err(a::Error::Refused)
             }
@@ -391,11 +397,12 @@ fn document(config: &Config, request: &Request, select: &Select, answer: &Answer
         | Answer::Revision(_)
         | Answer::Done
         | Answer::Pushed(_)
-        | Answer::Branch(_) => answers::read(config, request, answer),
+        | Answer::Branch(_) => answers::read(config, setup, request, answer),
     }
 }
 pub fn answer(
     config: &Config,
+    setup: &Store,
     limits: &Limits,
     request: &Request,
     select: &Select,
@@ -451,7 +458,7 @@ pub fn answer(
         | Answer::Pushed(_)
         | Answer::Branch(_) => {}
     }
-    let document = document(config, request, select, answer)?;
+    let document = document(config, setup, request, select, answer)?;
     let Ok(body) = server::encode(&document, &limits.documents) else {
         return Err(a::Error::TooLarge);
     };
@@ -597,6 +604,7 @@ fn raw(limits: &Limits, body: &[u8], range: Option<Range>) -> Result<Reply, a::E
 
 fn pull_document(
     config: &Config,
+    setup: &Store,
     request: &Request,
     select: &Select,
     pull: &a::Pull,
@@ -606,7 +614,7 @@ fn pull_document(
         Select::Review(id) => {
             for value in &pull.reviews {
                 if value.id == *id {
-                    return Ok(server::Answer::Review(answers::review(config, value)));
+                    return Ok(server::Answer::Review(answers::review(config, setup, value)));
                 }
             }
             Err(a::Error::Missing(a::What::Review))
@@ -616,12 +624,12 @@ fn pull_document(
             if crate::route(request) == crate::Route::OpenPull {
                 for repo in &config.repositories {
                     if repo.full == path {
-                        return Ok(server::Answer::Pull(answers::pull(config, u64::from(repo.id), pull)));
+                        return Ok(server::Answer::Pull(answers::pull(config, setup, u64::from(repo.id), pull)));
                     }
                 }
                 Err(a::Error::Missing(a::What::Repository))
             } else {
-                answers::read(config, request, answer)
+                answers::read(config, setup, request, answer)
             }
         }
         Select::Permission(_) | Select::Branch(_) | Select::Branches(_) | Select::Status(_) | Select::Raw(_) => {

@@ -47,7 +47,7 @@ fn repositories_keep_the_scenarios_id_path_and_domain_settings() {
     let input =
         a::Answer::Settings(a::Settings { default: boxed(b"trunk"), merge: false, rebase: false, squash: true });
     for request in [Request::RepositoryById { id: 2 }, Request::Repository { at: at() }] {
-        let repository = answers::read(&config(), &request, &input);
+        let repository = answers::read(&config(), &crate::setup::Store::new(&limits()), &request, &input);
         assert_eq!(
             repository,
             Ok(Answer::Repository(d::Repository {
@@ -82,7 +82,7 @@ fn issue_documents_keep_the_domain_values() {
         updated: Time::from_nanos(2_000_000_000),
     };
     assert_eq!(
-        answers::issue(&config(), &summary),
+        answers::issue(&config(), &crate::setup::Store::new(&limits()), &summary),
         d::Issue {
             number: 7,
             pull: false,
@@ -103,7 +103,7 @@ fn comment_documents_keep_the_domain_values() {
         let comment =
             a::Comment { id: 8, author: 17, body: boxed(b"comment"), created: Time::from_nanos(1_000_000_000), edited };
         assert_eq!(
-            answers::comment(&config(), &comment),
+            answers::comment(&config(), &crate::setup::Store::new(&limits()), &comment),
             d::Comment {
                 id: 8,
                 user: d::User { id: 17, login: boxed(b"u17"), is_admin: false, full_name: Box::from([]) },
@@ -133,7 +133,7 @@ fn review_documents_keep_the_head_verdict_and_official_flag() {
             official: true,
         };
         assert_eq!(
-            answers::review(&config(), &input),
+            answers::review(&config(), &crate::setup::Store::new(&limits()), &input),
             d::Review {
                 id: 8,
                 user: d::User { id: 2, login: boxed(b"person"), is_admin: false, full_name: Box::from([]) },
@@ -165,7 +165,7 @@ fn changed_files_keep_the_path_and_each_kind_of_change() {
             more: true,
         };
         assert_eq!(
-            answers::read(&config(), &request, &input),
+            answers::read(&config(), &crate::setup::Store::new(&limits()), &request, &input),
             Ok(Answer::Files(Box::new([d::ChangedFile {
                 filename: boxed(b"src"),
                 previous_filename: None,
@@ -186,7 +186,7 @@ fn a_ci_status_has_no_creator_and_a_link_relative_to_the_origin() {
     }]));
     let request =
         Request::CombinedStatus { at: at(), commit: routes::object(7), page: Page { page: None, limit: None } };
-    let answer = answers::read(&config(), &request, &input).expect("statuses");
+    let answer = answers::read(&config(), &crate::setup::Store::new(&limits()), &request, &input).expect("statuses");
     let encoded = server::encode(&answer, &limits().documents).expect("JSON");
     for expected in [
         b"\"creator\":null".as_slice(),
@@ -219,7 +219,8 @@ fn statuses_combine_failed_before_pending_before_passed() {
         let input = a::Answer::Checks(rows.into_boxed());
         let request =
             Request::CombinedStatus { at: at(), commit: routes::object(7), page: Page { page: None, limit: None } };
-        let answer = answers::read(&config(), &request, &input).expect("statuses");
+        let answer =
+            answers::read(&config(), &crate::setup::Store::new(&limits()), &request, &input).expect("statuses");
         let Answer::CombinedStatus { state, statuses, .. } = answer else {
             panic!("statuses");
         };
@@ -246,7 +247,8 @@ fn a_files_false_comparison_keeps_commits_and_lists_no_files() {
     };
     for (files, listed) in [(true, 1), (false, 0)] {
         let request = Request::Compare { at: at(), before: routes::object(8), after: routes::object(9), files };
-        let Ok(Answer::Compare { compare, commits, files: changed }) = answers::read(&config(), &request, &input)
+        let Ok(Answer::Compare { compare, commits, files: changed }) =
+            answers::read(&config(), &crate::setup::Store::new(&limits()), &request, &input)
         else {
             panic!("A comparison");
         };
@@ -266,7 +268,7 @@ fn a_jobs_steps_keep_their_numbers_names_and_statuses() {
         ]),
     };
     assert_eq!(
-        answers::read(&config(), &Request::Job { at: at(), job: 8 }, &input),
+        answers::read(&config(), &crate::setup::Store::new(&limits()), &Request::Job { at: at(), job: 8 }, &input),
         Ok(Answer::Job {
             job: d::Job { id: 8, run_id: 7, attempt: 2 },
             steps: Box::new([

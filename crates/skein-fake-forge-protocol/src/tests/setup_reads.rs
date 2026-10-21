@@ -4,7 +4,7 @@ use super::{
 };
 use skein_fake_forge_domain::{self as fake, api as a};
 use skein_forge::forgejo::{
-    document::{self as d, Document},
+    document::{self as d, Document, Row},
     id::ObjectFormat,
     request::{Grant, Request},
 };
@@ -389,4 +389,59 @@ fn scenario_grant_accepts_a_login_at_its_bound() {
     let login = scenario_login(usize::try_from(h.env.limits.documents.string_bytes).unwrap());
     assert_eq!(h.service.setup_mut().grant(REPOSITORY, &login, Grant::Read), Ok(()));
     assert_eq!(h.service.setup().collaborator(REPOSITORY, &login), Some(Grant::Read));
+}
+
+fn created_bot(h: &mut Harness) -> d::User {
+    let request = Request::CreateUser {
+        login: boxed(b"reconciler"),
+        email: boxed(b"reconciler@example.test"),
+        full_name: boxed(b"Reconciler Bot"),
+        password: Secret::new(boxed(b"fixture-password")),
+        must_change_password: false,
+    };
+    h.send(&request);
+    let Document::User(user) = h.decoded(&request).document else { panic!("created user") };
+    user
+}
+
+#[test]
+fn authenticated_user_names_a_created_account_by_its_login() {
+    let mut h = harness();
+    let bot = created_bot(&mut h);
+    h.service.setup_mut().token(bot.id, b"reads", &[b"read:user"], Secret::new(boxed(READ_TOKEN)));
+    ask_plain(&mut h, b"/api/v1/user");
+    assert_eq!(h.decoded(&Request::User).document, Document::User(bot));
+}
+
+#[test]
+fn user_search_names_a_created_account_by_its_login() {
+    let mut h = harness();
+    let bot = created_bot(&mut h);
+    let request = Request::UserSearch { uid: bot.id, limit: None };
+    h.send(&request);
+    assert_eq!(&*h.decoded(&request).rows, &[Row::User(d::User { full_name: boxed(b""), ..bot })]);
+}
+
+#[test]
+fn collaborators_name_an_added_created_account_by_its_login() {
+    let mut h = harness();
+    let bot = created_bot(&mut h);
+    fake::grant(&mut h.domain, b"acme/widgets", 1, a::Permission::Admin);
+    h.send(&Request::AddCollaborator { at: repo(), login: bot.login.clone(), permission: Grant::Write });
+    assert_eq!(h.status(), 204);
+    let request = Request::Collaborators { at: repo(), page: fixtures::PAGE };
+    h.send(&request);
+    let rows = h.decoded(&request).rows;
+    assert!(rows.contains(&Row::User(d::User { full_name: boxed(b""), ..bot })), "{rows:?}");
+}
+
+#[test]
+fn permission_reads_a_created_accounts_write_grant_by_its_login() {
+    let mut h = harness();
+    let bot = created_bot(&mut h);
+    h.send(&Request::AddCollaborator { at: repo(), login: bot.login.clone(), permission: Grant::Write });
+    assert_eq!(
+        read_permission(&mut h, &bot.login),
+        d::CollaboratorPermission { permission: d::Permission::Write, user: d::User { full_name: boxed(b""), ..bot } }
+    );
 }

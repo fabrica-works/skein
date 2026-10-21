@@ -88,7 +88,14 @@ fn a_merge_answers_200_with_no_body() {
     ] {
         assert_eq!(response::follow(&request, &a::Answer::Done), Ok(None), "{request:?}");
         assert_eq!(
-            response::answer(&config(), &limits(), &request, &Select::Document, &a::Answer::Done),
+            response::answer(
+                &config(),
+                &crate::setup::Store::new(&limits()),
+                &limits(),
+                &request,
+                &Select::Document,
+                &a::Answer::Done
+            ),
             Ok(response::Reply { status, headers: Box::from([]), body: boxed(body) }),
             "{request:?}"
         );
@@ -114,7 +121,15 @@ fn write_responses_keep_the_readbacks_author_text_and_time() {
     };
     let request =
         Request::EditIssue { at: at(), number: 9, title: None, body: None, state: Some(d::IssueState::Closed) };
-    let reply = response::answer(&config(), &limits(), &request, &Select::Document, &readback).expect("document");
+    let reply = response::answer(
+        &config(),
+        &crate::setup::Store::new(&limits()),
+        &limits(),
+        &request,
+        &Select::Document,
+        &readback,
+    )
+    .expect("document");
     assert_eq!(reply.status, 200);
     for expected in [
         b"\"id\":2".as_slice(),
@@ -135,9 +150,15 @@ fn raw_ranges_use_206_and_literal_content_range() {
         (Some(Range::From { first: 3, last: Some(99) }), 206, b"def", Some(b"bytes 3-5/6".as_slice())),
         (Some(Range::From { first: 9, last: None }), 416, b"", None),
     ] {
-        let reply =
-            response::answer(&config(), &limits(), &request, &Select::Raw(range), &a::Answer::File(boxed(b"abcdef")))
-                .expect("raw");
+        let reply = response::answer(
+            &config(),
+            &crate::setup::Store::new(&limits()),
+            &limits(),
+            &request,
+            &Select::Raw(range),
+            &a::Answer::File(boxed(b"abcdef")),
+        )
+        .expect("raw");
         assert_eq!((reply.status, &*reply.body), (status, body), "{range:?}");
         let header = reply.headers.first();
         assert_eq!(header_value(&reply.headers), content_range, "{range:?}");
@@ -171,7 +192,15 @@ fn pull_file_responses_carry_x_hasmore() {
     let request = Request::PullFiles { at: at(), number: 1, page: Page { page: Some(1), limit: Some(2) } };
     for (more, expected) in [(true, b"true".as_slice()), (false, b"false".as_slice())] {
         let input = a::Answer::PullFiles { head: 7, files: Box::from([]), more };
-        let reply = response::answer(&config(), &limits(), &request, &Select::Document, &input).expect("files");
+        let reply = response::answer(
+            &config(),
+            &crate::setup::Store::new(&limits()),
+            &limits(),
+            &request,
+            &Select::Document,
+            &input,
+        )
+        .expect("files");
         assert_eq!(&*reply.body, b"[]", "more {more}");
         assert_eq!(reply.headers.len(), 1, "more {more}");
         let header = reply.headers.first().expect("one");
@@ -188,6 +217,7 @@ fn a_suffix_range_answers_206_with_the_slices_last_bytes() {
     }
     let reply = response::answer(
         &config(),
+        &crate::setup::Store::new(&limits()),
         &limits(),
         &request,
         &Select::Raw(Some(Range::Suffix(10))),
@@ -204,6 +234,7 @@ fn a_suffix_longer_than_the_slice_answers_it_all() {
     let slice = [b'x'; 112];
     let reply = response::answer(
         &config(),
+        &crate::setup::Store::new(&limits()),
         &limits(),
         &request,
         &Select::Raw(Some(Range::Suffix(100_000))),
@@ -219,6 +250,7 @@ fn a_suffix_range_over_an_empty_log_names_no_byte() {
     let request = Request::JobLog { at: at(), job: 1, attempt: 1, step: Some(3) };
     let reply = response::answer(
         &config(),
+        &crate::setup::Store::new(&limits()),
         &limits(),
         &request,
         &Select::Raw(Some(Range::Suffix(10))),
@@ -234,6 +266,7 @@ fn a_head_range_over_an_empty_log_answers_200() {
     let request = Request::JobLog { at: at(), job: 1, attempt: 1, step: Some(3) };
     let reply = response::answer(
         &config(),
+        &crate::setup::Store::new(&limits()),
         &limits(),
         &request,
         &Select::Raw(Some(Range::From { first: 0, last: Some(10) })),

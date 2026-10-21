@@ -107,6 +107,12 @@ impl Store {
         }
         None
     }
+    pub(crate) fn resolve_user(&self, config: &Config, id: u64) -> User {
+        match self.user(id) {
+            Some(user) => user,
+            None => crate::routes::user(config, id),
+        }
+    }
     #[must_use]
     pub fn token_user(&self, secret: &[u8]) -> Option<u64> {
         for token in &self.tokens {

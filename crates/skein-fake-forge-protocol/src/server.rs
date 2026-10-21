@@ -277,7 +277,7 @@ pub fn down(
         return;
     }
     let reply = match result {
-        Ok(answer) => response::answer(&service.config, &env.limits, request, &server.select, &answer),
+        Ok(answer) => response::answer(&service.config, &service.setup, &env.limits, request, &server.select, &answer),
         Err(error) => Err(error),
     };
     retire(server, service);
@@ -722,14 +722,15 @@ fn repository_scoped(request: &Request) -> bool {
 }
 fn table(service: &Service, request: &Request, user: u64) -> Option<documents::Answer> {
     match request {
-        Request::User => Some(documents::Answer::User(routes::user(&service.config, user))),
+        Request::User => Some(documents::Answer::User(service.setup.resolve_user(&service.config, user))),
         Request::ApiSettings => Some(documents::Answer::ApiSettings(document::ApiSettings {
             max_response_items: service.config.max_response_items,
             default_paging_num: service.config.default_paging_num,
         })),
-        Request::UserSearch { uid, .. } => {
-            Some(documents::Answer::Search { ok: true, data: Box::new([routes::user(&service.config, *uid)]) })
-        }
+        Request::UserSearch { uid, .. } => Some(documents::Answer::Search {
+            ok: true,
+            data: Box::new([service.setup.resolve_user(&service.config, *uid)]),
+        }),
         Request::RepoSearch { .. }
         | Request::UserRepos { .. }
         | Request::RepositoryById { .. }

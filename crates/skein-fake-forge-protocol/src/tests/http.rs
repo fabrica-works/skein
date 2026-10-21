@@ -280,6 +280,7 @@ fn ci_statuses_keep_a_null_creator_before_and_after_a_success() {
         }]));
         let reply = crate::response::answer(
             &fixtures::config(),
+            &crate::setup::Store::new(&fixtures::limits()),
             &fixtures::limits(),
             &request,
             &crate::response::Select::Document,
@@ -303,7 +304,14 @@ fn an_unpaged_thread_past_the_projection_budget_is_refused() {
     let mut limits = fixtures::limits();
     limits.documents.writer.length = 1024;
     assert_eq!(
-        crate::response::answer(&fixtures::config(), &limits, &request, &crate::response::Select::Document, &answer),
+        crate::response::answer(
+            &fixtures::config(),
+            &crate::setup::Store::new(&limits),
+            &limits,
+            &request,
+            &crate::response::Select::Document,
+            &answer
+        ),
         Err(a::Error::TooLarge)
     );
 }

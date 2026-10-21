@@ -45,7 +45,7 @@ impl Store {
                     })
                 }
             };
-            return match answers::read(config, &Request::RepositoryById { id: u64::from(id) }, &settings) {
+            return match answers::read(config, self, &Request::RepositoryById { id: u64::from(id) }, &settings) {
                 Ok(answer) => encoded(200, answer, limits),
                 Err(_) => full(limits),
             };

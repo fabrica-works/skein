@@ -1,5 +1,5 @@
 //! The fake's typed reads in Forgejo's document vocabulary (fake-forge.md, 4).
-use crate::{Config, routes};
+use crate::{Config, routes, setup::Store};
 use alloc::boxed::Box;
 use skein_fake_forge_domain::api as a;
 use skein_forge::forgejo::{document as d, id::ObjectFormat, request::Request, server::Answer};
@@ -21,12 +21,12 @@ pub fn status(state: a::Check) -> d::StatusState {
     }
 }
 #[must_use]
-pub fn issue(config: &Config, item: &a::Summary) -> d::Issue {
+pub fn issue(config: &Config, setup: &Store, item: &a::Summary) -> d::Issue {
     d::Issue {
         number: item.number,
         pull: item.kind == a::Kind::Pull,
         state: state(item.state),
-        user: routes::user(config, item.author),
+        user: setup.resolve_user(config, item.author),
         labels: item.labels.clone(),
         updated_at: Wall::from_nanos(item.updated.as_nanos()),
         title: item.title.clone(),
@@ -34,20 +34,20 @@ pub fn issue(config: &Config, item: &a::Summary) -> d::Issue {
     }
 }
 #[must_use]
-pub fn comment(config: &Config, comment: &a::Comment) -> d::Comment {
+pub fn comment(config: &Config, setup: &Store, comment: &a::Comment) -> d::Comment {
     d::Comment {
         id: comment.id,
-        user: routes::user(config, comment.author),
+        user: setup.resolve_user(config, comment.author),
         created_at: Some(Wall::from_nanos(comment.created.as_nanos())),
         updated_at: wall(comment.edited),
         body: d::Body::Kept(comment.body.clone()),
     }
 }
 #[must_use]
-pub fn review(config: &Config, review: &a::Review) -> d::Review {
+pub fn review(config: &Config, setup: &Store, review: &a::Review) -> d::Review {
     d::Review {
         id: review.id,
-        user: routes::user(config, review.author),
+        user: setup.resolve_user(config, review.author),
         state: match review.verdict {
             a::Verdict::Approve => d::ReviewState::Approved,
             a::Verdict::RequestChanges => d::ReviewState::RequestChanges,
@@ -71,10 +71,10 @@ fn repository_id(config: &Config, request: &Request) -> Option<u64> {
     None
 }
 #[must_use]
-pub fn pull(config: &Config, id: u64, pull: &a::Pull) -> d::PullRequest {
+pub fn pull(config: &Config, setup: &Store, id: u64, pull: &a::Pull) -> d::PullRequest {
     let mut reviewers = List::with_capacity(u32::try_from(pull.reviewers.len()).expect("domain bound"));
     for user in &pull.reviewers {
-        reviewers.push(routes::user(config, *user)).expect("sized reviewers");
+        reviewers.push(setup.resolve_user(config, *user)).expect("sized reviewers");
     }
     d::PullRequest {
         number: pull.number,
@@ -179,7 +179,7 @@ pub(crate) fn repository_document(
         html_url: html.finish(),
     }))
 }
-fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<Answer, a::Error> {
+fn pull_answer(config: &Config, setup: &Store, request: &Request, value: &a::Pull) -> Result<Answer, a::Error> {
     match request {
         Request::Reviews { page, .. } => {
             let (page, limit) = routes::page(config, *page);
@@ -191,7 +191,7 @@ fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<An
                 .skip(usize::try_from(skip).unwrap_or(usize::MAX))
                 .take(usize::try_from(limit).expect("u32 fits"))
             {
-                out.push(review(config, value)).expect("page cap");
+                out.push(review(config, setup, value)).expect("page cap");
             }
             Ok(Answer::Reviews(out.into_boxed()))
         }
@@ -205,6 +205,7 @@ fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<An
         }
         Request::Pull { .. } | Request::PullFor { .. } => Ok(Answer::Pull(pull(
             config,
+            setup,
             repository_id(config, request).ok_or(a::Error::Missing(a::What::Repository))?,
             value,
         ))),
@@ -269,7 +270,7 @@ fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<An
         | Request::DeleteBranch { .. } => Err(a::Error::Refused),
     }
 }
-fn checks(config: &Config, request: &Request, values: &[a::CheckSummary]) -> Result<Answer, a::Error> {
+fn checks(config: &Config, setup: &Store, request: &Request, values: &[a::CheckSummary]) -> Result<Answer, a::Error> {
     let mut rows = List::with_capacity(u32::try_from(values.len()).expect("domain bound"));
     let mut combined = None;
     for value in values {
@@ -280,7 +281,7 @@ fn checks(config: &Config, request: &Request, values: &[a::CheckSummary]) -> Res
             a::Check::Pending | a::Check::Passed => {}
         }
         rows.push(d::CommitStatus {
-            creator: if value.link.is_empty() { Some(routes::user(config, value.status.author)) } else { None },
+            creator: if value.link.is_empty() { Some(setup.resolve_user(config, value.status.author)) } else { None },
             updated_at: Wall::from_nanos(value.status.at.as_nanos()),
             context: value.status.context.clone(),
             status: status(value.status.state),
@@ -361,35 +362,35 @@ fn checks(config: &Config, request: &Request, values: &[a::CheckSummary]) -> Res
     })
 }
 
-/// A decoded read reply, translated without inspecting the fake's store.
-pub fn read(config: &Config, request: &Request, answer: &a::Answer) -> Result<Answer, a::Error> {
+/// A decoded read reply, naming users from setup and scenario configuration.
+pub fn read(config: &Config, setup: &Store, request: &Request, answer: &a::Answer) -> Result<Answer, a::Error> {
     match answer {
         a::Answer::Settings(settings) => repository(config, request, settings),
         a::Answer::Items { items, .. } => {
             let mut out = List::with_capacity(u32::try_from(items.len()).expect("domain bound"));
             for value in items {
-                out.push(issue(config, value)).expect("sized items");
+                out.push(issue(config, setup, value)).expect("sized items");
             }
             Ok(Answer::Issues(out.into_boxed()))
         }
-        a::Answer::Item { item, .. } => Ok(Answer::Issue(issue(config, item))),
+        a::Answer::Item { item, .. } => Ok(Answer::Issue(issue(config, setup, item))),
         a::Answer::Comments(values) => {
             let mut out = List::with_capacity(u32::try_from(values.len()).expect("domain bound"));
             for value in values {
-                out.push(comment(config, value)).expect("sized thread");
+                out.push(comment(config, setup, value)).expect("sized thread");
             }
             Ok(Answer::Comments(out.into_boxed()))
         }
-        a::Answer::Pull(value) => pull_answer(config, request, value),
+        a::Answer::Pull(value) => pull_answer(config, setup, request, value),
         a::Answer::Pulls(values) => {
             let id = repository_id(config, request).ok_or(a::Error::Missing(a::What::Repository))?;
             let mut out = List::with_capacity(u32::try_from(values.len()).expect("domain bound"));
             for value in values {
-                out.push(pull(config, id, value)).expect("sized pulls");
+                out.push(pull(config, setup, id, value)).expect("sized pulls");
             }
             Ok(Answer::Pulls(out.into_boxed()))
         }
-        a::Answer::Checks(values) => checks(config, request, values),
+        a::Answer::Checks(values) => checks(config, setup, request, values),
         a::Answer::Protection(value) => {
             let document = optional_protection(value.as_ref());
             if crate::route(request) == crate::Route::Protections {
@@ -401,7 +402,7 @@ pub fn read(config: &Config, request: &Request, answer: &a::Answer) -> Result<An
                 Ok(Answer::Protection(document.ok_or(a::Error::Missing(a::What::Branch))?))
             }
         }
-        a::Answer::Collaborators(values) => collaborators(config, request, values),
+        a::Answer::Collaborators(values) => collaborators(config, setup, request, values),
         a::Answer::Runs(values) => {
             let mut out = List::with_capacity(u32::try_from(values.len()).expect("domain bound"));
             for value in values {
@@ -474,7 +475,12 @@ fn optional_protection(value: Option<&a::Protection>) -> Option<d::BranchProtect
     let value = value?;
     Some(protection(value))
 }
-fn collaborators(config: &Config, request: &Request, values: &[a::Collaborator]) -> Result<Answer, a::Error> {
+fn collaborators(
+    config: &Config,
+    setup: &Store,
+    request: &Request,
+    values: &[a::Collaborator],
+) -> Result<Answer, a::Error> {
     let mut out = List::with_capacity(config.max_response_items);
     let (page, limit) = match request {
         Request::Collaborators { page, .. } => routes::page(config, *page),
@@ -545,7 +551,7 @@ fn collaborators(config: &Config, request: &Request, values: &[a::Collaborator])
     for value in
         values.iter().skip(usize::try_from(skip).unwrap_or(usize::MAX)).take(usize::try_from(limit).expect("u32 fits"))
     {
-        out.push(routes::user(config, value.user)).expect("page cap");
+        out.push(setup.resolve_user(config, value.user)).expect("page cap");
     }
     Ok(Answer::Collaborators(out.into_boxed()))
 }
