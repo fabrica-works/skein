@@ -89,3 +89,6 @@ fn back_and_forward_move_between_the_list_and_a_note() {
         Outcome::Done
     );
 }
+
+#[path = "support/live_tree.rs"]
+mod live_tree;

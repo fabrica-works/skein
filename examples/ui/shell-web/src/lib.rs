@@ -17,6 +17,8 @@ use skein_ui_web::{
 use std::{cell::RefCell, rc::Rc};
 
 mod grow;
+#[cfg(debug_assertions)]
+mod tree;
 
 const NAMES: &[Names<'_>] = &[Names {
     owner: Owner { number: 1 },
@@ -64,6 +66,11 @@ pub fn start() {
     let facts = platform::facts();
     let location = window.location();
     let path = location.pathname().expect("page path") + &location.search().expect("page query");
+    #[cfg(debug_assertions)]
+    if path.starts_with("/test/tree/") {
+        tree::start(mount, &path, facts.primary);
+        return;
+    }
     let inbox = Inbox::new();
     let fetch = fetch::web::Fetch::new(9, Rc::clone(&inbox), Report::Fetch);
     let platform = platform::Browser::new(fetch);
