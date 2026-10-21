@@ -1,8 +1,8 @@
 # Owners
 
 Provisional, 2026-10-19, revised 2026-10-21. How a draft reaches
-`main` through an owner: one session that designs the draft and
-implements it.
+`main` through an owner: one session that takes the draft there in
+milestones, each designed and then implemented.
 
 **What an owner reads:** its brief, this file, and section 1, "In one
 page", of [programming-model.md](programming-model.md) and
@@ -22,16 +22,27 @@ behind the rules, when a rule's reason matters. The repository's
   direction. It starts one owner per draft, gives the final call on what
   owners escalate, and asks the user only what it can't reasonably
   decide. Its role is [director.md](director.md).
-- **An owner** (Claude Code, Opus 5.5) designs its draft, or its part
-  of one, and then implements it. A large scope is split into parts,
-  each given to a sub-owner, a session like itself (section 3). Its
-  effort is its parent's choice (section 2). An owner whose part needs
-  little taste (tooling, hygiene, optimization) is a Codex session
-  instead, under this same file, and brings its significant code and
-  test decisions to its parent.
-- **The flow:** design, report, a brief check by the parent, its green
-  light, implementation with the QA passes the owner chooses, landings,
-  a closing note.
+- **An owner** (Claude Code, Opus 5.5) designs and implements its
+  part: its draft, or one milestone of it. Its effort is its parent's
+  choice (section 2). An owner whose part needs little taste (tooling,
+  hygiene, optimization) is a Codex session instead, under this same
+  file, and brings its significant code and test decisions to its
+  parent.
+- **Milestones.** A draft is reached through one or more milestones,
+  one after another, each an MVP built on the one before: something
+  meaningful that works on its own. The owner drives a single milestone
+  itself; with more, it gives each to a sub-owner, a session like
+  itself, and holds the whole draft's plan (section 3.1). No milestone
+  runs past 4 hours. Milestones never run in parallel; within one,
+  whatever can run in parallel does.
+- **The design is the blueprint.** A repository's `docs/design/`
+  specifies the project whole, and the code converges on it. Each
+  milestone first brings the design to what it delivers, then the code
+  (section 3.2).
+- **The flow:** the milestone plan, its check by the parent; then for
+  each milestone: design, report, a brief check by the parent, its
+  green light, implementation with the QA passes the owner chooses,
+  landings, a report at its end; at the last, a closing note.
 - **Claude for taste, Codex for the rest.** Claude's tokens are the
   scarce ones; Codex's are ample, and throughput grows with what moves
   there. The owner spends Claude on what needs taste: the design, the
@@ -50,12 +61,12 @@ behind the rules, when a rule's reason matters. The repository's
 - **Rules and guidelines.** programming-model.md, testing-strategy.md
   and the project's testing documents are rules: they shape the code
   and its tests, and a departure needs its reason, stated in the design
-  or the commit. This file is guidelines: good practice for the owner
-  to apply with judgement, case by case, as the work goes, partly,
-  later, or not at all where it doesn't pay. None of it is upfront work
-  to complete before starting.
-  What the tools enforce holds: `land` and its gate, `heavy`, the disk
-  floor.
+  or the commit. This file is guidelines, unless it says a rule: good
+  practice for the owner to apply with judgement, case by case, as the
+  work goes, partly, later, or not at all where it doesn't pay. None of
+  it is upfront work to complete before starting. What holds: its
+  rules (a milestone's cap, 3.1), and what the tools enforce: `land`
+  and its gate, `heavy`, the disk floor.
 
 ## 2. The owner's session
 
@@ -73,16 +84,20 @@ behind the rules, when a rule's reason matters. The repository's
   at xhigh under the same discipline (notes, compaction), and consult
   it on what it judges delicate. Sparingly: tokens count.
 - **Its brief** names the input (draft sections, designs, a README to
-  grow), its parent and how to reach it, its machine, its notes
+  grow; for a milestone's sub-owner, its milestone and the plan's
+  file), its parent and how to reach it, its machine, its notes
   directory, and anything the parent knows that bears on it: other
   owners' footprints, budgets, dates.
 - **Its notes** are in `~/src/rust/tmp/owners/<name>/`:
   - `notes.md`: the state, the decisions taken with their reasons, the
     open questions, and the footprint (section 4.5). Kept short and
     true: corrected, pruned, never only appended.
+  - `milestones.md`, the plan (section 3.1), kept current like the
+    notes.
   - `ledger.md`: its own and its children's session ids, its
     implementers' sessions and Codex threads, each landing's commit, and
-    the start and end times. The director computes the cost from it.
+    the start and end times, its own and each milestone's. The director
+    computes the cost from it.
   - `inbox/`: its children's reports and questions.
 - **After a compaction or a restart,** it reads its brief and its notes
   first.
@@ -93,8 +108,84 @@ behind the rules, when a rule's reason matters. The repository's
   Between designing and implementing, it may write its notes and go on
   in a fresh session rather than carry the design conversation.
 
-## 3. Designing
+## 3. Milestones and design
 
+### 3.1 Milestones
+
+- **One or more, in sequence.** The owner reaches its draft through
+  milestones, one after another, each an MVP on the one before: a
+  piece of the draft's goal that means something on its own and works,
+  shown by a story that runs it. Wherever a meaningful piece can be
+  delivered alone, there is a candidate milestone, and the draft's end
+  is reached through a series of them.
+- **The draft's own.** When the draft lists its milestones, they are
+  adopted. The owner may split one; merging, reordering or changing
+  what one delivers changes the draft's expectations, and goes to its
+  parent (section 5).
+- **The plan,** in `milestones.md` in the owner's notes, before the
+  first milestone: a rough design of the whole draft, and the
+  milestones, each with the MVP it delivers and the story that shows
+  it, the design documents it adds or changes, and its rough size. The
+  rough design settles early what would be hard to reverse (a stored
+  format, an interface between repositories, a protocol's shape), so
+  that no milestone has to undo an earlier one's; the rest waits for
+  its milestone's design. The plan is the owner's first report to its
+  parent, in at most 15 lines beside the file, checked as a design is
+  (3.3). With a single milestone, the plan is a line of the design's
+  report.
+- **Who drives.** With one milestone, the owner drives it. With more,
+  each goes to a sub-owner, started with a brief once the milestone
+  before has ended (below). The owner keeps the plan and the whole
+  draft's picture: it checks each milestone's design, answers its
+  sub-owner, and reports to its parent. A sub-owner starts no
+  sub-owner of its own, and no two milestones are designed or
+  implemented at once. A parent keeps its children on its own machine,
+  where SendMessage reaches them.
+- **Parallel within.** Inside a milestone, whatever can run in parallel
+  does (4.1): that is where an owner finds its throughput.
+- **The plan moves** as the work teaches. Most often, a milestone
+  turns out too large or too long, from a finding or a change not known
+  before, and is split. A sub-owner that sees its milestone won't fit the cap asks
+  its parent for the split early, rather than run into the cap. The
+  owner changes the plan, and says so in its next report.
+- **The cap, a rule: 4 hours.** No milestone runs past 4 hours of wall
+  time, from its start, its design included, to its end, as the ledger
+  records them. Milestones are planned at 2 to 3 hours, so that the cap
+  leaves room. A milestone at its cap pauses: it starts no task, job,
+  landing or repin, and what runs finishes untouched (a pause,
+  director.md 6). Its owner escalates through its parent to the
+  director (section 5): what has landed, the cause, the options (most
+  often a split: what has landed as the milestone, the rest as the
+  next) and a recommendation. It resumes on the answer.
+- **A milestone ends** when what it delivers has landed. The end is a
+  checkpoint:
+  - its owner updates `STATUS.md` (4.4) and reports to its parent in at
+    most 10 lines: what the MVP now does, the commits, its time against
+    the cap, and what comes next. The owner passes it on to the
+    director;
+  - a QA pass on what has landed may start (4.6), beside the next
+    milestone, which starts at once. The ended milestone's sub-owner
+    judges the pass and lands its fixes, then writes its closing note
+    (section 6).
+
+### 3.2 Designing a milestone
+
+- **One milestone at a time.** A milestone's owner designs fully what
+  its milestone delivers, within the plan's rough design, and no
+  further: a later milestone's design waits for that milestone.
+- **The design is the blueprint.** A repository's `docs/design/`
+  specifies the project whole: in principle, its code could be
+  regenerated from it alone. It holds whatever a regeneration could
+  change that we would mind: the public APIs and the boundaries between
+  parts, the behaviours, the protocols, the stored formats, the crates'
+  layout, the test worlds and their stories. What it leaves out is the
+  implementer's choice. The code lags behind the design and converges
+  on it, and `docs/design/STATUS.md` says how far it is (4.4).
+- **New documents or existing ones.** A milestone changes in place the
+  documents that own the areas it touches, and adds one for an area
+  that has none. Each describes the project as designed, never a
+  milestone's change: the change is in `STATUS.md`'s row ("Takes the
+  design to") and in the commits.
 - **The owner is its part's designer.** It writes the design documents
   in `docs/design/` and lands them with `land --docs` (4.4), from a
   worktree on a branch. The house style:
@@ -115,30 +206,29 @@ behind the rules, when a rule's reason matters. The repository's
   recommendation.
 - **Reviews are its own choice:** none, or a cheap sub-agent's where the
   risk warrants one.
-- **Splitting.** When the scope is too large for one context, the owner
-  splits it into parts with their dependencies, like a jig task tree.
-  For each, it writes the input (the draft's sections, or the aggregate
-  design's README that the parts grow), and starts a sub-owner with a
-  brief: together for parts that stand alone, in turn for parts that
-  depend on another. The sub-owner designs its part. Split only for a
-  part that needs a design of its own: implementers, not sub-owners,
-  make implementation parallel. A parent keeps its children on its own
-  machine, where SendMessage reaches them.
-- **The report.** When its design has landed, the owner writes to its
-  parent, in at most 15 lines: what is designed and where, the commits,
-  where it departs from the draft, what is open, and how it means to
-  implement.
+
+### 3.3 The report and the check
+
+- **The report.** When a milestone's design has landed, its owner
+  writes to its parent, in at most 15 lines: what is designed and
+  where, the commits, where it departs from the draft or the plan, what
+  is open, and how it means to implement, with what will run in
+  parallel.
 - **The parent's check** is brief: the report and the design's summary,
-  against the draft's direction, not a review. It answers with a green
-  light, or names the obvious departures to amend.
+  or the plan, against the draft's direction, not a review. It answers
+  with a green light, or names the obvious departures to amend.
 
 ## 4. Implementing
 
 ### 4.1 The shape
 
 After the green light, the owner implements directly what is small.
-Otherwise it breaks the work into tasks, all upfront, as it goes, or
-both, and prepares the next tasks while implementers work.
+Otherwise it breaks the milestone into tasks, all upfront, as it goes,
+or both. Whatever can run in parallel does, and the owner shapes the
+tasks so that more can: tasks that don't wait on each other go out
+together, up to the implementers its machine takes (its brief says how
+many), investigations and surveys run beside them, and the next tasks
+are prepared while implementers work.
 
 These guidelines (section 1) serve its tasks, applied as the work goes
 and where they pay:
@@ -170,8 +260,9 @@ real thing on both sides, as soon as the far side can answer, and each
 task grows it. Neither side runs ahead of the other. Where their
 vocabularies differ, the translation is exhaustive from the first
 types, so that drift is a build error the day it happens. A fake's
-scenarios also run against the real side. A parent whose sub-owners
-build the two sides orders their parts so that they meet early.
+scenarios also run against the real side. A plan whose milestones build
+two sides that meet has them meet in the first milestone that builds
+either.
 
 ### 4.2 The implementer
 
@@ -295,7 +386,8 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
 An owner or a sub-owner may give its part QA passes while it
 implements, or decide that none is warranted. It decides only when: when
 to start its tester, resume it after more has landed, stop it, and when
-it is happy with what the passes have done.
+it is happy with what the passes have done. A milestone's end is the
+natural point for one, beside the next milestone (3.1).
 
 - **The tester** is a Codex session by default (section 1), of the
   owner's choice of model and effort, with its notes beside the owner's, in `qa/`. It reads the
@@ -349,6 +441,8 @@ directory, in at most half a page:
 - what landed, with its commits;
 - the wall time from its start to its last landing, and its ledger's
   sessions;
+- with more than one milestone, each one's time against the cap, and
+  how the plan changed and why;
 - for a world it added to, the test time at its start and at its end;
 - its QA passes: how many, what they found, and the tests left ignored;
 - what went well and what didn't, in this process.

@@ -127,8 +127,9 @@ runs.
   - its input: the draft with its commit, what the draft names, what
     is adopted and what is left open, the scope;
   - why it matters, in the user's words where there are some;
-  - how to start: design first, the report in parts where that is
-    faster;
+  - how to start: the milestone plan, with the draft's milestones
+    where it lists them (owners.md 3.1), then the first milestone's
+    design, the report in parts where that is faster;
   - who is near: the other owners' footprints, and that repins and API
     breaks go through the director;
   - how it spends: Claude for taste, Codex for the rest, with the
@@ -140,9 +141,10 @@ runs.
     how many implementers at once, where it lands from;
   - its notes, and that it re-reads the brief after a compaction;
   - how it reaches the director (section 5), and when it writes: at
-    the start (its plan, order and footprint), with its design report,
-    with each question (its options and a recommendation), at each
-    landing another owner waits on (its hash), and at the end;
+    the start (its milestone plan and footprint), with each design
+    report, at each milestone's end, with each question (its options
+    and a recommendation), at a milestone's cap, at each landing
+    another owner waits on (its hash), and at the end;
   - "Never use AskUserQuestion."
 - **The record:** a row in `notes/owners.md`, a decision and a log
   line. The owner's ledger gives its cost (owners.md, 2).
@@ -189,8 +191,12 @@ runs.
 
 ## 6. Answering owners
 
-- **A design report** gets owners.md 3's brief check, and a green light
-  or the amendments.
+- **A plan or a design report** gets owners.md 3.3's brief check, and
+  a green light or the amendments. A milestone's end updates the
+  owner's row in `notes/owners.md`.
+- **A milestone at its cap** waits, paused (owners.md 3.1), for an
+  answer decided like any question's: a split, more time, or a change
+  of course. Whether the user hears of it is section 8's call.
 - **A question** gets an answer from the direction, recorded as a
   decision. What is small and reversible the director decides even when
   it touches another owner's files, and tells that owner.
