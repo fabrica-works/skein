@@ -668,3 +668,137 @@ fn closing_an_active_call_discards_it_and_ends_its_socket() {
     assert!(h.peers.is_empty(), "no socket owned");
     assert!(h.answered(1).is_none(), "no call answer after Close");
 }
+
+#[test]
+fn json_body_demands_are_batched_across_bounded_pumps() {
+    use crate::connection::Phase;
+    use skein_forge::forgejo::request;
+    // Many structural bytes exceed one pump's 64 movements while the
+    // whole body fits the local intake. Whitespace after the object must
+    // be checked before the HTTP terminal is consumed.
+    let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(180, b' '), br#"]}"#]);
+    let response = fixtures::ok(&body);
+    let mut h = fixtures::ConnectionHarness::new();
+    h.connection
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(request::Request::User, None))
+        .expect("user request");
+    let heard = h.buffered_answer(&response, response.len(), false);
+    user_decoded(&heard);
+    assert_eq!(h.connection.phase, Phase::Idle);
+    assert!(!h.connection.ready(), "no ready work after the terminal");
+    assert!(h.local_pumps > 1, "buffered work survives a pump boundary");
+    assert_eq!(h.body_demands, 1, "one buffered body batch");
+}
+
+fn user_decoded(heard: &skein_lib::List<crate::connection::Heard>) {
+    use crate::connection::Heard;
+    use skein_forge::forgejo::plans;
+    assert_eq!(heard.len(), 2, "one head and one terminal: {heard:?}");
+    assert_eq!(
+        heard.get(1),
+        Some(&Heard::Forgejo(plans::Heard::Done(plans::Body::Document(d::Document::User(d::User {
+            id: 2,
+            login: Box::from(&b"writer"[..]),
+            is_admin: false,
+            full_name: Box::from([]),
+        }))))),
+        "complete decoded body"
+    );
+}
+
+fn user_request(h: &mut fixtures::ConnectionHarness) {
+    h.connection
+        .start(
+            &h.env,
+            &h.forge,
+            fixtures::USER_AGENT,
+            fixtures::forgejo_exchange(skein_forge::forgejo::request::Request::User, None),
+        )
+        .expect("user request");
+}
+
+#[test]
+fn json_body_fragments_and_final_bytes_precede_end() {
+    let response = fixtures::ok(br#"{"id":2,"login":"wri\u0074er","ignored":false}"#);
+    for chunk in [1, 4, 1024] {
+        for fragment in [1, 7, response.len()] {
+            for eof in [false, true] {
+                let mut h = fixtures::ConnectionHarness::with_chunk(chunk);
+                user_request(&mut h);
+                let heard = h.buffered_answer(&response, fragment, eof);
+                user_decoded(&heard);
+                assert!(!h.connection.ready(), "chunk{chunk}/fragment{fragment}/eof{eof}: no residual work");
+                assert!(h.body_demands > 0, "body read");
+            }
+        }
+    }
+}
+
+#[test]
+fn json_body_batches_cross_intake_boundaries_and_reuse_cleanly() {
+    let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(2500, b' '), br#"]}"#]);
+    let response = fixtures::ok(&body);
+    let mut h = fixtures::ConnectionHarness::new();
+    user_request(&mut h);
+    user_decoded(&h.buffered_answer(&response, response.len(), false));
+    let capacity = usize::try_from(h.env.limits.chunk).expect("chunk fits");
+    assert_eq!(usize::try_from(h.body_demands).expect("count fits"), body.len().div_ceil(capacity));
+    assert!(h.local_pumps > 2, "local work survives repeated 64-movement caps");
+    assert_eq!(h.connection.phase, crate::connection::Phase::Idle);
+    // A second exchange has no held bytes, end or demand from the first.
+    user_request(&mut h);
+    user_decoded(&h.buffered_answer(&fixtures::user_ok(), 7, false));
+    assert_eq!(h.connection.phase, crate::connection::Phase::Idle);
+}
+
+#[test]
+fn closing_with_a_partial_json_batch_drops_local_work() {
+    let response = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{\"id\":2,\"login\":\"wri";
+    let mut h = fixtures::ConnectionHarness::new();
+    user_request(&mut h);
+    let heard = h.buffered_answer(response, response.len(), false);
+    assert_eq!(heard.len(), 1, "only the head before the incomplete string");
+    assert!(!h.connection.ready(), "waits for bytes, not a local spin");
+    h.connection.close(true, &mut h.io);
+    h.connection.stream(&h.env, skein_lib::stream::Up::End);
+    h.pump();
+    assert!(!h.connection.ready(), "close leaves no local work");
+    assert!(h.connection.heard().is_none(), "no answer after close");
+}
+
+#[test]
+#[expect(
+    clippy::print_stdout,
+    clippy::disallowed_macros,
+    reason = "report the local intake peak and teardown for the memory ledger"
+)]
+fn json_body_intakes_fit_the_worst_case_and_release_on_teardown() {
+    let bound = crate::limits::worst_case(
+        &fixtures::limits(),
+        &fixtures::shared(),
+        crate::limits::Forges { forgejo: 1, github: 0 },
+        0,
+    )
+    .expect("complete bound");
+    let span = skein_heap::Span::start();
+    {
+        let mut connections = skein_lib::List::with_capacity(fixtures::limits().connections);
+        for _ in 0..fixtures::limits().connections {
+            let mut h = fixtures::ConnectionHarness::new();
+            user_request(&mut h);
+            let body = joined(&[br#"{"id":2,"login":"writer","ignored":["#, &fixtures::filled(2500, b' '), br#"]}"#]);
+            let response = fixtures::ok(&body);
+            user_decoded(&h.buffered_answer(&response, response.len(), false));
+            connections.push(h).expect("all configured connections");
+        }
+        for at in 0..connections.len() {
+            let h = connections.get_mut(at).expect("configured connection");
+            h.connection.close(false, &mut h.io);
+            assert!(!h.connection.ready(), "closed connections do not spin");
+        }
+    }
+    let grown = span.end();
+    assert_eq!(grown.net, 0, "all fixture and local intake allocations released");
+    assert!(u64::try_from(grown.peak).expect("positive peak") <= bound, "{} <= {bound}", grown.peak);
+    println!("JSON intake fixture peak={} bound={bound} teardown_net={}", grown.peak, grown.net);
+}

@@ -170,6 +170,19 @@ check it with; a listener that is not a loopback IP socket; a word that is not
 DNS name or an IP address, and either makes a `Host`. The check makes
 each forge's `Host` as its requests will (3.1), for 7.4's head.
 
+JSON response bodies pass through a connection-local intake. It reads
+what has arrived from HTTP, at most the remaining intake room, and meets
+the tokenizer's finer demands locally. There is at most one body read
+outstanding below. HTTP retains responsibility for framing and the body
+bound, so read-ahead cannot cross a response. Header lines and raw bodies
+keep their own demands.
+
+A pump routes at most 64 child-machine movements. At that boundary,
+local work remains ready or its answer remains queued. Held bytes meet
+the tokenizer before its end is delivered; queued HTTP terminal events
+are consumed before another refill is requested. Closing, discarding or
+reusing an exchange clears its local bytes and demand state.
+
 ### 3.3 Each forge's start
 
 A forge's start begins at each connect (3.5). Calls for a forge wait
@@ -668,7 +681,9 @@ The component's own; their values are the owner's.
   the body read, streamed, so it caps time and bytes, not memory;
   `depth`, the JSON nesting followed (Forgejo's documents need about 8);
   `chunk`, the most text of a string demanded at once, and the most one
-  read of a delivery takes.
+  read of a delivery takes. A JSON response intake holds `max(chunk, 5)`
+  bytes, enough for a tokenizer chunk or its largest literal; each refill
+  is bounded by its remaining room.
 - **What is kept,** the dialect's (forge.md, section 4.1):
   `string_bytes`, `body_bytes`, `inner` and `target_bytes`.
 - **Time:** `deadline`, a call's and each request's of a forge's own,
@@ -734,7 +749,8 @@ Each refusal names both limits:
 It is the sum of:
 
 - for each of `connections`: its stack, its intake and output caps, its
-  decoder and the answer as it is built (twice `answer_bytes`, for a
+  connection-local JSON intake and one delivery overlap, each at
+  `max(chunk, 5)`, its decoder and the answer as it is built (twice `answer_bytes`, for a
   body kept raw while it grows), TLS priced on every connection, since
   the bound knows each kind's count, not their transports;
 - with a GitHub forge configured, for each call or forge-owned connection:

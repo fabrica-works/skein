@@ -531,6 +531,8 @@ pub struct ConnectionHarness {
     pub forge: Forge,
     pub io: Queue<skein_io::Request>,
     pub sent: Box<[u8]>,
+    pub body_demands: u32,
+    pub local_pumps: u32,
 }
 impl ConnectionHarness {
     pub fn new() -> Self {
@@ -546,14 +548,30 @@ impl ConnectionHarness {
         forge.access = None;
         Self::with_forge(forge, shared)
     }
+    pub fn with_chunk(chunk: u32) -> Self {
+        let forge = settings().forges.into_boxed().into_iter().next().expect("one forge");
+        let mut limits = limits();
+        limits.chunk = chunk;
+        Self::with_forge_limits(forge, shared(), limits)
+    }
     fn with_forge(forge: Forge, shared: Shared) -> Self {
-        let limits = limits();
+        Self::with_forge_limits(forge, shared, limits())
+    }
+    fn with_forge_limits(forge: Forge, shared: Shared, limits: Limits) -> Self {
         let mut connection =
             crate::connection::Connection::new(&forge, &limits, shared, Time::from_nanos(10_000_000_000));
         connection.socket = Some(skein_lib::Token::new(100));
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         connection.connect(&env);
-        Self { connection, env, forge, io: Queue::with_capacity(32), sent: Box::from([]) }
+        Self {
+            connection,
+            env,
+            forge,
+            io: Queue::with_capacity(32),
+            sent: Box::from([]),
+            body_demands: 0,
+            local_pumps: 0,
+        }
     }
     pub fn pump(&mut self) {
         self.connection.pump(&self.env, &mut self.io, 16);
@@ -564,6 +582,82 @@ impl ConnectionHarness {
             match event {
                 crate::connection::Heard::Forgejo(event) => heard.push(event).expect("fixture events fit"),
                 crate::connection::Heard::GitHub(_) => unreachable!("Forgejo harness answer"),
+            }
+        }
+        heard
+    }
+    /// The existing connection fixture with a buffered or fragmented peer body.
+    pub fn buffered_answer(&mut self, response: &[u8], fragment: usize, eof: bool) -> List<crate::connection::Heard> {
+        use skein_lib::stream::{Down, Read, Up};
+        let mut intake = skein_lib::Intake::with_capacity(shared().io.intake);
+        let mut at = 0_usize;
+        let mut pending = None;
+        let mut ended = false;
+        let mut heard = List::with_capacity(16);
+        for _ in 0_u32..1024 {
+            if self.connection.ready() && self.io.is_empty() {
+                self.local_pumps = self.local_pumps.saturating_add(1);
+            }
+            self.pump();
+            for _ in 0..self.io.len() {
+                match self.io.pop().expect("queued request") {
+                    skein_io::Request::Stream { down, .. } => match down {
+                        Down::Demand { read: Read::Nothing, room: 0 } => {
+                            assert!(pending.take().is_some(), "withdraw an outstanding read");
+                        }
+                        Down::Demand { read, room } => {
+                            assert!(pending.is_none(), "one read below at a time");
+                            let body = match read {
+                                Read::Nothing => false,
+                                Read::Scan { until, .. } => until != skein_lib::stream::Delimiter::LF,
+                                Read::Fill(_) | Read::Line { .. } | Read::Arrived { .. } => true,
+                            };
+                            self.body_demands = self.body_demands.saturating_add(u32::from(body));
+                            pending = Some((read, room));
+                        }
+                        Down::Send(bytes) => self.sent = bytes,
+                        Down::Finish => {}
+                    },
+                    skein_io::Request::Listen { .. }
+                    | skein_io::Request::Connect { .. }
+                    | skein_io::Request::Bind { .. }
+                    | skein_io::Request::Reject { .. }
+                    | skein_io::Request::Output { .. }
+                    | skein_io::Request::Spawn { .. }
+                    | skein_io::Request::Signal { .. }
+                    | skein_io::Request::Usage { .. }
+                    | skein_io::Request::Window { .. }
+                    | skein_io::Request::Close { .. }
+                    | skein_io::Request::Abort { .. } => unreachable!("one connection emits stream requests"),
+                }
+            }
+            if at < response.len() {
+                let end = at.saturating_add(fragment).min(response.len());
+                assert!(end > at, "positive fixture fragments");
+                intake.append(response.get(at..end).expect("fixture fragment")).expect("response capacity");
+                at = end;
+            }
+            if let Some((read, room)) = pending {
+                if let Some(bytes) = intake.meet(read) {
+                    pending = None;
+                    self.connection.stream(&self.env, Up::Bytes(bytes));
+                } else if room > 0 {
+                    pending = None;
+                    self.connection.stream(&self.env, Up::Room);
+                }
+            }
+            // A terminal may accompany the final byte delivery, before the
+            // connection pumps either of HTTP's resulting events.
+            if eof && !ended && at == response.len() && intake.is_empty() {
+                ended = true;
+                self.connection.stream(&self.env, Up::End);
+            }
+            for _ in 0..16 {
+                let Some(event) = self.connection.heard() else { break };
+                heard.push(event).expect("fixture events fit");
+            }
+            if !self.connection.ready() && pending.is_none() && at == response.len() {
+                break;
             }
         }
         heard

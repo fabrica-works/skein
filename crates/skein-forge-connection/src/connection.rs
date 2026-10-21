@@ -30,7 +30,7 @@ use skein_forge::forgejo::{client as documents, request};
 use skein_http::client as http;
 use skein_json::tokenizer;
 use skein_lib::{
-    Env, List, Queue, Secret, Time, Token, Writer, bytes,
+    Env, Intake, List, Queue, Secret, Time, Token, Writer, bytes,
     stream::{Down, Read, Up},
 };
 /// A component-selected request and its complete Authorization value.
@@ -127,6 +127,10 @@ pub(crate) struct Connection {
     json_up: Queue<tokenizer::Event>,
     json_down: Queue<Down>,
     json_next: Option<tokenizer::Request>,
+    json_intake: Intake,
+    json_read: Option<Read>,
+    json_below: bool,
+    json_ended: bool,
     heard: Queue<Heard>,
     request: Option<Request>,
     receive: Receiving,
@@ -183,6 +187,10 @@ impl Connection {
             json_up: Queue::with_capacity(8),
             json_down: Queue::with_capacity(8),
             json_next: None,
+            json_intake: Intake::with_capacity(l.chunk.max(5)),
+            json_read: None,
+            json_below: false,
+            json_ended: false,
             heard: Queue::with_capacity(16),
             request: None,
             receive: Receiving::Empty,
@@ -284,6 +292,7 @@ impl Connection {
                 .push(skein_http::Header { name: Box::from(&b"Range"[..]), value: value.finish() })
                 .expect("five Forgejo header fields");
         }
+        self.clear_json_body();
         self.json_limits = limits::documents(&env.limits).json;
         self.request = Some(request);
         self.upload = upload;
@@ -321,6 +330,7 @@ impl Connection {
     }
     pub fn discard_redirect(&mut self, env: &Env<Limits>) {
         if self.phase == Phase::Reading {
+            self.clear_json_body();
             self.draining = true;
             self.receive = Receiving::Empty;
             self.json_next = None;
@@ -413,7 +423,7 @@ impl Connection {
                 continue;
             }
             if let Some(down) = self.json_down.pop() {
-                self.http_down(env, http::Request::Body(down));
+                self.json_demand(env, down);
                 continue;
             }
             if let Some(request) = self.json_next.take() {
@@ -424,12 +434,65 @@ impl Connection {
                 self.json_event(env, event);
                 continue;
             }
+            if self.pump_json_body(env) {
+                continue;
+            }
             if let Some(event) = self.http_up.pop() {
                 self.http_event(env, event);
                 continue;
             }
             break;
         }
+    }
+    fn clear_json_body(&mut self) {
+        self.json_intake.clear();
+        self.json_read = None;
+        self.json_below = false;
+        self.json_ended = false;
+    }
+    fn json_demand(&mut self, env: &Env<Limits>, down: Down) {
+        match down {
+            Down::Demand { read, room } => {
+                assert_eq!(room, 0, "JSON bodies only read");
+                if read == Read::Nothing {
+                    self.json_read = None;
+                    self.json_intake.clear();
+                    if self.json_below {
+                        self.json_below = false;
+                        self.http_down(env, http::Request::Body(Down::Demand { read, room: 0 }));
+                    }
+                } else {
+                    assert!(self.json_read.is_none(), "one tokenizer demand at a time");
+                    self.json_read = Some(read);
+                }
+            }
+            Down::Send(_) | Down::Finish => unreachable!("JSON bodies only read"),
+        }
+    }
+    /// One local answer or refill is one of the pump's bounded movements.
+    fn pump_json_body(&mut self, env: &Env<Limits>) -> bool {
+        let Some(read) = self.json_read else { return false };
+        let event = if let Some(bytes) = self.json_intake.meet(read) {
+            Up::Bytes(bytes)
+        } else if self.json_ended {
+            self.json_intake.clear();
+            Up::End
+        } else {
+            // HTTP may already have its final Bytes, End and Done queued.
+            // Consume those before asking its body stream for another read.
+            if self.json_below || !self.http_up.is_empty() {
+                return false;
+            }
+            let max = self.json_intake.room();
+            assert!(max > 0, "a full intake meets every tokenizer demand");
+            self.json_below = true;
+            self.http_down(env, http::Request::Body(Down::Demand { read: Read::Arrived { max }, room: 0 }));
+            return true;
+        };
+        self.json_read = None;
+        let j = Env { now: env.now, wall: env.wall, limits: self.json_limits };
+        tokenizer::up(&mut self.json, &j, event, &mut self.json_up, &mut self.json_down);
+        true
     }
     fn send(&mut self, down: Down, io: &mut Queue<skein_io::Request>) {
         if sending(&down) && self.request.is_some() {
@@ -459,10 +522,19 @@ impl Connection {
         match event {
             http::Event::Response(response) => self.response(env, response),
             http::Event::Body(event) => match &mut self.receive {
-                Receiving::Json(_) => {
-                    let j = Env { now: env.now, wall: env.wall, limits: self.json_limits };
-                    tokenizer::up(&mut self.json, &j, event, &mut self.json_up, &mut self.json_down);
-                }
+                Receiving::Json(_) => match event {
+                    Up::Bytes(bytes) => {
+                        assert!(self.json_below, "one answer to a JSON body refill");
+                        self.json_below = false;
+                        self.json_intake.append(&bytes).expect("refill fits the remaining intake room");
+                    }
+                    Up::End => {
+                        self.json_below = false;
+                        self.json_ended = true;
+                    }
+                    Up::Failed(_) => self.failed(Failure::Seen),
+                    Up::Room => unreachable!("JSON bodies only read"),
+                },
                 Receiving::Empty => {
                     drop(event);
                 }
@@ -530,6 +602,7 @@ impl Connection {
                     }
                 };
                 let close = reuse == http::Reuse::Close || done.closes();
+                self.clear_json_body();
                 self.finished(done);
                 self.request = None;
                 self.upload = None;
@@ -764,6 +837,7 @@ impl Connection {
             JsonStep::Done(body) => self.done = Some(body),
             JsonStep::Malformed(decode::Malformed::Json(tokenizer::Error::Stream(_))) => self.failed(Failure::Seen),
             JsonStep::Malformed(error) => {
+                self.clear_json_body();
                 self.receive = Receiving::Empty;
                 self.phase = Phase::Closed;
                 self.deadline = None;
@@ -805,6 +879,7 @@ impl Connection {
         if self.phase == Phase::Closed {
             return;
         }
+        self.clear_json_body();
         self.phase = Phase::Closed;
         self.deadline = None;
         self.request = None;
@@ -834,6 +909,7 @@ impl Connection {
         if self.closing {
             return;
         }
+        self.clear_json_body();
         self.phase = Phase::Closed;
         self.deadline = None;
         self.request = None;
@@ -861,6 +937,7 @@ impl Connection {
             || !self.json_down.is_empty()
             || !self.heard.is_empty()
             || self.json_next.is_some()
+            || (self.json_read.is_some() && !self.json_below)
     }
     pub fn keep_after(&mut self, after: u64) {
         self.after = after;

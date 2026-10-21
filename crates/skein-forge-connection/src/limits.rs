@@ -753,6 +753,10 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: Forges, owned_bytes: u64) -> O
         .checked_add(raw)?
         // A GitHub connection retains one boxed request, retention and comparison.
         .checked_add(exchange)?
+        // The local JSON intake and the delivery copied from it can coexist.
+        // HTTP already counts the incoming refill's box.
+        .checked_add(Intake::worst_case(l.chunk.max(5))?)?
+        .checked_add(u64::from(l.chunk.max(5)))?
         .checked_add(crate::connection::routing_bytes()?)?
         .checked_add(u64::from(l.tls.send.max(s.io.output)))?
         .checked_add(u64::from(l.body_bytes).checked_mul(6)?.checked_add(1024)?)?
