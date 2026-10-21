@@ -45,8 +45,8 @@ doing now is in its notes (section 3), never here.
   Code's auto-memory for `~/src/rust` is the director's: it carries the
   user's standing preferences and the machines' facts. Owners run with
   it off (owners.md, 2).
-- **Its timers** live in the session: a new session starts them, and a
-  fresh context (below) replaces them:
+- **Its timers** live in the session: a new session starts them, and
+  they stop for a compaction or a fresh context (below):
   - a cron, `17 */2 * * *`, recurring, with the prompt "Director's
     2-hour check: section 7 of skein's docs/foundation/director.md.";
   - the watcher, `tmp/director/watch.sh`, as a background task, started
@@ -57,13 +57,16 @@ doing now is in its notes (section 3), never here.
   - each check starts with `tmp/director/session.sh`, one line with the
     context's size, compactions and checks since it began, and a
     verdict. At "compact first", from 120k, it compacts before the
-    check: it runs `tmp/director/context.sh compact "<what to keep>"`
-    and ends its turn. The script types `/compact` into the session
-    through `claude attach` (a scheduled `/compact` would reach it as
-    plain text), then "Director's check, after compaction: section 7
-    of skein's docs/foundation/director.md.", which runs the check on
-    the fresh context, after its notes (section 3). The cron and the
-    watcher survive a compaction;
+    check: it stops the watcher, deletes the cron, runs
+    `tmp/director/context.sh compact "<what to keep>"` and ends its
+    turn. The script waits for the session to be idle, which it never
+    is while a cron or a background task is registered, types
+    `/compact` into it through `claude attach` (a scheduled `/compact`
+    would reach it as plain text), then "Director's check, after
+    compaction: section 7 of skein's docs/foundation/director.md.",
+    which runs the check on the fresh context, after its notes and the
+    timers (section 3). Should the script fail, it types the failure
+    into the session;
   - crossing 150k between checks compacts there, by itself;
   - compacting more often than every two hours means it reads too
     much: Codex reads for it (section 9).
@@ -78,11 +81,11 @@ doing now is in its notes (section 3), never here.
   direction, the budgets, what waits on the user), writes
   `notes/handover.md` with what only it holds (what is in flight, what
   is held, the items between owners), logs the handover, stops the
-  watcher, runs `tmp/director/context.sh clear` and ends its turn. The
-  script types `/clear`, then the starting prompt above. The fresh
-  context reads its notes (section 3), replaces the cron, which
-  survives the clear, and starts the watcher. Should the clear fail,
-  the old cron wakes the old context at the next check.
+  watcher, deletes the cron, runs `tmp/director/context.sh clear` and
+  ends its turn. The script types `/clear`, then the starting prompt
+  above. The fresh context reads its notes (section 3) and starts the
+  cron and the watcher. Should the clear fail, the script types the
+  failure into the old context.
 - **Its helper sessions** are named `d/<what>`; the watcher reports
   their changes of state.
 
@@ -277,7 +280,7 @@ is mechanical, and Codex reads what needs reading.
 4. **Next:** which work in `notes/direction.md` gets an owner, and
    where (section 4). Act.
 5. **Record:** update `notes/`, add to `decisions.md` and `log.md`,
-   and make sure the watcher runs.
+   and make sure the cron and the watcher run.
 6. **Push the user** only for what needs them.
 
 ## 8. The user
