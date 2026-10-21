@@ -129,8 +129,8 @@ runs.
   - why it matters, in the user's words where there are some;
   - how to start: design first, the report in parts where that is
     faster;
-  - who is near: the other owners' footprints, the shared numbers, and
-    that repins and API breaks go through the director;
+  - who is near: the other owners' footprints, and that repins and API
+    breaks go through the director;
   - how it spends: Claude for taste, Codex for the rest, with the
     commands;
   - its tests: the testing documents, where its stories go, and that a
@@ -201,13 +201,6 @@ runs.
   ride one ordered repin, and each owner adapts the downstream code to
   its own change. An upstream change that breaks a downstream build
   waits for the director's word.
-- **Shared numbers** (a protocol's version, a store's or a record's)
-  are taken by one change at a time, and an owner asks before taking
-  one. They are judged against the last deployment, the user's box: a
-  number still equal to the deployed one takes +1 on its next change;
-  one already past it changes in place. When the deployment moves, the
-  director reads its pins and numbers, and tells the next owner to
-  repin which changes since then need another +1.
 - **Budgets and timeouts are the user's** (testing-strategy.md, 8).
   Moving a test to escape a ceiling, such as from a fixed case to the
   fuzzy suite, is raising one by another name.
