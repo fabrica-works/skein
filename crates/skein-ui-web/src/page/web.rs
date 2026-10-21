@@ -251,8 +251,48 @@ impl Mounted {
             observer.observe(element);
         }
     }
+    fn affected_trees(&self, op: &Op, trees: &mut Vec<NodeId>) {
+        let mut affected = Vec::new();
+        match op {
+            Op::Insert { parent, .. } if *parent != NodeId(0) => {
+                affected.push(self.group(*parent).element);
+            }
+            Op::Move { node, parent, .. } => {
+                if *parent != NodeId(0) {
+                    affected.push(self.group(*parent).element);
+                }
+                if let Some(parent) = self
+                    .group(*node)
+                    .element
+                    .parent_element()
+                    .and_then(|parent| parent.closest("[data-node]").expect("parent selector"))
+                {
+                    affected.push(parent);
+                }
+            }
+            Op::Remove { node } | Op::Replace { node, .. } | Op::Attributes { node, .. } => {
+                let element = self.group(*node).element;
+                affected.push(element.clone());
+                if let Some(parent) =
+                    element.parent_element().and_then(|parent| parent.closest("[data-node]").expect("parent selector"))
+                {
+                    affected.push(parent);
+                }
+            }
+            _ => {}
+        }
+        for element in affected {
+            if let Some(node) = self.id(&element)
+                && !trees.contains(&node)
+            {
+                trees.push(node);
+            }
+        }
+    }
     fn apply(&self, ops: &[Op]) {
+        let mut trees = Vec::new();
         for op in ops {
+            self.affected_trees(op, &mut trees);
             match op {
                 Op::Insert { node, parent, before, element } => self.insert(*node, *parent, *before, element),
                 Op::Remove { node } => self.remove(*node),
@@ -303,6 +343,14 @@ impl Mounted {
                     let element = self.group(*node).element;
                     element.set_scroll_top(element.scroll_height());
                 }
+            }
+        }
+        for node in trees {
+            let tree = self.nodes.borrow().get(&node).map(|group| group.element.clone());
+            if let Some(tree) = tree
+                && tree.get_attribute("role").as_deref() == Some("treeitem")
+            {
+                self.tree_groups(&tree);
             }
         }
         let dialogs: Vec<_> = self
@@ -360,10 +408,71 @@ impl Mounted {
     }
     fn destination(&self, node: NodeId) -> Element {
         let element = self.group(node).element;
+        if element.get_attribute("role").as_deref() == Some("treeitem") {
+            let active = self.document.active_element().filter(|active| element.contains(Some(active)));
+            let selection = active.as_ref().and_then(selection);
+            Self::ungroup_tree(&element);
+            if let Some(active) = active {
+                active.unchecked_ref::<HtmlElement>().focus().expect("ungrouped focus remains mounted");
+                if let Some((start, end, direction)) = selection {
+                    restore_selection(&active, start, end, &direction);
+                }
+            }
+        }
         if element.tag_name() == "PRE" {
             element.query_selector("code").expect("code selector").expect("pre holds code")
         } else {
             element
+        }
+    }
+    fn ungroup_tree(element: &Element) {
+        let children = element.children();
+        let groups: Vec<_> = (0..children.length())
+            .filter_map(|index| children.item(index))
+            .filter(|child| {
+                child.get_attribute("role").as_deref() == Some("group") && !child.has_attribute("data-node")
+            })
+            .collect();
+        for group in groups {
+            while let Some(child) = group.first_child() {
+                element.insert_before(&child, Some(&group)).expect("tree child stays in order");
+            }
+            element.remove_child(&group).expect("tree owns its group");
+        }
+    }
+    fn tree_groups(&self, element: &Element) {
+        let active = self.document.active_element().filter(|active| element.contains(Some(active)));
+        let selection = active.as_ref().and_then(selection);
+        Self::ungroup_tree(element);
+        let children = element.child_nodes();
+        let children: Vec<_> = (0..children.length()).filter_map(|index| children.item(index)).collect();
+        let mut wrapper: Option<Element> = None;
+        for child in children {
+            if !child.parent_node().is_some_and(|parent| parent.is_same_node(Some(element))) {
+                continue;
+            }
+            let item = child.dyn_ref::<Element>().filter(|child| {
+                child.get_attribute("role").as_deref() == Some("treeitem") && child.has_attribute("data-node")
+            });
+            if let Some(item) = item {
+                let group = wrapper.get_or_insert_with(|| {
+                    let group = self.document.create_element("div").expect("group element");
+                    group.set_attribute("role", "group").expect("group role");
+                    element.insert_before(&group, Some(&child)).expect("group precedes its run");
+                    group
+                });
+                for root in self.group(self.id(item).expect("tree item is registered")).roots {
+                    group.append_child(&root).expect("group accepts tree item and companions");
+                }
+            } else {
+                wrapper = None;
+            }
+        }
+        if let Some(active) = active {
+            active.unchecked_ref::<HtmlElement>().focus().expect("grouped focus remains mounted");
+            if let Some((start, end, direction)) = selection {
+                restore_selection(&active, start, end, &direction);
+            }
         }
     }
     fn remove(&self, node: NodeId) {

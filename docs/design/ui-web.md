@@ -431,7 +431,7 @@ the host tests (section 14).
 | disclosure | `<details>` with `<summary>` |
 | dialog | `<dialog>`, shown modal |
 | status, alert, log | `role="status"`, `role="alert"`, `role="log"` |
-| tree, tree item | `role="tree"`, `role="treeitem"` |
+| tree, tree item | `role="tree"`, `role="treeitem"`; nested tree items in `<div role="group">` |
 | tabs, tab | `role="tablist"`, `<a role="tab">` |
 | progress | `role="progressbar"` with its text as `aria-valuetext` |
 | time | `<time>` |
@@ -442,6 +442,12 @@ the host tests (section 14).
 | drawing | `<figure>` named by its name: the scene's `<svg aria-hidden="true">`, then the fallback's elements, hidden from sight but not from assistive technology while the scene is drawn, shown when it is not (section 8) |
 
 - **An ARIA role alone** in the table is a `<div>` with that role.
+- **Nested tree items:** each run of consecutive tree-item children of a
+  tree item sits in one unnamed `<div role="group">` with no class.
+  Other children stay directly under the tree item, in document order.
+  A leaf has no group, and removing the last item removes its group.
+  The browser derives levels and set sizes from this nesting where the
+  owner gives no explicit count or position.
 - **Attributes:**
   - *a name* is `aria-label` where the element's own text does not give
     it; a button, a tab, a menu item and an option show their name as

@@ -558,3 +558,119 @@ fn a_component_patch_receives_the_new_value() {
         .collect();
     assert_eq!(values, vec![(COMPONENT_BODY, Some(b"New".as_slice()))]);
 }
+
+fn nested_tree(b: &mut Builder, children: &[(u64, &[u8])]) {
+    main(b);
+    b.open(Role::Tree);
+    b.open(Role::TreeItem);
+    b.name(b"Parent");
+    for (key, name) in children {
+        if *key == 0 {
+            b.open(Role::Paragraph);
+        } else {
+            b.open(Role::TreeItem);
+        }
+        if *key != 0 {
+            b.key(Key { owner: OWNER, kind: 0, a: *key, b: 0 });
+        }
+        b.name(name);
+        b.close();
+    }
+    b.close();
+    b.close();
+    end(b);
+}
+
+#[test]
+fn nested_tree_runs_keep_other_children_direct_and_leaves_ungrouped() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            nested_tree(b, &[(1, b"One"), (2, b"Two"), (0, b"Between"), (3, b"Three")]);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/tree-runs.html").trim_end());
+}
+
+#[test]
+fn keyed_tree_children_insert_move_update_and_remove_through_groups() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    let stages: &[&[(u64, &[u8])]] = &[
+        &[],
+        &[(1, b"One")],
+        &[(1, b"One"), (2, b"Two")],
+        &[(2, b"Two"), (1, b"One")],
+        &[(2, b"Changed"), (1, b"One")],
+        &[(1, b"One")],
+        &[],
+    ];
+    let mut snapshots = String::new();
+    for (revision, children) in stages.iter().enumerate() {
+        let patches = fixtures::patches(&mut view, u64::try_from(revision).unwrap(), |b| nested_tree(b, children));
+        let mut ops = Vec::new();
+        page.apply(&patches, &mut ops);
+        let html = page.html();
+        snapshots.push_str(&html);
+        snapshots.push('\n');
+        assert_eq!(html.matches("role=\"group\"").count(), usize::from(!children.is_empty()), "{html}");
+        for (_, name) in *children {
+            assert!(html.contains(&format!("aria-label=\"{}\"", String::from_utf8_lossy(name))), "{html}");
+        }
+        match revision {
+            1 | 2 => assert!(ops.iter().any(|op| matches!(op, Op::Insert { parent: NodeId(4), .. }))),
+            3 => {
+                assert!(ops.iter().any(|op| matches!(op, Op::Move { parent: NodeId(4), .. })));
+                assert!(html.find("Two").unwrap() < html.find("One").unwrap());
+            }
+            4 => assert!(ops.iter().any(|op| matches!(op, Op::Attributes { node: NodeId(6), .. }))),
+            5 | 6 => assert!(ops.iter().any(|op| matches!(op, Op::Remove { .. }))),
+            _ => {}
+        }
+    }
+    assert_eq!(snapshots, include_str!("golden/tree-patches.html"));
+}
+
+#[test]
+fn a_nested_tree_set_size_is_derived_from_its_group() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Tree);
+            b.count(10);
+            b.open(Role::TreeItem);
+            b.open(Role::TreeItem);
+            b.close();
+            b.close();
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html().matches("aria-setsize=\"10\"").count(), 1);
+    assert!(page.html().contains("<div role=\"group\"><div data-node=\"5\" role=\"treeitem\"></div></div>"));
+}
+
+#[test]
+fn slots_paragraphs_statuses_and_lists_split_tree_item_runs() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Tree);
+            b.open(Role::TreeItem);
+            for role in [Role::Slot, Role::Paragraph, Role::Status, Role::List] {
+                b.open(Role::TreeItem);
+                b.close();
+                b.open(role);
+                b.close();
+            }
+            b.close();
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/tree-mixed.html").trim_end());
+}

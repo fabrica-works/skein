@@ -223,6 +223,9 @@ impl<'a> Page<'a> {
             let mut count = None;
             while parent != NodeId(0) {
                 let held = self.held(parent);
+                if self.held(node).made.attribute.role == Role::TreeItem && held.made.attribute.role == Role::TreeItem {
+                    break;
+                }
                 if [Role::List, Role::Tree].contains(&held.made.attribute.role) {
                     count = held.made.attribute.count.map(|count| count.to_string());
                     break;
@@ -413,9 +416,24 @@ impl<'a> Page<'a> {
         } else {
             None
         };
+        let mut tree_group = None;
         let mut option_descriptions = Vec::new();
         for child in &self.held(node).children {
             let rendered = self.render(*child);
+            if self.held(node).made.attribute.role == Role::TreeItem {
+                if self.held(*child).made.attribute.role == Role::TreeItem {
+                    let group = tree_group.get_or_insert_with(|| {
+                        let mut group = Element::new("div");
+                        group.set("role", "group");
+                        group
+                    });
+                    group.append(rendered);
+                    continue;
+                }
+                if let Some(group) = tree_group.take() {
+                    destination.append(group);
+                }
+            }
             if self.held(node).made.attribute.role == Role::Select && rendered.tag.is_empty() {
                 for part in rendered.children {
                     match part {
@@ -426,6 +444,9 @@ impl<'a> Page<'a> {
             } else {
                 destination.append(rendered);
             }
+        }
+        if let Some(group) = tree_group {
+            destination.append(group);
         }
         if let Some(description) = description {
             destination.children.push(description);
