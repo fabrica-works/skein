@@ -63,7 +63,19 @@ pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> 
         repo_route(owner, name, tail, &query)?
     };
     // The fake accepts the dialect's exact query vocabulary, including fixed parameters.
-    let encoded = request::encode(&request, limits).ok()?;
+    let mut encoded = request::encode(&request, limits).ok()?;
+    // A raw epoch query is observable even though the dialect omits since at zero.
+    if let Request::Issues { since, .. } = &request
+        && since.as_nanos() == 0
+        && query.get(b"since").is_some()
+    {
+        let at = skein_lib::bytes::find(&encoded.target, b"&sort=")?;
+        let mut out = Writer::new(encoded.target.len().checked_add(b"&since=1970-01-01T00%3A00%3A00Z".len())?);
+        out.put(encoded.target.get(..at)?).ok()?;
+        out.put(b"&since=1970-01-01T00%3A00%3A00Z").ok()?;
+        out.put(encoded.target.get(at..)?).ok()?;
+        encoded.target = out.finish();
+    }
     if encoded.target.as_ref() != target || encoded.method != method {
         return None;
     }
@@ -145,7 +157,10 @@ fn item_route(owner: Box<[u8]>, name: Box<[u8]>, tail: &[u8], query: &Query) -> 
         return Some(Request::Issues {
             owner,
             name,
-            since: time::read(query.get(b"since")?)?,
+            since: match query.get(b"since") {
+                Some(value) => time::read(value)?,
+                None => skein_lib::Wall::from_nanos(0),
+            },
             page: query.page()?,
             per_page: query.size()?,
         });

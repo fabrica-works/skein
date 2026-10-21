@@ -440,8 +440,11 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
     match request {
         Request::Issues { owner, name, since, page, per_page } => {
             out.repo(owner, name)?;
-            out.put(b"/issues?state=all&since=");
-            out.segment(&crate::forgejo::time::write(*since))?;
+            out.put(b"/issues?state=all");
+            if since.as_nanos() != 0 {
+                out.put(b"&since=");
+                out.segment(&crate::forgejo::time::write(*since))?;
+            }
             out.put(b"&sort=updated&direction=asc");
             out.page(*page, *per_page, true);
         }

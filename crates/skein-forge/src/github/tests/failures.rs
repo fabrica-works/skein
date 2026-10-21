@@ -455,3 +455,29 @@ pub(super) fn check() {
     );
     assert_eq!(failure::classify(Asked::Read, 400, &Head::new(), None), fail(api::Error::InvalidAnswer));
 }
+
+#[test]
+fn github_pull_validation_objects_decode_and_keep_the_failure_mapping() {
+    use super::super::document::{Document, Kind};
+    for (body, expected) in [
+        (
+            br#"{"message":"Validation Failed","errors":[{"resource":"PullRequest","code":"custom","message":"No commits between main and feature"}]}"#.as_slice(),
+            api::Error::NothingToMerge,
+        ),
+        (
+            br#"{"message":"Validation Failed","errors":[{"resource":"PullRequest","code":"custom","message":"A pull request already exists for acme:feature."}]}"#.as_slice(),
+            api::Error::Exists,
+        ),
+    ] {
+        for chunk in [1, 7, u32::try_from(body.len()).unwrap()] {
+            let (_, document) = super::fixtures::decode(Kind::Error, body, chunk, &super::limits());
+            let Document::Error(refusal) = document.unwrap() else { panic!("pull validation refusal") };
+            assert_eq!(refusal.message.as_ref(), b"Validation Failed");
+            assert_eq!(refusal.errors.len(), 1);
+            assert_eq!(
+                failure::classify(Asked::OpenPull { empty: false }, 422, &Head::new(), Some(&refusal)),
+                fail(expected),
+            );
+        }
+    }
+}

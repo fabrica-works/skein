@@ -1183,3 +1183,19 @@ fn skipped_branches_count_toward_per_page_and_paging_continues() {
     let mut call = started(api::Read::Branches, Bounds { page_size: 2, ..bounds() });
     assert_eq!(branch_page(&mut call, &[b"before", &long, b"after"], 1), ended(Err(api::Error::TooLarge)));
 }
+
+#[test]
+fn github_issues_omits_since_only_at_zero_and_decodes_both_targets() {
+    for (since, target) in [
+        (skein_lib::Wall::EPOCH, b"/repos/acme/widgets/issues?state=all&sort=updated&direction=asc&per_page=4&page=1".as_slice()),
+        (fixtures::wall(), b"/repos/acme/widgets/issues?state=all&since=2026-10-20T08%3A00%3A00Z&sort=updated&direction=asc&per_page=4&page=1".as_slice()),
+    ] {
+        let request = Request::Issues { owner: owner(), name: name(), since, page: 1, per_page: 4 };
+        golden(&request, target, Some(Kind::IssueRows), Accept::Json);
+        assert_eq!(server::route(request::Method::Get, target, &limits()), Some(request.clone()));
+        if since == skein_lib::Wall::EPOCH {
+            let raw = b"/repos/acme/widgets/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=4&page=1";
+            assert_eq!(server::route(request::Method::Get, raw, &limits()), Some(request));
+        }
+    }
+}
