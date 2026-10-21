@@ -385,6 +385,16 @@ fn fresh_reads_retry_transient_failures_and_finish_once_at_the_bound() {
 }
 
 #[test]
+fn a_refused_read_is_terminal_and_never_retried() {
+    let mut h = Harness::new(LIMITS);
+    h.read(1);
+    let sent = h.one();
+    terminal(&h.answer(&sent, 1, Err(Error::Refused)), 1, Error::Refused);
+    assert!(h.send().is_none());
+    assert!(h.domain.next_deadline().is_none());
+}
+
+#[test]
 fn a_rate_refusal_does_not_spend_a_fresh_reads_retry_attempt() {
     let mut h = Harness::new(Limits { read_attempts: 1, ..LIMITS });
     h.read(1);

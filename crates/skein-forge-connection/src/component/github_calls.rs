@@ -173,7 +173,7 @@ impl Component {
             && self.settings.forges.get(at).expect("forge").log_origins.is_empty()
             && let Some(api::Op::Read(api::Read::Job { .. })) = waiting.op.as_ref()
         {
-            self.finish(call, id, Err(api::Error::Unavailable), up);
+            self.finish(call, id, Err(api::Error::Refused), up);
             return;
         }
         if waiting.plan.is_none() && !admitted(waiting.op.as_ref().expect("operation")) {

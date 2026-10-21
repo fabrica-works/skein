@@ -145,7 +145,7 @@ fn github_unconfigured_log_origin_is_reported_once_per_connect() {
     let mut w = world(Some(THIRD), None, &[JOB, LOG, JOB, LOG]);
     for call in [2, 3] {
         read(&mut w, call, TAIL_BYTES);
-        terminal(&w, call, REFUSED_COST, &Err(Error::Unavailable));
+        terminal(&w, call, REFUSED_COST, &Err(Error::Refused));
         let [Event::Fact { forge, fact: Fact::Origin { origin: reported } }] = w.facts() else {
             panic!("one origin fact for both reads")
         };
@@ -179,7 +179,7 @@ fn github_unconfigured_log_origin_is_reported_again_after_connect() {
     let mut w = world(Some(THIRD), None, RECONNECT);
     for call in [2, 3] {
         read(&mut w, call, TAIL_BYTES);
-        terminal(&w, call, REFUSED_COST, &Err(Error::Unavailable));
+        terminal(&w, call, REFUSED_COST, &Err(Error::Refused));
     }
     let mut invalid = fixtures::github_access();
     invalid.credential = skein_forge::credential::Credential::App { id: 7, key: Secret::new(Box::from([])) };
@@ -188,7 +188,7 @@ fn github_unconfigured_log_origin_is_reported_again_after_connect() {
     w.run_for(SECOND);
     for call in [4, 5] {
         read(&mut w, call, TAIL_BYTES);
-        terminal(&w, call, REFUSED_COST, &Err(Error::Unavailable));
+        terminal(&w, call, REFUSED_COST, &Err(Error::Refused));
     }
     assert_eq!(w.connected_forges(), &[FORGE, FORGE]);
     assert_eq!(w.facts().len(), 2);

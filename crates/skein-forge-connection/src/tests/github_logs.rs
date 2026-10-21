@@ -161,7 +161,7 @@ fn unconfigured_origin_fails_once_until_reconnect() {
     for call in [1, 2] {
         log_read(&mut h, call);
         h.answer(FORGE, &redirect(b"other.example.test"));
-        terminal(&mut h, call, 2, Err(Error::Unavailable));
+        terminal(&mut h, call, 2, Err(Error::Refused));
     }
     assert_eq!(origins(&h).as_slice(), &[origin(b"other.example.test")]);
     h.send(Request::Connect {
@@ -175,7 +175,7 @@ fn unconfigured_origin_fails_once_until_reconnect() {
     h.refuse(FORGE);
     log_read(&mut h, 3);
     h.answer(FORGE, &redirect(b"other.example.test"));
-    terminal(&mut h, 3, 2, Err(Error::Unavailable));
+    terminal(&mut h, 3, 2, Err(Error::Refused));
     assert_eq!(origins(&h).len(), 2);
 }
 #[test]
@@ -186,7 +186,7 @@ fn said_origins_forget_the_oldest_first() {
     {
         log_read(&mut h, call);
         h.answer(FORGE, &redirect(host));
-        terminal(&mut h, call, 2, Err(Error::Unavailable));
+        terminal(&mut h, call, 2, Err(Error::Refused));
     }
     assert_eq!(
         origins(&h).as_slice(),
@@ -222,7 +222,7 @@ fn an_empty_origin_list_reads_no_job_log() {
     settings.forges.get_mut(0).expect("forge").log_origins.clear();
     let mut h = harness(settings);
     h.call(1, REPO, job());
-    terminal(&mut h, 1, 0, Err(Error::Unavailable));
+    terminal(&mut h, 1, 0, Err(Error::Refused));
     assert_eq!(h.connections_opened(), 0);
 }
 #[test]
@@ -274,7 +274,7 @@ fn unconfigured_origin_fails_before_its_api_body_arrives() {
     let mut h = harness(settings());
     log_read(&mut h, 1);
     h.answer(FORGE, b"HTTP/1.1 302 Found\r\nLocation: http://other.test:8080/job\r\nContent-Length: 1000\r\n\r\n");
-    terminal(&mut h, 1, 2, Err(Error::Unavailable));
+    terminal(&mut h, 1, 2, Err(Error::Refused));
     assert_eq!(origins(&h).as_slice(), &[origin(b"other.test")]);
     let deadline = h.env.limits.deadline;
     h.run(deadline);
@@ -312,6 +312,6 @@ fn said_origin_keeps_the_dialects_complete_bounded_host() {
     let mut h = harness(settings());
     log_read(&mut h, 1);
     h.answer(FORGE, &redirect(&host));
-    terminal(&mut h, 1, 2, Err(Error::Unavailable));
+    terminal(&mut h, 1, 2, Err(Error::Refused));
     assert_eq!(origins(&h).as_slice(), &[origin(&host)]);
 }

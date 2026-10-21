@@ -60,7 +60,7 @@ impl Component {
                 gh.said_origins.push(redirect.origin.clone());
                 up.push(Event::Fact { forge: number, fact: Fact::Origin { origin: redirect.origin } });
             }
-            self.finish(call, id, Err(api::Error::Unavailable), up);
+            self.finish(call, id, Err(api::Error::Refused), up);
             return;
         };
         let waiting = self.waiting.get_mut(id).expect("call");

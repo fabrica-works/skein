@@ -603,7 +603,7 @@ subscribing; the others are temper's draft section 5's, and no more.
   `InvalidAnswer`. A plaintext origin is never among temper's defaults.
 - **The component follows it** to an origin among its `log_origins`,
   sending nothing of the forge's, and an origin it does not know is
-  `Unavailable` and a diagnostic (forge-connection.md, section 4).
+  `Refused` and a diagnostic (forge-connection.md, section 4).
 - **The log is read whole** as it streams, its last `max_bytes` kept
   within the answer's bound, `truncated` when bytes before them were
   read. GitHub's log is the job's, not a step's.

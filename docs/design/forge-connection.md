@@ -410,14 +410,16 @@ and port of `Location`, and its target is the path and query.
   Each origin comes with its address, which the shell resolved at start,
   since io connects to addresses alone and resolves no name at runtime
   (io.md, section 4). The configured origins are at most `log_origins`.
-  An empty list, the default, reads no job log.
-- **To another host,** the call fails `Unavailable` at once, and
+  An empty list, the default, reads no job log:
+  a job's read answers `Refused`.
+- **To another host,** the call fails `Refused` at once, and
   `Fact::Origin { origin }` names the origin, as `Redirect`'s, so the
   operator can add it. It is said once for each origin from each
   connect: the component remembers at most `log_origins` origins said,
   the oldest forgotten first when full, and forgets them all at the
   forge's next connect. A fact is a diagnostic: no decision rests on it,
-  and a call fails alike whether its origin was said or not.
+  and a call fails alike whether its origin was said or not. The origins
+  are settings, unchanged until a restart, so the client does not retry.
 - **The request** carries no credential and no `Range`, which that host
   ignores. It runs on a connection of the pool to the origin's address,
   as a call's do, with TLS to the origin's host and the forge's trust,

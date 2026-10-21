@@ -250,7 +250,7 @@ pub enum Error {
     Conflict,
     /// Protection refused the write.
     Protected,
-    /// Repository settings or transport policy refuses this write.
+    /// Repository settings or transport policy refuses this call.
     Refused,
     /// A decoded answer does not match its operation.
     InvalidAnswer,
