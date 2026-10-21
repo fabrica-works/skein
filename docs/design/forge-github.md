@@ -288,7 +288,12 @@ Batched reads are later (temper's draft 18).
   branch that came to require the queue is entered, and one that
   stopped is merged. The latest `Protection` saying `queue` is the
   client's to show; the plan never takes it for GitHub's answer.
-- **A moved head is `Stale`** on both routes: `409` "Head branch was
+- **A repeat merge on a merged pull** answers `200`, `merged: true`, with
+  the same merge sha, even when the supplied head sha differs. A REST pull
+  read immediately afterwards may still have null `merge_commit_sha` and
+  mergeability; the conformance polls within its four-second wait before
+  comparing the read-back sha with the PUTs.
+- **An open pull's moved head is `Stale`** on both routes: `409` "Head branch was
   modified. Review and try the merge again." at the merge, and
   `UNPROCESSABLE` "... expected head oid does not match the current head
   oid" at the queue.
@@ -444,12 +449,14 @@ bound, revisions, markers and malformed answers; and GitHub's:
   `Event::GitToken`.
 - **Its decoder** keeps `token`, as a `Secret` within `string_bytes`,
   and `expires_at`. Nothing else of it is read.
-- **A token minted for Contents still writes issues:** the observed answer
-  is `201`, with `x-accepted-github-permissions: issues=write`
-  (`token-narrowed-not-enforced`). Token narrowing is not a boundary skein
-  relies on; the dialect still mints the same tokens. The conformance case
-  records the mint response permissions object, the issue POST status and
-  accepted permissions header, and a title PATCH status with the same token.
+- **A token minted for Contents creates issues but cannot edit them:** the
+  observed mint permissions are `contents: write`, `metadata: read`, with
+  `repository_selection: selected`. Issue creation answers `201`, with
+  `x-accepted-github-permissions: issues=write`; a title PATCH with that
+  token answers `403` "Resource not accessible by integration", with
+  `x-accepted-github-permissions: issues=write; pull_requests=write`
+  (`token-narrowed-creates-not-edits`). The dialect mints the same tokens;
+  its mint decoder reads token and expiry alone.
 
 ### 8.3 Installations
 
@@ -655,13 +662,13 @@ github.com (fake-forge.md, section 11); the probe that found it in
 temper's draft section 11.
 
 - **Tokens and identity:** `token-expires-in-an-hour`,
-  `token-narrowed-not-enforced` (P1); `rate-core-5000`, `jwt-calls-no-rate`
+  `token-narrowed-creates-not-edits` (P1); `rate-core-5000`, `jwt-calls-no-rate`
   (P1); `viewer-is-bot`, `user-on-installation-403`,
   `app-routes-401-on-installation-token` (P2); `jwt-iss-string`.
-  Contents narrowing still permits issue creation, 201, with the accepted
-  permissions header. The case records the mint response permissions object
-  and both write statuses; a title PATCH of that issue uses the same token
-  and expects 200.
+  Contents narrowing returns mint permissions contents: write,
+  metadata: read. Issue creation is 201 with the accepted permissions
+  header; a title PATCH of that issue with the same token is 403,
+  "Resource not accessible by integration".
 - **Pull requests and CI:** `mergeable-null-then-settles`,
   `combined-pending-with-no-status`, `job-log-302-blob`,
   `job-log-range-honoured` (P4); `merge-stale-409`,
@@ -672,9 +679,10 @@ temper's draft section 11.
   The Range fact expects 206 and Content-Range. The ETag fact reads an
   unchanging repository with an installation token, and expects 304 with
   the same remaining rate. `merge-repeat-idempotent` expects 200, merged
-  true and the same merge sha for a repeat with the same sha.
-  `merge-repeat-stale-409` is inferred: the fake answers 409 for a different
-  sha on a merged pull; its live expectation is unknown.
+  true and the same merge sha for a repeat with the same sha, then polls
+  merge_commit_sha until it is a string within four seconds before comparing.
+  `merge-repeat-any-sha-200` expects 200 and merged true for a repeat with a
+  different sha on a merged pull; an open pull's stale sha remains 409.
 - **The log:** `log-lists-failed-deliveries`, `log-cursor-in-link`,
   `log-ids-19-digits`, `log-delivery-whole`,
   `log-installation-events-unscoped` (P7);
@@ -688,6 +696,13 @@ temper's draft section 11.
   message Unprocessable Entity and a string error, Review Can not approve
   your own pull request. Pull request rules carry all five parameters:
   the approval count and the four booleans false, with an empty ref exclusion.
+  Required status checks include strict_required_status_checks_policy: false
+  and context ci. Merge queues carry all seven parameters: timeout 60
+  minutes, grouping ALLGREEN, maximum build and merge entries 5 each,
+  method MERGE, minimum entries 1, and minimum-entry wait 0 minutes.
+  One entry and no batching wait keep single-pull cases immediate; the
+  check timeout is a ceiling, not a mandatory delay. Queue cases and their
+  rulesets use an organization's repository and its matching tokens.
 - **Repositories and issues:** `installation-repositories-at-once`
   (P12); `issues-list-pulls`, `new-issue-may-miss-listing` (P13).
 - **Not yet probed,** first held by the conformance:
@@ -759,3 +774,16 @@ component's worlds run it (fake-forge.md, sections 10 and 11).
   Default: so; a host that moves is a finding.
 - **A classic rule's merge queue** is not read by `Protection`: the
   merge's refusal finds it (5.1). Default: so.
+
+## 16. The live conformance's organization selection
+
+The live fixture format is described in fake-forge.md, section 11, and
+`tests/forge/github/README.md`. At startup, before minting tokens or making
+repository changes, the runner reads each installation's probe repository
+with that owner's person token. The first probe whose `owner.type` is
+`Organization` selects the installation for every merge-queue case,
+starting with `queue-direct-merge-405`, and their rulesets. Those cases
+use that installation's token and its owner's person token where a person
+acts. The fixture document needs no account-type field. If none qualifies,
+startup stops with "no organization installation for the merge-queue cases"
+before any write. The fake's `acme` is a user and `globex` an organization.

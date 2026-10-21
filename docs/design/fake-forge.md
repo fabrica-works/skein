@@ -732,7 +732,9 @@ below are tracked in STATUS.md.
   - a repository outside the installation is `404`;
   - issue creation succeeds even for a contents-only token, with `201`
     and `x-accepted-github-permissions: issues=write`; editing its title
-    also succeeds, with `200`; the remaining contents-only route refusals are inferred `403` responses;
+    is refused with `403` "Resource not accessible by integration";
+    the mint's narrowed permissions are `contents: write`, `metadata: read`;
+    the remaining contents-only route refusals are inferred `403` responses;
   - an expired token is `401`.
 
   `GET /app/installations` lists them and `GET /app/installations/<id>`
@@ -759,9 +761,17 @@ below are tracked in STATUS.md.
   `conditions.ref_name.include` with empty `exclude`, `bypass_actors`,
   and approvals, required status checks and merge queue rules. Unknown and duplicate fields are
   `422` "Validation Failed". The pull request rule requires the approval
-  count and all four booleans (false in this subset). A missing parameter
-  answers the observed 422 Invalid request message naming /rules/0 and
-  data matching no possible input. The accepted shape follows the docs.
+  count and all four booleans (false in this subset). Required status checks
+  require both the contexts array and `strict_required_status_checks_policy`
+  (false in this subset). Merge queues require all seven documented
+  parameters: `check_response_timeout_minutes`, `grouping_strategy`,
+  `max_entries_to_build`, `max_entries_to_merge`, `merge_method`,
+  `min_entries_to_merge`, and `min_entries_to_merge_wait_minutes`.
+  A missing required parameter answers the observed 422 Invalid request
+  message naming `/rules/N` for that rule's index and data matching no
+  possible input. The accepted shapes follow the documented schema.
+  A merge-queue ruleset on a user-owned repository is an inferred 422
+  "Validation Failed"; live's refusal form is unknown.
   Creation answers `201` with the configured ruleset id and the existing
   server encoder's bypass field; only the id is recorded, other fields are
   inferred. Deletion's empty `204` is recorded. Installation tokens receive
@@ -840,8 +850,9 @@ below are tracked in STATUS.md.
   `mergeable`, and defaults both bounds to two seconds in fixtures.
   Forgejo continues to render false while checking.
   A merge then decides as the domain does:
-  - a stale head is `409`, including an inferred different-sha repeat
-    on a merged pull; a same-sha repeat is `200` with the same merge sha;
+  - a merged pull answers any repeat merge `200`, `merged: true`, with the
+    same merge sha, including a different supplied sha;
+  - an open pull's stale head is `409`;
   - a merge refused for its checks or its approvals is `405` with
     `Repository rule violations found\n\n`, then the unmet approval
     sentence, then the unmet context lines, each followed by `\n\n`;
@@ -980,7 +991,8 @@ the fake.
   While a head or base move is still checking mergeability, the GitHub
   route answers `405` "Pull Request is not mergeable"
   (`merge-after-move-405-not-mergeable`, forge-github.md, section 7).
-  A stale supplied SHA keeps its `409` precedence.
+  An open pull's stale supplied SHA keeps its `409` precedence. A merged
+  pull's repeat merge answers `200` for any supplied SHA.
 - **Ids** are the domain's numbers, small and sequential. Deliveries'
   ids are 19 digits, so `u64` is held exactly.
 - **What is not modelled:** GitHub Apps other than the one App and
@@ -1050,6 +1062,11 @@ masking and refusal of leaked secrets are section 7's.
   `freeekanayaka/temper-probe-2`, is not granted: a run adds it to the
   installation and removes it again. Each probe repository's `ci`
   workflow fails a head whose message holds `FAIL`.
+- **Queue installation discovery.** Before minting or repository changes,
+  the startup repository reads select the first installation whose probe
+  has `owner.type: Organization`. Every queue case uses its probe repository,
+  installation token and matching person token. A run with no such account
+  stops before any write (forge-github.md, section 16).
 - **Who does what:**
   - The App's key and minted tokens drive the dialect's cases.
   - The person's tokens drive the person's part: rulesets, approvals,
