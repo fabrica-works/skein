@@ -219,7 +219,7 @@ cat >"$after/bin/kache" <<'EOF'
 echo gc >>"$AFTER_STATE/gc"
 exit 1
 EOF
-chmod +x "$after/kit/heavy" "$after/bin/"*
+chmod +x "$after/kit/heavy" "$after/bin/"{uname,rm,flock,kache}
 after_run() {
     PATH=$after/bin DEV_TMP=$after/tmp AFTER_STATE=$after AFTER_COMMIT=$after_commit \
         AFTER_TARGET=$after_target AFTER_HOST=$1 AFTER_STATUS=$2 \
