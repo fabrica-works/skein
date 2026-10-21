@@ -195,7 +195,7 @@ pub(crate) fn call(
                     &service.limits,
                 ));
             };
-            (Pending::Enqueue { repository: repository.clone() }, Op::Write(a::Write::Enqueue { number, head }))
+            return crate::enqueue::start(repository, number, head, grant.user(), reply_to);
         }
         Read::PullGraphql { number, .. } => {
             (Pending::PullGraphql { repository: row.id, number }, Op::Read(a::Read::Pull { number }))
@@ -447,7 +447,7 @@ fn refused(error: Error, limits: &Limits) -> Response {
     }
 }
 
-fn enqueue_finish(
+pub(crate) fn enqueue_finish(
     result: Result<Answer, Error>,
     repository: &[u8],
     limits: &Limits,
@@ -477,7 +477,7 @@ fn enqueue_finish(
             let Some(message) = answers::finish(out) else {
                 return answers::failed();
             };
-            return answers::response(200, &Body::EnqueueApproval(&message), limits);
+            return answers::response(200, &Body::EnqueueRefusal(&message), limits);
         }
         Err(Error::Stale) => {
             return answers::response(

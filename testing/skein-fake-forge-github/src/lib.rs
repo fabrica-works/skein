@@ -7,6 +7,7 @@ extern crate alloc;
 mod answers;
 mod auth;
 mod comment_edit;
+mod enqueue;
 mod mutations;
 pub use skein_fake_forge_protocol::Faults;
 pub mod app;

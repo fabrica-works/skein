@@ -227,6 +227,11 @@ fn github_fake_enqueue_is_idempotent_and_pull_reads_its_position() {
     let token = r::token(&mut h);
     let response = query(&mut h, &token, b"widgets", number);
     let id = pull(&h, &response).id;
+    r::call_as(
+        &mut h,
+        f::BOT,
+        a::Op::Write(a::Write::Status { commit: head, context: f::boxed(b"required"), state: a::Check::Passed }),
+    );
     for _delivery in 0..2_u32 {
         let response = enqueue(&mut h, &token, &id, head);
         assert_eq!(enqueued(&h, &response), 1);

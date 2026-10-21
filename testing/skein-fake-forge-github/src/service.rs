@@ -221,6 +221,7 @@ pub(crate) enum PendingKind {
     Mutation(crate::mutations::Mutation),
     CommentEdit(crate::comment_edit::Edit),
     Read(reads::Pending),
+    Enqueue(crate::enqueue::Pending),
     Conditional { read: reads::Pending, admission: Box<crate::rates::Admission>, validator: Box<[u8]> },
     Write(writes::Pending),
     Blob,
@@ -582,6 +583,7 @@ impl Service {
         let outcome = match pending.kind {
             PendingKind::CommentEdit(pending) => crate::comment_edit::finish(self, pending, result, reply_to),
             PendingKind::Mutation(pending) => Outcome::Reply(crate::mutations::finish(self, pending, result, domain)),
+            PendingKind::Enqueue(pending) => crate::enqueue::finish(self, pending, result, reply_to, domain),
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Conditional { read, admission, validator } => {
                 let mut response = reads::finish(read, result, self, domain);

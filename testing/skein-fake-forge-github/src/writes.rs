@@ -14,7 +14,7 @@ use skein_fake_forge_domain::{
 use skein_forge::github::{request::Request, server};
 use skein_lib::ReplyTo;
 
-mod merge;
+pub(crate) mod merge;
 
 #[derive(Debug)]
 pub(crate) enum Route {

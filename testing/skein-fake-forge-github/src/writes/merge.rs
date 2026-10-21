@@ -153,7 +153,7 @@ fn refused(
     };
     Outcome::Reply(response)
 }
-fn approvals(pull: &a::Pull, author: u64, protection: &a::Protection) -> u32 {
+pub(crate) fn approvals(pull: &a::Pull, author: u64, protection: &a::Protection) -> u32 {
     let mut count = 0_u32;
     for (index, review) in pull.reviews.iter().enumerate() {
         if review.author == author
@@ -175,7 +175,7 @@ fn approvals(pull: &a::Pull, author: u64, protection: &a::Protection) -> u32 {
     }
     count
 }
-fn check(pull: &a::Pull, context: &[u8]) -> Option<a::Check> {
+pub(crate) fn check(pull: &a::Pull, context: &[u8]) -> Option<a::Check> {
     for status in &pull.statuses {
         if status.context.as_ref() == context {
             return Some(status.state);
