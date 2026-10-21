@@ -435,6 +435,8 @@ domain, and holds no clock of its own.
   read by id, collaborators and hooks, and the admin's repository search,
   in id order and paged by number as Forgejo pages it) are served from this
   layer's own bounded store, not the domain's (forge-setup.md, section 4).
+  A repository read by id answers the domain's settings when the host
+  lends the domain.
 - **A setup grant reaches the domain.** A collaborator grant made through
   the setup routes is kept in the setup store, and the domain grants the
   account's user number (section 5) the same permission on the
@@ -483,7 +485,8 @@ peers host theirs. The real loop hosts the same one.
   so an owner that seeds both keeps the scenario's `users` apart from
   them.
 - **Plaintext only.** Its `base` is `http://`; its face is the shared one
-  with `Transport::Plaintext` and a `queue` of at least 64.
+  with `Transport::Plaintext` and a `queue` of at least 64. The peer supplies
+  its bound origin to either dialect's service before it accepts requests.
 - **It hosts the layer over a forge it is handed.** The owner builds the
   forge once: its domain, its configuration, the time of the last pass and
   the replies not yet routed. It hands the peer a single-threaded shared

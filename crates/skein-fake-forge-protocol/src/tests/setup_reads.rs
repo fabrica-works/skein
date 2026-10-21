@@ -1,19 +1,57 @@
 use super::{
     fixtures::{self, Harness, boxed},
-    repo_setup::{harness, other, repo},
+    repo_setup::{harness as setup_harness, other, repo},
 };
+use skein_fake_forge_domain::{self as fake, api as a};
 use skein_forge::forgejo::{
     document::{self as d, Document},
     id::ObjectFormat,
     request::{Grant, Request},
 };
-use skein_lib::Secret;
+use skein_lib::{Duration, Secret};
 
 // repo_setup's acme/widgets and bob/widgets configuration.
 const REPOSITORY: u32 = 2;
 const OTHER: u32 = 3;
 const BOB: u64 = 2;
 const READ_TOKEN: &[u8] = b"setup-read-token";
+
+fn harness() -> Harness {
+    harness_with_default(b"main")
+}
+fn harness_with_default(default: &[u8]) -> Harness {
+    let mut h = setup_harness();
+    // The setup fixture names these two repositories; by-id reads inspect them.
+    h.fake_env.limits.limits.repositories = 2;
+    h.domain = fake::Domain::new(&h.fake_env.limits, 3);
+    for (id, name, default) in
+        [(REPOSITORY, b"acme/widgets".as_slice(), default), (OTHER, b"bob/widgets".as_slice(), b"main".as_slice())]
+    {
+        fake::repository(
+            &mut h.domain,
+            &h.fake_env.limits,
+            a::Setup {
+                id,
+                name: boxed(name),
+                default: boxed(default),
+                tree: Box::from([]),
+                labels: Box::from([]),
+                checks: a::Checks {
+                    contexts: Box::from([]),
+                    latency_min: Duration::ZERO,
+                    latency_max: Duration::ZERO,
+                    silent: 0,
+                    passes: 0,
+                    reruns: 0,
+                    cue: None,
+                },
+                protection: None,
+                hooked: false,
+            },
+        );
+    }
+    h
+}
 
 fn by_id() -> Request {
     Request::RepositoryById { id: u64::from(REPOSITORY) }
@@ -51,6 +89,42 @@ fn expected_repository(id: u64, owner: &[u8], html_url: &[u8]) -> Document {
         allow_rebase: true,
         html_url: boxed(html_url),
     })
+}
+
+#[test]
+fn setup_by_id_reads_lent_settings_and_keeps_the_unhosted_default() {
+    let mut h = harness_with_default(b"trunk");
+    for (name, id, lent, changed, expected) in [
+        ("seeded trunk", REPOSITORY, true, None, (b"trunk".as_slice(), true, true, true)),
+        ("seeded main", OTHER, true, None, (b"main".as_slice(), true, true, true)),
+        (
+            "changed styles",
+            REPOSITORY,
+            true,
+            Some(a::Settings { default: boxed(b"trunk"), merge: false, rebase: false, squash: false }),
+            (b"trunk".as_slice(), false, false, false),
+        ),
+        ("no domain", REPOSITORY, false, None, (b"main".as_slice(), true, true, true)),
+    ] {
+        if let Some(settings) = changed {
+            fake::settings(&mut h.domain, b"acme/widgets", settings);
+        }
+        h.lend_domain = lent;
+        let request = Request::RepositoryById { id: u64::from(id) };
+        h.send(&request);
+        let Document::Repository(repository) = h.decoded(&request).document else { panic!("repository document") };
+        assert_eq!(
+            (
+                repository.default_branch.as_ref(),
+                repository.allow_merge_commits,
+                repository.allow_rebase,
+                repository.allow_squash_merge
+            ),
+            expected,
+            "{name}"
+        );
+        assert_eq!(h.calls, 0, "{name}: setup inspection is no domain call");
+    }
 }
 
 #[test]

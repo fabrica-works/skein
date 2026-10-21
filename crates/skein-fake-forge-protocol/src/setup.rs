@@ -157,7 +157,7 @@ impl Store {
             Request::RepoSearch { page } => Some(self.search(config, user, *page, limits)),
             Request::RepositoryById { id } => {
                 let caller = self.user(user)?;
-                Some(self.repository_by_id(*id, &caller, config, limits))
+                Some(self.repository_by_id(*id, &caller, config, limits, None))
             }
             Request::Permission { at, login } => {
                 let caller = self.user(user)?;

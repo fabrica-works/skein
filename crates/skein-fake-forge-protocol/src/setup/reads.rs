@@ -1,15 +1,22 @@
 use super::{Store, absent, collaborators, encoded, full, refusal};
-use crate::{Config, Limits, Repository, answers, response::Reply, routes};
-use skein_fake_forge_domain::api::{Permission, Settings};
+use crate::{Config, Hosted, Limits, Repository, answers, response::Reply, routes};
+use skein_fake_forge_domain::api::{self as a, Permission, Read, Settings};
 use skein_forge::forgejo::{
     document::{self as d, CollaboratorPermission, User},
-    request::{Grant, Repo},
+    request::{Grant, Repo, Request},
     server::Answer,
 };
 use skein_lib::bytes;
 
 impl Store {
-    pub(super) fn repository_by_id(&self, id: u64, caller: &User, config: &Config, limits: &Limits) -> Reply {
+    pub(super) fn repository_by_id(
+        &self,
+        id: u64,
+        caller: &User,
+        config: &Config,
+        limits: &Limits,
+        hosted: Option<&Hosted<'_>>,
+    ) -> Reply {
         let Ok(id) = u32::try_from(id) else { return absent(limits) };
         for repo in &config.repositories {
             if repo.id != id {
@@ -20,10 +27,25 @@ impl Store {
             if !caller.is_admin && self.is_private(u64::from(id)) && permission == Permission::None {
                 return absent(limits);
             }
-            // The domain takes its default branch from Setup; its fixtures use main (domain tests.rs).
-            // New repositories enable every merge style (domain store.rs, Repository::new).
-            let settings = Settings { default: bytes::copy_of(b"main"), merge: true, rebase: true, squash: true };
-            return match answers::repository_document(config, u64::from(id), &repo.full, &settings) {
+            let settings = match hosted {
+                Some(hosted) => {
+                    let Ok(settings) = hosted.domain.inspect(hosted.config, &repo.full, &Read::Settings) else {
+                        return absent(limits);
+                    };
+                    settings
+                }
+                None => {
+                    // up and resume lend no domain, so setup uses the fixtures' main
+                    // and the merge styles a new domain repository enables.
+                    a::Answer::Settings(Settings {
+                        default: bytes::copy_of(b"main"),
+                        merge: true,
+                        rebase: true,
+                        squash: true,
+                    })
+                }
+            };
+            return match answers::read(config, &Request::RepositoryById { id: u64::from(id) }, &settings) {
                 Ok(answer) => encoded(200, answer, limits),
                 Err(_) => full(limits),
             };

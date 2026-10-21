@@ -603,11 +603,7 @@ fn decoded(
         fail(server, &env.limits, 403);
         return;
     }
-    let lent = match domain {
-        Some(hosted) => Some(&mut *hosted.domain),
-        None => None,
-    };
-    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, lent) {
+    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, domain) {
         respond(server, reply);
         return;
     }

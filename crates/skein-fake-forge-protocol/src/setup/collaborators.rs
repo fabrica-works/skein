@@ -120,10 +120,14 @@ impl Store {
         user: u64,
         config: &Config,
         limits: &Limits,
-        domain: Option<&mut skein_fake_forge_domain::Domain>,
+        domain: Option<&mut crate::Hosted<'_>>,
     ) -> Option<Reply> {
         use skein_forge::forgejo::request::Request;
-        let Some(domain) = domain else { return self.answer(request, user, config, limits) };
+        let Some(hosted) = domain else { return self.answer(request, user, config, limits) };
+        if let Request::RepositoryById { id } = request {
+            let caller = self.user(user)?;
+            return Some(self.repository_by_id(*id, &caller, config, limits, Some(hosted)));
+        }
         let Request::AddCollaborator { at, login, permission } = request else {
             return self.answer(request, user, config, limits);
         };
@@ -142,26 +146,29 @@ impl Store {
             }
         }
         let repository = repository.expect("resolved scenario repository");
-        let mut account = None;
-        if let Some(known) = self.find(login) {
-            account = Some(known.id);
-        }
-        if account.is_none() {
-            for (id, name) in &config.users {
-                if name.as_ref() == login.as_ref() {
-                    account = Some(*id);
-                }
-            }
-        }
-        let Some(account) = account else { return self.answer(request, user, config, limits) };
-        let room = domain.can_grant(&repository.full, account);
+        let Some(account) = self.collaborator_user(config, login) else {
+            return self.answer(request, user, config, limits);
+        };
+        let room = hosted.domain.can_grant(&repository.full, account);
         if room == Ok(false) {
             return Some(full(limits));
         }
         let reply = self.answer(request, user, config, limits)?;
         if reply.status == 204 && room == Ok(true) {
-            skein_fake_forge_domain::grant(domain, &repository.full, account, domain_permission(*permission));
+            skein_fake_forge_domain::grant(hosted.domain, &repository.full, account, domain_permission(*permission));
         }
         Some(reply)
+    }
+    fn collaborator_user(&self, config: &Config, login: &[u8]) -> Option<u64> {
+        if let Some(known) = self.find(login) {
+            return Some(known.id);
+        }
+        let mut account = None;
+        for (id, name) in &config.users {
+            if name.as_ref() == login {
+                account = Some(*id);
+            }
+        }
+        account
     }
 }
