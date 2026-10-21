@@ -286,15 +286,18 @@ either.
 
 ### 4.2 The implementer
 
-The implementer is Codex: gpt-6.1-sol at high, through `codex exec` in
-its own worktree, with `-o` naming the report the owner reads by an
-absolute path (a relative one is taken from the shell's directory, not
-`-C`'s, and the report is lost). So is
-the owner's other work that needs no taste (section 1): an
-investigation, a profile, a survey, a review's fixes. An
-investigation's task names the question and what its report holds: the
-cause, the evidence that shows it (a measurement, a trace, a failing
-test), and the fix it proposes, in a few lines. Where the work gets
+The implementer is Codex: gpt-6.1-sol, through `codex exec` in its own
+worktree, with `-o` naming the report the owner reads by an absolute
+path (a relative one is taken from the shell's directory, not `-C`'s,
+and the report is lost). So is the owner's other work that needs no
+taste (section 1): an investigation, a profile, a survey, a review's
+fixes. An investigation's task names the question and what its report
+holds: the cause, the evidence that shows it (a measurement, a trace, a
+failing test), and the fix it proposes, in a few lines. Codex's effort,
+medium or high (`-c model_reasoning_effort=<effort>`), is the owner's
+choice by the task, as the owner's own is its parent's (section 2):
+medium where the work is plain, high where it is harder, and raised
+when a report falls short or the quality suffers. Where the work gets
 hard (two tries without the cause, evidence that conflicts, a fix that
 would reach across a boundary), Opus 5.5 at xhigh advises (`claude -p`
 or a sub-agent), from the report and the evidence rather than the whole

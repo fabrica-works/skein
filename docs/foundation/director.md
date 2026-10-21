@@ -312,8 +312,9 @@ is mechanical, and Codex reads what needs reading.
 - **Claude for its judgement,** Codex for the rest (owners.md, 1).
   Surveys, status reads, file reading, investigations and mechanical
   reviews go to Codex (`codex exec -m gpt-6.1-sol -c
-  model_reasoning_effort=high`, umask 077, `</dev/null`, `-o` by an
-  absolute path). A Claude sub-agent only where taste is the point,
+  model_reasoning_effort=<effort>`, umask 077, `</dev/null`, `-o` by an
+  absolute path), at medium or high by the task (owners.md, 4.2). A
+  Claude sub-agent only where taste is the point,
   on Opus; Sonnet only for `tell.sh`'s relays.
 - **Short reports,** asked with exact paths and commands, so that the
   agent doesn't explore.
