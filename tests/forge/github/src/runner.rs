@@ -42,6 +42,10 @@ pub(crate) struct Runner<'a> {
     pub replay: Vec<(&'static str, Request)>,
     #[cfg(test)]
     pub phase: &'static str,
+    #[cfg(test)]
+    pub plan_refusal: Option<(&'static str, &'static str, usize)>,
+    #[cfg(test)]
+    pub enqueue_refusal: Option<&'static str>,
     pub target: Target,
     pub fixtures: Fixtures,
     pub secrets: Secrets,
@@ -91,6 +95,10 @@ impl<'a> Runner<'a> {
             replay: vec![],
             #[cfg(test)]
             phase: "cases",
+            #[cfg(test)]
+            plan_refusal: None,
+            #[cfg(test)]
+            enqueue_refusal: None,
             target,
             fixtures,
             secrets,
@@ -159,6 +167,19 @@ impl<'a> Runner<'a> {
             let mut replay = Request::new(request.method, &request.target, None, &request.body);
             replay.blob = request.blob;
             self.replay.push((self.phase, replay));
+        }
+        #[cfg(test)]
+        if self.enqueue_refusal == Some(self.case) && request.target == "/graphql" {
+            let document = json::Json::parse(&request.body)?;
+            if document.root().get("query").str().map(str::as_bytes) == Some(github::document::ENQUEUE) {
+                self.enqueue_refusal = None;
+                self.flush()?;
+                return Ok(Response {
+                    status: 200,
+                    head: b"HTTP/1.1 200 OK\r\nContent-Type: application/json".to_vec(),
+                    body: br#"{"data":{"enqueuePullRequest":null},"errors":[{"type":"UNPROCESSABLE","message":"invented queue admission refusal"}]}"#.to_vec(),
+                });
+            }
         }
         let (wire, response) = match &mut self.target {
             Target::Fake(w) => w.exchange(request)?,
@@ -583,6 +604,25 @@ impl<'a> Runner<'a> {
                 plan::{Bounds, Plan, Step},
             },
         };
+        #[cfg(test)]
+        if let Some((case, kind, skip)) = &mut self.plan_refusal {
+            let operation = match &op {
+                api::Op::Write(api::Write::Review { .. }) => "approval",
+                api::Op::Write(api::Write::Merge { .. }) => "enqueue",
+                api::Op::Write(api::Write::Status { .. }) => "status",
+                api::Op::Read(api::Read::Branches) => "branches",
+                api::Op::Read(api::Read::Branch { branch }) if branch.starts_with(b"gh-readonly-queue/") => "group",
+                api::Op::Read(api::Read::Pull { .. }) => "pull",
+                api::Op::Read(_) | api::Op::Write(_) => "other",
+            };
+            if *case == self.case && *kind == operation {
+                if *skip == 0 {
+                    self.plan_refusal = None;
+                    return Ok(Err(api::Error::Forbidden));
+                }
+                *skip -= 1;
+            }
+        }
         let repo = self.repo(index)?;
         let token = if person { self.person(index)? } else { self.token(index)? };
         let located = if let Some(id) = self.repositories.get(&repo) {

@@ -98,6 +98,124 @@ fn github_conformance_null_merged_commit_fails_the_fact_and_continues() {
     assert!(facts.contains(&fact.line()));
     shutdown(&mut r);
 }
+fn queue_refusal_fails_one_fact(case: &'static str, kind: &'static str, skip: usize, reason: &str) {
+    let out = Temp::new(&format!("queue-{case}-{kind}-{skip}"));
+    let mut r = runner(&out.0);
+    r.start().expect("start fake run");
+    if kind == "raw enqueue" {
+        r.enqueue_refusal = Some(case);
+    } else {
+        r.plan_refusal = Some((case, kind, skip));
+    }
+    let run = cases::run(&mut r);
+    r.complete(run).expect("queue setup refusal permits later cases and cleanup");
+    assert!(r.plan_refusal.is_none() && r.enqueue_refusal.is_none(), "refusal exercised");
+    assert_eq!(r.facts.len(), cases::NAMES.len());
+    let fact = r.facts.iter().find(|fact| fact.name == case).expect("queue fact");
+    assert_eq!(fact.outcome, Outcome::Fails(reason.into()));
+    let later = r.facts.iter().find(|fact| fact.name == "compare-files-capped-300").expect("later fact");
+    assert_eq!(later.outcome, Outcome::Holds);
+    shutdown(&mut r);
+}
+macro_rules! queue_refusal_test {
+    ($name:ident, $case:literal, $kind:literal, $skip:literal, $reason:literal) => {
+        #[test]
+        fn $name() {
+            queue_refusal_fails_one_fact($case, $kind, $skip, $reason);
+        }
+    };
+}
+queue_refusal_test!(
+    github_conformance_queue_merge_approval_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "approval",
+    0,
+    "queue approval refused: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_merge_head_status_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "status",
+    0,
+    "queue status refused: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_merge_enqueue_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "enqueue",
+    0,
+    "queue admission refused: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_merge_branches_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "branches",
+    0,
+    "queue branches read failed: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_merge_group_read_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "group",
+    0,
+    "queue group read failed: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_merge_group_status_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "status",
+    1,
+    "queue status refused: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_merge_pull_read_refusal,
+    "queue-merged-no-merge-commit-sha",
+    "pull",
+    0,
+    "merged pull read failed: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_dequeue_approval_refusal,
+    "queue-dequeued-delivered",
+    "approval",
+    0,
+    "queue approval refused: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_dequeue_head_status_refusal,
+    "queue-dequeued-delivered",
+    "status",
+    0,
+    "queue status refused: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_dequeue_enqueue_refusal,
+    "queue-dequeued-delivered",
+    "raw enqueue",
+    0,
+    "queue admission refused: invented queue admission refusal"
+);
+queue_refusal_test!(
+    github_conformance_queue_dequeue_branches_refusal,
+    "queue-dequeued-delivered",
+    "branches",
+    0,
+    "queue branches read failed: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_dequeue_group_read_refusal,
+    "queue-dequeued-delivered",
+    "group",
+    0,
+    "queue group read failed: Forbidden"
+);
+queue_refusal_test!(
+    github_conformance_queue_dequeue_group_status_refusal,
+    "queue-dequeued-delivered",
+    "status",
+    1,
+    "queue status refused: Forbidden"
+);
 #[test]
 fn github_conformance_names_every_fact_of_forge_github_13() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../docs/design/forge-github.md");

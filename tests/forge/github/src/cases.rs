@@ -29,7 +29,7 @@ pub(crate) const NAMES: &[&str] = &[
     "job-log-302-blob",
     "job-log-range-honoured",
     "merge-stale-409",
-    "merge-after-move-405-not-mergeable",
+    "merge-after-move-not-merged",
     "merge-unheld-by-ci",
     "update-stale-422",
     "update-202-later",
@@ -45,6 +45,7 @@ pub(crate) const NAMES: &[&str] = &[
     "bypass-always-merges",
     "queue-direct-merge-405",
     "enqueue-stale-unprocessable",
+    "enqueue-pending-check-protected",
     "queue-merged-no-merge-commit-sha",
     "queue-dequeued-delivered",
     "signatures-push-gh013",
@@ -414,13 +415,16 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
         Ok(update(r, n, "0000000000000000000000000000000000000000")?
             .is(422, "expected head sha didn’t match current head ref."))
     })?;
-    r.next("merge-after-move-405-not-mergeable")?;
+    r.next("merge-after-move-not-merged")?;
     let moved = r.advance(0, &sha, &head, "FAIL moved", files("probe.txt", "FAIL moved"))?;
     let response = merge(r, 0, n, &moved)?;
+    let after = pull_doc(r, 0, n)?;
     r.fact(
-        "merge-after-move-405-not-mergeable",
-        response.is(405, "Pull Request is not mergeable"),
-        "head move was not transiently unmergeable",
+        "merge-after-move-not-merged",
+        (response.is(405, "Pull Request is not mergeable")
+            || response.is(409, "Head branch was modified. Review and try the merge again."))
+            && after.json()?.root().get("merged").bool() == Some(false),
+        "head move did not refuse merge with the recorded 405 or 409, or the pull merged",
     );
     r.wait(4);
     case(r, "etag-304-free", |r| {
@@ -511,7 +515,6 @@ fn job_logs(r: &mut Runner<'_>, index: usize, sha: &str) -> Result<()> {
     );
     Ok(())
 }
-#[expect(clippy::too_many_lines, reason = "ordered cases share their owned branches and pull state")]
 fn rules(r: &mut Runner<'_>) -> Result<()> {
     r.next("approve-own-422")?;
     let first = r.base(0)?;
@@ -596,67 +599,173 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
         Ok(response.status == 200
             && response.json()?.root().get("errors").items().iter().any(|e| e.get("type").is("UNPROCESSABLE")))
     })?;
-    r.next("queue-merged-no-merge-commit-sha")?;
-    let answer = r.plan_as(
+    queue_pending(r, index, n, &sha)?;
+    queue_merged(r, index, n, &sha)?;
+    queue_dequeued(r, index)?;
+    Ok(())
+}
+fn queue_plan(
+    r: &mut Runner<'_>,
+    index: usize,
+    op: api::Op,
+    person: bool,
+    reason: &str,
+) -> Result<Option<api::Answer>> {
+    match r.plan_as(index, op, person)? {
+        Ok(answer) => Ok(Some(answer)),
+        Err(e) => {
+            r.fact(r.case, false, &format!("{reason}: {e:?}"));
+            Ok(None)
+        }
+    }
+}
+fn queue_approval(r: &mut Runner<'_>, index: usize, number: u64) -> Result<bool> {
+    Ok(queue_plan(
+        r,
         index,
         api::Op::Write(api::Write::Review {
-            number: n,
+            number,
             key: fake::boxed(b"approval"),
             verdict: api::Verdict::Approve,
             body: fake::boxed(b"approval"),
         }),
         true,
-    )?;
-    if answer.is_err() {
-        return Err("queue approval refused".into());
+        "queue approval refused",
+    )?
+    .is_some())
+}
+fn queue_status(r: &mut Runner<'_>, index: usize, commit: api::Commit, check: api::Check) -> Result<bool> {
+    Ok(queue_plan(
+        r,
+        index,
+        api::Op::Write(api::Write::Status { commit, context: fake::boxed(b"ci"), check }),
+        false,
+        "queue status refused",
+    )?
+    .is_some())
+}
+fn queue_group(r: &mut Runner<'_>, index: usize) -> Result<Option<api::Commit>> {
+    let Some(branches) = queue_plan(r, index, api::Op::Read(api::Read::Branches), false, "queue branches read failed")?
+    else {
+        return Ok(None);
+    };
+    let api::Answer::Branches(branches) = branches else {
+        return Err("branches answer invalid".into());
+    };
+    let Some(group) = branches.iter().find(|b| b.starts_with(b"gh-readonly-queue/")) else {
+        r.fact(r.case, false, "queue group branch absent");
+        return Ok(None);
+    };
+    let Some(group) = queue_plan(
+        r,
+        index,
+        api::Op::Read(api::Read::Branch { branch: group.clone() }),
+        false,
+        "queue group read failed",
+    )?
+    else {
+        return Ok(None);
+    };
+    let api::Answer::Commit(commit) = group else {
+        return Err("queue group oid absent".into());
+    };
+    Ok(Some(commit))
+}
+fn queue_pending(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<()> {
+    r.next("enqueue-pending-check-protected")?;
+    if !queue_approval(r, index, number)? || !queue_status(r, index, oid(sha)?, api::Check::Pending)? {
+        return Ok(());
     }
-    let queued = r.plan(index, api::Op::Write(api::Write::Merge { number: n, head: oid(&sha)? }))?;
-    r.wait_ci();
-    let response = pull_doc(r, index, n)?;
-    let merged = r.plan(index, api::Op::Read(api::Read::Pull { number: n }))?;
+    let answer = r.plan(index, api::Op::Write(api::Write::Merge { number, head: oid(sha)? }))?;
+    let response = enqueue(r, index, number, sha)?;
     r.fact(
-        "queue-merged-no-merge-commit-sha",
-        matches!(queued, Ok(api::Answer::Queued))
-            && response.json()?.root().get("merged").bool() == Some(true)
-            && response.json()?.root().get("merge_commit_sha").kind().is_none()
-            && matches!(merged,Ok(api::Answer::Pull(p)) if p.merged.is_some()),
-        "queue merge did not use GraphQL for the merged commit",
+        "enqueue-pending-check-protected",
+        matches!(answer, Err(api::Error::Protected))
+            && response.status == 200
+            && response.json()?.root().get("errors").items().iter().any(|e| {
+                e.get("type").is("UNPROCESSABLE")
+                    && e.get("message")
+                        .str()
+                        .is_some_and(|message| message.starts_with("Pull request Required status check "))
+            }),
+        "pending required check did not refuse enqueue as UNPROCESSABLE and Protected",
     );
+    Ok(())
+}
+fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<()> {
+    r.next("queue-merged-no-merge-commit-sha")?;
+    if !queue_approval(r, index, number)? || !queue_status(r, index, oid(sha)?, api::Check::Passed)? {
+        return Ok(());
+    }
+    let Some(queued) = queue_plan(
+        r,
+        index,
+        api::Op::Write(api::Write::Merge { number, head: oid(sha)? }),
+        false,
+        "queue admission refused",
+    )?
+    else {
+        return Ok(());
+    };
+    if !matches!(queued, api::Answer::Queued) {
+        r.fact(r.case, false, "queue merge did not answer Queued");
+        return Ok(());
+    }
+    let Some(commit) = queue_group(r, index)? else { return Ok(()) };
+    if !queue_status(r, index, commit, api::Check::Passed)? {
+        return Ok(());
+    }
+    // Poll within the same CI wait budget used by the other cases.
+    let until = r.now().as_nanos() + if r.fake() { 4 } else { 55 } * 1_000_000_000;
+    loop {
+        let response = pull_doc(r, index, number)?;
+        if response.json()?.root().get("merged").bool() == Some(true) {
+            let Some(merged) =
+                queue_plan(r, index, api::Op::Read(api::Read::Pull { number }), false, "merged pull read failed")?
+            else {
+                return Ok(());
+            };
+            r.fact(
+                "queue-merged-no-merge-commit-sha",
+                response.json()?.root().get("merge_commit_sha").kind().is_none()
+                    && matches!(merged, api::Answer::Pull(p) if p.merged.is_some()),
+                "queue merge did not use GraphQL for the merged commit",
+            );
+            return Ok(());
+        }
+        if r.now().as_nanos() >= until {
+            r.fact(r.case, false, "queue merge wait expired before the pull read merged");
+            return Ok(());
+        }
+        r.wait(2);
+    }
+}
+fn queue_dequeued(r: &mut Runner<'_>, index: usize) -> Result<()> {
     r.next("queue-dequeued-delivered")?;
     let (base, _head, sha, n) = scenario(r, index, "queue-failure")?;
     rule(r, index, &base, 1, true, false)?;
     r.wait(4);
-    r.plan_as(
-        index,
-        api::Op::Write(api::Write::Review {
-            number: n,
-            key: fake::boxed(b"approval"),
-            verdict: api::Verdict::Approve,
-            body: fake::boxed(b"approval"),
-        }),
-        true,
-    )?
-    .map_err(|_| "queue approval refused")?;
-    let response = enqueue(r, index, n, &sha)?;
-    if response.json()?.root().get("errors").kind().is_some() {
-        return Err("queue admission refused".into());
+    if !queue_approval(r, index, n)? || !queue_status(r, index, oid(&sha)?, api::Check::Passed)? {
+        return Ok(());
     }
-    let branches = r.plan(index, api::Op::Read(api::Read::Branches))?.map_err(|_| "queue branches plan failed")?;
-    let api::Answer::Branches(branches) = branches else {
-        return Err("branches answer invalid".into());
-    };
-    let group = branches.iter().find(|b| b.starts_with(b"gh-readonly-queue/")).ok_or("queue group branch absent")?;
-    let group = r
-        .plan(index, api::Op::Read(api::Read::Branch { branch: group.clone() }))?
-        .map_err(|_| "queue group read failed")?;
-    let api::Answer::Commit(commit) = group else {
-        return Err("queue group oid absent".into());
-    };
-    r.plan(
-        index,
-        api::Op::Write(api::Write::Status { commit, context: fake::boxed(b"ci"), check: api::Check::Failed }),
-    )?
-    .map_err(|_| "queue failure status refused")?;
+    let response = enqueue(r, index, n, &sha)?;
+    let document = response.json()?;
+    if document.root().get("errors").kind().is_some() {
+        let messages = document
+            .root()
+            .get("errors")
+            .items()
+            .iter()
+            .filter_map(|e| e.get("message").str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        r.fact(r.case, false, &format!("queue admission refused: {messages}"));
+        return Ok(());
+    }
+    let Some(commit) = queue_group(r, index)? else { return Ok(()) };
+    if !queue_status(r, index, commit, api::Check::Failed)? {
+        return Ok(());
+    }
     r.wait(4);
     let log = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;
     let rows = log.json()?;
@@ -672,6 +781,7 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
     );
     Ok(())
 }
+
 #[expect(clippy::too_many_lines, reason = "ordered cases share their owned branches and pull state")]
 fn repositories(r: &mut Runner<'_>) -> Result<()> {
     case(r, "installation-repositories-at-once", |r| {
