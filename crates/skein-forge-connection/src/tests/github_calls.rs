@@ -30,6 +30,67 @@ fn answered(h: &mut Harness, cost: u32, result: Result<Answer, Error>) {
     assert_eq!((answer.cost, &answer.result), (cost, &result));
 }
 #[test]
+fn protection_joins_sources_and_preserves_result_and_cost() {
+    const RULES_PATH: &[u8] = b"GET /repos/acme/widgets/rules/branches/main?per_page=100&page=1 HTTP/1.1";
+    const RULESET_PATH: &[u8] = b"GET /repos/acme/widgets/rulesets/11 HTTP/1.1";
+    const CLASSIC_PATH: &[u8] = b"GET /repos/acme/widgets/branches/main/protection HTTP/1.1";
+    const ABSENT: &[u8] = br#"{"message":"Branch not protected"}"#;
+    const RULES: &[u8] = br#"[
+        {"ruleset_id":11,"type":"pull_request","parameters":{"required_approving_review_count":2,"dismiss_stale_reviews_on_push":true,"require_code_owner_review":true}},
+        {"ruleset_id":11,"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"},{"context":"lint"}]}},
+        {"ruleset_id":11,"type":"merge_queue"}
+    ]"#;
+    const BYPASS: &[u8] = br#"{"current_user_can_bypass":"always"}"#;
+    const CLASSIC: &[u8] = br#"{"required_status_checks":{"contexts":["lint","classic"]},"required_pull_request_reviews":{"required_approving_review_count":3,"dismiss_stale_reviews":false,"require_code_owner_reviews":false},"required_signatures":{"enabled":true},"required_linear_history":{"enabled":true}}"#;
+    // One charged request for rules, one for classic, and one for each distinct ruleset.
+    const ABSENT_COST: u32 = 2;
+    const JOINED_COST: u32 = 3;
+    for (name, responses, cost, expected) in [
+        (
+            "absent",
+            [(RULES_PATH, 200, b"[]".as_slice()), (CLASSIC_PATH, 404, ABSENT)].as_slice(),
+            ABSENT_COST,
+            Ok(Answer::Protection(None)),
+        ),
+        (
+            "joined",
+            [(RULES_PATH, 200, RULES), (RULESET_PATH, 200, BYPASS), (CLASSIC_PATH, 200, CLASSIC)].as_slice(),
+            JOINED_COST,
+            Ok(Answer::Protection(Some(api::Protection {
+                branch: Box::from(*b"main"),
+                contexts: Box::new([Box::from(*b"build"), Box::from(*b"lint"), Box::from(*b"classic")]),
+                approvals: 3,
+                dismiss_stale: true,
+                code_owners: true,
+                linear: true,
+                signatures: true,
+                queue: true,
+                bypass: api::Bypass::Never,
+            }))),
+        ),
+        (
+            "forbidden",
+            [(RULES_PATH, 200, b"[]".as_slice()), (CLASSIC_PATH, 403, br#"{"message":"Forbidden"}"#)].as_slice(),
+            ABSENT_COST,
+            Err(Error::Forbidden),
+        ),
+    ] {
+        let mut h = known();
+        h.call(1, REPO, Op::Read(Read::Protection { branch: Box::from(*b"main") }));
+        h.run(Duration::ZERO);
+        if h.answered(1).is_none() {
+            h.connected(FORGE);
+            for (path, status, body) in responses {
+                assert_eq!(h.request_lines(FORGE).as_slice().last().expect("request").as_ref(), *path, "{name}");
+                h.answer(FORGE, &f::response(*status, body));
+                h.run(Duration::ZERO);
+            }
+        }
+        let answer = h.answered(1).expect("one protection terminal");
+        assert_eq!((&answer.result, answer.cost), (&expected, cost), "{name}");
+    }
+}
+#[test]
 fn repository_account_selects_its_accepted_installation() {
     let mut h = known();
     f::github_account(&mut h, 2, 23, b"other", b"artificial-full-two");

@@ -581,8 +581,8 @@ fn bounds(page_size: u32, env: &Env<Limits>, shared: &crate::Shared) -> Bounds {
 fn admitted(op: &api::Op) -> bool {
     match op {
         api::Op::Read(read) => match read {
-            api::Read::Protection { .. } => false,
-            api::Read::Job { .. }
+            api::Read::Protection { .. }
+            | api::Read::Job { .. }
             | api::Read::File { .. }
             | api::Read::Compare { .. }
             | api::Read::PullFiles { .. }
