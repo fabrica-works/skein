@@ -35,6 +35,9 @@ pub(crate) fn route(method: Method, target: &[u8]) -> Option<Route> {
     Some(Route { repository: bytes::copy_of(tail.get(..at)?), id })
 }
 pub(crate) fn call(service: &Service, route: Route, access: Access, body: &[u8], reply_to: ReplyTo) -> Outcome {
+    if let Access::Person(_) = access {
+        return Outcome::Reply(answers::refusal(403, crate::texts::PERSON, &service.limits));
+    }
     if access.contents() {
         return Outcome::Reply(answers::refusal(403, crate::texts::INTEGRATION, &service.limits));
     }

@@ -116,7 +116,7 @@ fn github_fake_person_tokens_reach_their_users_and_not_the_apps_routes() {
     }
     assert!(h.service.installations_mut().set_reach(1, f::listed(&[2])));
     let response = h.ask(Method::Delete, b"/user/installations/1/repositories/2", Some(token.expose()), b"");
-    f::refusal(&h, &response, 422, b"Validation Failed");
+    f::refusal(&h, &response, 422, crate::texts::REMOVE_LAST_REPOSITORY);
     // bob cannot change the reach of a repository alice administers.
     assert_eq!(
         h.ask(Method::Delete, b"/user/installations/1/repositories/2", Some(person(false).expose()), b"").status,
@@ -302,7 +302,12 @@ enum Credential {
     Jwt,
 }
 fn expected(class: Class, credential: Credential, target: &[u8]) -> Option<u16> {
-    if target == b"/user" {
+    if skein_lib::bytes::find(target, b"/statuses/").is_some() {
+        match credential {
+            Credential::Full | Credential::Contents | Credential::Person => Some(403),
+            Credential::Expired | Credential::Revoked | Credential::Jwt => Some(401),
+        }
+    } else if target == b"/user" {
         match credential {
             Credential::Full | Credential::Contents => Some(403),
             Credential::Expired | Credential::Revoked | Credential::Jwt => Some(401),
@@ -395,7 +400,13 @@ fn matrix_request(h: &mut f::Harness, method: Method, target: &[u8], body: &[u8]
                     h,
                     &response,
                     status,
-                    if status == 401 { b"Bad credentials" } else { crate::texts::INTEGRATION },
+                    if status == 401 {
+                        b"Bad credentials"
+                    } else if credential == Credential::Person {
+                        crate::texts::PERSON
+                    } else {
+                        crate::texts::INTEGRATION
+                    },
                 );
             }
         } else {
@@ -500,7 +511,12 @@ fn github_fake_installation_repository_removal_refusals_preserve_reach() {
         let token = person(true);
         let response = h.ask(Method::Delete, b"/user/installations/1/repositories/2", Some(token.expose()), b"");
         if status == 422 {
-            f::refusal(&h, &response, 422, b"Validation Failed");
+            f::refusal(
+                &h,
+                &response,
+                422,
+                if all { crate::texts::REMOVE_ALL_REPOSITORIES } else { crate::texts::REMOVE_LAST_REPOSITORY },
+            );
         } else {
             assert_eq!(response.status, 204);
         }

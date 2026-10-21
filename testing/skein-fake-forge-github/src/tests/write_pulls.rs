@@ -45,8 +45,15 @@ fn github_fake_open_pull_plan_creates_and_reads_back() {
         Some(token.expose()),
         br#"{"title":"feature","body":"body","head":"feature","base":"trunk"}"#,
     );
-    let message = f::parts(&[crate::texts::PULL_EXISTS, b"feature"]);
-    f::refusal(&h, &response, 422, &message);
+    let message = f::parts(&[crate::texts::PULL_EXISTS, b"acme:feature."]);
+    f::refusal(&h, &response, 422, b"Validation Failed");
+    let (_, skein_forge::github::document::Document::Error(error)) =
+        h.decode(skein_forge::github::document::Kind::Error, &response)
+    else {
+        panic!("pull validation")
+    };
+    assert_eq!(error.errors.as_ref(), &[message]);
+    assert!(skein_lib::bytes::find(&response.body, br#""resource":"PullRequest","code":"custom""#).is_some());
 }
 #[test]
 fn github_fake_empty_head_refuses_open_pull_without_creating() {
@@ -61,7 +68,14 @@ fn github_fake_empty_head_refuses_open_pull_without_creating() {
         br#"{"title":"feature","body":"body","head":"feature","base":"trunk"}"#,
     );
     let message = f::parts(&[crate::texts::NO_COMMITS, b"trunk and feature"]);
-    f::refusal(&h, &response, 422, &message);
+    f::refusal(&h, &response, 422, b"Validation Failed");
+    let (_, skein_forge::github::document::Document::Error(error)) =
+        h.decode(skein_forge::github::document::Kind::Error, &response)
+    else {
+        panic!("pull validation")
+    };
+    assert_eq!(error.errors.as_ref(), &[message]);
+    assert!(skein_lib::bytes::find(&response.body, br#""resource":"PullRequest","code":"custom""#).is_some());
     assert_eq!(r::read(&mut h, &token, api::Read::Pull { number: 1 }), Err(api::Error::Missing));
 }
 #[test]

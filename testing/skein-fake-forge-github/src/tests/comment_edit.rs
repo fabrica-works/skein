@@ -37,9 +37,9 @@ fn harness() -> f::Harness {
 #[test]
 fn github_fake_comment_edits_follow_domain_authorship_and_permission_and_advance_updated_at() {
     for (who, user, permission, status) in [
-        (b"invented-author".as_slice(), 31, a::Permission::Read, 200_u16),
-        (b"invented-other", 32, a::Permission::Read, 404),
-        (b"invented-other", 32, a::Permission::Write, 200),
+        (b"invented-author".as_slice(), 31, a::Permission::Read, 403_u16),
+        (b"invented-other", 32, a::Permission::Read, 403),
+        (b"invented-other", 32, a::Permission::Write, 403),
         (b"installation", f::BOT, a::Permission::Read, 404),
         (b"installation", f::BOT, a::Permission::Write, 200),
     ] {
@@ -69,7 +69,7 @@ fn github_fake_comment_edits_follow_domain_authorship_and_permission_and_advance
 #[test]
 fn github_fake_comment_edit_refuses_extra_duplicate_empty_and_non_string_bodies() {
     let mut h = harness();
-    let token = f::bearer(b"invented-author");
+    let token = r::token(&mut h);
     for body in [
         br#"{"body":"after","unknown":1}"#.as_slice(),
         br#"{"body":"first","body":"second"}"#,

@@ -166,3 +166,33 @@ fn github_fake_issue_routes_refuse_outside_installation_and_invalid_pages() {
         f::refusal(&h, &response, 404, b"Not Found");
     }
 }
+
+#[test]
+fn github_fake_issues_since_observed_cutoff_and_inclusive_timestamp() {
+    let mut h = r::harness();
+    h.env.now = Time::from_nanos(31_536_000_000_000_000);
+    let number = r::issue(&mut h, b"at the observed bound");
+    let token = r::token(&mut h);
+    for (since, present) in [
+        (b"".as_slice(), true),
+        (b"&since=1970-01-01T00%3A00%3A00Z", false),
+        (b"&since=1970-01-01T00%3A00%3A01Z", false),
+        (b"&since=1970-12-31T23%3A59%3A59Z", false),
+        (b"&since=1971-01-01T00%3A00%3A00Z", true),
+        (b"&since=1971-01-01T00%3A00%3A01Z", false),
+    ] {
+        let target = f::parts(&[
+            b"/repos/acme/widgets/issues?state=all",
+            since,
+            b"&sort=updated&direction=asc&per_page=100&page=1",
+        ]);
+        let response = h.ask(Method::Get, &target, Some(token.expose()), b"");
+        assert_eq!(response.status, 200);
+        let (rows, Document::Rows) = h.decode(Kind::IssueRows, &response) else { panic!("listing") };
+        assert_eq!(rows.len(), u32::from(present), "{since:?}");
+        if present {
+            let Row::Issue(row) = rows.as_slice().first().unwrap() else { panic!("issue") };
+            assert_eq!(row.number, number);
+        }
+    }
+}

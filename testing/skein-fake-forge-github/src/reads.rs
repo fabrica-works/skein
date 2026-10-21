@@ -23,6 +23,9 @@ pub(crate) mod protection;
 mod pulls;
 mod reviews;
 
+// The earliest observed nonempty since; the bound was not probed further.
+const ISSUES_SINCE_MIN: Wall = Wall::from_nanos(31_536_000_000_000_000);
+
 // Two quotes around the hexadecimal SHA-256 of the repository document.
 pub(crate) const REPOSITORY_ETAG_BYTES: usize = 66;
 
@@ -240,6 +243,9 @@ pub(crate) fn call(
             };
             (Pending::Raw, Op::Read(a::Read::File { commit, path }))
         }
+        Read::Issues { since, .. } if since < ISSUES_SINCE_MIN && bytes::find(target, b"&since=").is_some() => {
+            return Outcome::Reply(answers::response(200, &Body::Issues(&[]), &service.limits));
+        }
         Read::Issues { since, page, per_page, .. } => (
             Pending::Issues { target: bytes::copy_of(target), page, size: per_page.min(service.limits.page) },
             Op::Read(a::Read::Items {
@@ -392,7 +398,8 @@ pub(crate) fn finish(
             let Answer::Commit(count) = answer else {
                 return answers::failed();
             };
-            answers::response(200, &Body::Branch(&d::Branch { name, commit: commit(count) }), limits)
+            let Some(object) = domain.object(count) else { return answers::failed() };
+            answers::response(200, &Body::Branch(&d::Branch { name, commit: commit(count) }, &object.message), limits)
         }
         Pending::Branches { page, size, target } => branches(answer, page, size, &target, limits),
     }

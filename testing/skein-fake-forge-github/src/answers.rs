@@ -33,7 +33,7 @@ pub(crate) enum Body<'a> {
     Enqueued(u32),
     EnqueueRefusal(&'a [u8]),
     Repository(&'a d::Repository),
-    Branch(&'a d::Branch),
+    Branch(&'a d::Branch, &'a [u8]),
     Branches(&'a [&'a [u8]]),
     Issues(&'a [d::Issue]),
     Issue(&'a d::Issue),
@@ -48,6 +48,7 @@ pub(crate) enum Body<'a> {
     Permission(skein_forge::api::Permission),
     Reviews(&'a [d::Review]),
     Remarks(&'a [d::Remark]),
+    PullValidation(&'a [u8]),
     Refusal(&'a [u8]),
     RefusalStrings(&'a [u8], &'a [&'a [u8]]),
 }
@@ -77,8 +78,14 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::EnqueueRefusal(message) => server::enqueue_refused(b"UNPROCESSABLE", message, out),
         Body::Enqueued(position) => server::enqueued(*position, out),
         Body::Graphql => server::graphql_refusal(b"UNPROCESSABLE", b"Unsupported query", out),
-        Body::Repository(row) => server::repository(row, out),
-        Body::Branch(row) => server::branch(row, out),
+        Body::Repository(row) => {
+            let mut scratch = Writer::new(out.room());
+            server::repository(row, &mut scratch)?;
+            let encoded = finish(scratch).ok_or(Overflow)?;
+            out.put(encoded.strip_suffix(b"}").ok_or(Overflow)?)?;
+            out.put(br#","squash_merge_commit_title":"COMMIT_OR_PR_TITLE"}"#)
+        }
+        Body::Branch(row, message) => extra_json(Detail::Branch(row, message), out),
         Body::Branches(rows) => server::branches(rows, out),
         Body::Issues(rows) => server::issues(rows, out),
         Body::Issue(row) => server::issue(row, out),
@@ -93,9 +100,61 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Permission(value) => server::permission(*value, out),
         Body::Reviews(rows) => server::reviews(rows, out),
         Body::Remarks(rows) => server::remarks(rows, out),
+        Body::PullValidation(message) => extra_json(Detail::PullValidation(message), out),
         Body::Refusal(message) => server::refusal(message, &[], out),
         Body::RefusalStrings(message, errors) => server::refusal_strings(message, errors, out),
     }
+}
+enum Detail<'a> {
+    Branch(&'a d::Branch, &'a [u8]),
+    PullValidation(&'a [u8]),
+}
+fn extra_json(detail: Detail<'_>, out: &mut Writer) -> Result<(), Overflow> {
+    use skein_json::writer::{Encoder, Limits};
+    let Ok(length) = u32::try_from(out.room()) else { return Err(Overflow) };
+    let limits = Limits { depth: 4, length };
+    let mut measure = Encoder::measure(&limits);
+    extra_fields(&detail, &mut measure)?;
+    let Ok(length) = measure.measured() else { return Err(Overflow) };
+    let mut json = Encoder::write(length, &limits);
+    extra_fields(&detail, &mut json)?;
+    out.put(&json.finish())
+}
+fn extra_fields(detail: &Detail<'_>, json: &mut skein_json::writer::Encoder) -> Result<(), Overflow> {
+    json.object_start();
+    match detail {
+        Detail::Branch(row, message) => {
+            json.key(b"name");
+            json.string(&row.name);
+            json.key(b"commit");
+            json.object_start();
+            json.key(b"sha");
+            json.string(&skein_forge::github::id::write_commit(&row.commit).ok_or(Overflow)?);
+            json.key(b"commit");
+            json.object_start();
+            json.key(b"message");
+            json.string(message);
+            json.object_end();
+            json.object_end();
+        }
+        Detail::PullValidation(message) => {
+            json.key(b"message");
+            json.string(b"Validation Failed");
+            json.key(b"errors");
+            json.array_start();
+            json.object_start();
+            json.key(b"resource");
+            json.string(b"PullRequest");
+            json.key(b"code");
+            json.string(b"custom");
+            json.key(b"message");
+            json.string(message);
+            json.object_end();
+            json.array_end();
+        }
+    }
+    json.object_end();
+    Ok(())
 }
 fn minted(
     row: &d::Minted,

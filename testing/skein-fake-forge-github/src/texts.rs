@@ -2,6 +2,7 @@
 
 // user-on-installation-403.
 pub(crate) const INTEGRATION: &[u8] = b"Resource not accessible by integration";
+pub(crate) const PERSON: &[u8] = b"Resource not accessible by personal access token";
 // merge-stale-409.
 pub(crate) const MERGE_STALE: &[u8] = b"Head branch was modified. Review and try the merge again.";
 // merge-after-move-not-merged.
@@ -82,9 +83,9 @@ pub(crate) const SECONDARY_RATE: &[u8] = b"You have exceeded a secondary rate li
 // Docs-derived installation-repository-removal-refusals; unchecked live.
 // DELETE is refused for an all-repositories installation.
 pub(crate) const REMOVE_ALL_REPOSITORIES: &[u8] = b"Validation Failed";
-// Docs-derived installation-repository-removal-refusals; unchecked live.
+// installation-repository-removal-refusals, checked live.
 // DELETE is refused when it would remove the installation's last repository.
-pub(crate) const REMOVE_LAST_REPOSITORY: &[u8] = b"Validation Failed";
+pub(crate) const REMOVE_LAST_REPOSITORY: &[u8] = b"Cannot remove the last repository from this installation.";
 
 // Inferred from GitHub docs, unrecorded on an installation token.
 pub(crate) const RULESET_INTEGRATION: &[u8] = b"Resource not accessible by integration";

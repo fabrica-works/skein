@@ -6,7 +6,6 @@ use skein_forge::github::request::Method;
 use skein_forge_connection::{Component, Event, Limits, Request};
 use skein_forge_machine_world::{
     fixtures as machine,
-    github::WALL_BASE,
     joint::REPO,
     pipe::{Cut, Pipe},
 };
@@ -17,6 +16,8 @@ use skein_lib::{
 };
 use std::collections::BTreeMap;
 
+// Recovery listing timestamps must be above the observed issues-since cutoff.
+const WALL_BASE: Wall = Wall::from_nanos(31_536_000_000_000_000);
 const TURN: Duration = Duration::from_nanos(100_000);
 
 #[derive(Default)]

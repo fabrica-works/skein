@@ -171,14 +171,13 @@ enum Stage {
     Done,
     Created,
     Commented,
-    OpenPull { head: Box<[u8]>, base: Box<[u8]> },
+    OpenPull { owner: Box<[u8]>, head: Box<[u8]>, base: Box<[u8]> },
     UpdateHead { number: u64, head: skein_forge::api::Commit },
     Updated,
     Reviewed,
     Branch,
     Merge(merge::Stage),
     DeleteBranch,
-    Status,
     ReviewAuthor { number: u64, verdict: skein_forge::api::Verdict, body: Box<[u8]> },
     Reviewers(bool),
 }
@@ -229,7 +228,6 @@ fn verdict_of(verdict: skein_forge::api::Verdict) -> a::Verdict {
         skein_forge::api::Verdict::Comment => a::Verdict::Comment,
     }
 }
-#[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively translates each write request")]
 #[expect(clippy::result_large_err, reason = "bounded inline responses avoid an allocation on refusals")]
 fn operation(service: &Service, request: Request, access: &Access) -> Result<(Stage, Op), Response> {
     let (stage, write) = match request {
@@ -243,33 +241,15 @@ fn operation(service: &Service, request: Request, access: &Access) -> Result<(St
             (Stage::Branch, Write::CreateBranch { branch, commit })
         }
         Request::DeleteBranch { branch, .. } => (Stage::DeleteBranch, Write::DeleteBranch { branch }),
-        Request::Status { commit, context, check, .. } => {
-            let mut allowed = match access {
-                Access::Person(_) => true,
-                Access::Installation { .. } => false,
+        Request::Status { .. } => {
+            let message = match access {
+                Access::Person(_) => texts::PERSON,
+                Access::Installation { .. } => texts::INTEGRATION,
             };
-            for permission in &service.app.permissions {
-                if permission.name.as_ref() == b"statuses"
-                    && permission.access == skein_forge::github::document::Access::Write
-                {
-                    allowed = true;
-                }
-            }
-            if !allowed {
-                return Err(answers::refusal(403, texts::INTEGRATION, &service.limits));
-            }
-            let Some(commit) = reads::count(&commit) else {
-                return Err(answers::missing(&service.limits));
-            };
-            let state = match check {
-                skein_forge::api::Check::Pending => a::Check::Pending,
-                skein_forge::api::Check::Passed => a::Check::Passed,
-                skein_forge::api::Check::Failed => a::Check::Failed,
-            };
-            (Stage::Status, Write::Status { commit, context, state })
+            return Err(answers::refusal(403, message, &service.limits));
         }
-        Request::OpenPull { title, body, head, base, .. } => (
-            Stage::OpenPull { head: head.clone(), base: base.clone() },
+        Request::OpenPull { owner, title, body, head, base, .. } => (
+            Stage::OpenPull { owner, head: head.clone(), base: base.clone() },
             Write::OpenPull { title, body, head, base, opens_empty: false },
         ),
         Request::Update { number, head, .. } => {
@@ -359,7 +339,6 @@ pub(crate) fn finish(
         }
         stage @ (Stage::Branch
         | Stage::DeleteBranch
-        | Stage::Status
         | Stage::ReviewAuthor { .. }
         | Stage::Done
         | Stage::Created
@@ -391,12 +370,6 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             answers::empty(204)
-        }
-        Stage::Status => {
-            let a::Answer::Done = answer else {
-                return Outcome::Reply(answers::failed());
-            };
-            answers::response(201, &Body::Done, limits)
         }
         Stage::ReviewAuthor { number, verdict, body } => {
             let a::Answer::Item { item, .. } = answer else {
@@ -465,7 +438,7 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
         Stage::DeleteBranch if error == a::Error::Missing(a::What::Branch) => {
             return answers::refusal(422, texts::REF_MISSING, limits);
         }
-        Stage::OpenPull { head, base } => {
+        Stage::OpenPull { owner, head, base } => {
             let text = match error {
                 a::Error::NothingToMerge => {
                     let Some(prefix) = crate::service::joined(texts::NO_COMMITS, base) else {
@@ -476,7 +449,18 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
                     };
                     crate::service::joined(&prefix, head)
                 }
-                a::Error::Exists => crate::service::joined(texts::PULL_EXISTS, head),
+                a::Error::Exists => {
+                    let Some(prefix) = crate::service::joined(texts::PULL_EXISTS, owner) else {
+                        return answers::failed();
+                    };
+                    let Some(prefix) = crate::service::joined(&prefix, b":") else {
+                        return answers::failed();
+                    };
+                    let Some(prefix) = crate::service::joined(&prefix, head) else {
+                        return answers::failed();
+                    };
+                    crate::service::joined(&prefix, b".")
+                }
                 a::Error::Unavailable
                 | a::Error::Timeout
                 | a::Error::RateLimited { .. }
@@ -495,7 +479,7 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
                 | a::Error::Refused => None,
             };
             if let Some(text) = text {
-                return answers::refusal(422, &text, limits);
+                return answers::response(422, &Body::PullValidation(&text), limits);
             }
         }
         Stage::Updated if error == a::Error::Conflict => {
@@ -503,7 +487,6 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
         }
         Stage::Branch
         | Stage::DeleteBranch
-        | Stage::Status
         | Stage::ReviewAuthor { .. }
         | Stage::Done
         | Stage::Created

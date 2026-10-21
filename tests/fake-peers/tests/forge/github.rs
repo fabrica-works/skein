@@ -550,14 +550,14 @@ fn github_peer_pages_link_to_its_own_origin() {
     }
     let response = world.fetch(
         Method::Get,
-        b"/repos/org/repo/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=1&page=1",
+        b"/repos/org/repo/issues?state=all&sort=updated&direction=asc&per_page=1&page=1",
         b"",
         Some(&token),
     );
     assert_eq!(response.status, 200);
     let link = response.header(b"Link").expect("next page");
     let expected = format!(
-        "<http://{}/repos/org/repo/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=1&page=2>; rel=\"next\"",
+        "<http://{}/repos/org/repo/issues?state=all&sort=updated&direction=asc&per_page=1&page=2>; rel=\"next\"",
         world.github.address().expect("bound GitHub address")
     );
     assert_eq!(link, expected.as_bytes());
