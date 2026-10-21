@@ -31,6 +31,11 @@ key in PEM and `webhook_secret` holds the hook secret. The first installation
 reaches only its one probe repository, the second reaches all its account's
 repositories, and the spare is ungranted in the first account. The probe `ci`
 workflow fails on `FAIL` in the commit message. All names come from these files.
+Startup reads each probe repository with its owner's person token before any
+write. The first whose `owner.type` is `Organization` supplies the repository,
+installation token and matching person token for all queue cases and rulesets.
+At least one organization installation is required; otherwise startup stops
+before minting or repository changes. No account-type fixture field is needed.
 The version must equal the dialect's API pin. Tokens expiring within thirty
 days are named in the facts' provenance.
 

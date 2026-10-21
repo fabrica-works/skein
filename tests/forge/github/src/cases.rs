@@ -17,7 +17,7 @@ use skein_forge_conformance::{
 
 pub(crate) const NAMES: &[&str] = &[
     "token-expires-in-an-hour",
-    "token-narrowed-not-enforced",
+    "token-narrowed-creates-not-edits",
     "rate-core-5000",
     "jwt-calls-no-rate",
     "viewer-is-bot",
@@ -63,7 +63,7 @@ pub(crate) const NAMES: &[&str] = &[
     "refs-delete-missing-422",
     "update-conflict-422",
     "merge-repeat-idempotent",
-    "merge-repeat-stale-409",
+    "merge-repeat-any-sha-200",
     "compare-files-capped-300",
     "comment-updated-at-on-edit",
     "inactive-hook-visible",
@@ -88,9 +88,21 @@ fn pull_doc(r: &mut Runner<'_>, index: usize, number: u64) -> Result<crate::wire
     let token = r.token(index)?;
     r.raw(Method::Get, format!("/repos/{repo}/pulls/{number}"), &token, b"")
 }
-fn merge(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<crate::wire::Response> {
-    let repo = r.repo(0)?;
-    let token = r.token(0)?;
+fn merged_sha(r: &mut Runner<'_>, index: usize, number: u64) -> Result<Option<String>> {
+    for attempt in 0..=4 {
+        let response = pull_doc(r, index, number)?;
+        if let Some(sha) = response.json()?.root().get("merge_commit_sha").str() {
+            return Ok(Some(sha.to_owned()));
+        }
+        if attempt < 4 {
+            r.wait(1);
+        }
+    }
+    Ok(None)
+}
+fn merge(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<crate::wire::Response> {
+    let repo = r.repo(index)?;
+    let token = r.token(index)?;
     let body = json::object(&[("merge_method", &"merge"), ("sha", &sha)])?;
     r.raw(Method::Put, format!("/repos/{repo}/pulls/{number}/merge"), &token, &body)
 }
@@ -100,8 +112,8 @@ fn update(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<crate::wire::Res
     let body = json::object(&[("expected_head_sha", &sha)])?;
     r.raw(Method::Put, format!("/repos/{repo}/pulls/{number}/update-branch"), &token, &body)
 }
-fn enqueue(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<crate::wire::Response> {
-    let repo = r.repo(0)?;
+fn enqueue(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<crate::wire::Response> {
+    let repo = r.repo(index)?;
     let (owner, name) = repo.split_once('/').ok_or("repository name invalid")?;
     let query = github::request::Request::PullGraphql {
         owner: fake::boxed(owner.as_bytes()),
@@ -109,7 +121,7 @@ fn enqueue(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<crate::wire::Re
         number,
     };
     let encoded = github::request::encode(&query, &fake::bounds()).map_err(|_| "pull query encoding refused")?;
-    let token = r.token(0)?;
+    let token = r.token(index)?;
     let response = r.raw(encoded.method, "/graphql", &token, encoded.body.as_deref().unwrap_or_default())?;
     let document = response.json()?;
     let node = document
@@ -123,7 +135,7 @@ fn enqueue(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<crate::wire::Re
         .to_owned();
     let request = github::request::Request::Enqueue { id: fake::boxed(node.as_bytes()), head: oid(sha)? };
     let encoded = github::request::encode(&request, &fake::bounds()).map_err(|_| "enqueue encoding refused")?;
-    let token = r.token(0)?;
+    let token = r.token(index)?;
     r.raw(
         encoded.method,
         String::from_utf8(encoded.target.into_vec())?,
@@ -138,9 +150,9 @@ fn scenario(r: &mut Runner<'_>, index: usize, message: &str) -> Result<(String, 
     let n = r.pull(index, &head, &base, false)?;
     Ok((base, head, sha, n))
 }
-fn rule(r: &mut Runner<'_>, base: &str, approvals: u64, queue: bool, bypass: bool) -> Result<()> {
+fn rule(r: &mut Runner<'_>, index: usize, base: &str, approvals: u64, queue: bool, bypass: bool) -> Result<()> {
     r.remove_rules()?;
-    let repo = r.repo(0)?;
+    let repo = r.repo(index)?;
     let name = r.name("rule");
     r.before(Made::Rules { repo: repo.clone(), name: name.clone() })?;
     let app = r.fixtures.app;
@@ -199,34 +211,57 @@ fn rule(r: &mut Runner<'_>, base: &str, approvals: u64, queue: bool, bypass: boo
         out.object_end();
         out.object_end();
         if queue {
-            out.object_start();
-            out.key(b"type");
-            out.string(b"required_status_checks");
-            out.key(b"parameters");
-            out.object_start();
-            out.key(b"required_status_checks");
-            out.array_start();
-            out.object_start();
-            out.key(b"context");
-            out.string(b"ci");
-            out.object_end();
-            out.array_end();
-            out.object_end();
-            out.object_end();
-            out.object_start();
-            out.key(b"type");
-            out.string(b"merge_queue");
-            out.object_end();
+            queue_rules(out);
         }
         out.array_end();
         out.object_end();
     })?;
-    let person = r.person(0)?;
+    let person = r.person(index)?;
     let response = r.raw(Method::Post, format!("/repos/{repo}/rulesets"), &person, &body)?;
     if response.status != 201 || response.json()?.root().get("id").u64().is_none() {
         return Err("person ruleset creation refused".into());
     }
     Ok(())
+}
+fn queue_rules(out: &mut skein_json::writer::Encoder) {
+    out.object_start();
+    out.key(b"type");
+    out.string(b"required_status_checks");
+    out.key(b"parameters");
+    out.object_start();
+    out.key(b"strict_required_status_checks_policy");
+    out.boolean(false);
+    out.key(b"required_status_checks");
+    out.array_start();
+    out.object_start();
+    out.key(b"context");
+    out.string(b"ci");
+    out.object_end();
+    out.array_end();
+    out.object_end();
+    out.object_end();
+    out.object_start();
+    out.key(b"type");
+    out.string(b"merge_queue");
+    out.key(b"parameters");
+    out.object_start();
+    // One entry and no batching wait let a single-pull case proceed immediately.
+    for (name, value) in [
+        (b"check_response_timeout_minutes".as_slice(), 60),
+        (b"max_entries_to_build", 5),
+        (b"max_entries_to_merge", 5),
+        (b"min_entries_to_merge", 1),
+        (b"min_entries_to_merge_wait_minutes", 0),
+    ] {
+        out.key(name);
+        out.unsigned(value);
+    }
+    out.key(b"grouping_strategy");
+    out.string(b"ALLGREEN");
+    out.key(b"merge_method");
+    out.string(b"MERGE");
+    out.object_end();
+    out.object_end();
 }
 pub(crate) fn run(r: &mut Runner<'_>) -> Result<()> {
     authentication(r)?;
@@ -259,7 +294,7 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
             .ok_or("mint expiry absent")?;
         Ok(response.status == 201 && expires.as_nanos().abs_diff(before + 3_600_000_000_000) < 2_000_000_000)
     })?;
-    case(r, "token-narrowed-not-enforced", |r| {
+    case(r, "token-narrowed-creates-not-edits", |r| {
         let token = r.mint(0, true)?;
         let repo = r.repo(0)?;
         let title = r.name("narrowed-issue");
@@ -268,7 +303,7 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
         let response = r.raw(Method::Post, format!("/repos/{repo}/issues"), &token, &body)?;
         let accepted = response.header("x-accepted-github-permissions");
         r.provenance.push(format!(
-            "# token-narrowed-not-enforced issue POST status {} accepted permissions {}",
+            "# token-narrowed-creates-not-edits issue POST status {} accepted permissions {}",
             response.status,
             accepted.unwrap_or("absent")
         ));
@@ -278,8 +313,8 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
         let number = response.json()?.root().get("number").u64().ok_or("created issue number absent")?;
         let body = json::object(&[("title", &format!("{title}-edited"))])?;
         let edited = r.raw(Method::Patch, format!("/repos/{repo}/issues/{number}"), &token, &body)?;
-        r.provenance.push(format!("# token-narrowed-not-enforced issue title PATCH status {}", edited.status));
-        Ok(accepted.is_some() && edited.status == 200)
+        r.provenance.push(format!("# token-narrowed-creates-not-edits issue title PATCH status {}", edited.status));
+        Ok(accepted.is_some() && edited.is(403, "Resource not accessible by integration"))
     })?;
     case(r, "rate-core-5000", |r| {
         let token = r.token(0)?;
@@ -358,7 +393,7 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
     r.wait_ci();
     job_logs(r, 0, &sha)?;
     case(r, "merge-stale-409", |r| {
-        Ok(merge(r, n, "0000000000000000000000000000000000000000")?
+        Ok(merge(r, 0, n, "0000000000000000000000000000000000000000")?
             .is(409, "Head branch was modified. Review and try the merge again."))
     })?;
     case(r, "update-stale-422", |r| {
@@ -367,7 +402,7 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
     })?;
     r.next("merge-after-move-405-not-mergeable")?;
     let moved = r.advance(0, &sha, &head, "FAIL moved", files("probe.txt", "FAIL moved"))?;
-    let response = merge(r, n, &moved)?;
+    let response = merge(r, 0, n, &moved)?;
     r.fact(
         "merge-after-move-405-not-mergeable",
         response.is(405, "Pull Request is not mergeable"),
@@ -394,22 +429,21 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
         Ok(matches!(answer, Ok(api::Answer::Merged(_))))
     })?;
     case(r, "merge-repeat-idempotent", |r| {
-        let first = merge(r, n, &moved)?;
-        let second = merge(r, n, &moved)?;
-        let landed = pull_doc(r, 0, n)?;
+        let first = merge(r, 0, n, &moved)?;
+        let second = merge(r, 0, n, &moved)?;
+        let landed = merged_sha(r, 0, n)?;
         Ok(first.status == 200
             && second.status == 200
             && first.json()?.root().get("merged").bool() == Some(true)
             && second.json()?.root().get("merged").bool() == Some(true)
             && second.json()?.root().get("message").is("Pull Request successfully merged")
             && first.json()?.root().get("sha").str() == second.json()?.root().get("sha").str()
-            && first.json()?.root().get("sha").str() == landed.json()?.root().get("merge_commit_sha").str())
+            && landed.is_some()
+            && first.json()?.root().get("sha").str() == landed.as_deref())
     })?;
-    r.provenance
-        .push("# inferred merge-repeat-stale-409: different-sha repeat merge is 409; live expectation unknown".into());
-    case(r, "merge-repeat-stale-409", |r| {
-        Ok(merge(r, n, "0000000000000000000000000000000000000000")?
-            .is(409, "Head branch was modified. Review and try the merge again."))
+    case(r, "merge-repeat-any-sha-200", |r| {
+        let response = merge(r, 0, n, "0000000000000000000000000000000000000000")?;
+        Ok(response.status == 200 && response.json()?.root().get("merged").bool() == Some(true))
     })?;
     case(r, "update-202-later", |r| {
         let (base, head, sha, n) = scenario(r, 0, "head")?;
@@ -498,8 +532,8 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
         "own approval was not refused",
     );
     r.next("ruleset-approval-405")?;
-    rule(r, &base, 2, false, false)?;
-    let response = merge(r, n, &sha)?;
+    rule(r, 0, &base, 2, false, false)?;
+    let response = merge(r, 0, n, &sha)?;
     r.fact(
         "ruleset-approval-405",
         response.status == 405
@@ -535,14 +569,15 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
             .is(404, "Branch not protected"))
     })?;
     r.next("bypass-always-merges")?;
-    rule(r, &base, 2, false, true)?;
+    rule(r, 0, &base, 2, false, true)?;
     let answer = r.plan(0, api::Op::Write(api::Write::Merge { number: n, head: oid(&sha)? }))?;
     r.fact("bypass-always-merges", matches!(answer, Ok(api::Answer::Merged(_))), "always bypass did not merge");
+    let index = r.queue_installation.ok_or("organization installation absent")?;
     r.next("queue-direct-merge-405")?;
-    let (base, _head, sha, n) = scenario(r, 0, "queue")?;
-    rule(r, &base, 1, true, false)?;
+    let (base, _head, sha, n) = scenario(r, index, "queue")?;
+    rule(r, index, &base, 1, true, false)?;
     r.wait(4);
-    let response = merge(r, n, &sha)?;
+    let response = merge(r, index, n, &sha)?;
     r.fact(
         "queue-direct-merge-405",
         response.status == 405
@@ -555,13 +590,13 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
         "direct merge ignored queue",
     );
     case(r, "enqueue-stale-unprocessable", |r| {
-        let response = enqueue(r, n, "0000000000000000000000000000000000000000")?;
+        let response = enqueue(r, index, n, "0000000000000000000000000000000000000000")?;
         Ok(response.status == 200
             && response.json()?.root().get("errors").items().iter().any(|e| e.get("type").is("UNPROCESSABLE")))
     })?;
     r.next("queue-merged-no-merge-commit-sha")?;
     let answer = r.plan_as(
-        0,
+        index,
         api::Op::Write(api::Write::Review {
             number: n,
             key: fake::boxed(b"approval"),
@@ -573,10 +608,10 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
     if answer.is_err() {
         return Err("queue approval refused".into());
     }
-    let queued = r.plan(0, api::Op::Write(api::Write::Merge { number: n, head: oid(&sha)? }))?;
+    let queued = r.plan(index, api::Op::Write(api::Write::Merge { number: n, head: oid(&sha)? }))?;
     r.wait_ci();
-    let response = pull_doc(r, 0, n)?;
-    let merged = r.plan(0, api::Op::Read(api::Read::Pull { number: n }))?;
+    let response = pull_doc(r, index, n)?;
+    let merged = r.plan(index, api::Op::Read(api::Read::Pull { number: n }))?;
     r.fact(
         "queue-merged-no-merge-commit-sha",
         matches!(queued, Ok(api::Answer::Queued))
@@ -586,11 +621,11 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
         "queue merge did not use GraphQL for the merged commit",
     );
     r.next("queue-dequeued-delivered")?;
-    let (base, _head, sha, n) = scenario(r, 0, "queue-failure")?;
-    rule(r, &base, 1, true, false)?;
+    let (base, _head, sha, n) = scenario(r, index, "queue-failure")?;
+    rule(r, index, &base, 1, true, false)?;
     r.wait(4);
     r.plan_as(
-        0,
+        index,
         api::Op::Write(api::Write::Review {
             number: n,
             key: fake::boxed(b"approval"),
@@ -600,23 +635,26 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
         true,
     )?
     .map_err(|_| "queue approval refused")?;
-    let response = enqueue(r, n, &sha)?;
+    let response = enqueue(r, index, n, &sha)?;
     if response.json()?.root().get("errors").kind().is_some() {
         return Err("queue admission refused".into());
     }
-    let branches = r.plan(0, api::Op::Read(api::Read::Branches))?.map_err(|_| "queue branches plan failed")?;
+    let branches = r.plan(index, api::Op::Read(api::Read::Branches))?.map_err(|_| "queue branches plan failed")?;
     let api::Answer::Branches(branches) = branches else {
         return Err("branches answer invalid".into());
     };
     let group = branches.iter().find(|b| b.starts_with(b"gh-readonly-queue/")).ok_or("queue group branch absent")?;
     let group = r
-        .plan(0, api::Op::Read(api::Read::Branch { branch: group.clone() }))?
+        .plan(index, api::Op::Read(api::Read::Branch { branch: group.clone() }))?
         .map_err(|_| "queue group read failed")?;
     let api::Answer::Commit(commit) = group else {
         return Err("queue group oid absent".into());
     };
-    r.plan(0, api::Op::Write(api::Write::Status { commit, context: fake::boxed(b"ci"), check: api::Check::Failed }))?
-        .map_err(|_| "queue failure status refused")?;
+    r.plan(
+        index,
+        api::Op::Write(api::Write::Status { commit, context: fake::boxed(b"ci"), check: api::Check::Failed }),
+    )?
+    .map_err(|_| "queue failure status refused")?;
     r.wait(4);
     let log = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;
     let rows = log.json()?;

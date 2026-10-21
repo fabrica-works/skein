@@ -54,6 +54,7 @@ pub(crate) struct Runner<'a> {
     pub facts: Vec<Fact>,
     pub provenance: Vec<String>,
     pub serial: usize,
+    pub queue_installation: Option<usize>,
     tables: github::plans::tables::Tables,
     repositories: std::collections::BTreeMap<String, u64>,
     cleanup_tokens: std::collections::BTreeMap<u64, String>,
@@ -102,6 +103,7 @@ impl<'a> Runner<'a> {
             facts: vec![],
             provenance: vec![],
             serial: 0,
+            queue_installation: None,
             tables: github::plans::tables::Tables::new(16, 512),
             repositories: std::collections::BTreeMap::new(),
             cleanup_tokens: std::collections::BTreeMap::new(),
@@ -292,11 +294,14 @@ impl<'a> Runner<'a> {
             return Err("mint was refused".into());
         }
         if contents {
-            if response.json()?.root().get("permissions").kind() != Some(skein_json::Kind::ObjectStart) {
-                return Err("mint permissions object absent".into());
+            let json = response.json()?;
+            let permissions = json.root().get("permissions");
+            if !permissions.get("contents").is("write") || !permissions.get("metadata").is("read") {
+                return Err("contents mint permissions differ from contents write and metadata read".into());
             }
-            self.provenance
-                .push("# token-narrowed-not-enforced mint permissions object recorded in response transcript".into());
+            self.provenance.push(
+                "# token-narrowed-creates-not-edits mint permissions object recorded in response transcript".into(),
+            );
         }
         Ok(response.json()?.root().get("token").str().ok_or("mint token absent")?.into())
     }
@@ -312,9 +317,6 @@ impl<'a> Runner<'a> {
         Ok(())
     }
     pub fn start(&mut self) -> Result<()> {
-        if self.fake() {
-            self.bootstrap()?;
-        }
         self.sign()?;
         self.provenance = vec![
             format!("# target {}", if self.fake() { "fake" } else { "github.com" }),
@@ -322,10 +324,15 @@ impl<'a> Runner<'a> {
             format!("# app {}", self.fixtures.slug),
         ];
         for index in 0..self.fixtures.installations.len() {
-            self.mint(index, false)?;
             let person = self.person(index)?;
             let repo = self.repo(index)?;
             let r = self.raw(Method::Get, format!("/repos/{repo}"), &person, b"")?;
+            if r.status != 200 {
+                return Err("probe repository discovery refused".into());
+            }
+            if self.queue_installation.is_none() && r.json()?.root().get("owner").get("type").is("Organization") {
+                self.queue_installation = Some(index);
+            }
             if let Some(expires) = r.header("github-authentication-token-expiration") {
                 let rfc = expires.replace(' ', "T");
                 let date = format!("{}Z", rfc.get(..19).ok_or("expiration header invalid")?);
@@ -337,6 +344,15 @@ impl<'a> Runner<'a> {
                     ));
                 }
             }
+        }
+        if self.queue_installation.is_none() {
+            return Err("no organization installation for the merge-queue cases".into());
+        }
+        if self.fake() {
+            self.bootstrap()?;
+        }
+        for index in 0..self.fixtures.installations.len() {
+            self.mint(index, false)?;
         }
         self.flush()?;
         Ok(())

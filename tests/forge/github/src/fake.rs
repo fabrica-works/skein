@@ -115,8 +115,11 @@ pub(crate) struct World {
     pub refuse_issue_patch_for: Option<String>,
 }
 impl World {
-    #[expect(clippy::too_many_lines, reason = "one declared fixture binds domain, service and peer limits")]
     pub fn new() -> Result<Self> {
+        Self::with_organization(true)
+    }
+    #[expect(clippy::too_many_lines, reason = "one declared fixture binds domain, service and peer limits")]
+    pub(crate) fn with_organization(organization: bool) -> Result<Self> {
         let config = config();
         let mut d = domain::Domain::new(&config, 23);
         for (id, name) in [(2, b"acme/widgets".as_slice()), (4, b"globex/gadgets"), (6, b"acme/spare")] {
@@ -154,13 +157,23 @@ impl World {
             (6, b"acme", 22, b"spare"),
         ] {
             repositories
-                .push(Row { id, owner: boxed(owner), owner_id, organization: true, name: boxed(name), private: true })
+                .push(Row {
+                    id,
+                    owner: boxed(owner),
+                    owner_id,
+                    organization: organization && owner == b"globex",
+                    name: boxed(name),
+                    private: true,
+                })
                 .expect("fixture rows");
         }
         let mut accounts = List::with_capacity(4);
-        for (id, login, organization) in
-            [(22, b"acme".as_slice(), true), (24, b"globex", true), (PERSON, b"alice", false), (32, b"bob", false)]
-        {
+        for (id, login, organization) in [
+            (22, b"acme".as_slice(), false),
+            (24, b"globex", organization),
+            (PERSON, b"alice", false),
+            (32, b"bob", false),
+        ] {
             accounts.push(Account { id, login: boxed(login), organization }).expect("fixture accounts");
         }
         let mut tokens = List::with_capacity(2);

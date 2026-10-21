@@ -659,3 +659,35 @@ fn github_conformance_raw_sends_the_supplied_narrowed_token() {
     r.finish().expect("cleanup");
     shutdown(&mut r);
 }
+
+#[test]
+fn github_conformance_discovers_the_organization_before_minting() {
+    let out = Temp::new("organization");
+    let mut r = runner(&out.0);
+    r.start().expect("organization discovered");
+    assert_eq!(r.queue_installation, Some(1));
+    assert_eq!(r.repo(r.queue_installation.expect("organization index")).expect("probe"), "globex/gadgets");
+    assert!(r.replay.iter().take(2).all(|(_, request)| request.method == Method::Get));
+    let mut in_queue = false;
+    cases::run(&mut r).expect("cases");
+    for (_, request) in &r.replay {
+        if request.target.contains("/rulesets") && request.body.windows(11).any(|w| w == b"merge_queue") {
+            in_queue = true;
+            assert!(request.target.starts_with("/repos/globex/gadgets/"));
+        }
+    }
+    assert!(in_queue);
+    r.complete(Ok(())).expect("cleanup");
+    shutdown(&mut r);
+}
+#[test]
+fn github_conformance_stops_without_an_organization_before_any_write() {
+    let out = Temp::new("no-organization");
+    let world = World::with_organization(false).expect("user-owned repositories");
+    let mut r = Runner::new(Target::Fake(world), World::fixtures().expect("fixtures"), &out.0).expect("runner");
+    let error = r.start().expect_err("queue requires an organization");
+    assert_eq!(error.to_string(), "no organization installation for the merge-queue cases");
+    assert!(r.replay.iter().all(|(_, request)| request.method == Method::Get));
+    assert!(r.journal.pending.is_empty());
+    shutdown(&mut r);
+}
