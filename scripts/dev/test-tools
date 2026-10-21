@@ -166,6 +166,10 @@ after_target=$after/tmp/after-landing/clone/target
 after_log=$after/tmp/after-landing/clone-$(git -C "$t/clone" rev-parse --short HEAD).log
 echo keep >"$after/tmp/after-landing/sibling/sentinel"
 echo keep >"$after/outside/sentinel"
+# The runner's utility path has uname but no hostname.
+for tool in bash basename date dirname git grep ln mkdir readlink sed sleep tail timeout touch wc; do
+    ln -s "$(command -v "$tool")" "$after/bin/$tool"
+done
 cat >"$after/kit/heavy" <<'EOF'
 #!/usr/bin/env bash
 [[ $* == '--gate -- scripts/after-landing.sh' ]] || exit 70
@@ -185,9 +189,9 @@ else
 fi
 exit "$AFTER_STATUS"
 EOF
-cat >"$after/bin/hostname" <<'EOF'
+cat >"$after/bin/uname" <<'EOF'
 #!/usr/bin/env bash
-[[ $* == -s ]] || exit 1
+[[ $* == -n ]] || exit 1
 echo "$AFTER_HOST"
 EOF
 cat >"$after/bin/rm" <<'EOF'
@@ -217,10 +221,12 @@ exit 1
 EOF
 chmod +x "$after/kit/heavy" "$after/bin/"*
 after_run() {
-    PATH=$after/bin:$PATH DEV_TMP=$after/tmp AFTER_STATE=$after AFTER_COMMIT=$after_commit \
+    PATH=$after/bin DEV_TMP=$after/tmp AFTER_STATE=$after AFTER_COMMIT=$after_commit \
         AFTER_TARGET=$after_target AFTER_HOST=$1 AFTER_STATUS=$2 \
         timeout 10 "$after/kit/after-landing" "$t/clone/.git" "$after_commit" fixture-branch
 }
+expect "after-landing fixture has no hostname" \
+    "$(PATH=$after/bin capture status bash -c 'command -v hostname')" 'status=1'
 while IFS='|' read -r host code target; do
     out=$(capture status after_run "$host" "$code")
     expect "after-landing $host exit $code" "$out" "status=$code"
@@ -228,11 +234,15 @@ while IFS='|' read -r host code target; do
     expect "after-landing keeps sibling" "$(cat "$after/tmp/after-landing/sibling/sentinel")" keep
     expect "after-landing keeps nested link referent" "$(cat "$after/outside/sentinel")" keep
     expect "after-landing keeps log" "$(cat "$after_log")" 'heavy:'
+    expect "after-landing runner has its commands" \
+        "$(if grep -q 'command not found' "$after_log"; then echo missing; else echo available; fi)" available
 done <<'AFTER'
 x1|0|removed
 x1|23|removed
 x1|9|removed
+x1.example.test|0|removed
 other|0|kept
+carbon-forge.example.test|0|kept
 AFTER
 expect "after-landing failure context" "$(cat "$after/tmp/director/inbox/after-landing.md")" \
     "clone ${after_commit:0:10} (fixture-branch, \"Add the test\") failed (exit 23)" \
@@ -240,7 +250,7 @@ expect "after-landing failure context" "$(cat "$after/tmp/director/inbox/after-l
 rm -rf "$after_target"
 out=$(AFTER_ABSENT=1 capture status after_run x1 0)
 expect "after-landing missing target is harmless" "$out" 'status=0'
-expect "after-landing collects released cache blocks best effort" "$(wc -l <"$after/gc")" 4
+expect "after-landing collects released cache blocks best effort" "$(wc -l <"$after/gc")" 5
 expect "after-landing log is private" "$(stat -c %a "$after_log")" 600
 
 ln -s "$after/outside" "$after_target"
