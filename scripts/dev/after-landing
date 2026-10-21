@@ -8,7 +8,7 @@
 # land starts it in the background after each code landing of a repository
 # whose landed tree has scripts/after-landing.sh. It checks the commit out
 # in a detached worktree kept for the repository (tmp/after-landing/REPO,
-# with its own target, one run at a time), runs the script through
+# with its own target, one at a time), runs the script through
 # `heavy --gate`, and when that fails or heavy refuses it, writes one line
 # to the director's inbox, tmp/director/inbox/after-landing.md, naming the
 # repository, the commit, its branch and subject, and the log.
@@ -54,7 +54,7 @@ cleanup_target() (
     if command -v kache >/dev/null; then kache gc >/dev/null 2>&1 || true; fi
 )
 
-# One run at a time per repository: they share the worktree and its target.
+# One at a time per repository: they share the worktree and its target.
 exec 7>"$dir/$repo.lock"
 flock 7
 {

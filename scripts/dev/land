@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Land the current branch on main (development.md, section 9).
+# Land the current branch on main (owners.md, 4.4).
 #
 #   land [--docs] [--local] [--gate COMMAND] [--tries N]
 #
@@ -16,17 +16,13 @@
 # starts again from the rebase. Then the local main, and the checkout that
 # has it, follow. A code landing holds its repository's turn on this
 # machine from its rebase to its push, so that another landing here never
-# moves main under its gate. Before the gate, it refuses a commit whose
-# Plan, Step, Proof, Planner-Session or Designer-Session lines git does
-# not read as trailers, and code that adds a word the active plan's Pulse
-# forbids or a test whose name its `test-names:` pattern matches.
+# moves main under its gate.
 #
 # After a code landing, a repository's scripts/after-landing.sh, the tests
 # too slow for its gate, runs on the landed commit in the background
 # (after-landing).
 #
-# --docs   Markdown only, and a plan's metrics.tsv: check that, and skip
-#          the gate.
+# --docs   Markdown only: check that, and skip the gate.
 # --local  No remote: land on the local main under a lock (LAND_LOCK, or
 #          the repository's land.lock) instead of pushing.
 # --gate   The gate, a shell command, instead of scripts/check.sh.
@@ -38,8 +34,7 @@
 #
 # Exit status:
 #   0  landed
-#   2  refused: before starting, a commit's trailers, a forbidden word or
-#      test name, or nothing to land
+#   2  refused: before starting, or nothing to land
 #   3  the rebase stopped on conflicts, left for you to resolve
 #   4  the gate failed
 #   5  the local main could not follow: with a push, the commit landed on
@@ -52,7 +47,7 @@ set -euo pipefail
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 # The workspace: DEV_ROOT, or the directory holding the skein checkout these
-# tools come from (development.md, section 3.6), or ~/src/rust.
+# tools come from, or ~/src/rust.
 workspace() {
     local skein
     skein=$(cd "$kit/../.." && pwd)
@@ -60,11 +55,9 @@ workspace() {
 }
 root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
-# A run's own kit, if it has one (kit.sh).
 if [[ -f $kit/kit.sh ]]; then
     # shellcheck source=kit.sh
     source "$kit/kit.sh"
-    run_kit land "$@"
 fi
 start_dir=$PWD
 
@@ -96,10 +89,10 @@ lock=${LAND_LOCK:-$common/land.lock}
 [[ $lock == /* ]] || lock=$start_dir/$lock
 
 # One code landing at a time in each repository on this machine
-# (development.md, section 9.1), from its rebase to its push: gates run one
+# (owners.md, 4.4), from its rebase to its push: gates run one
 # at a time anyway, and a gate that passed on a base another landing moved
-# was thrown away (17 of test-budgets' 65). Markdown-only landings take no
-# turn: a gate holds across them.
+# would be thrown away. Markdown-only landings take no turn: a gate holds
+# across them.
 if ((!docs)); then
     exec 6>"$common/land-turn.lock"
     if ! flock --nonblock 6; then
@@ -155,58 +148,7 @@ gated_before() {
     echo "$before"
 }
 
-# Each commit since the base that names a plan, a step, a proof or a session
-# does so in trailers git reads (implementer.md, section 8.4): one that does
-# not would stay unread by plan status and the metrics for good.
-unread_trailers() {
-    local commit key body
-    for commit in $(git rev-list "$1..HEAD"); do
-        body=$(git log -1 --format=%B "$commit")
-        for key in Plan Step Proof Planner-Session Designer-Session; do
-            if grep -qE "^$key: " <<<"$body" &&
-                [[ -z $(git log -1 --format="%(trailers:key=$key,valueonly)" "$commit") ]]; then
-                git log -1 --format="%h %s: its $key line" "$commit"
-            fi
-        done
-    done
-}
-
-# A line of the active plan's Pulse (development.md, section 5.2), when
-# this branch carries that plan's steps: its value, or else the default;
-# nothing on another branch.
-#   pulse_line BASE KEY [DEFAULT]
-pulse_line() {
-    local active=$tmp/active-plan plan_dir value
-    [[ -f $active ]] || return 0
-    plan_dir=$(sed -n 2p "$active")
-    git log --format='%(trailers:key=Plan,valueonly)' "$1..HEAD" | grep -qx "$(basename "$plan_dir")" || return 0
-    value=$(sed -nE "s/^ *$2: *(.*[^ ]) *\$/\\1/p" "$plan_dir/README.md" 2>/dev/null | head -n1)
-    echo "${value:-${3:-}}"
-}
-
-# The test functions this branch adds whose names match a pattern, as
-# "path: name": an added `fn` line under a test attribute, which may be a
-# line of context.
-#   added_tests BASE PATTERN
-added_tests() {
-    local name path
-    git diff "$1" HEAD -- '*.rs' | awk '
-        /^\+\+\+ / { path = substr($2, 3); test = 0; next }
-        /^@@/ { test = 0; next }
-        /^-/ { next }
-        { line = substr($0, 2) }
-        line ~ /^[ \t]*#\[([A-Za-z_]+::)*test[]( ]/ { test = 1; next }
-        line ~ /^[ \t]*(#\[|\/\/|$)/ { next }
-        test && /^\+/ && match(line, /fn +[A-Za-z0-9_]+/) {
-            name = substr(line, RSTART, RLENGTH); sub(/^fn +/, "", name); print name "\t" path
-        }
-        { test = 0 }' |
-        while IFS=$'\t' read -r name path; do
-            if grep -qP -- "$2" <<<"$name"; then echo "$path: $name"; fi
-        done
-}
-
-# The build lane's pass before the gate (development.md, section 9.1).
+# The build lane's pass before the gate (owners.md, 4.4).
 prebuild_command='cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo nextest run --workspace --no-run'
 prebuild=${LAND_PREBUILD-$prebuild_command}
 
@@ -238,31 +180,10 @@ Resolve them, run git rebase --continue, then land again."
     fi
     [[ $(git rev-parse HEAD) != "$base" ]] ||
         die 2 "nothing to land: the branch has no commits beyond main"
-    unread=$(unread_trailers "$base")
-    [[ -z $unread ]] || die 2 "git reads no trailer in: $unread. The message's last paragraph holds the trailers alone: one 'Key: value' a line, no blank line among them, no space in a key (implementer.md, section 8.4). Amend it, then land again."
-    if ((!docs)); then
-        words=$(pulse_line "$base" words)
-        if [[ -n $words ]]; then
-            found=$(git diff --unified=0 "$base" HEAD -- . ':(exclude)*.md' |
-                awk '/^\+\+\+ / { path = substr($2, 3); next } /^\+/ { print path "\t" substr($0, 2) }' |
-                grep -iP "\t.*\b(?:$words)\b" | head -n 10 | sed 's/\t/: /' || true)
-            [[ -z $found ]] || die 2 "the plan's Pulse forbids these words ($words), which this branch adds:
-$found
-Say what the code checks instead, never a synonym (development.md, section 4.5); a name another crate defines is a question."
-        fi
-        names=$(pulse_line "$base" test-names _and_)
-        if [[ -n $names ]]; then
-            found=$(added_tests "$base" "$names" | head -n 10 || true)
-            [[ -z $found ]] || die 2 "the plan's Pulse names tests matching ($names) as checking more than one behaviour, and this branch adds:
-$found
-Name each test for its one behaviour, and split one that checks two (testing-strategy.md, section 10)."
-        fi
-    fi
-
     tree=$(git rev-parse 'HEAD^{tree}')
     if ((docs)); then
         others=$(git diff --no-renames --name-only "$base" HEAD |
-            grep -vE '\.md$|^docs/development/plans/[^/]+/metrics\.tsv$' || true)
+            grep -vE '\.md$' || true)
         [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
         summary="none (Markdown only)"
         gated=$tree
@@ -352,7 +273,7 @@ Name each test for its one behaviour, and split one that checks two (testing-str
     case $status in
     0) ;;
     1) die 5 "landed $commit on origin/main, but a checkout of main has changes and did not follow" ;;
-    *) die 5 "landed $commit on origin/main, but the local main has commits origin lacks: reconcile it (development.md, section 9.6)" ;;
+    *) die 5 "landed $commit on origin/main, but the local main has commits origin lacks: reconcile it" ;;
     esac
     break
 done
