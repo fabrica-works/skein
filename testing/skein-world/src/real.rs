@@ -14,6 +14,7 @@
 
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 
@@ -348,10 +349,41 @@ struct Running<P, R> {
     dying: BTreeSet<usize>,
 }
 
+fn thread_cpu_nanos() -> Option<u64> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    // Linux scheduler/sched-stats documents field one in nanoseconds;
+    // thread-self selects this thread's scheduler accounting.
+    let source = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+    let mut fields = source.split_whitespace();
+    let runtime = fields.next()?.parse::<u64>().ok()?;
+    let _delay = fields.next()?.parse::<u64>().ok()?;
+    let _slices = fields.next()?.parse::<u64>().ok()?;
+    // Disabled accounting emits zeros; a saturated counter has no usable delta.
+    if fields.next().is_some() || runtime == 0 || runtime == u64::MAX {
+        return None;
+    }
+    Some(runtime)
+}
+
+fn deadline_diagnostic(patience: Duration, iterations: u32, thread_cpu_start: Option<u64>) -> String {
+    let elapsed = thread_cpu_nanos().zip(thread_cpu_start).and_then(|(end, start)| end.checked_sub(start));
+    format!(
+        "the real loop settles within {} ms; iterations (including failing iteration): {iterations}; thread CPU elapsed (schedstat): {}",
+        patience.as_nanos().div_euclid(1_000_000),
+        match elapsed {
+            Some(nanos) => format!("{nanos} ns"),
+            None => String::from("UNAVAILABLE (ns)"),
+        }
+    )
+}
+
 impl<P: Host, R: Referee<P>> Running<P, R> {
     fn run(mut self, clock: &Clock, patience: Duration) -> Outcome<P> {
         let start = clock.now().now;
         let deadline = start.saturating_add(patience);
+        let thread_cpu_start = thread_cpu_nanos();
         let mut iterations: u32 = 0;
         let mut last_word = None;
         let mut policy_wake: Vec<(usize, Time)> = Vec::new();
@@ -359,7 +391,7 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
             iterations = iterations.checked_add(1).expect("fewer than 2^32 iterations");
             let Now { now, wall } = clock.now();
             check_policy_wake(&mut policy_wake, now);
-            assert!(now < deadline, "the real loop settles within {} ms", patience.as_nanos().div_euclid(1_000_000));
+            assert!(now < deadline, "{}", deadline_diagnostic(patience, iterations, thread_cpu_start));
             self.world.referee.act(now, &mut self.world.procs);
             self.signals();
             self.reap();

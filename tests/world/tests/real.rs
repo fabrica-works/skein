@@ -192,6 +192,26 @@ fn a_keep_time_after_the_last_word_fails_the_world_naming_the_process() {
 }
 
 #[test]
+fn a_zero_patience_deadline_reports_the_failing_iteration() {
+    let failure = std::panic::catch_unwind(|| {
+        let mut world = real::World::new(Judge);
+        world.spawn(|| Script::new(&[]));
+        world.run(&Clock::new(), Duration::ZERO)
+    })
+    .expect_err("zero patience fails before the first script iteration");
+    let text = failure.downcast_ref::<String>().expect("the deadline fails with its diagnostic");
+    let cpu = text
+        .strip_prefix(
+            "the real loop settles within 0 ms; iterations (including failing iteration): 1; thread CPU elapsed (schedstat): ",
+        )
+        .expect("the deadline names its budget, failing iteration and thread CPU source");
+    if cpu != "UNAVAILABLE (ns)" {
+        let nanos = cpu.strip_suffix(" ns").expect("available thread CPU has nanosecond units");
+        assert!(nanos.parse::<u64>().is_ok(), "available thread CPU is an unsigned elapsed count: {cpu}");
+    }
+}
+
+#[test]
 fn a_world_that_ends_by_itself_passes() {
     let mut world = real::World::new(Judge);
     world.spawn(|| Script::new(&[]));
