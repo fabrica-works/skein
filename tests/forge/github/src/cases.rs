@@ -88,20 +88,37 @@ fn pull_doc(r: &mut Runner<'_>, index: usize, number: u64) -> Result<crate::wire
     let token = r.token(index)?;
     r.raw(Method::Get, format!("/repos/{repo}/pulls/{number}"), &token, b"")
 }
-fn merged_commit(r: &mut Runner<'_>, index: usize, number: u64) -> Result<Option<api::Commit>> {
-    let answer = r
-        .plan(index, api::Op::Read(api::Read::Pull { number }))?
-        .map_err(|e| format!("merged pull plan failed: {e:?}"))?;
-    let api::Answer::Pull(pull) = answer else {
-        return Err("merged pull plan answer invalid".into());
-    };
-    Ok(pull.merged)
-}
 fn merge(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Result<crate::wire::Response> {
     let repo = r.repo(index)?;
     let token = r.token(index)?;
     let body = json::object(&[("merge_method", &"merge"), ("sha", &sha)])?;
     r.raw(Method::Put, format!("/repos/{repo}/pulls/{number}/merge"), &token, &body)
+}
+fn merge_repeat_idempotent(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<()> {
+    r.next("merge-repeat-idempotent")?;
+    let first = merge(r, 0, number, sha)?;
+    let second = merge(r, 0, number, sha)?;
+    match r.plan(0, api::Op::Read(api::Read::Pull { number }))? {
+        Ok(api::Answer::Pull(pull)) => {
+            let landed = pull.merged.and_then(|commit| github::id::write_commit(&commit));
+            r.fact(
+                "merge-repeat-idempotent",
+                first.status == 200
+                    && second.status == 200
+                    && first.json()?.root().get("merged").bool() == Some(true)
+                    && second.json()?.root().get("merged").bool() == Some(true)
+                    && second.json()?.root().get("message").is("Pull Request successfully merged")
+                    && first.json()?.root().get("sha").str() == second.json()?.root().get("sha").str()
+                    && landed.is_some()
+                    && first.json()?.root().get("sha").str()
+                        == landed.as_ref().and_then(|sha| std::str::from_utf8(sha).ok()),
+                "wire observation differs from the fact",
+            );
+        }
+        Ok(_) => return Err("merged pull plan answer invalid".into()),
+        Err(e) => r.fact("merge-repeat-idempotent", false, &format!("merged pull plan failed: {e:?}")),
+    }
+    Ok(())
 }
 fn update(r: &mut Runner<'_>, number: u64, sha: &str) -> Result<crate::wire::Response> {
     let repo = r.repo(0)?;
@@ -425,19 +442,7 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
         let answer = r.plan(0, api::Op::Write(api::Write::Merge { number: n, head: oid(&moved)? }))?;
         Ok(matches!(answer, Ok(api::Answer::Merged(_))))
     })?;
-    case(r, "merge-repeat-idempotent", |r| {
-        let first = merge(r, 0, n, &moved)?;
-        let second = merge(r, 0, n, &moved)?;
-        let landed = merged_commit(r, 0, n)?.and_then(|commit| github::id::write_commit(&commit));
-        Ok(first.status == 200
-            && second.status == 200
-            && first.json()?.root().get("merged").bool() == Some(true)
-            && second.json()?.root().get("merged").bool() == Some(true)
-            && second.json()?.root().get("message").is("Pull Request successfully merged")
-            && first.json()?.root().get("sha").str() == second.json()?.root().get("sha").str()
-            && landed.is_some()
-            && first.json()?.root().get("sha").str() == landed.as_ref().and_then(|sha| std::str::from_utf8(sha).ok()))
-    })?;
+    merge_repeat_idempotent(r, n, &moved)?;
     case(r, "merge-repeat-any-sha-200", |r| {
         let response = merge(r, 0, n, "0000000000000000000000000000000000000000")?;
         Ok(response.status == 200 && response.json()?.root().get("merged").bool() == Some(true))

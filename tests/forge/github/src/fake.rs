@@ -113,6 +113,8 @@ pub(crate) struct World {
     pub last_wire: Vec<u8>,
     #[cfg(test)]
     pub refuse_issue_patch_for: Option<String>,
+    #[cfg(test)]
+    pub null_next_merged_pull_commit: bool,
 }
 impl World {
     pub fn new() -> Result<Self> {
@@ -255,6 +257,8 @@ impl World {
             last_wire: vec![],
             #[cfg(test)]
             refuse_issue_patch_for: None,
+            #[cfg(test)]
+            null_next_merged_pull_commit: false,
         };
         for _ in 0..1000 {
             if w.peer.address().is_some() && w.peer.blob_address().is_some() {
@@ -358,6 +362,37 @@ impl World {
         }
         self.client(Op::Close { fd })?.result.map_err(|_| "fake close refused")?;
         let response = crate::wire::parse(&received)?.ok_or("fake answer incomplete")?;
+        #[cfg(test)]
+        let response = {
+            let mut response = response;
+            if self.null_next_merged_pull_commit && request.target == "/graphql" {
+                let document = response.json()?;
+                let pull = document.root().get("data").get("repository").get("pullRequest");
+                if pull.get("mergeCommit").get("oid").str().is_some() {
+                    let row = skein_forge::github::document::PullGraphql {
+                        id: boxed(pull.get("id").str().ok_or("fake pull node id absent")?.as_bytes()),
+                        merge_commit: None,
+                        queued: pull.get("mergeQueueEntry").get("position").u64().map(u32::try_from).transpose()?,
+                        dequeued: pull
+                            .get("timelineItems")
+                            .get("nodes")
+                            .nth(0)
+                            .get("reason")
+                            .str()
+                            .map(|reason| boxed(reason.as_bytes())),
+                    };
+                    let mut body = skein_lib::Writer::new(response.body.len());
+                    skein_forge::github::server::pull_graphql(&row, &mut body)
+                        .map_err(|_| "fake null merge commit response exceeds bound")?;
+                    let length = body.written();
+                    body.put(&vec![0; body.room()]).map_err(|_| "fake response padding exceeds bound")?;
+                    response.body = body.finish().into_vec();
+                    response.body.truncate(length);
+                    self.null_next_merged_pull_commit = false;
+                }
+            }
+            response
+        };
         Ok((wire, response))
     }
     pub fn call(&mut self, repo: &str, user: u64, op: a::Op) -> Result<a::Answer> {

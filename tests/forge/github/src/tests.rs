@@ -77,6 +77,28 @@ fn github_conformance_holds_every_fact_on_the_fake() {
     assert!(report.leftover_mints.is_empty());
 }
 #[test]
+fn github_conformance_null_merged_commit_fails_the_fact_and_continues() {
+    let out = Temp::new("null-merged-commit");
+    let mut r = runner(&out.0);
+    let Target::Fake(w) = &mut r.target else { panic!("fake target") };
+    w.null_next_merged_pull_commit = true;
+    r.start().expect("start fake run");
+    let run = cases::run(&mut r);
+    r.complete(run).expect("plan error permits later cases and cleanup");
+    let Target::Fake(w) = &r.target else { panic!("fake target") };
+    assert!(!w.null_next_merged_pull_commit, "merged pull fault was exercised");
+    assert_eq!(r.facts.len(), cases::NAMES.len());
+    let fact = r.facts.iter().find(|fact| fact.name == "merge-repeat-idempotent").expect("repeat merge fact");
+    assert_eq!(fact.outcome, Outcome::Fails("merged pull plan failed: InvalidAnswer".into()));
+    for name in ["merge-repeat-any-sha-200", "queue-merged-no-merge-commit-sha"] {
+        let fact = r.facts.iter().find(|fact| fact.name == name).expect("later fact recorded");
+        assert_eq!(fact.outcome, Outcome::Holds, "{name}");
+    }
+    let facts = fs::read_to_string(out.0.join("facts.txt")).expect("recorded facts");
+    assert!(facts.contains(&fact.line()));
+    shutdown(&mut r);
+}
+#[test]
 fn github_conformance_names_every_fact_of_forge_github_13() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../docs/design/forge-github.md");
     let doc = fs::read_to_string(root).expect("design contract");
