@@ -744,9 +744,12 @@ temper's draft section 11.
   (P12); `issues-list-pulls`, `new-issue-may-miss-listing` (P13).
   The pull listing gets three tries, two seconds apart, without since.
   The new-issue fact records immediate visibility in an unfiltered listing;
-  either visibility is valid. `issues-since-epoch-empty` requires raw epoch
-  since to answer 200 with an empty array, the unfiltered listing to contain
-  the made issue, and the dialect's zero-time Items read to contain it.
+  either visibility is valid. `issues-since-epoch-empty` first waits for its
+  made issue in the unfiltered listing, with at most three reads two seconds
+  apart, and records the read count. Exhaustion fails the fact as made issue
+  absent from listing and sends no later reads. Once listed, raw epoch since
+  must answer 200 with an empty array, then the dialect's zero-time Items
+  read must contain the issue.
   `installation-repository-removal-refusals` expects 422, "Cannot remove the
   last repository from this installation.", from each fixture installation.
 - **Additional protocol facts:**
@@ -772,7 +775,12 @@ temper's draft section 11.
   across the two owners' repositories).
 
 A fact's texts (each refusal's message) are the conformance's
-transcripts, and the decoders' tests take them (section 14).
+transcripts, and the decoders' tests take them (section 14). A response
+framing, length or parse error preserves the masked request and received
+response head and fails that fact; later cases run, while guard, budget,
+journal and cleanup errors stop the run. Close-delimited responses are read
+to stream end within the 4 MiB bound on a connection used for one request,
+and each records its case and status in provenance.
 
 ## 14. Verification
 

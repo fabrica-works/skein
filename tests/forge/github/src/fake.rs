@@ -359,11 +359,12 @@ impl World {
             };
             received.extend_from_slice(&buf[..usize::try_from(count)?]);
             if received.len() > 4_194_304 {
-                return Err("fake response exceeds bound".into());
+                self.client(Op::Close { fd })?.result.map_err(|_| "fake close refused")?;
+                return Err(crate::wire::failure(&wire, &received, "response exceeds conformance bound").into());
             }
         }
         self.client(Op::Close { fd })?.result.map_err(|_| "fake close refused")?;
-        let response = crate::wire::parse(&received)?.ok_or("fake answer incomplete")?;
+        let response = crate::wire::read(&wire, &received, true)?.ok_or("fake answer incomplete")?;
         #[cfg(test)]
         let response = {
             let mut response = response;

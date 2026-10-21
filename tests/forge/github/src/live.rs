@@ -420,9 +420,11 @@ impl Connector {
                     Event::Stream(Up::Bytes(bytes)) => {
                         received.extend_from_slice(&bytes);
                         if received.len() > 4_194_304 {
-                            return Err("live answer exceeds its bound".into());
+                            return Err(
+                                crate::wire::failure(&wire, &received, "response exceeds conformance bound").into()
+                            );
                         }
-                        if let Some(response) = crate::wire::parse(&received)? {
+                        if let Some(response) = crate::wire::read(&wire, &received, false)? {
                             return Ok((wire, response));
                         }
                         client::down(
@@ -433,7 +435,12 @@ impl Connector {
                             &mut below,
                         );
                     }
-                    Event::Stream(Up::End | Up::Failed(_)) | Event::Failed(_) | Event::Closed => {
+                    Event::Stream(Up::End) => {
+                        let response = crate::wire::read(&wire, &received, true)?
+                            .ok_or("live TLS exchange ended before its answer")?;
+                        return Ok((wire, response));
+                    }
+                    Event::Stream(Up::Failed(_)) | Event::Failed(_) | Event::Closed => {
                         return Err("live TLS exchange ended before its answer".into());
                     }
                 }

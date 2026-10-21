@@ -46,6 +46,9 @@ pub(crate) struct Runner<'a> {
     pub plan_refusal: Option<(&'static str, &'static str, usize)>,
     #[cfg(test)]
     pub enqueue_refusal: Option<&'static str>,
+    #[cfg(test)]
+    pub response_override: Option<(&'static str, &'static str, Vec<u8>)>,
+    pub wire: Option<String>,
     pub target: Target,
     pub fixtures: Fixtures,
     pub secrets: Secrets,
@@ -99,6 +102,9 @@ impl<'a> Runner<'a> {
             plan_refusal: None,
             #[cfg(test)]
             enqueue_refusal: None,
+            #[cfg(test)]
+            response_override: None,
+            wire: None,
             target,
             fixtures,
             secrets,
@@ -181,10 +187,21 @@ impl<'a> Runner<'a> {
                 });
             }
         }
-        let (wire, response) = match &mut self.target {
-            Target::Fake(w) => w.exchange(request)?,
-            Target::Live(c) => c.exchange(request)?,
+        let (wire, response) = match self.exchange(request) {
+            Ok(exchange) => exchange,
+            Err(error) => {
+                if let Some(failed) = error.downcast_ref::<crate::wire::ReadError>() {
+                    self.record_failed(failed)?;
+                    if !self.cleanup {
+                        self.wire = Some(error.to_string());
+                    }
+                }
+                return Err(error);
+            }
         };
+        if response.close_delimited() {
+            self.provenance.push(format!("# {} close-delimited response {}", self.case, response.status));
+        }
         self.record_created(request, &response)?;
         let credentials = request.target.ends_with("/access_tokens") || request.target.ends_with("/conversions");
         if credentials && response.status == 201 {
@@ -231,6 +248,49 @@ impl<'a> Runner<'a> {
         self.request_bytes.extend_from_slice(&masked_request);
         self.response_bytes.extend_from_slice(&masked_response);
         Ok(response)
+    }
+    fn exchange(&mut self, request: &Request) -> Result<(Vec<u8>, Response)> {
+        #[cfg(test)]
+        if self.response_override.as_ref().map(|(case, target, _)| (*case, *target))
+            == Some((self.case, request.target.as_str()))
+        {
+            let (_, _, received) = self.response_override.take().ok_or("response override absent")?;
+            let wire = request.wire("127.0.0.1")?;
+            let response = crate::wire::read(&wire, &received, true)?.ok_or("injected answer incomplete")?;
+            return Ok((wire, response));
+        }
+        match &mut self.target {
+            Target::Fake(w) => w.exchange(request),
+            Target::Live(c) => c.exchange(request),
+        }
+    }
+    fn record_failed(&mut self, failed: &crate::wire::ReadError) -> Result<()> {
+        let end = failed.request.windows(4).position(|p| p == b"\r\n\r\n").ok_or("request head absent")?;
+        let request = self.failure_head(&failed.request[..end]);
+        let response = self.failure_head(&failed.head);
+        write::check(self.case, &request, &response, &self.secrets)?;
+        if !self.request_bytes.is_empty() {
+            self.request_bytes.extend_from_slice(b"\r\n");
+            self.response_bytes.extend_from_slice(b"\r\n");
+        }
+        self.request_bytes.extend_from_slice(&request);
+        self.response_bytes.extend_from_slice(&response);
+        Ok(())
+    }
+    fn failure_head(&mut self, head: &[u8]) -> Vec<u8> {
+        let mut filtered = Vec::new();
+        for line in head.split(|byte| *byte == b'\n') {
+            let key = line.split(|byte| *byte == b':').next().unwrap_or_default();
+            if [b"authorization".as_slice(), b"proxy-authorization", b"cookie", b"set-cookie"]
+                .iter()
+                .any(|name| key.eq_ignore_ascii_case(name))
+            {
+                continue;
+            }
+            filtered.extend_from_slice(line);
+            filtered.push(b'\n');
+        }
+        self.mask.headers(&filtered)
     }
     fn record_created(&mut self, request: &Request, response: &Response) -> Result<()> {
         if request.method == Method::Post
@@ -426,6 +486,7 @@ impl<'a> Runner<'a> {
         Ok(())
     }
     pub fn next(&mut self, name: &'static str) -> Result<()> {
+        self.wire = None;
         self.flush()?;
         self.case = name;
         Ok(())

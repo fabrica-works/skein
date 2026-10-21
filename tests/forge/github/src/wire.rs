@@ -65,6 +65,13 @@ pub(crate) struct Response {
     pub body: Vec<u8>,
 }
 impl Response {
+    pub fn close_delimited(&self) -> bool {
+        self.status != 204
+            && self.status != 304
+            && self.header("transfer-encoding").is_none()
+            && self.header("content-length").is_none()
+    }
+
     pub fn header(&self, name: &str) -> Option<&str> {
         let head = std::str::from_utf8(&self.head).ok()?;
         head.lines().skip(1).find_map(|line| {
@@ -125,7 +132,34 @@ impl Response {
         self.status == status && self.json().is_ok_and(|j| j.root().get("message").is(message))
     }
 }
-pub(crate) fn parse(wire: &[u8]) -> Result<Option<Response>> {
+pub(crate) struct ReadError {
+    pub request: Vec<u8>,
+    pub head: Vec<u8>,
+    text: String,
+}
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+// The retained wire bytes can hold credentials; diagnostics print only the error text.
+impl std::fmt::Debug for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+impl std::error::Error for ReadError {}
+pub(crate) fn failure(request: &[u8], received: &[u8], text: &str) -> ReadError {
+    let end = received.windows(4).position(|p| p == b"\r\n\r\n").unwrap_or(received.len());
+    ReadError { request: request.to_vec(), head: received[..end].to_vec(), text: text.into() }
+}
+pub(crate) fn read(request: &[u8], received: &[u8], ended: bool) -> Result<Option<Response>> {
+    let result = parse(received, ended).and_then(|response| {
+        if ended && response.is_none() { Err("response incomplete at stream end".into()) } else { Ok(response) }
+    });
+    result.map_err(|error| failure(request, received, &error.to_string()).into())
+}
+fn parse(wire: &[u8], ended: bool) -> Result<Option<Response>> {
     let Some(at) = wire.windows(4).position(|p| p == b"\r\n\r\n") else { return Ok(None) };
     let head = wire[..at].to_vec();
     let text = std::str::from_utf8(&head).map_err(|_| "invalid HTTP head")?;
@@ -163,6 +197,16 @@ pub(crate) fn parse(wire: &[u8]) -> Result<Option<Response>> {
             unframed.extend_from_slice(chunk);
             rest = &tail[2..];
         }
+    }
+    if response.close_delimited() {
+        if body.len() > 4_194_304 {
+            return Err("response exceeds conformance bound".into());
+        }
+        if !ended {
+            return Ok(None);
+        }
+        response.body = body.to_vec();
+        return Ok(Some(response));
     }
     let count: usize = response
         .header("content-length")

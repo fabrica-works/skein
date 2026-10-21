@@ -89,14 +89,121 @@ fn github_conformance_holds_every_fact_on_the_fake() {
         })
         .count();
     // Extend both four-poll head waits to seven, the four-poll group wait
-    // and merge wait to eleven, the listing to three tries, and the group
+    // and merge wait to eleven, both listings to three tries, and the group
     // branch lookup from one read to thirteen.
-    let extra_polls = 2 * 2 * 3 + 2 * 7 + 7 + 2 + 12;
+    let extra_polls = 2 * 2 * 3 + 2 * 7 + 7 + 2 * 2 + 12;
     let projected_live_requests = report.requests + 4 * commits + 6 * 4 + extra_polls - FAKE_ONLY_REQUESTS;
     assert!(projected_live_requests <= 400, "live request upper bound: {projected_live_requests}");
     let facts = fs::read_to_string(out.0.join("facts.txt")).expect("recorded facts");
     assert!(facts.lines().any(|line| line == "# queue-dequeued-delivered group branch reads 1"));
+    assert!(facts.lines().any(|line| line == "# issues-since-epoch-empty listing reads 1"));
     assert!(report.leftover_mints.is_empty());
+}
+#[test]
+fn github_conformance_response_framing_records_the_exchange_and_continues() {
+    let rows = [
+        (
+            "invalid-length",
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: invalid\r\nSet-Cookie: invented-cookie\r\nX-GitHub-Request-Id: invented-request\r\n\r\n".as_slice(),
+            Outcome::Fails("wire: invalid response length".into()),
+        ),
+        (
+            "close-delimited",
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n[{\"status_code\":500}]".as_slice(),
+            Outcome::Holds,
+        ),
+    ];
+    for (name, response, outcome) in rows {
+        let out = Temp::new(name);
+        let mut r = runner(&out.0);
+        r.start().expect("start fake run");
+        r.response_override =
+            Some(("log-lists-failed-deliveries", "/app/hook/deliveries?per_page=100", response.to_vec()));
+        let run = cases::run(&mut r);
+        r.complete(run).expect("framing observation permits later cases and cleanup");
+        assert!(r.response_override.is_none(), "response fault exercised");
+        assert_eq!(r.facts.len(), cases::NAMES.len());
+        let fact = r.facts.iter().find(|fact| fact.name == "log-lists-failed-deliveries").expect("log fact");
+        assert_eq!(fact.outcome, outcome);
+        for fact in &r.facts {
+            if fact.name != "log-lists-failed-deliveries" && fact.name != "signatures-push-gh013" {
+                assert_eq!(fact.outcome, Outcome::Holds, "later and earlier fact {}", fact.name);
+            }
+        }
+        let dir = out.0.join("transcripts/log-lists-failed-deliveries");
+        let request = fs::read_to_string(dir.join("request")).expect("failed request transcript");
+        let response = fs::read_to_string(dir.join("response")).expect("failed response transcript");
+        assert!(request.starts_with("GET /app/hook/deliveries?per_page=100 HTTP/1.1\r\n"));
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"));
+        if name == "invalid-length" {
+            assert!(response.contains("Content-Length: invalid\r\n"));
+            assert!(response.contains("X-GitHub-Request-Id: \"opaque-"));
+            assert!(!request.contains("Authorization:"));
+            assert!(!response.contains("Set-Cookie:"));
+        } else {
+            assert!(response.contains("[{\"status_code\":500}]"), "case read the close-delimited body");
+            let facts = fs::read_to_string(out.0.join("facts.txt")).expect("recorded facts");
+            assert!(facts.lines().any(|line| line == "# log-lists-failed-deliveries close-delimited response 200"));
+        }
+        assert!(r.cleanup && r.journal.pending.is_empty());
+        assert!(r.tokens.is_empty() && r.leftover_mints.is_empty());
+        scan(&out.0, &r.secrets);
+        shutdown(&mut r);
+    }
+}
+#[test]
+fn github_conformance_epoch_refusals_and_non_json_fail_only_the_fact() {
+    for (status, body) in [(503, "[]"), (503, "not json"), (200, "not json")] {
+        let out = Temp::new(&format!("epoch-{status}-{}", body.len()));
+        let mut r = runner(&out.0);
+        r.start().expect("start fake run");
+        let response = format!(
+            "HTTP/1.1 {status} Invented\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        r.response_override = Some((
+            "issues-since-epoch-empty",
+            "/repos/acme/widgets/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page=1",
+            response.into_bytes(),
+        ));
+        let run = cases::run(&mut r);
+        r.complete(run).expect("epoch observation permits later facts and cleanup");
+        assert!(r.response_override.is_none(), "epoch response fault exercised");
+        assert_eq!(r.facts.len(), cases::NAMES.len());
+        for fact in &r.facts {
+            if fact.name == "issues-since-epoch-empty" {
+                assert_eq!(fact.outcome, Outcome::Fails("wire observation differs from the fact".into()));
+            } else if fact.name != "signatures-push-gh013" {
+                assert_eq!(fact.outcome, Outcome::Holds, "{}", fact.name);
+            }
+        }
+        assert!(r.cleanup && r.journal.pending.is_empty());
+        assert!(r.tokens.is_empty() && r.leftover_mints.is_empty());
+        shutdown(&mut r);
+    }
+}
+#[test]
+fn github_conformance_close_delimited_waits_for_end_and_bounds_the_body() {
+    let request = b"GET /app/hook/deliveries HTTP/1.1\r\n\r\n";
+    let mut response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n".to_vec();
+    response.extend_from_slice(b"[]");
+    assert!(crate::wire::read(request, &response, false).expect("wait for EOF").is_none());
+    assert_eq!(crate::wire::read(request, &response, true).expect("EOF").expect("body").body, b"[]");
+    response.truncate(response.len() - 2);
+    response.resize(response.len() + 4_194_304, b' ');
+    assert_eq!(
+        crate::wire::read(request, &response, true).expect("body at bound").expect("body").body.len(),
+        4_194_304
+    );
+    response.push(b' ');
+    assert_eq!(
+        crate::wire::read(request, &response, false).err().expect("over bound").to_string(),
+        "response exceeds conformance bound"
+    );
+    for response in [b"HTTP/1.1 204 No Content\r\n\r\n".as_slice(), b"HTTP/1.1 304 Not Modified\r\n\r\n".as_slice()] {
+        let response = crate::wire::read(request, response, false).expect("bodyless answer").expect("no EOF needed");
+        assert!(response.body.is_empty() && !response.close_delimited());
+    }
 }
 #[test]
 fn github_conformance_null_merged_commit_fails_the_fact_and_continues() {
