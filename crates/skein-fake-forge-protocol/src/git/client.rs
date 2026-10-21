@@ -29,6 +29,7 @@ pub struct Decoder {
     name: Name,
     status: u16,
     reset: Time,
+    named: bool,
     scratch: Scratch,
 }
 #[derive(Debug, PartialEq, Eq)]
@@ -40,11 +41,16 @@ pub enum Step {
 /// `reset` is the caller's clock plus Retry-After for an unnamed 429.
 #[must_use]
 pub fn decoder(name: Name, status: u16, reset: Time, limits: &Limits) -> Decoder {
-    Decoder { name, status, reset, scratch: Scratch::new(limits) }
+    Decoder { name, status, reset, named: false, scratch: Scratch::new(limits) }
 }
 #[must_use]
 pub const fn first(_decoder: &Decoder) -> tokenizer::Request {
     tokenizer::Request::Next
+}
+/// Whether the body named its error, read after `step` gives `Decoded(Err(_))`; false for a status fallback.
+#[must_use]
+pub const fn named(decoder: &Decoder) -> bool {
+    decoder.named
 }
 pub fn step(decoder: &mut Decoder, limits: &Limits, event: &tokenizer::Event) -> Step {
     let result = read::collect(&mut decoder.scratch, event);
@@ -52,7 +58,10 @@ pub fn step(decoder: &mut Decoder, limits: &Limits, event: &tokenizer::Event) ->
         return match result {
             Ok(None) => Step::Demand(tokenizer::Request::Next),
             Ok(Some(document)) => Step::Decoded(Err(match read::error(&document) {
-                Ok(error) => error,
+                Ok(error) => {
+                    decoder.named = true;
+                    error
+                }
                 Err(()) => status(decoder.status, decoder.reset),
             })),
             Err(()) => Step::Decoded(Err(status(decoder.status, decoder.reset))),

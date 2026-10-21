@@ -129,13 +129,18 @@ fn decode_call(body: &[u8], name: Name, limits: &Limits, piece: usize) -> server
     }
 }
 fn decode_answer(body: &[u8], name: Name, status: u16, limits: &Limits, piece: usize) -> client::Step {
+    decoded(body, name, status, limits, piece).0
+}
+fn decoded(body: &[u8], name: Name, status: u16, limits: &Limits, piece: usize) -> (client::Step, bool) {
     let mut decoder = client::decoder(name, status, Time::ZERO, limits);
     let mut pump = Pump::new(body, limits, piece);
     let mut demand = client::first(&decoder);
     loop {
         match client::step(&mut decoder, limits, &pump.next(demand)) {
             client::Step::Demand(next) => demand = next,
-            outcome @ (client::Step::Decoded(_) | client::Step::Malformed) => return outcome,
+            outcome @ (client::Step::Decoded(_) | client::Step::Malformed) => {
+                return (outcome, client::named(&decoder));
+            }
         }
     }
 }
@@ -162,8 +167,8 @@ fn git_answers_round_trip_whole_and_bytewise() {
         let body = server::encode(&answer, &limits).expect("answer encoding");
         for piece in [usize::MAX, 1] {
             assert_eq!(
-                decode_answer(&body, name, 200, &limits, piece),
-                client::Step::Decoded(Ok(answer.clone())),
+                decoded(&body, name, 200, &limits, piece),
+                (client::Step::Decoded(Ok(answer.clone())), false),
                 "{name:?}/{piece}"
             );
         }
@@ -212,12 +217,14 @@ fn git_errors_round_trip_whole_and_bytewise() {
     }
     for error in errors.into_boxed() {
         let body = server::error(error, &limits).expect("error encoding");
-        for piece in [usize::MAX, 1] {
-            assert_eq!(
-                decode_answer(&body, Name::Fetch, 422, &limits, piece),
-                client::Step::Decoded(Err(error)),
-                "{error:?}/{piece}"
-            );
+        for status in [404, 403, 401, 422] {
+            for piece in [usize::MAX, 1] {
+                assert_eq!(
+                    decoded(&body, Name::Fetch, status, &limits, piece),
+                    (client::Step::Decoded(Err(error)), true),
+                    "{error:?}/{status}/{piece}"
+                );
+            }
         }
     }
 }
@@ -937,10 +944,10 @@ fn git_client_uses_unnamed_error_status() {
         (503, api::Error::Unavailable),
         (507, api::Error::Full),
     ] {
-        for body in [b"".as_slice(), b"{}", b"not json"] {
+        for body in [b"".as_slice(), b"{}", b"not json", br#"{"message":"Not Found"}"#] {
             assert_eq!(
-                decode_answer(body, Name::Fetch, status, &fixtures::limits(), 1),
-                client::Step::Decoded(Err(error)),
+                decoded(body, Name::Fetch, status, &fixtures::limits(), 1),
+                (client::Step::Decoded(Err(error)), false),
                 "{status}/{body:?}"
             );
         }

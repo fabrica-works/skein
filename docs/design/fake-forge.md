@@ -420,7 +420,12 @@ domain, and holds no clock of its own.
     members that error carries: `"what"` for `missing` (`"repository"`,
     `"branch"`, `"commit"`, ...), `"reset"` in nanoseconds for
     `rate_limited`, and `"number"`, `"head"` and `"position"` for
-    `already_queued`, so every domain error crosses whole.
+    `already_queued`, so every domain error crosses whole. A refusal the
+    layer makes before the call is decoded (an unknown call `404`, a wrong
+    method `405`, a missing or unknown credential `401`, one that may not
+    write `403`) has no body, and the client's decoder says whether an
+    error was named, so a caller tells those, and a host with no route,
+    from a domain error.
   - An `objects` call asking for more commits than `max_response_items`
     is `422`, before the store is read.
   - A body other than one object, an unknown, repeated or missing member,
