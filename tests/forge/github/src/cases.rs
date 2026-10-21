@@ -577,6 +577,9 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
     rule(r, 0, &base, 2, false, true)?;
     let answer = r.plan(0, api::Op::Write(api::Write::Merge { number: n, head: oid(&sha)? }))?;
     r.fact("bypass-always-merges", matches!(answer, Ok(api::Answer::Merged(_))), "always bypass did not merge");
+    queue(r)
+}
+pub(crate) fn queue(r: &mut Runner<'_>) -> Result<()> {
     let index = r.queue_installation.ok_or("organization installation absent")?;
     r.next("queue-direct-merge-405")?;
     let (base, _head, sha, n) = scenario(r, index, "queue")?;
