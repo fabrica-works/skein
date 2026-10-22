@@ -28,23 +28,88 @@ pub enum Down {
 /// entry; its terminal is `Event::Address` or `Refused`.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Request {
-    Person { person: Token },
-    Page { person: Token, page: Token, url: Box<[u8]> },
-    Go { page: Token, op: Token, to: Go },
-    Find { page: Token, op: Token, query: Query },
-    Await { page: Token, op: Token, query: Query, expect: Expect, within: Duration },
-    Press { page: Token, op: Token, node: Node, at: Option<Point> },
-    Type { page: Token, op: Token, node: Node, text: Box<[u8]> },
-    Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },
-    Keys { page: Token, op: Token, node: Node, text: Box<[u8]> },
-    Key { page: Token, op: Token, key: Key, shift: bool },
-    Address { page: Token, op: Token },
-    Attribute { page: Token, op: Token, selector: Box<[u8]>, name: Box<[u8]> },
-    Snapshot { page: Token, op: Token },
-    Screenshot { page: Token, op: Token },
+    Person {
+        person: Token,
+    },
+    Page {
+        person: Token,
+        page: Token,
+        url: Box<[u8]>,
+    },
+    Go {
+        page: Token,
+        op: Token,
+        to: Go,
+    },
+    Find {
+        page: Token,
+        op: Token,
+        query: Query,
+    },
+    Await {
+        page: Token,
+        op: Token,
+        query: Query,
+        expect: Expect,
+        within: Duration,
+    },
+    Press {
+        page: Token,
+        op: Token,
+        node: Node,
+        at: Option<Point>,
+    },
+    Type {
+        page: Token,
+        op: Token,
+        node: Node,
+        text: Box<[u8]>,
+    },
+    Compose {
+        page: Token,
+        op: Token,
+        node: Node,
+        text: Box<[u8]>,
+    },
+    Keys {
+        page: Token,
+        op: Token,
+        node: Node,
+        text: Box<[u8]>,
+    },
+    Key {
+        page: Token,
+        op: Token,
+        key: Key,
+        shift: bool,
+    },
+    Address {
+        page: Token,
+        op: Token,
+    },
+    Attribute {
+        page: Token,
+        op: Token,
+        selector: Box<[u8]>,
+        name: Box<[u8]>,
+    },
+    Snapshot {
+        page: Token,
+        op: Token,
+    },
+    Screenshot {
+        page: Token,
+        op: Token,
+    },
     /// The lab's look reads alone (browser.md, 5.1); no test sends one.
-    Look { page: Token, op: Token, look: Look },
-    Close { entity: Token },
+    Look {
+        page: Token,
+        op: Token,
+        look: Look,
+    },
+    Close {
+        entity: Token,
+    },
 }
 
 /// What the browser reports to the test.
@@ -148,7 +213,11 @@ pub enum Looked {
     Viewport,
     Tree(List<Entry>),
     Selected(Option<Node>),
-    Style { values: List<Property>, faces: List<Face>, rect: Option<Rect> },
+    Style {
+        values: List<Property>,
+        faces: List<Face>,
+        rect: Option<Rect>,
+    },
     /// A PNG.
     Shot(Box<[u8]>),
 }

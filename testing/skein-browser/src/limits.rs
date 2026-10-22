@@ -1,5 +1,6 @@
 //! Resource limits for one browser machine.
 
+use alloc::boxed::Box;
 use core::mem::size_of;
 
 use skein_lib::Duration;
@@ -72,13 +73,32 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let message = u64::from(limits.message).checked_add(1)?;
     let seen = u64::try_from(size_of::<crate::boundary::Seen>()).ok()?.checked_add(text.checked_mul(3)?)?;
     let matches = u64::from(limits.matches).checked_mul(seen)?;
-    let report = matches.checked_add(u64::from(limits.snapshot))?.checked_add(u64::from(limits.screenshot))?;
+    let entry = u64::try_from(size_of::<crate::boundary::Entry>()).ok()?.checked_add(text.checked_mul(2)?)?;
+    let face = u64::try_from(size_of::<crate::boundary::Face>()).ok()?.checked_add(text)?;
+    let property = u64::try_from(size_of::<crate::boundary::Property>()).ok()?.checked_add(text.checked_mul(2)?)?;
+    let tree = u64::from(limits.entries).checked_mul(entry)?;
+    let style = u64::from(limits.properties)
+        .checked_mul(property)?
+        .checked_add(u64::from(limits.entries).checked_mul(face)?)?;
+    let look_answer = tree.max(style);
+    let look_request = u64::from(limits.properties)
+        .checked_mul(text.checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?)?
+        .checked_add(text)?;
+    let report = matches
+        .checked_add(u64::from(limits.snapshot))?
+        .checked_add(u64::from(limits.screenshot))?
+        .checked_add(look_answer)?;
     let persons = u64::from(limits.persons).checked_mul(512_u64.checked_add(text)?)?;
     let pages =
         u64::from(limits.pages).checked_mul(1024_u64.checked_add(command)?.checked_add(text.checked_mul(3)?)?)?;
     // Each attribute operation owns a selector and an attribute name.
-    let ops = u64::from(limits.ops)
-        .checked_mul(1024_u64.checked_add(report)?.checked_add(command)?.checked_add(text.checked_mul(2)?)?)?;
+    let ops = u64::from(limits.ops).checked_mul(
+        1024_u64
+            .checked_add(report)?
+            .checked_add(command)?
+            .checked_add(text.checked_mul(2)?)?
+            .checked_add(look_request)?,
+    )?;
     let commands = u64::from(limits.commands).checked_mul(512_u64.checked_add(command.checked_mul(2)?)?)?;
     let events = u64::from(limits.persons)
         .checked_add(u64::from(limits.pages))?
@@ -87,10 +107,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let events = events.checked_mul(
         u64::try_from(size_of::<crate::boundary::Event>()).ok()?.checked_add(report)?.checked_add(text)?,
     )?;
+    // A tree's explicit stack holds at most one value and depth per reply node.
+    let tree_stack = message.checked_mul(u64::try_from(size_of::<(crate::wire::decode::Value<'_>, u32)>()).ok()?)?;
     let transient = message
         .checked_mul(4)?
         .checked_add(command.checked_mul(4)?)?
         .checked_add(text.checked_mul(2)?)?
-        .checked_add(u64::from(limits.stderr))?;
+        .checked_add(u64::from(limits.stderr))?
+        .checked_add(tree_stack)?;
     persons.checked_add(pages)?.checked_add(ops)?.checked_add(commands)?.checked_add(events)?.checked_add(transient)
 }

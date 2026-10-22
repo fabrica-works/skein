@@ -52,3 +52,38 @@ fn random_load_stays_within_the_declared_bound() {
         assert_eq!(meter.held(), 0, "seed {seed}: all storage released");
     }
 }
+
+#[path = "support/look_memory.rs"]
+mod look_memory;
+#[test]
+fn seeded_look_answers_reach_each_limit_within_the_memory_bound() {
+    for seed in 0..48_u32 {
+        let limits = Limits {
+            persons: 1,
+            pages: 1,
+            ops: 3,
+            commands: 16,
+            message: 32768,
+            command: 4096,
+            matches: 0,
+            text: 32 + seed % 4 * 16,
+            snapshot: 0,
+            screenshot: 128 + seed * 8,
+            entries: 4 + seed % 16,
+            properties: 1 + seed % 8,
+            stderr: 0,
+            ..Limits::default()
+        };
+        let bound = worst_case(&limits).unwrap();
+        let meter = Meter::new();
+        meter.start();
+        let mut world = World::with_limits(limits);
+        world.start();
+        world.open();
+        look_memory::drive(&mut world, limits);
+        let measured = meter.end();
+        assert!(measured.peak() <= bound, "seed {seed}: look peak {} exceeds {bound}", measured.peak());
+        drop(world);
+        assert_eq!(meter.held(), 0, "seed {seed}");
+    }
+}

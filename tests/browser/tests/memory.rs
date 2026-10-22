@@ -78,3 +78,21 @@ fn selector_and_attribute_storage_fits_the_declared_bound() {
     drop(world);
     assert_eq!(meter.held(), 0);
 }
+
+#[path = "support/look_memory.rs"]
+mod look_memory;
+#[test]
+fn look_requests_and_answers_at_their_limits_fit_the_declared_bound() {
+    let limits = Limits { entries: 16, properties: 8, message: 32768, command: 4096, ..compact_limits() };
+    let bound = worst_case(&limits).unwrap();
+    let meter = Meter::new();
+    meter.start();
+    let mut world = World::with_limits(limits);
+    world.start();
+    world.open();
+    look_memory::drive(&mut world, limits);
+    let measured = meter.end();
+    assert!(measured.peak() <= bound, "look peak {} exceeds {bound}", measured.peak());
+    drop(world);
+    assert_eq!(meter.held(), 0);
+}

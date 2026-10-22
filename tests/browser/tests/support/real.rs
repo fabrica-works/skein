@@ -2,6 +2,8 @@
 
 #[path = "real/dialogs.rs"]
 mod dialogs;
+#[path = "real/look.rs"]
+mod look;
 #[path = "real/scope.rs"]
 mod scope;
 use skein_fake_person_browser::origins as serve;
@@ -65,6 +67,18 @@ pub fn chromium() -> PathBuf {
         }
     }
     panic!("Chromium is required for the browser suite: set SKEIN_TEST_CHROMIUM or put chromium on PATH");
+}
+
+pub fn fonts() -> PathBuf {
+    let fallback = PathBuf::from("/usr/share/fonts/truetype/dejavu");
+    let configured = std::env::var_os("SKEIN_TEST_FONTS").map(PathBuf::from);
+    let directory = configured.as_ref().unwrap_or(&fallback);
+    assert!(
+        directory.join("DejaVuSans.ttf").is_file(),
+        "DejaVuSans.ttf is required: SKEIN_TEST_FONTS={configured:?}; fallback {}",
+        fallback.display()
+    );
+    directory.clone()
 }
 
 fn spawn(chromium: &Path, profile: &Path) -> (Spawn, kernel::Fd) {
@@ -146,6 +160,7 @@ pub enum Scenario {
     Dates,
     Reduction,
     ScopeReload,
+    Look,
     Attribute { selector: &'static [u8], name: &'static [u8], expected: Option<&'static [u8]> },
     Leave,
     Confirm,
@@ -168,6 +183,7 @@ impl Scenario {
             | Scenario::Select
             | Scenario::Dates
             | Scenario::Reduction
+            | Scenario::Look
             | Scenario::ScopeReload
             | Scenario::Attribute { .. } => "/facts",
         }
@@ -205,6 +221,7 @@ pub struct Rig {
     pub snapshot: Box<[u8]>,
     dialog: dialogs::State,
     scope: Option<u64>,
+    look: look::State,
 }
 
 impl Rig {
@@ -243,6 +260,7 @@ impl Rig {
             scenario,
             dialog: dialogs::State::new(scenario),
             scope: None,
+            look: look::State::default(),
             context_ready: false,
             exception_seen: false,
             csp_log_seen: false,
@@ -439,7 +457,11 @@ impl Rig {
         }
         let Some(addr) = self.pages.addr else { return };
         self.stage = Stage::Opening;
-        let url = format!("http://{addr}{}", self.scenario.path());
+        let url = if matches!(self.scenario, Scenario::Look) {
+            "about:blank".into()
+        } else {
+            format!("http://{addr}{}", self.scenario.path())
+        };
         self.ask(Request::Page { person: PERSON, page: PAGE, url: url.into_bytes().into_boxed_slice() });
     }
 
@@ -448,6 +470,14 @@ impl Rig {
     }
 
     fn browser_event(&mut self, event: Event) {
+        let event = if matches!(self.scenario, Scenario::Look) {
+            match self.look_event(event) {
+                Ok(()) => return,
+                Err(event) => event,
+            }
+        } else {
+            event
+        };
         let event = if let Scenario::Attribute { selector, name, expected } = self.scenario {
             match event {
                 Event::Opened { page } => {
@@ -499,7 +529,11 @@ impl Rig {
                 assert_eq!(self.stage, Stage::Opening);
                 self.stage = Stage::Finding;
                 match self.scenario {
-                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload | Scenario::Attribute { .. } => {
+                    Scenario::Look
+                    | Scenario::Leave
+                    | Scenario::Confirm
+                    | Scenario::ScopeReload
+                    | Scenario::Attribute { .. } => {
                         unreachable!("dialog scenario handled above")
                     }
                     Scenario::Reduction => {
@@ -575,7 +609,11 @@ impl Rig {
                 assert_eq!(seen.len(), 1, "one accessible target for {:?}", self.scenario);
                 let node = seen.get(0).expect("target").node;
                 match self.scenario {
-                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload | Scenario::Attribute { .. } => {
+                    Scenario::Look
+                    | Scenario::Leave
+                    | Scenario::Confirm
+                    | Scenario::ScopeReload
+                    | Scenario::Attribute { .. } => {
                         unreachable!("dialog scenario handled above")
                     }
                     Scenario::Choose => {
@@ -677,6 +715,7 @@ impl Rig {
                         | Scenario::Select
                         | Scenario::Dates
                         | Scenario::Reduction
+                        | Scenario::Look
                         | Scenario::ScopeReload
                         | Scenario::Attribute { .. } => {
                             panic!("no action should complete for {:?}", self.scenario)

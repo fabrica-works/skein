@@ -12,6 +12,8 @@ pub enum Fault {
     Drop,
     Delay,
     Error,
+    Vanish,
+    NoBox,
     ContextGone,
     ScopeGone,
     InvalidSelector,
@@ -32,6 +34,14 @@ pub struct World {
     pub ax_visible: bool,
     pub selected: u64,
     pub attributes: String,
+    pub tree: String,
+    pub styles: String,
+    pub fonts: String,
+    pub border: String,
+    pub metrics: String,
+    pub png: String,
+    pub frontend: u64,
+    pub gone: bool,
     pub disabled: bool,
     pub covered: bool,
     pub hidden: bool,
@@ -64,6 +74,14 @@ impl World {
             ax_visible: true,
             selected: 7,
             attributes: r#"["value","first","data-note","named","empty",""]"#.into(),
+            tree: r#"{"nodes":[{"nodeId":"1","role":{"value":"RootWebArea"},"childIds":["2"]},{"nodeId":"2","ignored":true,"childIds":["3"]},{"nodeId":"3","backendDOMNodeId":7,"role":{"value":"heading"},"name":{"value":"Title"},"properties":[{"name":"level","value":{"value":1}}]}]}"#.into(),
+            styles: r#"{"computedStyle":[{"name":"font-size","value":"16px"},{"name":"color","value":"rgb(17, 17, 17)"}]}"#.into(),
+            fonts: r#"{"fonts":[{"familyName":"Fixture","isCustomFont":true,"glyphCount":5},{"familyName":"Fallback","isCustomFont":false,"glyphCount":2}]}"#.into(),
+            border: r#"{"model":{"border":[10.25,20.5,110.75,20.5,110.75,60.9,10.25,60.9]}}"#.into(),
+            metrics: r#"{"cssLayoutViewport":{"pageX":0,"pageY":0},"cssVisualViewport":{"pageX":0,"pageY":0,"clientWidth":390,"clientHeight":844}}"#.into(),
+            png: "iVBORw0KGgo=".into(),
+            frontend: 7,
+            gone: false,
             disabled: false,
             covered: false,
             hidden: false,
@@ -171,7 +189,11 @@ impl World {
                             Some(Fault::InvalidSelector) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"DOM Error while querying\"}}}}\0").into_bytes()),
                             Some(Fault::ScopeGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Node with given id does not belong to the document\"}}}}\0").into_bytes()),
                             Some(Fault::ContextGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Cannot find context with specified id\"}}}}\0").into_bytes()),
-                            Some(Fault::Error) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"No node found for given backend id\"}}}}\0").into_bytes()),
+                            Some(Fault::Error | Fault::Vanish) => {
+                                if fault == Some(Fault::Vanish) { self.gone = true; }
+                                replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"No node found for given backend id\"}}}}\0").into_bytes());
+                            }
+                            Some(Fault::NoBox) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Could not compute box model.\"}}}}\0").into_bytes()),
                             Some(Fault::Oversize) => replies.push_back(vec![b'x'; usize::try_from(self.env.limits.message).expect("message fits usize") + 2]),
                             Some(Fault::Crash) => {
                                 up(&mut self.browser, &self.env, Below::Replies(stream::Up::End), &mut self.above, &mut self.below);
@@ -235,6 +257,18 @@ impl World {
     }
 
     fn reply(&self, method: &[u8], params: Option<skein_browser::wire::decode::Value<'_>>) -> String {
+        match method {
+            b"Accessibility.getFullAXTree" => return self.tree.clone(),
+            b"CSS.getComputedStyleForNode" => return self.styles.clone(),
+            b"CSS.getPlatformFontsForNode" => return self.fonts.clone(),
+            b"DOM.getBoxModel" => return self.border.clone(),
+            b"DOM.pushNodesByBackendIdsToFrontend" => {
+                return format!("{{\"nodeIds\":[{}]}}", if self.gone { 0 } else { self.frontend });
+            }
+            b"Page.captureScreenshot" => return format!("{{\"data\":\"{}\"}}", self.png),
+            b"Page.getLayoutMetrics" => return self.metrics.clone(),
+            _ => {}
+        }
         if method == b"DOM.querySelector" {
             return format!("{{\"nodeId\":{}}}", self.selected);
         }
@@ -267,14 +301,14 @@ impl World {
             }
             b"DOM.getContentQuads" if self.hidden => r#"{"quads":[]}"#,
             b"DOM.getContentQuads" => r#"{"quads":[[10.25,10.25,110.75,10.25,110.75,40.75,10.25,40.75]]}"#,
-            b"Page.getLayoutMetrics" => r#"{"cssLayoutViewport":{"pageX":0,"pageY":0}}"#,
+
             b"DOM.getNodeForLocation" if self.covered => r#"{"backendNodeId":99}"#,
             b"DOM.getNodeForLocation" => r#"{"backendNodeId":7}"#,
             b"DOM.describeNode" => r#"{"node":{"backendNodeId":7,"children":[]}}"#,
             b"Page.getNavigationHistory" => {
                 r#"{"currentIndex":1,"entries":[{"id":1,"url":"https://example.test/"},{"id":2,"url":"https://example.test/notes/1"},{"id":3,"url":"https://example.test/notes/2"}]}"#
             }
-            b"Page.captureScreenshot" => r#"{"data":"iVBORw0KGgo="}"#,
+
             _ => "{}",
         };
         result.into()

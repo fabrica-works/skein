@@ -15,6 +15,7 @@ pub struct Referee {
     presses: BTreeMap<u64, usize>,
     mouse_events: usize,
     closed: bool,
+    looks: BTreeMap<u64, skein_browser::Limits>,
 }
 
 impl Referee {
@@ -24,6 +25,10 @@ impl Referee {
 
     pub fn await_op(&mut self, op: Token, expect: Expect) {
         assert!(self.expectations.insert(op.raw(), expect).is_none(), "operation registered once");
+    }
+
+    pub fn look_op(&mut self, op: Token, limits: skein_browser::Limits) {
+        assert!(self.looks.insert(op.raw(), limits).is_none());
     }
 
     pub fn press(&mut self, op: Token) {
@@ -61,6 +66,37 @@ impl Referee {
         };
         if let Some(op) = op {
             assert!(self.terminal.insert(op.raw()), "one terminal per operation: {op:?}");
+        }
+        if let Event::Looked { op, looked } = event {
+            let limits = self.looks.get(&op.raw()).expect("look registered with its limits");
+            use skein_browser::boundary::Looked;
+            match looked {
+                Looked::Viewport | Looked::Selected(_) => {}
+                Looked::Tree(entries) => {
+                    assert!(entries.len() <= limits.entries);
+                    let mut previous = 0;
+                    for (index, entry) in entries.iter().enumerate() {
+                        if index == 0 {
+                            assert_eq!(entry.depth, 0);
+                        }
+                        assert!(entry.depth <= previous + 1);
+                        assert!(entry.role.len() <= usize::try_from(limits.text).unwrap());
+                        assert!(entry.name.len() <= usize::try_from(limits.text).unwrap());
+                        previous = entry.depth;
+                    }
+                }
+                Looked::Style { values, faces, .. } => {
+                    assert!(values.len() <= limits.properties && faces.len() <= limits.entries);
+                    for property in values.iter() {
+                        assert!(property.name.len() <= usize::try_from(limits.text).unwrap());
+                        assert!(property.value.len() <= usize::try_from(limits.text).unwrap());
+                    }
+                    for face in faces.iter() {
+                        assert!(face.family.len() <= usize::try_from(limits.text).unwrap());
+                    }
+                }
+                Looked::Shot(png) => assert!(png.len() <= usize::try_from(limits.screenshot).unwrap()),
+            }
         }
         if let Event::Met { op, .. } = event {
             let expected = self.expectations.get(&op.raw()).expect("Met belongs to a registered Await");

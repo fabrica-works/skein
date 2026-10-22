@@ -1,6 +1,7 @@
 //! The CDP parameters the browser sends. One description is written twice:
 //! measuring before allocation, then writing exactly the measured length.
 
+use crate::boundary::{Motion, Rect, Scheme};
 use alloc::boxed::Box;
 
 use skein_json::writer::{Encoder, Limits as JsonLimits};
@@ -27,14 +28,17 @@ pub(crate) enum Params<'a> {
     Text(&'a [u8]),
     Composition(&'a [u8]),
     Key { kind: &'static [u8], key: &'a [u8], code: &'a [u8], windows: u64, text: &'a [u8], modifiers: u64 },
-    Viewport { width: u64, height: u64 },
+    Viewport { width: u64, height: u64, mobile: bool },
+    Media { scheme: Scheme, motion: Motion },
+    Push(u64),
+    Shot { clip: Rect, scale: u8 },
     HistoryEntry(u64),
     Describe { backend: u64, depth: i64 },
 }
 
 impl Params<'_> {
     pub(crate) fn encode(&self, limit: u32) -> Option<Box<[u8]>> {
-        let limits = JsonLimits { depth: 3, length: limit };
+        let limits = JsonLimits { depth: 4, length: limit };
         let mut measure = Encoder::measure(&limits);
         self.write(&mut measure);
         let len = measure.measured().ok()?;
@@ -173,7 +177,7 @@ impl Params<'_> {
                     json.unsigned(*modifiers);
                 }
             }
-            Params::Viewport { width, height } => {
+            Params::Viewport { width, height, mobile } => {
                 json.key(b"width");
                 json.unsigned(*width);
                 json.key(b"height");
@@ -181,7 +185,60 @@ impl Params<'_> {
                 json.key(b"deviceScaleFactor");
                 json.unsigned(1);
                 json.key(b"mobile");
-                json.boolean(false);
+                json.boolean(*mobile);
+            }
+            Params::Media { scheme, motion } => {
+                json.key(b"features");
+                json.array_start();
+                for (name, value) in [
+                    (
+                        b"prefers-color-scheme".as_slice(),
+                        match scheme {
+                            Scheme::Light => b"light".as_slice(),
+                            Scheme::Dark => b"dark".as_slice(),
+                        },
+                    ),
+                    (
+                        b"prefers-reduced-motion".as_slice(),
+                        match motion {
+                            Motion::Reduce => b"reduce".as_slice(),
+                            Motion::NoPreference => b"no-preference".as_slice(),
+                        },
+                    ),
+                ] {
+                    json.object_start();
+                    json.key(b"name");
+                    json.string(name);
+                    json.key(b"value");
+                    json.string(value);
+                    json.object_end();
+                }
+                json.array_end();
+            }
+            Params::Push(node) => {
+                json.key(b"backendNodeIds");
+                json.array_start();
+                json.unsigned(*node);
+                json.array_end();
+            }
+            Params::Shot { clip, scale } => {
+                json.key(b"format");
+                json.string(b"png");
+                json.key(b"clip");
+                json.object_start();
+                json.key(b"x");
+                json.signed(clip.x);
+                json.key(b"y");
+                json.signed(clip.y);
+                json.key(b"width");
+                json.unsigned(clip.width);
+                json.key(b"height");
+                json.unsigned(clip.height);
+                json.key(b"scale");
+                json.unsigned(u64::from(*scale));
+                json.object_end();
+                json.key(b"captureBeyondViewport");
+                json.boolean(true);
             }
             Params::HistoryEntry(entry) => {
                 json.key(b"entryId");

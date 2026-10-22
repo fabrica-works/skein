@@ -112,3 +112,10 @@ fn varied_pages_and_faults_hold_the_contract() {
     }
     assert!(faults_seen.into_iter().all(|seen| seen), "each fault must actually fall");
 }
+
+#[path = "support/look_world.rs"]
+mod look_world;
+#[test]
+fn seeded_look_reads_and_faults_hold_the_machine_contracts() {
+    look_world::run(256);
+}
