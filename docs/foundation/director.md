@@ -14,7 +14,7 @@ doing now is in its notes (section 3), never here.
   machines', and from it takes informed decisions: on what owners
   escalate, on what runs next and where, and on the resources
   (machines, disk, subscriptions).
-- **One session at a time,** on x1, started by the user, its context
+- **One session at a time,** on hel8, started by the user, its context
   cleared about every six hours (section 2). Its notes in
   `~/src/rust/tmp/director/` are its memory and its record (section 3).
 - **It starts the owners,** one per mission: which work, when, where, a
@@ -36,10 +36,10 @@ doing now is in its notes (section 3), never here.
 
 ## 2. The session
 
-- **Started by the user** on x1 in `~/src/rust`, as a background
-  session with remote control:
-  `claude --bg --remote-control -n director --model claude-opus-5-5
-  --effort xhigh --autocompact 150000 --dangerously-skip-permissions
+- **Started by the user** on hel8 in `~/src/rust`, as a background
+  session with remote control, on the 1M window:
+  `claude --bg --remote-control -n director --model 'claude-opus-5-5[1m]'
+  --effort xhigh --autocompact 282000 --dangerously-skip-permissions
   "You are the director; read ~/src/rust/tmp/director/README.md and
   follow it."` Remote control lets it push to the user's phone. Claude
   Code's auto-memory for `~/src/rust` is the director's: it carries the
@@ -74,7 +74,7 @@ doing now is in its notes (section 3), never here.
     much: Codex reads for it (section 9).
 - **One director only.** Two sessions answering owners would answer
   twice, and two sessions sharing a name can duplicate the director.
-  After x1 restarts, `claude agents` may list an auto-resumed copy of
+  After its machine restarts, `claude agents` may list an auto-resumed copy of
   an old director: stop it.
 - **A fresh context at the third check,** about six hours in,
   however many compactions came before: `session.sh` says "hand
@@ -93,7 +93,7 @@ doing now is in its notes (section 3), never here.
 
 ## 3. Its notes
 
-`~/src/rust/tmp/director/` on x1. Each other machine has its own
+`~/src/rust/tmp/director/` on hel8. Each other machine has its own
 `tmp/director/inbox/` (`~/src/tmp/` on carbon-forge), the messages
 `tell.sh` delivers there, and `codex-owner.sh` where a Codex owner
 runs.
@@ -115,7 +115,7 @@ runs.
   each change to a machine's settings.
 - **`log.md`:** the timeline, one line per event.
 - **Folders:** `briefs/` (finished ones in `done/`), `messages/` (what
-  it sent), `inbox/` (reports from x1's sessions), `for-user/` (notes
+  it sent), `inbox/` (reports from hel8's sessions), `for-user/` (notes
   sent to the user), `archive/` (old decisions, the old log, old
   messages).
 - **Stamps** come from `date -u +%H:%MZ`, run before stamping anything.
@@ -203,7 +203,7 @@ runs.
 
 ## 5. The channels
 
-- **From an owner:** SendMessage on x1. From another machine, an entry
+- **From an owner:** SendMessage on hel8. From another machine, an entry
   in that machine's `~/src/rust/tmp/director/inbox/o-<name>.md`, at
   most 15 lines under a `## HH:MMZ o/<name>: <subject>` header, and
   the owner's turn ends (owners.md, 5). After-landing failures arrive
@@ -223,7 +223,7 @@ runs.
 - **On each wake,** it reads the newest headers of every machine's
   inbox, not only the one that fired: an ask can hide inside a report.
 - **To an owner,** each message is written in `messages/` first, then
-  sent: SendMessage on x1; to a Claude session on another machine,
+  sent: SendMessage on hel8; to a Claude session on another machine,
   `tell.sh MACHINE SESSION FILE`, which has a one-shot Sonnet session
   there pass the text verbatim to the newest session of that name; to
   a Codex owner, a file in its `wake/`, with umask 077.
