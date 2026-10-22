@@ -989,13 +989,22 @@ fn response_head(
         fail(client, Failure::Protocol, bytes::copy_of(b"unsupported content encoding"), above);
         closing(client, env, above, below);
     } else if (200..300).contains(&response.status) {
-        // The Codex subscription route can omit Content-Type on a valid SSE
-        // response. Still reject explicit wrong or duplicate media types, and
-        // require Anthropic's documented event-stream type.
-        if media_type(&response.headers, b"text/event-stream", client.provider == Provider::OpenAiCodex) {
+        // Both OpenAI Responses routes can omit Content-Type on valid SSE.
+        // The event decoder still requires a terminal event (llm.md, 4.8).
+        let allow_missing = match client.provider {
+            Provider::OpenAi | Provider::OpenAiCodex => true,
+            Provider::Anthropic => false,
+        };
+        let media = media_type(&response.headers);
+        let accepted = match media {
+            Ok(Some(value)) => value.eq_ignore_ascii_case(b"text/event-stream"),
+            Ok(None) => allow_missing,
+            Err(()) => false,
+        };
+        if accepted {
             client.state = State::Streaming;
         } else {
-            fail(client, Failure::Protocol, bytes::copy_of(b"response is not an event stream"), above);
+            fail(client, Failure::Protocol, stream_type_detail(media), above);
             closing(client, env, above, below);
         }
     } else {
@@ -1885,25 +1894,49 @@ fn identity_encoding(headers: &[Header]) -> bool {
     true
 }
 
-fn media_type(headers: &[Header], expected: &[u8], allow_missing: bool) -> bool {
-    let mut found = false;
+fn media_type(headers: &[Header]) -> Result<Option<&[u8]>, ()> {
+    let mut found = None;
     for header in headers {
         if header.is(b"content-type") {
-            if found {
-                return false;
+            if found.is_some() {
+                return Err(());
             }
             let end = match bytes::find(&header.value, b";") {
                 Some(end) => end,
                 None => header.value.len(),
             };
-            if !trim(header.value.get(..end).expect("the delimiter is within the value")).eq_ignore_ascii_case(expected)
-            {
-                return false;
-            }
-            found = true;
+            found = Some(trim(header.value.get(..end).expect("the delimiter is within the value")));
         }
     }
-    found || allow_missing
+    Ok(found)
+}
+
+fn stream_type_detail(media: Result<Option<&[u8]>, ()>) -> Box<[u8]> {
+    // Keep only a bounded media type, never its parameters or response body.
+    const MEDIA_BYTES: usize = 64;
+    const PREFIX: &[u8] = b"response is not an event stream (content-type: ";
+    let value: &[u8] = match media {
+        Ok(Some(value)) => {
+            if value.len() > MEDIA_BYTES {
+                b"too long"
+            } else if let Some(slash) = bytes::find(value, b"/") {
+                let kind = value.get(..slash).expect("the slash is within the media type");
+                let subtype = value.get(slash.saturating_add(1)..).expect("the slash is within the media type");
+                if header_name(kind) && header_name(subtype) { value } else { b"invalid" }
+            } else {
+                b"invalid"
+            }
+        }
+        Ok(None) => b"missing",
+        Err(()) => b"duplicate",
+    };
+    let length = PREFIX.len().checked_add(value.len()).expect("bounded media type");
+    let length = length.checked_add(1).expect("bounded media detail");
+    let mut out = Writer::new(length);
+    out.put(PREFIX).expect("measured detail prefix");
+    out.put(value).expect("measured media type");
+    out.put(b")").expect("measured detail suffix");
+    out.finish()
 }
 
 fn trim(mut value: &[u8]) -> &[u8] {

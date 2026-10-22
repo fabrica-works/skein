@@ -208,10 +208,16 @@ fn codex_accepts_sse_without_content_type_but_rejects_explicit_wrong_or_duplicat
         assert!(world.seen.iter().any(|event| matches!(event, client::Event::Completed { .. })));
         assert!(world.seen.iter().any(|event| matches!(event, client::Event::Reusable)));
     }
-    for headers in [
-        "Content-Type: application/json\r\n",
-        "Content-Type: text/event-stream\r\ncontent-type: text/event-stream\r\n",
-        "Content-Type: text/event-stream\r\ncontent-type: application/json\r\n",
+    for (headers, expected) in [
+        ("Content-Type: application/json\r\n", "response is not an event stream (content-type: application/json)"),
+        (
+            "Content-Type: text/event-stream\r\ncontent-type: text/event-stream\r\n",
+            "response is not an event stream (content-type: duplicate)",
+        ),
+        (
+            "Content-Type: text/event-stream\r\ncontent-type: application/json\r\n",
+            "response is not an event stream (content-type: duplicate)",
+        ),
     ] {
         let mut world = World::new(call(1), limits(), response(200, headers, &body, true), 23);
         world.request(client::Request::Start);
@@ -220,7 +226,7 @@ fn codex_accepts_sse_without_content_type_but_rejects_explicit_wrong_or_duplicat
         assert!(world.seen.iter().any(|event| matches!(
             event,
             client::Event::Failed { failure: Failure::Protocol, detail, .. }
-                if detail.as_ref() == b"response is not an event stream"
+                if detail.as_ref() == expected.as_bytes()
         )));
     }
 }

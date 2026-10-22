@@ -770,6 +770,13 @@ a plan's route refuses: `background`, `conversation`,
 admission refuses an explicit output-token cap, and the local output
 bounds still hold.
 
+- **Response media type.** Both OpenAI Responses routes accept a missing
+  `Content-Type` and validate SSE events through their terminal. An explicit
+  type must be `text/event-stream` (case-insensitive, parameters ignored);
+  duplicate types are refused. This follows the provider dialect regardless
+  of credential kind or endpoint override. A refusal names the media type
+  within 64 bytes, or says missing, duplicate, invalid or too long, and
+  carries neither parameters nor body text.
 - **Affinity.** The key renders as 36 bytes: lowercase hexadecimal in the
   8-4-4-4-12 form of a UUID, in the body as `prompt_cache_key`. The
   thread is not rendered: conversations that share a key share its cache

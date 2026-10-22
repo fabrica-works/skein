@@ -59,7 +59,7 @@ fn anthropic_requires_an_explicit_event_stream_content_type() {
     assert!(world.seen.iter().any(|event| matches!(
         event,
         client::Event::Failed { failure: Failure::Protocol, detail, .. }
-            if detail.as_ref() == b"response is not an event stream"
+            if detail.as_ref() == b"response is not an event stream (content-type: missing)"
     )));
 }
 
