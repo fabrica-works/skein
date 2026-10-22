@@ -150,8 +150,10 @@ the kernel's: each child's pidfd, its pipes, its exit and its group.
 - **Groups.** Each child leads a group of its own from its spawn. A
   program the machine runs may start a child of its own, which joins its
   group unless the program leaves it; the minimal machine's program that
-  does so stands in for a command that leaves a descendant behind. A
-  signal to the group reaches every member, a hosted service included.
+  does so stands in for a command that leaves a descendant behind. An
+  interrupt or a termination to the group reaches every member: a modeled
+  program dies of it, and a hosted service reads it as a termination
+  signal on its signal source. `Kill` ends each.
 - **Stop and continue.** `Stop` holds a modeled program's work and exit
   until `Continue`; continuing a running member changes nothing. INT, TERM
   and `Kill` still end a stopped modeled program. Both in-loop worlds refuse
