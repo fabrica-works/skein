@@ -135,7 +135,7 @@ impl<'a> Page<'a> {
                 }
                 Patch::Attribute { node, attribute } => {
                     let old_tag = semantic(&self.held(*node).element).tag.clone();
-                    self.nodes.get_mut(node).expect("held node").made.attribute = attribute.clone();
+                    self.nodes.get_mut(node).expect("held node").made.attribute = attribute.as_ref().clone();
                     self.remap(*node);
                     self.draw(*node);
                     let element = self.own_element(*node);

@@ -4,7 +4,7 @@
 //! relationships. Structural patches remove unmatched roots, insert unmatched
 //! roots after positioning matched siblings by reverse moves. Insertions then
 //! use the already-positioned siblings as anchors, in reverse order.
-//! Each node has at most one structural patch and three attribute patches.
+//! A diff emits at most four patches per node (ui.md, 7).
 //! Bindings stay in the view: the shell sees only their presence and node ids.
 
 use crate::Limits;
@@ -91,13 +91,6 @@ impl Made {
 
 /// An edit to a shell tree; identity zero names the shell's outer container.
 #[derive(Clone, PartialEq, Eq, Debug)]
-#[cfg_attr(
-    target_pointer_width = "64",
-    expect(
-        clippy::large_enum_variant,
-        reason = "the bounded patch queue reserves inline attributes in worst_case (ui.md, 15)"
-    )
-)]
 pub enum Patch {
     /// Insert a whole preorder subtree under a parent, before a sibling or at its end.
     Insert { parent: NodeId, before: Option<NodeId>, nodes: Box<[Made]> },
@@ -108,7 +101,7 @@ pub enum Patch {
     /// Replace all runs on a text node.
     Text { node: NodeId, text: Box<[TextRun]> },
     /// Replace semantic attributes, including a drawing's whole data.
-    Attribute { node: NodeId, attribute: Attribute },
+    Attribute { node: NodeId, attribute: Box<Attribute> },
     /// Apply a owner write to a field, or remove its value.
     Value { node: NodeId, value: Option<Value> },
 }
@@ -297,7 +290,7 @@ fn attributes(old: &Node, new: &Node, out: &mut Queue<Patch>) {
         || was_bound != bound
         || old.drawing != new.drawing
     {
-        let attribute = Attribute::of(new);
+        let attribute = Box::new(Attribute::of(new));
         out.push(Patch::Attribute { node: new.id, attribute });
     }
     if old.text != new.text {

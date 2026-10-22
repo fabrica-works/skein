@@ -5,7 +5,7 @@
 
 use crate::builder::PlacedSlot;
 use crate::diff::Open;
-use crate::{Made, Node, Patch, Slot, State, Style, TextRun};
+use crate::{Attribute, Made, Node, Patch, Slot, State, Style, TextRun};
 use skein_lib::{List, Queue, Stack};
 
 /// Capacities checked before each builder allocation.
@@ -42,7 +42,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let slots = List::<PlacedSlot>::worst_case(limits.slots)?
         .checked_mul(3)?
         .checked_add(List::<Slot>::worst_case(limits.slots)?.checked_mul(2)?)?;
-    let patches = Queue::<Patch>::worst_case(limits.patches)?;
+    // Each matched node emits at most one boxed attribute (ui.md, 7).
+    let attributes = u64::from(limits.nodes).checked_mul(u64::try_from(size_of::<Attribute>()).ok()?)?;
+    let patches = Queue::<Patch>::worst_case(limits.patches)?.checked_add(attributes)?;
     let made = List::<Made>::worst_case(limits.nodes)?;
     let maps = List::<Option<u32>>::worst_case(limits.nodes)?.checked_mul(4)?;
     let children = List::<u32>::worst_case(limits.nodes)?;

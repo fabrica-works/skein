@@ -409,7 +409,7 @@ fn drawing_page(data: &[u8]) -> Page<'static> {
     page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, data)), &mut Vec::new());
     let mut attribute = skein_ui::Made::of(view.tree().get(2).expect("fixture drawing")).attribute;
     attribute.bound = true;
-    page.apply(&[Patch::Attribute { node: DRAWING, attribute }], &mut Vec::new());
+    page.apply(&[Patch::Attribute { node: DRAWING, attribute: Box::new(attribute) }], &mut Vec::new());
     page.resized(DRAWING, 100, 50, &mut Vec::new());
     page
 }

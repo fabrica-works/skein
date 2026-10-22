@@ -103,7 +103,7 @@ fn apply(rows: &mut Vec<Entry>, patch: Patch) {
         }
         Patch::Attribute { node, attribute } => {
             let at = position(rows, node);
-            rows[at].node.attribute = attribute;
+            rows[at].node.attribute = *attribute;
         }
         Patch::Value { node, value } => {
             let at = position(rows, node);
@@ -282,6 +282,7 @@ fn a_seeded_sweep_of_nested_trees_is_reproduced_by_the_independent_applier() {
             random_tree(&mut builder, &mut rng);
             view.finish(builder, shown, &mut out);
             assert!(out.len() <= LIMITS.patches);
+            assert!(out.len() <= LIMITS.nodes.checked_mul(4).expect("four patches per node fit"));
             let mut trace = Vec::new();
             while let Some(patch) = out.pop() {
                 apply(&mut model, patch.clone());

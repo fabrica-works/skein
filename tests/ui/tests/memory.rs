@@ -2,7 +2,7 @@
 use skein_heap::{Counting, Meter};
 use skein_lib::Queue;
 use skein_ui::scene::{Anchor, Point, Scene};
-use skein_ui::{Builder, Limits, Owner, Role, Style, View, markdown, worst_case};
+use skein_ui::{Builder, Limits, Owner, Patch, Role, Style, View, markdown, worst_case};
 use skein_ui_tests::full_page;
 
 #[global_allocator]
@@ -63,4 +63,17 @@ fn the_view_holds_no_more_than_its_worst_case() {
 fn a_full_page_reaches_half_its_worst_case() {
     let (peak, bound) = peak();
     assert!(peak >= bound / 2, "full pages reach the limits: {peak} >= {bound}/2");
+}
+
+#[test]
+fn a_patch_queue_reserves_at_most_four_words_a_patch() {
+    // Four words cover every patch variant (ui.md, 7).
+    const WORDS: u64 = 4;
+    let bound = u64::from(LIMITS.patches) * WORDS * u64::try_from(size_of::<usize>()).expect("word size fits");
+    let meter = Meter::new();
+    meter.start();
+    let patches = Queue::<Patch>::with_capacity(LIMITS.patches);
+    let peak = meter.end().peak();
+    drop(patches);
+    assert!(peak <= bound, "patch queue reservation: {peak} <= {bound}");
 }
