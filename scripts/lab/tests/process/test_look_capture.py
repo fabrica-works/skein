@@ -38,6 +38,7 @@ class Capture(unittest.TestCase):
                 self.fonts(source, fonts)
                 page = root / "page"
                 shutil.copytree(FIXTURE / "page", page)
+                shutil.copyfile(FIXTURE / "mockups/blank.html", page / "blank.html")
                 with socket.socket() as listener:
                     listener.bind(("127.0.0.1", 0))
                     listener.listen()
@@ -48,12 +49,22 @@ class Capture(unittest.TestCase):
                     args = [str(PACKAGE / "look/capture"), "--browser", browser, "--chromium", chromium,
                             "--fonts", str(fonts), "--mockups", str(FIXTURE / "mockups"), "--page", str(page),
                             "--ready-seconds", "2", "--out", str(out)]
-                    run = subprocess.run([*args, str(FIXTURE / "scene.json")], capture_output=True, timeout=40)
+                    run = subprocess.run([*args, str(FIXTURE / "blank-scene.json"), str(FIXTURE / "scene.json")],
+                                         capture_output=True, timeout=40)
                     self.assertEqual(run.returncode, 0, run.stderr.decode())
                     self.assertEqual(select.select([listener], [], [], 0)[0], [], "capture reached the machine's loopback")
                 capture = record.check(canon.loads((out / "capture.json").read_bytes(), "look-capture/1"))
                 self.assertIn("Chrome", capture["browser"])
-                scene = capture["scenes"][0]
+                blank = capture["scenes"][0]
+                self.assertEqual(blank["name"], "blank")
+                self.assertEqual([(w["name"], w["width"], w["height"], w["mobile"]) for w in blank["widths"]],
+                                 [("desktop", 1440, 900, False), ("phone", 390, 844, True)])
+                for blank_width in blank["widths"]:
+                    for side in ("mockup", "page"):
+                        with self.subTest(scene="blank", width=blank_width["name"], side=side):
+                            self.assertEqual(blank_width[side]["ready"], "met")
+                            self.assertEqual(blank_width[side]["trouble"], [])
+                scene = capture["scenes"][1]
                 self.assertEqual(scene["scene"], "sha256:" + hashlib.sha256((FIXTURE / "scene.json").read_bytes()).hexdigest())
                 width = scene["widths"][0]
                 self.assertEqual((width["name"], width["width"], width["height"], width["mobile"]), ("phone", 360, 480, False))

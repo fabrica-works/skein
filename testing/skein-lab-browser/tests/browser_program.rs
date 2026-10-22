@@ -69,18 +69,24 @@ fn browser_program() {
     assert_eq!(field(field(&served, "served"), "origin"), &json::bytes(b"fixture"));
     // lab-browser.md, 6: both emulations precede the story's reads.
     for (page, size, mobile) in [("blank-desktop", DESKTOP, false), ("blank-phone", PHONE, true)] {
-        call(object([
-            ("call", string("open")),
-            ("page", string(page)),
-            ("width", number(size.0)),
-            ("height", number(size.1)),
-            ("mobile", Value::Bool(mobile)),
-        ]));
-        call(object([
-            ("call", string("go")),
-            ("page", string(page)),
-            ("url", string(format!("{address}/blank.html"))),
-        ]));
+        assert_eq!(
+            call(object([
+                ("call", string("open")),
+                ("page", string(page)),
+                ("width", number(size.0)),
+                ("height", number(size.1)),
+                ("mobile", Value::Bool(mobile)),
+            ])),
+            object([("opened", string(page))])
+        );
+        assert_eq!(
+            call(object([
+                ("call", string("go")),
+                ("page", string(page)),
+                ("url", string(format!("{address}/blank.html"))),
+            ])),
+            object([("done", string(page))])
+        );
     }
     // The first shot is an unclipped desktop viewport on a scrolling page.
     call(object([
@@ -213,12 +219,6 @@ fn browser_program() {
                 && field(entry, "text") == &string("styles.example:80")),
         "{trouble:?}"
     );
-    let network: Vec<_> = trouble
-        .iter()
-        .filter(|entry| field(entry, "kind") == &string("network"))
-        .map(|entry| text(field(entry, "text")))
-        .collect();
-    assert_eq!(network, ["styles.example:80"], "only the page's external stylesheet asks the proxy");
     let selected = call(object([("call", string("select")), ("page", string("p")), ("selector", string("#part"))]));
     let style = call(object([
         ("call", string("style")),
@@ -229,10 +229,6 @@ fn browser_program() {
     assert_eq!(field(field(field(&style, "style"), "values"), "color"), &string("rgb(51, 68, 85)"));
     let refused = call(object([("call", string("fly"))]));
     assert_eq!(field(&refused, "refused"), &string("call"));
-    for page in ["blank-desktop", "blank-phone"] {
-        let trouble = call(object([("call", string("trouble")), ("page", string(page))]));
-        assert_eq!(field(&trouble, "trouble"), &Value::Array(vec![]), "{page}: {trouble:?}");
-    }
     drop(stdin);
     let deadline = reader.now().saturating_add(Duration::from_secs(10));
     loop {

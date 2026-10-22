@@ -27,6 +27,56 @@ const PROCESS: Token = Token::new(u64::MAX - 1);
 const BROWSER: Token = Token::new(u64::MAX - 2);
 const ROOT: Token = Token::new(u64::MAX);
 const POLL: Duration = Duration::from_millis(10);
+// lab-browser.md, 2.4: trouble contains the page's requests alone;
+// viewport shots have no scrollbar gutter.
+const CAPTURE_SWITCHES: &[&str] = &[
+    "--disable-background-networking",
+    "--disable-component-update",
+    // On-demand model manifest updates bypass --disable-component-update;
+    // Chromium's blocked port stops them, and update pings are off too.
+    "--component-updater=url-source=http://127.0.0.1:1/,disable-pings",
+    "--disable-sync",
+    "--disable-default-apps",
+    "--disable-client-side-phishing-detection",
+    "--disable-domain-reliability",
+    "--disable-field-trial-config",
+    "--no-pings",
+    "--metrics-recording-only",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-search-engine-choice-screen",
+    // Gaia's session metrics probe and GCM's registration have no
+    // service switch; Chromium's blocked port stops their requests.
+    "--gaia-url=http://127.0.0.1:1/",
+    "--gcm-checkin-url=http://127.0.0.1:1/",
+    "--gcm-registration-url=http://127.0.0.1:1/",
+    // Search preconnects retry refused connections to the default engine;
+    // network time queries and AIM eligibility are browser traffic too.
+    "--disable-features=AutofillServerCommunication,CertificateTransparencyComponentUpdater,\
+         MediaRouter,OptimizationHints,OptimizationHintsFetching,OptimizationTargetPrediction,\
+         OptimizationGuideModelDownloading,AutofillEnableAccountWalletStorage,\
+         InterestFeedContentSuggestions,PreconnectToSearch,PreconnectFromKeyedService,SearchEnginePreconnect,\
+         NetworkTimeServiceQuerying,AimEnabled",
+    "--hide-scrollbars",
+];
+fn capture_args(kit_args: &List<Box<[u8]>>, proxy: std::net::SocketAddr) -> List<Box<[u8]>> {
+    let switch_count = u32::try_from(CAPTURE_SWITCHES.len()).expect("capture switches fit u32");
+    let mut args = List::with_capacity(kit_args.len() + 2 + switch_count);
+    // Keep the initial URL last so launchers preserve switch order: the
+    // capture's feature list supersedes the kit's shorter feature list.
+    let (initial_page, switches) = kit_args.as_slice().split_last().expect("kit's initial page");
+    for arg in switches {
+        args.push(arg.clone()).expect("args room");
+    }
+    args.push(format!("--proxy-server=http://{proxy}").into_bytes().into()).expect("proxy arg room");
+    args.push(Box::from(b"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1".as_slice()))
+        .expect("resolver arg room");
+    for arg in CAPTURE_SWITCHES {
+        args.push(arg.as_bytes().into()).expect("capture arg room");
+    }
+    args.push(initial_page.clone()).expect("initial page arg room");
+    args
+}
 struct OpenPage {
     page: Token,
     person: Token,
@@ -163,59 +213,11 @@ impl Runtime {
         Ok(())
     }
     fn spawn(&mut self, config: &Config, fonts: &Path) -> Result<(), String> {
-        // lab-browser.md, 2.4: trouble contains the page's requests alone;
-        // viewport shots have no scrollbar gutter.
-        const CAPTURE_SWITCHES: &[&str] = &[
-            "--disable-background-networking",
-            "--disable-component-update",
-            // On-demand model manifest updates bypass --disable-component-update;
-            // Chromium's blocked port stops them, and update pings are off too.
-            "--component-updater=url-source=http://127.0.0.1:1/,disable-pings",
-            "--disable-sync",
-            "--disable-default-apps",
-            "--disable-client-side-phishing-detection",
-            "--disable-domain-reliability",
-            "--disable-field-trial-config",
-            "--no-pings",
-            "--metrics-recording-only",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-search-engine-choice-screen",
-            // Gaia's session metrics probe and GCM's registration have no
-            // service switch; Chromium's blocked port stops their requests.
-            "--gaia-url=http://127.0.0.1:1/",
-            "--gcm-checkin-url=http://127.0.0.1:1/",
-            "--gcm-registration-url=http://127.0.0.1:1/",
-            // Search preconnects retry refused connections to the default engine;
-            // network time queries and AIM eligibility are browser traffic too.
-            "--disable-features=AutofillServerCommunication,CertificateTransparencyComponentUpdater,\
-             MediaRouter,OptimizationHints,OptimizationHintsFetching,OptimizationTargetPrediction,\
-             OptimizationGuideModelDownloading,AutofillEnableAccountWalletStorage,\
-             InterestFeedContentSuggestions,PreconnectToSearch,PreconnectFromKeyedService,SearchEnginePreconnect,\
-             NetworkTimeServiceQuerying,AimEnabled",
-            "--hide-scrollbars",
-        ];
         let mut command = browser::command::command(
             config.chromium.as_os_str().as_bytes(),
             config.scratch.join("profile").as_os_str().as_bytes(),
         );
-        let switch_count = u32::try_from(CAPTURE_SWITCHES.len()).expect("capture switches fit u32");
-        let mut args = List::with_capacity(command.args.len() + 2 + switch_count);
-        // Keep the initial URL last so launchers preserve switch order: the
-        // capture's feature list supersedes the kit's shorter feature list.
-        let (initial_page, switches) = command.args.as_slice().split_last().expect("kit's initial page");
-        for arg in switches {
-            args.push(arg.clone()).expect("args room");
-        }
-        args.push(format!("--proxy-server=http://{}", self.proxy.address.expect("bound proxy")).into_bytes().into())
-            .expect("proxy arg room");
-        args.push(Box::from(b"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1".as_slice()))
-            .expect("resolver arg room");
-        for arg in CAPTURE_SWITCHES {
-            args.push(arg.as_bytes().into()).expect("capture arg room");
-        }
-        args.push(initial_page.clone()).expect("initial page arg room");
-        command.args = args;
+        command.args = capture_args(&command.args, self.proxy.address.expect("bound proxy"));
         let mut env = List::with_capacity(command.env.len() + 1);
         for variable in &command.env {
             env.push(variable.clone()).expect("env room");
@@ -841,4 +843,23 @@ fn shot(config: &Config, file: &str, png: &[u8]) -> Result<Value, String> {
             ("width", number(width)),
         ]),
     )]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CAPTURE_SWITCHES, browser, capture_args};
+
+    #[test]
+    fn capture_switches_follow_kit_switches_before_initial_url() {
+        let command = browser::command::command(b"/chromium", b"/scratch/profile");
+        let args = capture_args(&command.args, "127.0.0.1:12345".parse().unwrap());
+        let (initial_page, switches) = args.as_slice().split_last().unwrap();
+        assert_eq!(initial_page.as_ref(), b"about:blank");
+        let (kit, capture) = switches.split_at(switches.len() - CAPTURE_SWITCHES.len());
+        for (arg, expected) in capture.iter().zip(CAPTURE_SWITCHES) {
+            assert_eq!(arg.as_ref(), expected.as_bytes());
+        }
+        assert_eq!(kit.last().unwrap().as_ref(), b"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1");
+        assert!(kit.iter().any(|arg| arg.as_ref() == b"--proxy-server=http://127.0.0.1:12345"));
+    }
 }
