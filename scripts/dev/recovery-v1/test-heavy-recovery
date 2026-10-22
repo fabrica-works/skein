@@ -467,6 +467,71 @@ def missing_reconciler(lab):
     lab.done(gate)
 
 
+def land_diagnostic(lab, point, prebuild=False):
+    if prebuild:
+        (lab.repo / 'Cargo.toml').write_text('# capture prebuild fixture\n')
+        lab.call(['git', 'add', 'Cargo.toml'])
+        lab.call(['git', 'commit', '-qm', 'prebuild fixture'])
+    base, head = candidate(lab)
+    proceed = lab.path / 'complete-payload'
+    command = 'while test ! -e ' + str(proceed) + '; do sleep .02; done'
+    label = 'land repo prebuild' if prebuild else 'land repo'
+    output = lab.path / 'land.client.txt'
+    environment = dict(lab.env, LAND_PREBUILD=command if prebuild else '')
+    with output.open('w') as stream:
+        client = subprocess.Popen([str(KIT / 'land'), '--local', '--gate', 'true' if prebuild else command],
+            env=environment, cwd=lab.repo, stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT)
+    lab.clients.append(client)
+    wait_for(lambda: lab.event(label, 'payload_begin'), 'land payload entered')
+    task = lab.task(label)
+    token = task['token']
+    # This faults the capture write with a real kernel ENOSPC (/dev/full).
+    # Its warning must already reach the waiting caller before that write.
+    (lab.faults / 'enospc-land-capture').touch()
+    if point == 'missing':
+        lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.timer'])
+    else:
+        injection = lab.faults / ('enospc-' + point)
+        injection.touch()
+        proceed.touch()
+        wait_for((lab.faults / ('hit-enospc-' + point)).exists, 'land storage failure')
+    wait_for(lambda: 'recovery/storage failure' in output.read_text(), 'warning on waiting land caller')
+    task = lab.task(label)
+    assert client.poll() is None and task['token'] == token
+    assert not (lab.base / 'receipts' / (token + '.json')).exists()
+    assert task.get('outcome') != 'cancelled'
+    if point == 'missing':
+        assert owned_wrapper(task['wrapper']) and task['state'] == 'active'
+    elif not prebuild and point != 'seal':
+        assert lab.state()['gate'] == token
+        assert json.loads(lab.q('group', '--json'))['build']['status'] != 'Running'
+    assert lab.call(['git', 'rev-parse', 'main']).stdout.strip() == base
+    assert not (lab.path / 'tmp/gates').exists()
+    if point == 'missing':
+        lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.timer'])
+        proceed.touch()
+    else:
+        injection.unlink()
+        lab.call(['systemctl', '--user', 'reset-failed', lab.prefix + '-reconcile.service'])
+        lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.service'])
+    lab.call([HEAVY, '--reconcile'])
+    lab.released(label)
+    # Capture failure refuses the landing even after durable same-ledger recovery.
+    lab.done(client, 4)
+    assert 'capture could not be written' in output.read_text()
+    assert lab.call(['git', 'rev-parse', 'main']).stdout.strip() == base
+    assert lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip() == head
+    assert not (lab.path / 'tmp/gates').exists()
+    (lab.faults / 'enospc-land-capture').unlink()
+    lab.done(lab.start('progress'))
+    (lab.path / 'land-diagnostic-proof.json').write_text(json.dumps({
+        'path': 'prebuild' if prebuild else 'gate', 'fault': point,
+        'warning_seen_before_restore': True, 'caller_waiting_at_warning': True,
+        'kernel_capture_enospc': True, 'no_receipt_during_failure': True,
+        'same_queue_ledger_service_restored': True, 'no_false_green': True,
+        'land_exit': client.returncode}, indent=2) + '\n')
+
+
 def kill_at(lab, point):
     lab.arm(point)
     gate = lab.start('gate', gate=True)
@@ -973,6 +1038,33 @@ def concurrent_land_drift(lab, mode, point='after_receipt'):
         'land_exit': land.returncode, 'no_fresh_cache': point == 'after_receipt'}, indent=2) + '\n')
 
 
+def relocated_after_landing(lab):
+    scripts = lab.repo / 'scripts'
+    scripts.mkdir()
+    (lab.repo / '.gitignore').write_text('target/\n')
+    script = scripts / 'after-landing.sh'
+    script.write_text('#!/bin/sh\nset -eu\ntest -f "$SKEIN_GATE_POLICY_HELPER"\n'
+                      'test -f "$(dirname "$SKEIN_GATE_POLICY_HELPER")/recovery_message.py"\n'
+                      'mkdir -p target\necho artifact > target/artifact\n'
+                      'echo relocated-after-landing\n')
+    script.chmod(0o700)
+    lab.call(['git', 'add', '.'])
+    lab.call(['git', 'commit', '-qm', 'after landing fixture'])
+    common = lab.call(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']).stdout.strip()
+    commit = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+    result = lab.call([KIT / 'after-landing', common, commit, 'fixture'])
+    (lab.path / 'after-landing.client.txt').write_text(result.stdout + result.stderr)
+    task = lab.released('after-landing repo')
+    assert task['code'] == 0 and task['args'] == ['scripts/after-landing.sh']
+    assert task['policy'].startswith('sha256:')
+    assert 'relocated-after-landing' in Path(task['log']).read_text()
+    assert not (lab.path / 'tmp/after-landing/repo/target').exists()
+    assert (lab.path / 'tmp/after-landing/repo.lock').exists()
+    (lab.path / 'after-landing-proof.json').write_text(json.dumps({
+        'relocated_sibling_heavy_and_helper': True, 'completed_receipt': True,
+        'target_removed_under_lane_lock': True, 'shared_cache_stubbed': True}, indent=2) + '\n')
+
+
 def real_land(lab):
     lab.env.update(SKEIN_TEST_CHROMIUM=str(Path.home() / '.local/opt/chromium-147.0.7727.101/bin/chromium'),
                    SKEIN_TEST_FONTS='/usr/share/fonts/truetype/dejavu')
@@ -1119,7 +1211,7 @@ def main():
              ('late-launch-release-crash', lambda lab: late_launch(lab, True)),
              ('policy-helper-descendants', policy_helper_descendants),
              ('cancelled-reused-id', cancelled_reused_id), ('stale-pause-5s', stale_pause),
-             ('receipt-publication', publication_crash), ('real147-land-cache', real_land),
+             ('receipt-publication', publication_crash), ('relocated-after-landing', relocated_after_landing), ('real147-land-cache', real_land),
              ('gate-settle-commit-drift', lambda lab: payload_tree_drift(lab, 'settled', 'commit')),
              ('gate-settle-index-drift', lambda lab: payload_tree_drift(lab, 'settled', 'index')),
              ('gate-payload-commit-drift', lambda lab: payload_tree_drift(lab, 'payload', 'commit')),
@@ -1143,6 +1235,9 @@ def main():
              ('tree-drift', lambda lab: policy_refusal(lab, 'tree')),
              ('supplied-policy', supplied_policy), ('overhead', overhead),
              ('real147-overhead', lambda lab: overhead(lab, True))]
+    cases.extend(('land-diagnostic-' + ('prebuild-' if prebuild else 'gate-') + point,
+                  lambda lab, point=point, prebuild=prebuild: land_diagnostic(lab, point, prebuild))
+                 for prebuild in (False, True) for point in ('snapshot', 'journal', 'seal', 'missing'))
     for name, test in cases:
         if opts.case and name not in opts.case:
             continue

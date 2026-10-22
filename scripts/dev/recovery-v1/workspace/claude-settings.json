@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"You were just compacted: re-read your role\\u0027s card and the files your work depends on before acting.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}

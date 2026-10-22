@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Queue builds and exclusive gates (build-infrastructure.md, 2-5).
+# shellcheck source-path=SCRIPTDIR
+set -euo pipefail
+umask 077
+kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+workspace() {
+    echo "$HOME/src/rust"
+}
+root=${DEV_ROOT:-$(workspace)}
+tmp=${DEV_TMP:-$root/tmp}
+# shellcheck source=kit.sh
+source "$kit/kit.sh"
+read -r build_jobs _ < <(machine_setting HEAVY_BUILD_JOBS 4)
+export DEV_ROOT=$root DEV_TMP=$tmp HEAVY_BUILD_JOBS_EFFECTIVE=$build_jobs
+prepare_gate_policy() {
+    local token=${1:-} expected=${SKEIN_GATE_POLICY_ID:-}
+    if [[ -f $kit/gate-policy.sh ]]; then
+        # shellcheck source=/dev/null
+        source "$kit/gate-policy.sh"
+        gate_policy_prepare || {
+            HEAVY_LANE=gate python3 -B "$kit/heavy-recovery.py" --record-refusal policy "$token" || true
+            return 2
+        }
+        if [[ -n $expected && $expected != "$SKEIN_GATE_POLICY_ID" ]]; then
+            echo 'heavy: supplied gate policy differs from the validated policy' >&2
+            HEAVY_LANE=gate python3 -B "$kit/heavy-recovery.py" --record-refusal policy "$token" || true
+            return 2
+        fi
+    else
+        echo 'heavy: gate policy helper is unavailable' >&2
+        HEAVY_LANE=gate python3 -B "$kit/heavy-recovery.py" --record-refusal policy "$token" || true
+        return 2
+    fi
+}
+case ${1:-} in
+    # The Python payload guard must precede every policy executable.
+    --payload|--task|--observe|--reconcile|--install-reconciler|--remove-reconciler|--maintenance-pause|--maintenance-resume|--check-recovery|--repair-group|--group-held|--record-refusal) ;;
+    *)
+        disk_floor heavy || {
+            python3 -B "$kit/heavy-recovery.py" --record-refusal disk-floor || true
+            exit 2
+        }
+        # Preparation at submission preserves the policy helper selection in
+        # the queue; contained entry validates it again before payload start.
+        pending_tail=0
+        for argument in "$@"; do
+            if ((pending_tail)); then pending_tail=0; continue; fi
+            case $argument in
+                --gate) prepare_gate_policy "" ;;
+                --tail) pending_tail=1 ;;
+                --) break ;;
+                -*) ;;
+                *) break ;;
+            esac
+        done
+        ;;
+esac
+exec python3 -B "$kit/heavy-recovery.py" "$@"

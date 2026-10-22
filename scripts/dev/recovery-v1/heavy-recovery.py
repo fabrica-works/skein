@@ -15,6 +15,9 @@ import time
 import tomllib
 import uuid
 
+sys.dont_write_bytecode = True
+from recovery_message import RECOVERY_DIAGNOSTIC
+
 os.umask(0o077)
 KIT = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get('DEV_ROOT', str(Path.home() / 'src/rust'))).resolve()
@@ -301,13 +304,6 @@ def storage_fault(point):
     if (path / ('enospc-' + point)).exists():
         (path / ('hit-enospc-' + point)).touch()
         raise OSError(errno.ENOSPC, 'injected isolated storage write failure')
-
-
-RECOVERY_DIAGNOSTIC = (
-    'heavy: recovery/storage failure; task ownership is retained. Free space, restore/restart '
-    'the SAME recovery service if needed, then run heavy --reconcile with the SAME queue and '
-    'DEV_TMP state. RETAIN the ledger; do not delete/reset it. Rerun land if completion is '
-    'recovered with exit 137.')
 
 
 def waiter_failure():

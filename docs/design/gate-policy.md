@@ -4,11 +4,11 @@ Provisional, 2026-10-22. The runtime contract for reusable gate evidence.
 
 ## 1. In one page
 
-- **One effective policy.** `scripts/dev/gate-policy.sh` provides
+- **One effective policy.** `scripts/dev/recovery-v1/gate-policy.sh` provides
   `gate_policy_prepare`, which validates and exports `SKEIN_TEST_CHROMIUM`,
   `SKEIN_TEST_FONTS` and `SKEIN_GATE_POLICY_ID`. The prepared
-  `SKEIN_GATE_POLICY_HELPER` path lets the repository gate use the same kit
-  helper as admission while a change to that helper is being landed.
+  `SKEIN_GATE_POLICY_HELPER` path identifies the stable kit helper used by
+  admission and the contained payload.
   `gate_policy_identity`
   prepares in a subshell and prints only the identity. Errors disclose no
   environment or configuration values.
@@ -22,8 +22,9 @@ Provisional, 2026-10-22. The runtime contract for reusable gate evidence.
   accepting the result. Its cache record and `Gate-Policy` trailer carry
   the identity. Evidence without a policy is invalid. Documentation-only
   differences under `docs/` preserve evidence only under the same policy.
-- **The gate stays full.** `scripts/check.sh` validates at entry, then runs
-  all of its checks and the focused, fuzzy and browser suites. Deliberate
+- **The gate stays full.** The new heavy validates before entering the
+  payload; `scripts/check.sh` retains its baseline bytes and runs all of
+  its checks and the focused, fuzzy and browser suites. Deliberate
   wrapper overrides for direct-rustc work and benchmarks remain possible.
 
 ## 2. Identity
@@ -62,7 +63,8 @@ whether that target needs them.
 Lane job and test-thread counts are not semantic build fields.
 
 The policy includes the kit's helper, `land`, `heavy`,
-`heavy-recovery.py` when present, `kit.sh`, and the
+`heavy-recovery.py` when present, `kit.sh`, `land-capture.py`,
+`recovery_message.py`, and the
 repository's `scripts/check.sh` implementation contents. The policy also
 hashes the Bash executable, gate command (`SKEIN_GATE_COMMAND`, set by
 `land`) and its first executable when resolvable without evaluating shell
@@ -190,3 +192,19 @@ durations and file types. Refusals must leave the candidate commit, local
 main and accepted cache untouched. These fixtures exercise `land`'s consumer
 boundary; queue lifecycle and durable receipt publication need heavy's
 separate recovery fixtures.
+
+The source kit is `scripts/dev/recovery-v1/`. Top-level legacy tools and
+`scripts/check.sh` load none of it. A landing therefore installs no runtime
+on an unmigrated host. Build-infrastructure.md, section 7 specifies the
+explicit quiet migration to a committed, read-only release outside all
+checkouts. Setup refuses repair from the mutable source kit before any
+fetch, link or queue change.
+
+`land-capture.py` reads heavy's combined output through a pipe. It forwards
+only the fixed recovery/storage diagnostic to the caller as soon as that
+line arrives, before any capture-file write. The protocol stays in memory
+until heavy returns; then the helper writes it to the private capture file.
+A failed write refuses completion evidence and landing. This applies to
+both prebuild and gate entry. It never cancels a task or infers failure
+from age. Existing receipt, log digest, policy and candidate validation
+remain necessary; streamed diagnostics are not success evidence.

@@ -235,8 +235,8 @@ receipt path and token as its final output line, outside the hashed log.
 
 ## 6. Fault verification
 
-`scripts/dev/test-heavy-recovery --evidence NEW_DIRECTORY` exercises the
-production heavy entrypoints with disposable pueued instances and user
+`scripts/dev/recovery-v1/test-heavy-recovery --evidence NEW_DIRECTORY`
+exercises the production heavy entrypoints with disposable pueued instances and user
 systemd units. It covers killed pause intent, fsynced intent before
 rename, paused groups, setsid/private descendants, release and release
 snapshot windows, queue restart, boot identity change, pre-paused groups,
@@ -284,12 +284,47 @@ Before fleet installation, stop old `heavy` and `land` submissions and
 account for every legacy caller, wrapper, queued/running entry and TSV
 writer. Drain all of them; absence of Cargo processes or a completion-only
 TSV does not prove the queue is quiet. Record intentional pauses and
-restore them as explicit maintenance holds where appropriate. Install
-`heavy` and `land` together at a stable kit path, with one ledger shared
-by every caller of each dedicated queue, only after this accounting and
-drain. Do not mix legacy TSV writers with the durable ledger's writers.
-Install and verify that queue's independent reconciler before admitting
-new submissions.
+restore them as explicit maintenance holds where appropriate. The source
+kit is `scripts/dev/recovery-v1/`; legacy `scripts/dev/heavy`, `land`,
+`setup`, `kit.sh`, `after-landing`, `kache-setup`, workspace assets and
+`scripts/check.sh` retain their pre-M2 baseline contents. Nothing in a
+legacy entrypoint loads the new kit, and following main does not migrate
+a host. Baseline setup retains its link-to-primary behavior. After migration,
+use only the stable setup on PATH; explicitly running baseline setup would
+restore legacy links.
+
+The director owns this sequence after the complete quiet accounting/drain:
+
+1. Select and verify the committed release and its source/evidence hashes.
+   Run `release=$(skein/scripts/dev/recovery-v1/install-release)` from the
+   workspace containing that verified checkout.
+   It copies HEAD's complete kit with `git archive` into a new
+   `~/.local/share/skein-kits/recovery-v1-COMMIT` directory outside every
+   primary/linked checkout. It writes a content manifest and makes every
+   file/directory read-only. An existing release is refused, never rewritten.
+   It changes no links, queues or services. Verify the release manifest with
+   `python3 -I -B "$release/stable-release.py"` and the reviewed source hashes.
+2. Use the exact `release` path returned by the copier. With the accounted
+   legacy queue still quiet, run `"$release/setup" --fix` using the intended
+   `DEV_ROOT`, `DEV_TMP` and queue configuration. This links heavy, land and
+   setup together to that stable kit, including workspace assets. The stable
+   setup is self-contained and never invokes baseline setup. Mutable-source
+   setup refuses even `--fix` before any mutation. Readiness can report failure
+   here until the new reconciler is installed; that is not permission to admit.
+3. Establish the dedicated queue/config/data identity and its own shared
+   ledger/state; preserve the recorded intentional pauses. Do not mix legacy
+   TSV writers with durable-ledger writers or adopt queued legacy work.
+   Install and verify that queue's independent reconciler with the stable
+   `heavy --install-reconciler` and `heavy --check-recovery` under the same
+   configuration/state, restore explicit maintenance holds, then check setup
+   again. Admit new submissions only after readiness and ownership are proved.
+
+Later landings can change the source kit, but cannot move stable links or
+change installed helper bytes. A new release requires another explicit quiet
+drain/copy/verify/link/reconcile/admit sequence; there is no online upgrade
+or automatic fleet installation. Read-only permissions prevent accidental
+writes, not deliberate chmod by the owning account. Retain each release
+unchanged while it has callers, tasks, services or rollback evidence.
 
 Never reset or replace a live queue or erase its ledger. Enqueue recovery
 uses a persisted bare numeric queue ID; it cannot prove identity after a
@@ -308,7 +343,20 @@ caller, wrapper and queue entry using the new kit. Explicitly resolve all
 maintenance holds and resume requests with the new maintenance commands;
 a drained task list alone does not resolve them. Remove the reconciler
 with the new kit while its helpers still exist, then restore old `heavy`
-and old `land` together. Do not swap binaries first or leave an old client
-paired with the new recovery path. The old cache namespace and the new
+and old `land` together, plus baseline setup and workspace links. Do not
+swap binaries first or leave an old client paired with the new recovery path. The old cache namespace and the new
 receipt/cache files can remain; rollback requires no destructive cache or
 ledger cleanup.
+
+`scripts/dev/recovery-v1/test-inert-install --evidence NEW_DIRECTORY` compares all legacy
+files to baseline `01c6ab91`, fast-forwards a disposable primary from a
+separate disposable clone, and compares its unmigrated symlink bytes and
+setup behavior. It verifies stable release hashes/links across another
+primary advance, repeat-copy refusal and mutable-setup refusal. It never
+runs global setup. Recovery fixtures also cover relocated after-landing
+helper lookup and real Chromium 147 receipt/cache reuse. Land-entry storage
+and missing-reconciler cases require the warning on the waiting caller's
+stream before restoring the same service/ledger, with no receipt/green
+while broken. The capture write uses guarded `/dev/full` to obtain kernel
+ENOSPC without consuming disk space; both prebuild and gate paths refuse
+landing after that capture failure.

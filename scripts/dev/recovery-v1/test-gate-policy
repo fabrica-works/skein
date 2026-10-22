@@ -59,7 +59,7 @@ class PolicyFixtures(unittest.TestCase):
                     "DEV_ROOT": str(self.root), "DEV_TMP": str(self.root / "tmp"),
                     "LAND_PREBUILD": "", "GIT_CONFIG_GLOBAL": os.devnull,
                     "GIT_CONFIG_NOSYSTEM": "1", "FIXTURE_CALLS": str(self.root / "calls")}
-        for name in ("land", "gate-policy.sh", "kit.sh"):
+        for name in ("land", "gate-policy.sh", "kit.sh", "land-capture.py", "recovery_message.py"):
             shutil.copy(KIT / name, self.kit / name)
         self.script(self.kit / "heavy", r'''#!/usr/bin/env python3
 import hashlib
@@ -489,7 +489,7 @@ sys.exit(result.returncode)
 
     def test_implementation_and_tool_contents_invalidate(self):
         for path in (self.kit / "gate-policy.sh", self.kit / "land", self.kit / "heavy", self.kit / "heavy-recovery.py",
-                     self.kit / "kit.sh", self.bin / "rustc", self.bin / "cargo"):
+                     self.kit / "kit.sh", self.kit / "land-capture.py", self.kit / "recovery_message.py", self.bin / "rustc", self.bin / "cargo"):
             with self.subTest(path=path.name):
                 baseline = self.identity().stdout
                 with path.open("a") as output:
@@ -538,31 +538,18 @@ printf '%s\\n' "$before"
         self.assertFalse(self.calls())
         self.assertIn("none (Markdown only)", self.git("log", "-1", "--format=%(trailers:key=Gate-Policy,valueonly)"))
 
-    def test_check_boundary_uses_admission_helper_and_refuses_drift(self):
+    def test_legacy_check_boundary_keeps_full_checks_without_loading_new_kit(self):
         script = self.repo / "scripts/check.sh"
         script.parent.mkdir()
-        shutil.copy(KIT.parent / "check.sh", script)
-        # The checked-out helper can differ from the kit being used to land it.
+        shutil.copy(KIT.parent.parent / "check.sh", script)
         self.script(self.repo / "scripts/dev/gate-policy.sh", "#!/bin/sh\nexit 91\n")
-        self.script(self.bin / "python3", f'''#!/bin/sh
-if [ "$3" = -m ]; then
-    echo 'fixture: checks reached'
-    exit 73
-fi
-exec {shlex.quote(sys.executable)} "$@"
-''')
-        result = self.run_command(["bash", "-c", '''source "$1"
-gate_policy_prepare || exit
-exec bash scripts/check.sh
-''', "fixture", str(self.kit / "gate-policy.sh")], check=False)
-        self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
-        self.assertIn("fixture: checks reached", result.stdout)
+        self.script(self.bin / "python3", "#!/bin/sh\necho 'fixture: checks reached'\nexit 73\n")
         result = self.run_command(["bash", "scripts/check.sh"], check=False, extra={
             "SKEIN_GATE_POLICY_ID": "sha256:wrong",
             "SKEIN_GATE_POLICY_HELPER": str(self.kit / "gate-policy.sh")})
-        self.assertEqual(result.returncode, 2)
-        self.assertNotIn("checks reached", result.stdout)
-        self.assertIn("admission policy differs", result.stderr)
+        self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
+        self.assertIn("fixture: checks reached", result.stdout)
+        self.assertNotIn("gate-policy", script.read_text())
 
     def test_configured_path_and_inactive_target_commands(self):
         alternate = self.root / "alternate-bin"
@@ -740,13 +727,13 @@ exit 97
         self.assertEqual(self.git("log", "-1", "--format=%(trailers:key=Gate-Tree,valueonly)", pushed["commit"]).strip(), original_tree)
 
     def test_normal_gate_keeps_all_tiers(self):
-        source = (KIT.parent / "check.sh").read_text()
+        source = (KIT.parent.parent / "check.sh").read_text()
         for command in ("cargo nextest run --workspace\n",
                         "cargo nextest run --workspace --profile fuzzy\n",
                         "cargo nextest run --workspace --profile browser\n",
                         "cargo check -p skein-tls\n", "cargo clippy --workspace --all-targets -- -D warnings\n"):
             self.assertIn(command, source)
-        self.assertLess(source.index("gate_policy_prepare"), source.index("cargo fmt"))
+        self.assertNotIn("gate_policy_prepare", source)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,502 @@
+#!/usr/bin/env bash
+# Land the current branch on main (owners.md, 4.4).
+#
+#   land [--docs] [--local] [--gate COMMAND] [--tries N]
+#
+# From a clean worktree on the branch to land: rebase it on origin/main,
+# build it and run its lints in the build lane, run the repository's gate
+# through `heavy --gate`, record the gate's evidence in the tip commit's
+# trailers, and push the tip to origin's main. The build lane's pass leaves
+# the gate's own build and lints nothing to redo, so the gate lane, which
+# runs alone, holds the machine for the suites, and a tree that does not
+# build or lint never takes it.
+# A gate that passed before the rebase still holds when what moved main
+# changed only Markdown files under docs/, which no gate reads.
+# The push only fast-forwards: a rejected push means main moved, and land
+# starts again from the rebase. Then the local main, and the checkout that
+# has it, follow. A code landing holds its repository's turn on this
+# machine from its rebase to its push, so that another landing here never
+# moves main under its gate.
+#
+# After a code landing, a repository's scripts/after-landing.sh, the tests
+# too slow for its gate, runs on the landed commit in the background
+# (after-landing).
+#
+# --docs   Markdown only: check that, and skip the gate.
+# --local  No remote: land on the local main under a lock (LAND_LOCK, or
+#          the repository's land.lock) instead of pushing.
+# --gate   The gate, a shell command, instead of scripts/check.sh.
+# --tries  How many times to start again when main moves (default 5).
+#
+# LAND_PREBUILD is the build lane's command before the gate, in a Cargo
+# repository: by default formatting, clippy as the gates run it, and the
+# tests' build. Empty, there is none.
+#
+# Exit status:
+#   0  landed
+#   2  refused: before starting, or nothing to land
+#   3  the rebase stopped on conflicts, left for you to resolve
+#   4  the gate failed
+#   5  the local main could not follow: with a push, the commit landed on
+#      origin/main; with --local, nothing landed
+#   6  main kept moving, or its ref stayed locked
+#   7  fetching or pushing failed
+#   8  another command failed
+#   9  heavy refused to run the build or gate, so nothing ran
+set -euo pipefail
+umask 077
+
+kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# The workspace: DEV_ROOT, or the directory holding the skein checkout these
+# tools come from, or ~/src/rust.
+workspace() {
+    echo "$HOME/src/rust"
+}
+root=${DEV_ROOT:-$(workspace)}
+tmp=${DEV_TMP:-$root/tmp}
+if [[ -f $kit/kit.sh ]]; then
+    # shellcheck source=kit.sh
+    source "$kit/kit.sh"
+fi
+# shellcheck source=gate-policy.sh
+source "$kit/gate-policy.sh"
+start_dir=$PWD
+
+docs=0 local=0 gate=scripts/check.sh tries=5
+while (($#)); do
+    case $1 in
+    --docs) docs=1; shift ;;
+    --local) local=1; shift ;;
+    --gate) gate=${2:?}; shift 2 ;;
+    --tries) tries=${2:?}; shift 2 ;;
+    *) echo "usage: land [--docs] [--local] [--gate COMMAND] [--tries N]" >&2; exit 2 ;;
+    esac
+done
+
+die() { echo "land: $2" >&2; exit "$1"; }
+trap 'echo "land: line $LINENO failed" >&2; exit 8' ERR
+
+top=$(git rev-parse --show-toplevel)
+cd "$top"
+branch=$(git symbolic-ref --quiet --short HEAD) || die 2 "not on a branch"
+[[ $branch != main ]] || die 2 "on main; land a branch"
+[[ -z $(git status --porcelain --untracked-files=normal --ignore-submodules=none) ]] || die 2 "the index/worktree is not clean; rerun land after committing changes"
+for state in rebase-merge rebase-apply MERGE_HEAD; do
+    [[ ! -e $(git rev-parse --git-path "$state") ]] || die 2 "a rebase or merge is in progress; finish it and rerun land"
+done
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+repo=$(basename "$(dirname "$common")")
+lock=${LAND_LOCK:-$common/land.lock}
+[[ $lock == /* ]] || lock=$start_dir/$lock
+
+# One code landing at a time in each repository on this machine
+# (owners.md, 4.4), from its rebase to its push: gates run one
+# at a time anyway, and a gate that passed on a base another landing moved
+# would be thrown away. Markdown-only landings take no turn: a gate holds
+# across them.
+if ((!docs)); then
+    exec 6>"$common/land-turn.lock"
+    if ! flock --nonblock 6; then
+        echo "land: another landing in $repo has its turn; waiting for it" >&2
+        flock 6
+    fi
+fi
+
+fetch() {
+    local wait
+    for wait in 1 2 4; do
+        git fetch --quiet origin main 2>/dev/null && return
+        sleep "$wait"
+    done
+    die 7 "cannot fetch origin's main"
+}
+
+# Move the local main, and the checkout that has it, to $1. Returns 0 when
+# main is there or past it, 1 when a checkout of main has changes, 2 when
+# main has commits that $1 lacks. Called under the lock.
+follow() {
+    local commit=$1 main wt
+    main=$(git rev-parse main)
+    if git merge-base --is-ancestor "$commit" "$main"; then
+        return 0
+    fi
+    git merge-base --is-ancestor "$main" "$commit" || return 2
+    wt=$(git worktree list --porcelain | awk '
+        /^worktree / { w = substr($0, 10) } $0 == "branch refs/heads/main" { print w }')
+    if [[ -z $wt ]]; then
+        git update-ref refs/heads/main "$commit" "$main"
+    elif [[ -n $(git -C "$wt" status --porcelain --untracked-files=no) ]]; then
+        return 1
+    else
+        git -C "$wt" merge --quiet --ff-only "$commit"
+    fi
+}
+
+# A result holds for one tree, gate command and effective runtime policy.
+gate_key() {
+    printf '%s\0%s\0%s\0' "$1" "$gate" "$policy" | sha256sum | cut -c1-64
+}
+
+cache_read() {
+    local lines=()
+    [[ -f $1 ]] || return 1
+    mapfile -t lines <"$1"
+    [[ ${#lines[@]} == 3 && ${lines[0]} == gate-evidence-v3 &&
+        ${lines[1]} == "$policy" &&
+        ${lines[2]} =~ \ passed:.*\ [0-9]+([.][0-9]+)?\ s\ in\ all$ &&
+        ${lines[2]} != *'? s'* ]] || return 1
+    printf '%s\n' "${lines[2]}"
+}
+
+candidate_check() {
+    local expected=${1:-$candidate} current dirty state
+    current=$(git rev-parse HEAD) || die 4 "candidate HEAD is unavailable; rerun land"
+    [[ $(git symbolic-ref --quiet HEAD) == "$candidate_ref" && $current == "$expected" &&
+        $(git rev-parse 'HEAD^{tree}') == "$tree" ]] ||
+        die 4 "candidate HEAD or tree changed; rerun land"
+    dirty=$(git status --porcelain --untracked-files=normal --ignore-submodules=none) || die 4 "candidate index/worktree cannot be checked; rerun land"
+    [[ -z $dirty ]] || die 4 "candidate index/worktree changed; rerun land"
+    for state in rebase-merge rebase-apply MERGE_HEAD; do
+        [[ ! -e $(git rev-parse --git-path "$state") ]] ||
+            die 4 "candidate merge/rebase state changed; rerun land"
+    done
+}
+
+# Fixture barriers use the recovery fixture's isolated flag/path contract.
+land_fault() {
+    [[ -n ${HEAVY_FAULT_DIR:-} ]] || return 0
+    python3 -I -B - "$1" "$tmp" "$HEAVY_FAULT_DIR" "${HEAVY_RECOVERY_FIXTURE:-}" <<'PYFAULT'
+import os
+from pathlib import Path
+import sys
+import time
+point, temporary, directory, enabled = sys.argv[1:]
+path = Path(directory).resolve()
+if enabled != '1' or not path.is_relative_to(Path(temporary).resolve()):
+    sys.exit('land: fault barriers require an isolated recovery fixture')
+if (path / ('arm-' + point)).exists():
+    (path / ('land-' + point)).write_text(str(os.getpid()))
+    while not (path / ('continue-' + point)).exists():
+        time.sleep(.02)
+PYFAULT
+}
+
+policy_recheck() {
+    candidate_check
+    gate_policy_prepare || die 4 "the gate policy no longer validates; rerun land"
+    [[ $SKEIN_GATE_POLICY_ID == "$policy" ]] || die 4 "the gate policy changed; evidence was not accepted"
+    candidate_check
+}
+
+# The tree a gate passed on before this rebase, when this tree differs from
+# it only in Markdown files under docs/: the tip's Gate-Tree, from an
+# earlier try, with its result still in the cache.
+gated_before() {
+    local tree=$1 before changes others
+    [[ $(git log -1 --format='%(trailers:key=Gate-Policy,valueonly,separator=)' "$candidate") == "$policy" ]] || return 1
+    before=$(git log -1 --format='%(trailers:key=Gate-Tree,valueonly,separator=)' "$candidate")
+    [[ -n $before && $before != "$tree" ]] || return 1
+    cache_read "$cache_dir/$(gate_key "$before")" >/dev/null || return 1
+    changes=$(git diff --no-renames --name-only "$before" "$tree" 2>/dev/null) || return 1
+    others=$(grep -vE '^docs/.*\.md$' <<<"$changes" || true)
+    [[ -z $others ]] || return 1
+    echo "$before"
+}
+
+# The build lane's pass before the gate (owners.md, 4.4).
+prebuild_command='cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo nextest run --workspace --no-run'
+prebuild=${LAND_PREBUILD-$prebuild_command}
+
+# A successful heavy client is necessary, but its token-owned receipt is
+# the completion evidence (gate-policy.md, 3). Keep validation in land so
+# its implementation is included in the policy identity.
+evidence() {
+    python3 -I -B - "$1" "$tree" "$policy" "$gate" <<'PY'
+from decimal import Decimal
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def read_regular(path, kind):
+    # O_NOFOLLOW also closes the check/open race for the selected file.
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            require(stat.S_ISREG(os.fstat(source.fileno()).st_mode),
+                    f"{kind} is not a regular file")
+            return source.read()
+    except OSError:
+        raise ValueError(f"{kind} is missing, unreadable or a symlink") from None
+
+
+def unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "receipt JSON has duplicate fields")
+        result[key] = value
+    return result
+
+
+def invalid_constant(value):
+    raise ValueError("receipt JSON has a non-finite number")
+
+
+def main():
+    output, tree, policy, command = sys.argv[1:]
+    lines = Path(output).read_text().splitlines()
+    headers = [line for line in lines if line.startswith("heavy: queued task ")]
+    receipts = [line for line in lines if line.startswith("heavy: receipt ")]
+    require(len(headers) == 1, "expected exactly one queued gate header")
+    header = re.fullmatch(r"heavy: queued task ([0-9]+) in the gate lane token ([0-9a-f]{32})", headers[0])
+    require(header is not None, "malformed queued gate header or non-gate lane")
+    task_id, token = header.groups()
+    require(len(receipts) == 1, "expected exactly one receipt line")
+    selected = re.fullmatch(r"heavy: receipt (/.+) token ([0-9a-f]{32})", receipts[0])
+    require(selected is not None, "malformed receipt line")
+    require(lines[-1] == receipts[0], "receipt line must be the final heavy output")
+    receipt_path, receipt_token = selected.groups()
+    require(receipt_token == token, "receipt line token differs from queued gate token")
+    require(Path(receipt_path).name == token + ".json", "receipt filename differs from queued gate token")
+    try:
+        receipt = json.loads(read_regular(receipt_path, "receipt"),
+                             object_pairs_hook=unique_fields, parse_constant=invalid_constant)
+    except (json.JSONDecodeError, UnicodeError, RecursionError):
+        raise ValueError("receipt JSON is malformed") from None
+    fields = {"schema", "token", "id", "queue", "lane", "tree", "policy", "args",
+              "outcome", "code", "payload_started", "payload_ended", "release_complete",
+              "cgroup_empty", "elapsed_s", "log", "log_sha256"}
+    require(type(receipt) is dict and receipt.keys() == fields, "receipt schema fields are invalid")
+    expected = {"schema": "heavy-receipt-v1", "token": token, "id": task_id,
+                "lane": "gate", "tree": tree, "policy": policy,
+                "args": ["bash", "-c", command], "outcome": "completed"}
+    for field, value in expected.items():
+        require(receipt[field] == value, f"receipt {field} differs from requested gate")
+    require(re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", receipt["tree"]) is not None,
+            "receipt tree is malformed")
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", receipt["policy"]) is not None,
+            "receipt policy is malformed")
+    require(type(receipt["queue"]) is str and bool(receipt["queue"].strip()),
+            "receipt queue identity is missing")
+    require(type(receipt["code"]) is int and receipt["code"] == 0, "receipt code is not zero")
+    for field in ("payload_started", "payload_ended", "release_complete", "cgroup_empty"):
+        require(receipt[field] is True, f"receipt {field} is not true")
+    elapsed = receipt["elapsed_s"]
+    require(type(elapsed) in (int, float), "receipt elapsed_s is not numeric")
+    require((type(elapsed) is int or math.isfinite(elapsed)) and elapsed >= 0,
+            "receipt elapsed_s is not finite and nonnegative")
+    log = receipt["log"]
+    require(type(log) is str and Path(log).is_absolute() and Path(log).name == token + ".log",
+            "receipt log path does not name the token-owned absolute log")
+    digest = receipt["log_sha256"]
+    require(type(digest) is str and re.fullmatch(r"[0-9a-fA-F]{64}", digest) is not None,
+            "receipt log_sha256 is malformed")
+    contents = read_regular(log, "receipt log")
+    require(hashlib.sha256(contents).hexdigest() == digest.lower(), "receipt log SHA-256 differs")
+    # Summarize the bytes whose digest was checked, without reopening the log.
+    text = re.sub(r"\x1b\[[0-9;]*m", "", contents.decode("utf-8", errors="replace"))
+    summaries = re.findall(r"^ *Summary \[ *([0-9]+(?:\.[0-9]+)?)s\] [0-9]+ tests? run: ([0-9]+) passed.*$",
+                           text, re.MULTILINE)
+    parts = [f"{count} tests / {seconds} s" for seconds, count in summaries]
+    parts.append(f"{format(Decimal(str(elapsed)), 'f')} s in all")
+    label = "gate" if any(char.isspace() for char in command) else command
+    print(f"{label} passed: " + "; ".join(parts))
+
+
+try:
+    main()
+except (OSError, UnicodeError, ValueError):
+    # Field-specific errors contain no command, environment or JSON values.
+    error = sys.exc_info()[1]
+    reason = str(error) if isinstance(error, ValueError) and not isinstance(error, UnicodeError) else "receipt evidence could not be read or decoded"
+    print("land: invalid gate receipt: " + reason, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+try=0
+while :; do
+    try=$((try + 1))
+    ((try <= tries)) || die 6 "main moved $tries times; giving up"
+
+    if [[ -n ${commit:-} ]]; then candidate_check "$commit"; fi
+    if ((local)); then
+        base=$(git rev-parse main)
+    else
+        fetch
+        base=$(git rev-parse origin/main)
+    fi
+    if ! git rebase --quiet "$base"; then
+        die 3 "the rebase on $(git rev-parse --short "$base") stopped on conflicts. \
+Resolve them, run git rebase --continue, then land again."
+    fi
+    [[ $(git rev-parse HEAD) != "$base" ]] ||
+        die 2 "nothing to land: the branch has no commits beyond main"
+    candidate=$(git rev-parse HEAD)
+    candidate_ref=refs/heads/$branch
+    tree=$(git rev-parse "$candidate^{tree}")
+    candidate_check
+    if ((docs)); then
+        others=$(git diff --no-renames --name-only "$base" "$candidate" |
+            grep -vE '\.md$' || true)
+        [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
+        summary="none (Markdown only)"
+        policy="none (Markdown only)"
+        gated=$tree
+    else
+        [[ $gate != scripts/check.sh || -x $gate ]] ||
+            die 2 "no scripts/check.sh: give the gate with --gate (see the repository's workflow)"
+        export SKEIN_GATE_COMMAND=$gate
+        gate_policy_prepare || die 2 "cannot prepare the gate runtime policy"
+        policy=$SKEIN_GATE_POLICY_ID
+        candidate_check
+        cache_dir=$tmp/gates/$repo
+        cache=$cache_dir/$(gate_key "$tree")
+        gated=$tree
+        if summary=$(cache_read "$cache"); then
+            :
+        elif gated=$(gated_before "$tree"); then
+            summary=$(cache_read "$cache_dir/$(gate_key "$gated")")
+            echo "land: the gate passed on $gated, which differs from this tree only in docs/ Markdown" >&2
+        else
+            gated=$tree
+            out=$(mktemp)
+            if [[ -n $prebuild && -f Cargo.toml ]]; then
+                if HEAVY_LABEL="land $repo prebuild" python3 -B "$kit/land-capture.py" "$out" "$kit/heavy" --tail 60 bash -c "$prebuild"; then
+                    :
+                else
+                    capture_status=$?
+                    if ((capture_status == 74)); then
+                        rm -f "$out"
+                        die 4 "the build capture is unavailable; nothing landed; rerun land"
+                    fi
+                    cat "$out"
+                    if ! grep -qE '^heavy: (queued )?task [0-9]+ ' "$out"; then
+                        rm -f "$out"
+                        die 9 "heavy refused to run the build on $(git rev-parse --short HEAD), so nothing ran (its reason above); land again once that is put right"
+                    fi
+                    rm -f "$out"
+                    die 4 "the build or its lints failed on $(git rev-parse --short HEAD), in the build lane; the gate did not run"
+                fi
+                grep '^heavy: task ' "$out" | tail -n1 >&2 || true
+            fi
+            policy_recheck
+            if HEAVY_LABEL="land $repo" python3 -B "$kit/land-capture.py" "$out" "$kit/heavy" --gate --tail 60 bash -c "$gate"; then
+                :
+            else
+                capture_status=$?
+                if ((capture_status == 74)); then
+                    rm -f "$out"
+                    die 4 "the gate capture is unavailable; nothing landed; rerun land"
+                fi
+                cat "$out"
+                if ! grep -qE '^heavy: (queued )?task [0-9]+ ' "$out"; then
+                    rm -f "$out"
+                    die 9 "heavy refused to run the gate on $(git rev-parse --short HEAD), so nothing ran (its reason above); land again once that is put right"
+                fi
+                rm -f "$out"
+                die 4 "the gate failed on $(git rev-parse --short HEAD)"
+            fi
+            cat "$out"
+            land_fault after_receipt
+            candidate_check
+            if ! summary=$(evidence "$out"); then
+                rm -f "$out"
+                die 4 "the gate completion evidence was not accepted; nothing landed"
+            fi
+            rm -f "$out"
+            policy_recheck
+            candidate_check
+            mkdir -p "$(dirname "$cache")"
+            cache_tmp=$(mktemp "$cache_dir/.evidence.XXXXXX")
+            printf 'gate-evidence-v3\n%s\n%s\n' "$policy" "$summary" >"$cache_tmp"
+            mv -f "$cache_tmp" "$cache"
+        fi
+        policy_recheck
+    fi
+
+    # Construct the amendment from the verified object, then compare-and-swap
+    # its branch. A concurrent HEAD can never supply the tree being pushed.
+    candidate_check
+    message=$(git log -1 --format=%B "$candidate" |
+        git interpret-trailers --if-exists replace \
+            --trailer "Gate-Tree: $gated" --trailer "Gate-Result: $summary" \
+            --trailer "Gate-Policy: $policy")
+    read -r -a parents <<<"$(git show -s --format=%P "$candidate")"
+    parent_args=()
+    for parent in "${parents[@]}"; do parent_args+=(-p "$parent"); done
+    commit=$(GIT_AUTHOR_NAME="$(git show -s --format=%an "$candidate")" \
+        GIT_AUTHOR_EMAIL="$(git show -s --format=%ae "$candidate")" \
+        GIT_AUTHOR_DATE="$(git show -s --format=%aI "$candidate")" \
+        git commit-tree "$tree" "${parent_args[@]}" <<<"$message")
+    [[ $(git rev-parse "$commit^{tree}") == "$tree" ]] || die 4 "amended tree differs; rerun land"
+    candidate_check
+    land_fault before_candidate_cas
+    git update-ref "$candidate_ref" "$commit" "$candidate" ||
+        die 4 "candidate ref changed during amendment; rerun land"
+    candidate_check "$commit"
+    land_fault before_push
+    candidate_check "$commit"
+
+    if ((local)); then
+        exec 9>"$lock"
+        flock 9
+        if [[ $(git rev-parse main) != "$base" ]]; then
+            flock -u 9
+            echo "land: main moved; again" >&2
+            continue
+        fi
+        candidate_check "$commit"
+        status=0
+        follow "$commit" || status=$?
+        flock -u 9
+        ((status == 0)) || die 5 "nothing landed: a checkout of main has changes"
+        where="local main"
+        break
+    fi
+
+    if ! err=$(git push --quiet origin "$commit:refs/heads/main" 2>&1); then
+        if grep -qE 'non-fast-forward|fetch first|stale info|cannot lock ref|reference already exists' <<<"$err"; then
+            echo "land: main moved on origin; again" >&2
+            continue
+        fi
+        die 7 "the push failed: $err"
+    fi
+    where="origin/main"
+    exec 9>"$lock"
+    flock 9
+    status=0
+    follow "$commit" || status=$?
+    flock -u 9
+    case $status in
+    0) ;;
+    1) die 5 "landed $commit on origin/main, but a checkout of main has changes and did not follow" ;;
+    *) die 5 "landed $commit on origin/main, but the local main has commits origin lacks: reconcile it" ;;
+    esac
+    break
+done
+
+# A repository's tier too slow for its gate runs after its landing, in the
+# background (after-landing; owners.md, 4.5).
+if ((!docs && !local)) && [[ -x scripts/after-landing.sh ]]; then
+    setsid "$kit/after-landing" "$common" "$commit" "$branch" </dev/null >/dev/null 2>&1 &
+    echo "land: queued scripts/after-landing.sh on $commit; a failure goes to $tmp/director/inbox/after-landing.md" >&2
+fi
+
+cat <<EOF
+land: landed $repo $branch on $where
+  commit  $commit
+  parent  $base
+  tree    $tree${gated:+$([[ $gated == "$tree" ]] || printf ', gated as %s' "$gated")}
+  gate    $summary
+EOF

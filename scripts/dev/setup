@@ -103,11 +103,11 @@ check_units() {
         fi
     fi
     if ((!bus)); then
-        if pueue group --json >/dev/null 2>&1; then
+        if pueue status >/dev/null 2>&1; then
             ok "pueued is running (no systemd user bus: setup --fix starts it after a restart)"
         elif ((fix)); then
             pueued --daemonize >/dev/null 2>&1 && sleep 1
-            pueue group --json >/dev/null 2>&1 && ok "pueued started" || fail "pueued does not start"
+            pueue status >/dev/null 2>&1 && ok "pueued started" || fail "pueued does not start"
         else
             fail "pueued is not running (--fix starts it)"
         fi
@@ -132,7 +132,7 @@ check_units() {
 check_machine() {
     # Tools.
     local tool
-    for tool in git jq pueue flock cargo python3 systemd-run; do
+    for tool in git jq pueue flock cargo; do
         command -v "$tool" >/dev/null && ok "has $tool" || fail "no $tool"
     done
     cargo nextest --version >/dev/null 2>&1 && ok "has cargo-nextest" || fail "no cargo-nextest"
@@ -188,7 +188,7 @@ check_machine() {
         ok "cargo fetches with git" ||
         fail "cargo must fetch with git: [net] git-fetch-with-cli = true in ~/.cargo/config.toml"
     local bus=0
-    systemctl --user show --property=Version >/dev/null 2>&1 && bus=1
+    systemctl --user show-environment >/dev/null 2>&1 && bus=1
     if grep -qs kache "$HOME/.cargo/config.toml"; then
         if ((bus)); then
             systemctl --user is-active --quiet kache && ok "kache is running" ||
@@ -209,13 +209,6 @@ check_machine() {
     # systemd user bus (some containers), pueued runs on its own, and `setup
     # --fix` starts it again after a restart.
     check_units
-    # Installation is explicit: setup never probes/installs a new recovery
-    # mechanism while repairing an existing queue.
-    if "$home/heavy" --check-recovery >/dev/null 2>&1; then
-        ok "heavy's independent reconciler and containment proof are ready"
-    else
-        fail "heavy recovery is not ready: drain legacy tasks, then heavy --install-reconciler"
-    fi
     if apt-config dump 2>/dev/null | grep -E '^Unattended-Upgrade::Automatic-Reboot "true";' >/dev/null; then
         warn 'the machine may reboot unattended (Unattended-Upgrade::Automatic-Reboot)'
     fi
@@ -243,16 +236,10 @@ check_machine() {
             warn "queue lane $group runs $have at once, not $want ($source; --fix sets it)"
         status=$(pueue group --json | jq -r --arg g "$group" '.[$g].status')
         if [[ $status != Running ]] && ((fix)); then
-            "$home/heavy" --repair-group "$group" >/dev/null || true
-            status=$(pueue group --json | jq -r --arg g "$group" '.[$g].status')
+            pueue start --group "$group" >/dev/null && status=Running
         fi
-        if [[ $status == Running ]]; then
-            ok "queue lane $group is running"
-        elif "$home/heavy" --group-held "$group"; then
-            ok "queue lane $group is held by heavy"
-        else
-            fail "queue lane $group is $status (--fix starts it, preserving gate and maintenance holds)"
-        fi
+        [[ $status == Running ]] && ok "queue lane $group is running" ||
+            fail "queue lane $group is $status (--fix starts it)"
     done
 
     # Room to work.

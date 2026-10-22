@@ -211,7 +211,7 @@ def main():
                 tools["rustup-" + name] = file_identity(Path(selected))
     compiler_version = output([rustc, "-vV"], environment)
     implementations = {}
-    for path in [SCRIPT, SCRIPT.parent / "land", SCRIPT.parent / "heavy", SCRIPT.parent / "heavy-recovery.py", SCRIPT.parent / "kit.sh", CWD / "scripts/check.sh"]:
+    for path in [SCRIPT, SCRIPT.parent / "land", SCRIPT.parent / "heavy", SCRIPT.parent / "heavy-recovery.py", SCRIPT.parent / "kit.sh", SCRIPT.parent / "land-capture.py", SCRIPT.parent / "recovery_message.py", CWD / "scripts/check.sh"]:
         implementations[path.name] = digest_file(path) if path.is_file() else None
     record = {"schema": "skein-gate-policy-v1", "chromium": browser,
               "fonts": {"path": str(fonts), "files": font_files},

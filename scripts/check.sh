@@ -1,19 +1,9 @@
-#!/usr/bin/env bash
-# What CI runs: formatting, lints as errors, then the focused, fuzzy and
-# browser suites in full (testing-strategy.md, section 8; testing.md, 6).
+#!/bin/sh
+# What CI runs: formatting, lints as errors, then both test suites in full
+# (testing-strategy.md, section 8): the focused one, then the fuzzy one.
 set -eu
 
 cd "$(dirname "$0")/.."
-
-# gate-policy.md, 1: the gate validates the same runtime as admission.
-# shellcheck source=dev/gate-policy.sh
-source "${SKEIN_GATE_POLICY_HELPER:-scripts/dev/gate-policy.sh}"
-expected_policy=${SKEIN_GATE_POLICY_ID:-}
-gate_policy_prepare || exit 2
-if [[ -n $expected_policy && $expected_policy != "$SKEIN_GATE_POLICY_ID" ]]; then
-    echo "gate-policy: admission policy differs from the gate runtime" >&2
-    exit 2
-fi
 
 python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/unit
 cargo fmt --all --check
