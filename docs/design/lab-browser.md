@@ -500,3 +500,9 @@ REFUSED {"refused", "detail"}
 - **Pages that animate** past reduced motion: readiness by a part
   shown holds for a static page; a page that moves after it would need
   an expectation of its own.
+- **Chromium's own requests:** its background services (`www.google.com`,
+  `content-autofill.googleapis.com`, `clients2.google.com`) reach the
+  proxy and are refused, so `trouble` lists them as `network` beside the
+  page's own (temper's chats mockup, at M2's hand capture). The look's
+  checks (M3) must tell the page's from Chromium's, or the program turn
+  those services off.
