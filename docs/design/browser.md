@@ -185,7 +185,7 @@ pub enum Request {                                       // from the test
     Type   { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },  // an IME composition, left open
     Keys   { page: Token, op: Token, node: Node, text: Box<[u8]> },  // each character a key: a native date or time field
-    Key    { page: Token, op: Token, key: Key, shift: bool },  // Enter, Escape, Tab, Backspace, arrows
+    Key    { page: Token, op: Token, key: Key, shift: bool },  // Enter, Escape, Tab, Backspace, arrows, select-all
     Address { page: Token, op: Token },                  // the current address, from the history
     Attribute { page: Token, op: Token, selector: Box<[u8]>, name: Box<[u8]> },  // of the first element a CSS selector finds
     Snapshot   { page: Token, op: Token },               // the accessibility tree, as text
@@ -247,6 +247,11 @@ pub enum Read    { NoElement, NoAttribute, Value(Box<[u8]>) }  // Value: whole, 
   that holds it.
 - **A key may be pressed with Shift held,** as a person makes a new line
   with Shift+Enter in a text area, where Enter alone sends.
+- **Select-all is a key of its own,** Control and A as the kit's
+  platform takes them, as a person selects a field's whole value before
+  typing over it: a `Type` after it replaces the value (the face's
+  typing, ui-web.md 14.2). It is named by what it does, so that no
+  other chord is asked for.
 - **An attribute is read by a CSS selector,** of the first element it
   finds in the page's current document, as the document holds it. It is
   how a test reads what holds no role a person finds it by, such as a
@@ -284,7 +289,8 @@ pub enum Looked {
     Style { values: List<Property>, faces: List<Face>, rect: Option<Rect> },
     Shot(Box<[u8]>),                                     // PNG
 }
-pub struct Entry { node: Option<Node>, depth: u32, role: Box<[u8]>, name: Box<[u8]>, level: u32 }
+pub struct Entry { node: Option<Node>, depth: u32, role: Box<[u8]>, name: Box<[u8]>, level: u32,
+                   value: Box<[u8]>, states: States, multiline: bool }
 pub struct Property { name: Box<[u8]>, value: Box<[u8]> }       // a computed value, whole
 pub struct Face  { family: Box<[u8]>, custom: bool, glyphs: u32 }   // custom: a web font
 ```
@@ -307,8 +313,11 @@ pub struct Face  { family: Box<[u8]>, custom: bool, glyphs: u32 }   // custom: a
   order, ignored nodes left out and their children lifted to their
   depth: each entry its backend node (none for a node without one), its
   depth from the root, its role, its name cut at `Limits::text`, and its
-  level, a heading's or a tree item's, 0 for none. Past `Limits::entries`
-  it is refused `Limit`, never cut, since the lab reads it whole.
+  level, a heading's or a tree item's, 0 for none; its value, cut the
+  same, and its states, as a find's `Seen` has them, and whether a text
+  box takes several lines (`multiline`), for the hand's outline
+  (lab-browser.md, 8.4). Past `Limits::entries` it is refused `Limit`,
+  never cut, since the lab reads it whole.
 - **A select** finds an element by a CSS selector, as an attribute read
   does (section 5): for a mockup's part that has no role of its own.
   Its answer is the node, or none.
@@ -343,7 +352,7 @@ to the next command, never a closure waiting on a reply:
 | type | the node focused; the text inserted |
 | compose | the node focused; a composition set and left open, which a later `Type` commits |
 | keys | the node focused; for each character of the text, in order, its key down and up, the character its key and its text |
-| key | the key down and up, with the text it makes; with `shift`, Shift's modifier on both |
+| key | the key down and up, with the text it makes; with `shift`, Shift's modifier on both; select-all, A's key down and up with Control's modifier and no text |
 | address | the page's navigation history (`Page.getNavigationHistory`); its current entry's URL, `Address` |
 | attribute | the current document's root (`DOM.getDocument`, its root alone); the first element under it the selector finds (`DOM.querySelector`), `NoElement` if none; its attributes (`DOM.getAttributes`), the named one's value, or `NoAttribute`; refused `Protocol` for a selector Chromium cannot parse, and `Limit` for a value past `Limits::text`, which is never cut, since a test uses it whole |
 | snapshot | the accessibility tree under the document, as indented lines of role, name, value and states, cut at `Limits::snapshot` |

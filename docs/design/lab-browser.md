@@ -8,7 +8,7 @@ scenes (section 3 there), their three views (section 4) and their
 judging (section 5). The lab's records, runner and checks are
 `lab.md`'s; this document says what the browser adds to them. The hand,
 a driver's browser in a cluster (qa-web.md, section 6), is this same
-program grown, and is not designed here (section 8).
+program in a second form (section 8).
 
 ## 1. In one page
 
@@ -49,6 +49,11 @@ program grown, and is not designed here (section 8).
   mockup as captured, overridden by the scene's expectations and
   excused by its departures, which name what they accept and why
   (5.4). They read only the scene file and the capture's record.
+- **The hand,** the program's second form: one person's page on a
+  product's origin in its cluster, a person's calls on a loopback
+  listener, finds and acts as the fake person's through the face, the
+  sign-in link redacted, the page's trouble logged; and `browse`, the
+  tool that sends them (section 8).
 - **Tested where each part lives:** the kit's reads in the kit's own
   tests, the program by one story on real Chromium in skein's browser
   suite, the capture's decisions in the runner's unit tier and its
@@ -70,6 +75,8 @@ program grown, and is not designed here (section 8).
   and reads is its caller's.
 
 ### 2.2 Its command line and its life
+
+The capture's form; the hand's is 8.1's.
 
 ```
 skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
@@ -555,6 +562,8 @@ files it needs, and nothing else; it starts no browser.
 
 ## 6. Tests
 
+The capture's; the hand's are 8.9's.
+
 - **The kit's reads** are the kit's (browser.md, 9 and 5.1): its step
   tests, its machine world, and its facts on real Chromium.
 - **The program:** one story in skein's browser suite (browser.md,
@@ -633,12 +642,298 @@ files it needs, and nothing else; it starts no browser.
   holds both through the runner's tree (temper's `lab/look/`). The
   capture also runs by hand, with the same paths. Neither runs in a
   gate, and the shots are evidence, never goldens.
+- **The hand in a product's cluster:** the program as a process of the
+  experiment's, and `{runner}/hand/` in the runner's tree, digested
+  with it (8.8).
 
-## 8. Open questions
+## 8. The hand
 
-- **The hand:** the program's calls on a socket in its directory, the
-  person's acts through the face, and the sign-in (qa-web.md, section
-  6).
+A driver's browser in a product's cluster (qa-web.md, section 6): the
+same program in a second form, holding one person's page on the
+product's origin and answering a person's calls, and `browse`, the tool
+an agent acts through there. The agent finds and acts as a world's fake
+person does (ui.md, 17.1), through the face (ui-web.md, 14.2), so that
+a transcript reads as a story.
+
+### 8.1 Its form and its life
+
+```
+skein-lab-browser hand --chromium PATH --fonts DIR --scratch DIR --out DIR
+    --origin URL --size WIDTHxHEIGHT [--mobile] --listen ADDRESS
+```
+
+- **`--origin`:** the product's origin, `http://` and a loopback
+  address with its port, as the product's ready line gave it (lab.md,
+  4.4): the one origin the page goes to (8.5).
+- **`--size` and `--mobile`:** the page's viewport, as a scene's width
+  (section 4), at scale 1, light scheme and reduced motion, as the
+  capture's.
+- **`--listen`:** the calls' listener, a loopback address with port 0.
+- **`--chromium`, `--fonts`, `--scratch` and `--out`** as 2.2 has
+  them; `--out` holds the shots and the trouble's log (8.7).
+- **Its life:** it binds its proxy and its listener, spawns Chromium as
+  2.2 does, opens its one person and page at `about:blank` at its size,
+  and once the page is open prints `listening ADDRESS` on its standard
+  output, the listener's bound address, its ready line (lab.md, 4.3).
+  Then it takes calls (8.2). Its standard input is not read: a
+  cluster's process has none (lab.md, 4.3). A `SIGTERM` or a `SIGINT`
+  closes the page, then the browser, and it exits 0 once Chromium's
+  exit is confirmed, as the runner stops a process (lab.md, 5.2). A
+  browser that ends by itself ends it with status 1 and a line on its
+  standard error.
+- **The capture's form is unchanged:** its command line is 2.2's, with
+  no first word.
+
+### 8.2 Calls on a listener
+
+- **One call a connection:** a caller connects, writes one canonical
+  JSON line (section 3's form), and reads one line, its answer; the
+  program then closes the connection. Calls are answered one at a time,
+  in the order their connections were accepted. A connection that has
+  not sent a whole line within 10 seconds, or sends more than 128 KiB,
+  is closed unanswered.
+- **A loopback listener, not a socket in a directory** (qa-web.md's
+  6.1 named one): skein's io has no Unix sockets, and a listener on
+  port 0 reported by a ready line is how the lab's processes meet
+  (lab.md, 4.4). It is the tool's endpoint (lab.md, 6.2): an agent's
+  own commands open no socket, and reach it only through `browse`,
+  whose fixed argument names it.
+- **Only a person's calls:** the hand answers 8.3's, and refuses the
+  capture's look reads (`serve`, `open`, `tree`, `select`, `style`)
+  `call`. The capture's form answers section 3's alone.
+
+### 8.3 A person's calls
+
+A part is found as the fake person finds it (ui.md, 17.1), through the
+face: `{"role", "name", "match", "in"}`. `role` is a person's role by
+the fake person's name for it (`button`, `link`, `text field`, `text
+area`, `heading`, `text`, `check`, `select`, ...), refused `call` for
+another; `name`, words in its name (`match` `words`) or the whole of it
+(`exact`); `in`, a list of `{"role", "name", "match"}`, the parts it is
+within, outermost first, perhaps empty. The first match in document
+order is the one acted on, as the fake person's is, and the answer
+names it. A **`PART`** is `{"role", "name", "value", "states"}`, its
+role by the same names, its states a list of `focused`, `disabled`,
+`checked`, `expanded` and `selected`.
+
+| Call | Its members | Its answer |
+|---|---|---|
+| `sign-in` | `link`, an address on the origin with a query (8.6) | `{"opened":ADDRESS}`, once the load event fires |
+| `outline` | `in` | `{"outline":TEXT,"left":N}` (8.4) |
+| `press` | a part | `{"pressed":PART}` |
+| `type` | a part; `text` | `{"typed":PART}`, the field's whole value replaced by `text` |
+| `key` | `key`: `Enter`, `Escape` or `Tab`; `shift` | `{"keyed":KEY}`, into what has focus |
+| `choose` | a part, a select; `option`, `{"name", "match"}` | `{"chose":PART}`, the option |
+| `go` | `path` | `{"went":ADDRESS}` |
+| `history` | `to`: `reload`, `back` or `forward` | `{"went":ADDRESS}` |
+| `address` | | `{"address":ADDRESS}` |
+| `wait` | a part; `gone`, a boolean; `seconds`, 1 to 300 | `{"met":PART}`, `{"gone":true}`, or `{"missed":[PART]}`: what of its role there was, at most 8 |
+| `shot` | | `{"shot":{"file","bytes","sha256","width","height"}}`, the viewport at scale 1 |
+| `trouble` | | `{"trouble":[ENTRY],"more":N}`, since the last `trouble` (8.7) |
+
+- **The acts are the face's:**
+  - a press on a check or a choice toggles it;
+  - typing focuses the field, selects its whole value with the
+    platform's select-all key, and inserts the text as one edit, so the
+    field holds the text alone (ui-web.md, 14.2); a native date or time
+    field takes its value by keys, as the face types it;
+  - a choice of an option presses its select and reaches the option by
+    the arrow keys and Enter, as a keyboard chooses one;
+  - a go, a reload and a move through the history accept the page's
+    closing warning, as a person who chose to leave answers it
+    (browser.md, section 6).
+- **Done is the browser's:** an act is answered once the browser has
+  taken it, a move once its navigation commits (browser.md, section 6).
+  What follows is the caller's to wait for.
+- **An address** is the page's history's current entry, as the address
+  bar shows it (browser.md, section 5), whole.
+- **A path** starts with `/` but not `//`, and holds printable ASCII
+  without spaces: a path on the origin, and its query.
+- **A shot** is written to `--out` as `shots/NNNN.png`, numbered from
+  0001 in the order taken, and named by that path.
+- **A refusal** is section 3's form: the kit's (`hidden`, `covered`,
+  `disabled`, `gone`, `timeout`, `limit`, `protocol`, `crashed`), or the
+  hand's: `missing`, no such part, its detail the fake person's words
+  ("no button named Save in the region named Draft"); `takes`, a part
+  whose role takes no such act (a press on a text field, typing into a
+  button: ui.md, section 6); `origin`, a path or a link that is not on
+  the origin; `call`. A refused act changed nothing the browser had
+  taken, and the caller may wait and try again.
+
+### 8.4 The outline
+
+What a screen reader meets, in order, as text: the page's accessibility
+tree (browser.md, 5.1), one entry a line, indented two spaces for each
+entry it is within.
+
+- **Each line:** its role by the fake person's name; a heading's level
+  after it (`heading 2`) and a list's items' count (`list (3)`); its
+  name, quoted as JSON, when it has one; a field's value after ` = `,
+  quoted the same; and its states, each in brackets (`[focused]`).
+- **Roles mapped back** by the web mapping (ui-web.md, section 6): a
+  browser role is shown as the person's role that lists it first, a
+  text box as a `text area` when it takes several lines and a `text
+  field` when one, and two others listing it first (`figure`) by the
+  first in ui.md's order; a browser role no role lists first
+  (`LayoutTableCell`), by the first that lists it. So a call naming a
+  line's role and name finds that line's part. A browser role the
+  mapping lacks is shown in angle brackets (`<article>`), which no call
+  names.
+- **Left out:** the document's root, ignored nodes, and the containers
+  (`generic`, `none`), each with its children lifted to its depth; and
+  the text within an entry whose name holds that text's words (a
+  button's label, a heading's), which a reader says once.
+- **Every name and every text,** unlike the look's structure (5.3),
+  which keeps a scene's names alone: the hand reads the page, where the
+  look compares its frame.
+- **Bounded:** at most 64 KiB, cut at a line's end, `left` counting the
+  entries cut; an outline `in` a part shows that part alone, its first
+  match.
+
+```
+banner
+  link "Chats"
+  button "Sign out"
+main
+  heading 1 "Chats"
+  text area "Start a chat" [focused]
+  button "Start" [disabled]
+  list (1)
+    item
+      link "Add a NOTICE file"
+      text "running"
+```
+
+### 8.5 One origin
+
+- **The proxy takes all but the origin:** the hand starts Chromium
+  with 2.4's proxy, and with Chromium's implicit loopback bypass
+  removed and the origin alone bypassing it
+  (`--proxy-bypass-list=HOST:PORT;<-loopback>`). So every request but
+  the origin's, another loopback port's among them, reaches the proxy,
+  which refuses and records it (2.4). In a cluster the hand has no
+  namespace of its own (lab.md, 4.3), and needs none.
+- **A link off the origin is not followed, and says so:** its load
+  reaches the proxy, whose refusal is what the page then shows (a `403`
+  whose text names the address and the reason), as a person whose
+  network refuses a host sees it; `trouble` names it `network`, and
+  `history` `back` returns.
+- **A call names no other origin:** `go`'s path is on the origin by its
+  form, and a `sign-in` link off it is refused `origin` before the
+  browser sees it.
+- **Chromium's own requests** are off, as 2.4 has them.
+
+### 8.6 The sign-in link
+
+- **A credential,** given in a `sign-in` call alone. The lab's
+  `hand/sign-in` command reads it from its standard input and sends it
+  (8.8), so it is never an argument, and never offered to the agent: an
+  experiment names it in its seed, and no tool runs it.
+- **Its query is redacted:** the program keeps each link's query (at
+  most 4 links, each query at least 16 bytes, else refused `call`), and
+  writes `<link>` in its place in every answer, the trouble's log and
+  its standard error. A page's script that replaces its address leaves
+  nothing to redact; one that keeps it shows `<link>` to `address`.
+- **What still holds it** is the run's own record of the seed (the
+  stdin file of the action that sent it, lab.md 5.4), as the ctl
+  level's seed holds its link (temper's `qa.md`, 4.3), and the
+  product's printed lines; neither is in an agent's view, and the link
+  is spent before the driver starts.
+- **A refused link is the page's:** the program opens what it is given
+  and answers `opened`. Whether the page signed the person in is the
+  caller's to wait for, by what the page shows.
+
+### 8.7 The trouble
+
+- **A log as it comes:** each entry of the page's trouble, the kit's
+  kinds and the proxy's `network`, is appended to `--out`'s
+  `trouble.jsonl`, a canonical JSON line each:
+  `{"n","kind","text","address","call","during"}`. `n` counts from 1;
+  `address` is the page's, read when the entry came; `call` is the
+  number of the call in flight, counted from 1 in the order accepted,
+  and `during` its name, or 0 and null between calls. So a product's
+  check can name each entry's page by its address (qa-web.md, 8.1), and
+  leave out what a seed's call caused.
+- **The `trouble` call** answers the entries since the last one, at
+  most 64, `more` counting the rest, each an `ENTRY`, `{"kind","text","address"}`.
+- **Bounded:** a text at the kit's `Limits::text`, and the log at 4096
+  entries, past which one last entry counts those not written.
+
+### 8.8 `browse` and `sign-in`
+
+```
+scripts/lab/hand/browse ADDRESS VERB [OPERAND...] [--in ROLE NAME]... [--exact]
+scripts/lab/hand/sign-in ADDRESS
+```
+
+- **Python's standard library** under the runner's "for now" (lab.md,
+  10.1), as the capture is: one call an invocation, to the listener at
+  `ADDRESS`, its answer printed for a reader.
+- **`browse`'s verbs** are qa-web.md's (6.2), each one call:
+  `outline`; `press ROLE NAME`; `type ROLE NAME`, its text the whole of
+  its standard input but one final newline; `key KEY`, one of `Enter`,
+  `Shift+Enter`, `Escape`, `Tab` and `Shift+Tab`; `choose ROLE NAME
+  OPTION`; `go PATH`; `reload`, `back` and `forward`; `address`; `wait
+  ROLE NAME [--gone] --timeout S`; `shot`; `trouble`. `--in ROLE NAME`,
+  repeated outermost first, scopes a find, and `--exact` matches its
+  name whole, the option's too.
+- **What it prints:** the answer as lines a person reads (`pressed
+  button "Send"`, `refused covered: ...`, the outline as it is, a
+  trouble entry a line), and nothing else.
+- **Its statuses:** 0 answered, 1 refused, 2 a usage error (its usage
+  on its standard error), 3 the browser unreachable or its answer
+  unreadable.
+- **Its endpoint is its own** (lab.md, 6.2): `ADDRESS` is its fixed
+  argument, a loopback address and port, and no operand of the agent's
+  names another: a path is checked as 8.3 has it, before any call.
+- **`sign-in`** reads one line, the link, from its standard input,
+  sends `sign-in`, and prints the answer, redacted by the program.
+- **In a product's experiment:** the process `browser`,
+  `["{browser.program}", "hand", ...]`, after the product's server, its
+  ready line `listening ` captured as `address`; the seed's action
+  `["{runner}/hand/sign-in", "{proc.browser.ready.address}"]`, the link
+  on its standard input; and the tool `browse`, `["{runner}/hand/browse",
+  "{proc.browser.ready.address}"]` (lab.md, 6.3).
+
+### 8.9 Its tests
+
+- **The kit's additions** (browser.md, 5.1 and 5): its tree's values,
+  states and lines, and the select-all key, in the kit's step tests and
+  its facts on real Chromium.
+- **The face's:** typing into a field that holds words replaces them,
+  in its story on real Chromium; the mapping back, pure, for every
+  person's role and each browser role it maps to, the role shown finds
+  that browser role.
+- **The outline,** pure, in the program's unit tests: from trees as the
+  kit gives them, nesting, levels, a list's count, values, states, text
+  left out under a name that holds it, an unmapped role, the cut.
+- **The program's hand:** a second story in skein's browser suite,
+  beside the capture's (section 6): the built program in its hand form,
+  with the suite's Chromium and fonts, against an origin the story
+  serves, whose page holds a banner, a heading, a text field holding
+  words, a text area, a button, a check, a select, a link to a second
+  page, a link to another loopback listener the story holds, and a
+  sign-in path whose script replaces its address. It shows: the ready
+  line; a sign-in whose query appears in no answer, no trouble line and
+  not on the standard error; the outline; each call answered; typing
+  replacing; a key into the focused field; a choice; back and forward;
+  the link off the origin shown refused, the other listener seeing no
+  connection, its `network` trouble; each refusal of the hand's;
+  `wait` met, gone and missed; and `SIGTERM` ending it with status 0.
+- **`browse` and `sign-in`:** the runner's unit tier (lab.md, 10.3),
+  against a listener the test holds: each verb's call, each answer's
+  text, the statuses, and an operand naming another endpoint refused;
+  and its process tier, the built program and Chromium against an
+  origin the test serves: one walk, a sign-in, an outline, a typing, a
+  press, a wait, an address and the trouble, which shows the two
+  speaking, each verb's meaning being the program's story's.
+
+## 9. Open questions
+
+- **The look on the hand's page:** live scenes (qa-web.md, 3.3) read a
+  live page's style and shots, which the hand refuses; whether the
+  capture drives a cluster's page through the hand, or the hand answers
+  the look's reads to the lab alone.
 - **A dark scheme** for a product whose look follows the system's.
 - **Pages that animate** past reduced motion: readiness by a part
   shown holds for a static page; a page that moves after it would need

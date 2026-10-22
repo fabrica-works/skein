@@ -868,12 +868,17 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
     Chromium, which a find of that role asks the kit for (a text field:
     `textbox`; `spinbutton` for a number's, `Date` for a date's and
     `InputTime` for a time's; 14.1);
+  - and back, for the lab's hand (lab-browser.md, 8.4): a browser role
+    to the role that lists it first, a text box by whether it takes
+    several lines, beside the mapping and tested against it, so that
+    the role shown finds what it was shown for;
   - names by words in them or exactly (browser.md, section 5); text by
     words within one run, a sentence that a strong word or a link splits
     being several runs;
   - `Pending` while the kit answers.
-- **Its acts:** press; type, an input's whole value (the field cleared,
-  then the words), a date's or a time's by the kit's keys (below);
+- **Its acts:** press; type, an input's whole value (the field's value
+  selected whole by the kit's select-all key, then the words typed over
+  it), a date's or a time's by the kit's keys (below);
   Enter for a send; a key with Shift held, Shift+Enter a new line in a
   text area that sends on Enter (section 7); an option chosen with the
   kit's keys, as a keyboard chooses one; `Go`, a navigation to the path
