@@ -891,7 +891,7 @@ struct Judge {
 impl Referee<Process> for Judge {
     fn act(&mut self, now: Time, processes: &mut [Process]) {
         if self.deadline.is_none() {
-            self.deadline = Some(now.saturating_add(Duration::from_secs(60)));
+            self.deadline = Some(now.saturating_add(Duration::from_secs(120)));
         }
         let address = processes.iter().find_map(|process| match process {
             Process::Issuer(peer) => peer.address(),

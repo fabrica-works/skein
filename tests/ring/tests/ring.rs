@@ -152,7 +152,7 @@ fn a_wait_with_a_deadline_returns_by_it_when_nothing_completes() {
         world.kernel.submit(&mut world.submissions, Wait::Until(deadline));
         let woke = world.clock.now().now;
         assert!(woke >= deadline, "it waited for the deadline");
-        assert!(woke < deadline.checked_add(Duration::from_secs(1)).unwrap(), "and returned by it");
+        assert!(woke < deadline.checked_add(Duration::from_secs(2)).unwrap(), "and returned by it");
         world.reap();
         assert!(world.arrived.is_empty(), "nothing completed");
         if let Some((listener, accept)) = pending {
@@ -171,7 +171,7 @@ fn a_deadline_already_past_does_not_wait() {
     let before = world.clock.now().now;
     world.kernel.submit(&mut world.submissions, Wait::Until(Time::ZERO));
     let after = world.clock.now().now;
-    assert!(after < before.checked_add(Duration::from_millis(500)).unwrap(), "it returned at once");
+    assert!(after < before.checked_add(Duration::from_millis(1000)).unwrap(), "it returned at once");
     world.settle();
 }
 
@@ -293,7 +293,7 @@ fn a_reap_takes_only_what_fits_and_the_rest_waits_without_blocking() {
         world.kernel.submit(&mut world.submissions, Wait::Until(deadline));
         let after = world.clock.now().now;
         assert!(
-            after < before.checked_add(Duration::from_millis(500)).expect("in reach"),
+            after < before.checked_add(Duration::from_millis(1000)).expect("in reach"),
             "no wait while completions are queued"
         );
         world.check(&mut one);

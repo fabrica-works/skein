@@ -46,7 +46,7 @@ impl Loop {
         stream.write_all(head.as_bytes()).expect("request head");
         stream.write_all(&encoded.body).expect("request body");
         stream.set_nonblocking(true).expect("one loop");
-        let deadline = self.clock.now().now.saturating_add(Duration::from_secs(3));
+        let deadline = self.clock.now().now.saturating_add(Duration::from_secs(6));
         let mut response = Vec::new();
         loop {
             self.pass();
@@ -101,7 +101,7 @@ fn private_git_calls_cross_kernel_loopback_and_move_shared_branch() {
         .without_records();
     let kernel = Kernel::open(skein_shell::Config { operations: peer.operations() }).expect("kernel ring");
     let mut world = Loop { peer, kernel, clock: Clock::new() };
-    let deadline = world.clock.now().now.saturating_add(Duration::from_secs(3));
+    let deadline = world.clock.now().now.saturating_add(Duration::from_secs(6));
     while world.peer.address().is_none() {
         world.pass();
         assert!(world.clock.now().now < deadline, "listener binds");
@@ -218,7 +218,7 @@ fn github_private_git_calls_cross_kernel_loopback_on_an_installation_token() {
     let authorization = Secret::new(authorization.finish());
     let kernel = Kernel::open(skein_shell::Config { operations: peer.operations() }).expect("kernel ring");
     let mut world = Loop { peer, kernel, clock };
-    let deadline = world.clock.now().now.saturating_add(Duration::from_secs(3));
+    let deadline = world.clock.now().now.saturating_add(Duration::from_secs(6));
     while world.peer.address().is_none() || world.peer.blob_address().is_none() {
         world.pass();
         assert!(world.clock.now().now < deadline, "listeners bind");

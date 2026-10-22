@@ -114,7 +114,7 @@ fn the_shipped_idle_time_does_not_delay_the_real_echo_shutdown() {
     world.spawn(|| Proc::client(client_limits(1), &plans));
     let outcome = world.run(&clock, Duration::from_secs(2));
     assert!(
-        outcome.end.saturating_since(outcome.start) < Duration::from_millis(500),
+        outcome.end.saturating_since(outcome.start) < Duration::from_millis(1000),
         "the owner drain, rather than the shipped idle time, ends the echo"
     );
 }

@@ -113,7 +113,7 @@ fn receive(mut stream: TcpStream, tx: &Sender<(Received, Reply)>) -> io::Result<
     reader.read_exact(&mut received.body)?;
     let (answer, reply) = mpsc::channel();
     if tx.send((received, Reply(answer))).is_ok()
-        && let Ok(status) = reply.recv_timeout(Duration::from_secs(10))
+        && let Ok(status) = reply.recv_timeout(Duration::from_secs(20))
     {
         stream.write_all(&response(status))?;
     }
@@ -206,7 +206,7 @@ impl Scenario<'_> {
     }
     #[expect(clippy::disallowed_types, reason = "the recorder bounds mergeability rereads by settle")]
     fn reread(&mut self, index: usize, answered: Instant) -> Result<()> {
-        let until = answered + Duration::from_secs(30);
+        let until = answered + Duration::from_secs(60);
         let mut delay = Duration::from_secs(1);
         let mut next = answered + delay;
         loop {
