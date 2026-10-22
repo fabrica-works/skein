@@ -229,7 +229,7 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
             if let Some(name) = &n.name {
                 start(&mut print.text, indent);
                 safe(&mut print.text, name, indent, false);
-                raw(&mut print.text, b":");
+                colon(&mut print.text, name);
                 finish(n, &mut print.text);
                 Some(indent.saturating_add(2))
             } else {
@@ -466,6 +466,16 @@ fn sort(n: &Node, out: &mut List<u8>) {
 fn finish(n: &Node, out: &mut List<u8>) {
     states(n, out);
     raw(out, b"\n");
+}
+/// A group's name line ends in a colon, unless its name ends in its own mark.
+fn colon(out: &mut List<u8>, name: &[u8]) {
+    let marked = match name.last() {
+        Some(last) => b"?!:".contains(last),
+        None => false,
+    };
+    if !marked {
+        raw(out, b":");
+    }
 }
 fn start(out: &mut List<u8>, indent: u32) {
     if out.last() == Some(&b'\n') {

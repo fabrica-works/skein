@@ -27,6 +27,23 @@ fn control_bytes_and_bad_utf8_print_as_replacement() {
     assert_eq!(print.text.as_slice(), include_bytes!("tests/golden/bytes.txt"));
 }
 #[test]
+fn a_name_ending_in_its_own_mark_takes_no_colon() {
+    let tree = fixtures::page(|b| {
+        for name in [b"What shall we change?".as_slice(), b"Stop!", b"Note:", b"Plain"] {
+            b.open(Role::Region);
+            b.name(name);
+            fixtures::leaf(b, Role::Paragraph, b"in");
+            b.close();
+        }
+    });
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    assert_eq!(
+        print.text.as_slice(),
+        b"== ops == \nWhat shall we change?\n  in\nStop!\n  in\nNote:\n  in\nPlain:\n  in\n".as_slice()
+    );
+}
+#[test]
 fn a_disabled_button_prints_a_dash_not_a_number() {
     let tree = fixtures::page(|b| {
         fixtures::button(b, b"Accept", true);

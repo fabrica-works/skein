@@ -189,7 +189,10 @@ this shell's text (ui.md, 17.1).
   after `== TITLE == `, its trailing space kept. Neither the heading nor the
   status node is printed again, and nothing in the status node is
   numbered.
-- **Then every node in preorder,** by its role (ui.md, 3.1):
+- **Then every node in preorder,** by its role (ui.md, 3.1). Where a
+  row prints `NAME:` above its children, a name already ending in `?`,
+  `!` or `:` takes no colon ("What shall we change?", not "What shall
+  we change?:"):
 
   | Role | Prints |
   |---|---|
