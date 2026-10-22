@@ -40,12 +40,10 @@ report() {
         >>"$tmp/director/inbox/after-landing.md"
 }
 
-# x1's kept targets hold cache blocks past the cache's limit (owners.md,
+# Kept targets hold cache blocks past the cache's limit (owners.md,
 # 4.5). Stay inside this lane's physical worktree; rm does not follow
 # links within target, and must not cross a filesystem mounted below it.
 cleanup_target() (
-    host=$(uname -n) || exit 1
-    [[ ${host%%.*} == x1 ]] || exit 0
     cd -P -- "$wt" || exit 1
     if [[ $PWD != "$wt" || -L target || ( -e target && ! -d target ) ]]; then
         echo "after-landing: refusing unsafe target cleanup: $wt/target" >&2
