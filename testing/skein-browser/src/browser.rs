@@ -652,6 +652,8 @@ impl Browser {
                 }
                 self.issue_step(env, op, b"Page.captureScreenshot", &Params::Empty, Step::Screenshot);
             }
+            // Transitional: the look's operations replace this refusal (o/qa-b-m1's kit task).
+            Request::Look { op, .. } => self.events.push_back(Event::Refused { op, why: Refusal::Protocol }),
             Request::Close { entity } => self.close(env, entity),
         }
     }

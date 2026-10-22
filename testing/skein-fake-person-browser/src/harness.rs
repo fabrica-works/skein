@@ -609,6 +609,7 @@ impl Runtime {
             | Event::Address { .. }
             | Event::Snapshot { .. }
             | Event::Screenshot { .. }
+            | Event::Looked { .. }
             | Event::Closed { .. } => {}
         }
     }

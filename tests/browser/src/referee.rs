@@ -51,7 +51,8 @@ impl Referee {
             | Event::Attribute { op, .. }
             | Event::Address { op, .. }
             | Event::Snapshot { op, .. }
-            | Event::Screenshot { op, .. } => Some(*op),
+            | Event::Screenshot { op, .. }
+            | Event::Looked { op, .. } => Some(*op),
             Event::Warned { .. }
             | Event::Ready { .. }
             | Event::Opened { .. }

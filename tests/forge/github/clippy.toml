@@ -6,6 +6,7 @@ disallowed-types = [
     { path = "std::collections::HashSet", reason = "iteration order depends on a random seed: BTreeSet" },
     { path = "std::time::Instant", reason = "the world's clock is World::now" },
     { path = "std::time::SystemTime", reason = "the world's clock is World::now" },
+    { path = "skein_browser::boundary::Look", reason = "a test sees what a person sees: the look's reads are the lab's browser's alone (browser.md, 5.1)" },
 ]
 
 disallowed-methods = [

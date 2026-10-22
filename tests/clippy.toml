@@ -12,6 +12,7 @@ disallowed-types = [
     { path = "std::hash::RandomState", reason = "iteration order would depend on a random seed: BTreeMap" },
     { path = "std::time::Instant", reason = "the simulator owns time (Sim::now); on the ring, skein_shell::Clock" },
     { path = "std::time::SystemTime", reason = "the simulator owns time (Sim::wall); on the ring, skein_shell::Clock" },
+    { path = "skein_browser::boundary::Look", reason = "a test sees what a person sees: the look's reads are the lab's browser's alone (browser.md, 5.1)" },
 ]
 
 disallowed-methods = [

@@ -17,6 +17,10 @@ pub struct Limits {
     pub text: u32,
     pub snapshot: u32,
     pub screenshot: u32,
+    /// A look's list: a tree's entries, a style's faces.
+    pub entries: u32,
+    /// The properties a style names.
+    pub properties: u32,
     pub stderr: u32,
     pub poll: Duration,
     pub answer: Duration,
@@ -35,6 +39,8 @@ impl Default for Limits {
             text: 4096,
             snapshot: 262_144,
             screenshot: 2_097_152,
+            entries: 4096,
+            properties: 32,
             stderr: 32_768,
             poll: Duration::from_millis(50),
             answer: Duration::from_secs(10),
