@@ -43,9 +43,11 @@ program in a second form (section 8).
   shots side by side, each region cropped from both at twice the scale,
   and a difference image with its PSNR where a region's content matches
   (5.3).
-- **Two checks hold a capture to its scene:** `look-structure` (the
+- **Three checks hold a capture to its scene:** `look-structure` (the
   outlines' entries, the regions' order on the screen, readiness and
-  trouble) and `look-style` (the regions' values), each against the
+  trouble), `look-style` (the regions' values) and `look-words` (the
+  words of the regions a scene names, its data cut by its own
+  declaration), each against the
   mockup as captured, overridden by the scene's expectations and
   excused by its departures, which name what they accept and why
   (5.4). They read only the scene file and the capture's record.
@@ -275,7 +277,7 @@ a node by the kit (browser.md, section 5).
 `look-scene/1`, canonical JSON (lab.md, 2.2), one file a scene, kept by
 the product beside its look experiment. The capture reads it; the
 look's checks read it too, with the members they add (`expectations`,
-`departures`). Shown spread out here; the file holds its canonical
+`departures`, and `words` where the file has it). Shown spread out here; the file holds its canonical
 bytes.
 
 ```json
@@ -294,7 +296,9 @@ bytes.
                         "page": {"role": "textbox", "name": "Message", "match": "exact"}}],
  "names": ["Chats", "Inbox", "Accounts", "Send"],
  "expectations": [],
- "departures": []}
+ "departures": [],
+ "words": [{"id": "banner-words-desktop", "width": "desktop", "region": "banner",
+            "data": [], "cites": "qa-web.md, 3.2: the frame's words are the mockups'"}]}
 ```
 
 - **`name`** matches `[a-z][a-z0-9-]*`, as every name in the file does,
@@ -348,6 +352,17 @@ bytes.
     difference accepted by its signature's part after
     `<scene>/<width>/` (`style/banner/faces`), or `{"id", "width",
     "entry", "cites"}`, any difference in that entry's count.
+- **`words`,** a list the file may leave out (none then), the word
+  check's (5.4): `{"id", "width", "region", "data", "cites"}`, a region
+  whose words are held to the mockup's at that width. `id`, `width` and
+  `cites` as above, the id unique among the expectations', the
+  departures' and the words' ids; `region` one of the scene's regions,
+  named once a width; `data`, a list of the page's data in that region
+  (its counts, times and titles drawn from a run), each a regular
+  expression (Python's `re`) that matches no empty text, none
+  repeated: each span one matches is one word of data, `#` on both
+  sides (5.4). The rule is the scene's declaration, never what a side
+  happens to lack.
 - **Refused,** every problem named with its member, before the browser
   starts. A file of another format is refused for that alone, before
   any other member is named. Otherwise: bytes not canonical, a missing, unknown or
@@ -358,9 +373,12 @@ bytes.
   or in a readiness, another `match`, a path or a size out of its rule,
   a region's mockup finder in a scene without a mockup, or none in one
   with, a region named `page`, a live page with a `path` or a served
-  one with `live` or `focus`, a `focus` finder with a selector, an expectation or a departure naming a
+  one with `live` or `focus`, a `focus` finder with a selector, an expectation, a departure or a words entry naming a
   width or a region the scene lacks, a property not listed above, a
-  negative count, an empty `cites` or signature.
+  negative count, an empty `cites` or signature, a words entry in a
+  scene without a mockup, a region's words named twice at a width, a
+  data pattern that does not compile, matches empty text or is
+  repeated.
 
 ## 5. The capture
 
@@ -407,9 +425,9 @@ scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
   the proxy cannot tell pages apart (2.4), the mockup's side first:
   `open` at the width; `go` to the side's path on its origin; `await`
   its readiness within `--ready-seconds`; `tree`; for each region, its
-  part found (`find`, or `select` on the mockup's side), its `style`
-  with the properties of 5.3, and its `shot` at scale 2 clipped to its
-  box; the viewport's `shot` at scale 1; `trouble`; `close`. Then the
+  part found (`find`, or `select` on the mockup's side), its words from
+  the tree (5.2), its `style` with the properties of 5.3, and its
+  `shot` at scale 2 clipped to its box; the viewport's `shot` at scale 1; `trouble`; `close`. Then the
   width's views (5.3), from the files written.
 - **A live page's side** is read from the hand's page as the seed left
   it, never opened, moved or reloaded, by the hand's look reads (8.10),
@@ -476,7 +494,8 @@ SIDE    {"address", "ready", "trouble", "tree", "outline", "shot"}
 REGION  {"name", "mockup": PART or null, "page": PART,
          "pair": FILE or null, "content", "diff": FILE or null,
          "psnr", "differing", "pixels"}
-PART    {"found": true, "more", "box", "values", "faces", "shot"}
+PART    {"found": true, "more", "box", "values", "faces", "shot",
+         "words"}
         or {"found": false} or REFUSED
 FILE    {"path", "bytes", "sha256"}
 REFUSED {"refused", "detail"}
@@ -495,7 +514,14 @@ REFUSED {"refused", "detail"}
 - **A part's** `more` is how many others its finder matched; `box` is
   its style's border box (a `RECT`, or null for a part not displayed);
   `values` and `faces` are its style's; `shot` is its crop, null
-  without a box, or the refusal.
+  without a box, or the refusal; `words` is the names of the
+  `StaticText` entries under its node in the tree, in document order,
+  as the tree gives them: the text a person reads in the part, a
+  control's or a heading's as well as a hint's or a line's. It is null
+  when the tree was refused or the node is not in it (an ignored node,
+  as 5.3's content has it). It is read from the tree the side already
+  took, so it needs no call of its own; a record made before it leaves
+  `words` out, and the word check is undecided on it.
 - **A region's** `content` is `same`, `differs` or `unknown` (5.3);
   `diff`, `psnr`, `differing` and `pixels` are its difference image's,
   null where none is made.
@@ -563,11 +589,12 @@ REFUSED {"refused", "detail"}
 ### 5.4 Its checks
 
 ```
-scripts/lab/look/check structure|style --capture DIR [--capture DIR]... SCENE...
+scripts/lab/look/check structure|style|words --capture DIR [--capture DIR]... SCENE...
 ```
 
-Two check commands by lab.md's contract (7.2): `structure`, which an
-experiment names `look-structure`, and `style`, named `look-style`.
+Three check commands by lab.md's contract (7.2): `structure`, which an
+experiment names `look-structure`, `style`, named `look-style`, and
+`words`, named `look-words`.
 Each reads each `DIR/capture.json` and the scene files, and the
 record's files it needs, and nothing else; it starts no browser. Each
 scene is judged from the one record that holds it, so that live
@@ -597,8 +624,9 @@ together; a scene in no record, or in two, is could not judge.
     entry, a departure of its width names is not reported. A departure
     that accepts nothing in the capture fails `departure-gone/<id>`, in
     the check whose kinds its signature names (`style` for `style/...`,
-    `structure` for every other, and an entry's), so the list stays
-    true once the page or the mockup comes to agree.
+    `words` for `words/...`, `structure` for every other, and an
+    entry's), so the list stays true once the page or the mockup comes
+    to agree.
 - **`look-structure`:**
   - `ready/<side>`: a side whose readiness was missed or refused;
   - `trouble/<side>/<kind>`, and `trouble/<side>/network/<host:port>`
@@ -637,9 +665,50 @@ together; a scene in no record, or in two, is could not judge.
   page's disagrees by 5.3's rule: 5.3's properties, `faces`, the box's
   `x`, `y`, `width` and `height`, and `shown`, the part drawn on one
   side and not on the other, whose box is then not compared.
+- **`look-words`:** for each of the scene's `words` entries at the
+  width, the region's words on the mockup's side against the page's,
+  the mockup's being the base: the page's words are the mockups' where
+  temper's model can hold them (qa-web.md, 3.2), so a difference is a
+  finding, a departure or a question.
+  - **Words, not runs:** each side's `words` joined by one space; each
+    of the entry's `data` patterns, in order, replaces each span it
+    matches with `#`; the text split at white space into words. Two
+    pages that split one text into runs differently (an inline element,
+    an icon's span) agree, and a time or a count across a run's end is
+    still one span.
+  - **Data never hides a word:** a span a pattern matches that holds
+    white space is no datum: the entry is undecided, naming the
+    pattern and the span, since a word beside a datum must still sign.
+    A pattern that matches nothing on either side is named on the
+    check's stderr (`<scene>/<width>/<id>: data <pattern> matched
+    nothing`) and signs nothing, so a stale declaration shows.
+  - **The comparison:** the two lists of words in order, by Python's
+    `difflib.SequenceMatcher` without its junk heuristic. Each opcode
+    other than `equal` signs once with its span's words: `delete`,
+    `words/<region>/missing/<words>`, the mockup's words the page
+    lacks; `insert`, `words/<region>/extra/<words>`, the page's the
+    mockup lacks; `replace`, both. A word moved signs both, where it
+    left and where it came.
+  - **`<words>`:** the span's words joined by one space, percent-
+    encoded as the structure's names; a span of more than eight words
+    is its first eight, then `/`, its count, `w-` and the first eight
+    hex digits of its joined text's SHA-256 (`/31w-1f0a9c3e`), so a
+    long span keeps a stable, readable signature. The summary holds
+    the span's words whole, and the other side's where it replaces.
+  - **What it cannot judge,** for that entry alone: either part's call
+    refused, the mockup's part not found, or either part's `words`
+    null or absent (undecided); the page's part not found signs
+    nothing here, since `look-structure` signs it.
+  - **Not yet: a disclosure's words.** A part closed in a disclosure
+    (the phone's Menu, the chat's model chooser) is out of the tree, so
+    its words are neither side's. Opening it needs a call that presses
+    a control, which section 3 lacks: a words entry naming a finder to
+    press before the tree and again after it, a step of the capture's
+    on both sides, and the program built anew. Until that call, a
+    disclosure's words are judged by eye.
 - **Pure decisions:** the expected page, the comparisons, the order,
-  the signatures and the departures are functions of the records and
-  texts read, beside the command that reads them.
+  the words, the signatures and the departures are functions of the
+  records and texts read, beside the command that reads them.
 
 ## 6. Tests
 
@@ -668,15 +737,21 @@ The capture's; the hand's are 8.9's.
   faces); the content's three answers; PNG's reading (RGB, RGBA, each
   filter) and writing; the side by side; the difference image and the
   PSNR on small images, equal, one pixel off, and of unequal sizes; the
-  record's canonical form; the scene's expectations and departures and
-  their refusals.
+  record's canonical form; the scene's expectations, departures and
+  words and their refusals; a part's words from a tree, and null for a
+  node the tree leaves out.
 - **The checks' decisions** in the same tier, on records and texts
   written as fixtures, with no browser: each signature of 5.4 from a
   record that shows it and none from one that doesn't; the base, an
   expectation overriding it and a scene without a mockup; a departure
   accepting by signature and by entry, and gone; the order from both
   sides of its pixel, a region moved past two, a tie, a pair nested
-  or crossing (no order), a part not drawn; each could-not-judge; the statuses and lines of lab.md, 7.2.
+  or crossing (no order), a part not drawn; the words joined across
+  runs split differently, a datum cut on both sides, a changed word
+  beside a datum still signing, a datum's span across white space
+  undecided, a stale pattern on stderr, a moved word signing both, a
+  long span's bound; each could-not-judge; the statuses and lines of
+  lab.md, 7.2.
 - **The capture's run** in the runner's process tier: the built program
   (`SKEIN_LAB_BROWSER`), Chromium (`SKEIN_TEST_CHROMIUM`) and the fonts
   (`SKEIN_TEST_FONTS`, else Debian's directory, as the program's story)

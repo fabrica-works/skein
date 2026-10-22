@@ -205,7 +205,7 @@ DejaVu by default); missing prerequisites fail.
 for scenes whose page has `live`, `ready` and `focus`. It reads the hand's page
 in place at each scene width, copies and verifies its shots, records its focus
 and trouble, and gives back the hand's viewport after each scene or a failure.
-The mockup runs in its own bubblewrap namespace. `look/check structure|style`
+The mockup runs in its own bubblewrap namespace. `look/check structure|style|words`
 accepts repeated `--capture DIR` arguments: each scene must occur in exactly
 one record, and structure checks a live scene's focus finder as `focus/page`.
 
