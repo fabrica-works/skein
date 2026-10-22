@@ -10,27 +10,29 @@
 
 use crate::Limits;
 use crate::{Act, Binding, BoundAct};
-use crate::{Builder, NodeId, Patch, Tree, diff};
+use crate::{Builder, Node, NodeId, Patch, Tree, diff};
 
-use skein_lib::Queue;
+use skein_lib::{List, Queue};
 
 /// A visible tree, its spare allocation, shown count and never-reused node ids.
 #[derive(Debug)]
 pub struct View {
     last: Option<Tree>,
     spare: Option<Tree>,
+    room: Option<List<Node>>,
     built: Option<u64>,
     next_id: u32,
     limits: Limits,
 }
 
 impl View {
-    /// Reserve both trees before any build.
+    /// Reserve both trees and any splice room before any build.
     #[must_use]
     pub fn new(limits: &Limits) -> View {
         View {
             last: Some(Tree::new(limits.nodes)),
             spare: Some(Tree::new(limits.nodes)),
+            room: Some(List::with_capacity(if limits.slots > 0 { limits.nodes } else { 0 })),
             built: None,
             next_id: 0,
             limits: *limits,
@@ -45,14 +47,18 @@ impl View {
     #[must_use]
     pub fn builder(&mut self) -> Builder {
         let tree = self.spare.take().expect("one build at a time");
-        Builder::reuse(tree, &self.limits)
+        let room = self.room.take().expect("one build at a time");
+        Builder::lend(tree, room, &self.limits)
     }
     /// Finish a complete, already-spliced tree, emit its diff and keep it.
     /// Building for an unchanged count returns the spare without emitting.
     pub fn finish(&mut self, built: Builder, shown: u64, out: &mut Queue<Patch>) {
         assert!(self.spare.is_none(), "finish returns the outstanding builder");
         assert!(built.limits == self.limits, "builder uses the view limits");
-        let mut new = built.finish();
+        let (mut new, room) = built.into_parts();
+        let capacity = if self.limits.slots > 0 { self.limits.nodes } else { 0 };
+        assert!(room.capacity() == capacity, "build returns the configured splice room");
+        self.room = Some(room);
         if !self.stale(shown) {
             self.spare = Some(new);
             return;

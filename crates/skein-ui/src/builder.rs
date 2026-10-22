@@ -62,13 +62,21 @@ impl Builder {
             focused: false,
             slots: List::with_capacity(limits.slots),
             next_slot: 0,
-            spare: List::with_capacity(limits.nodes),
+            spare: List::with_capacity(if limits.slots > 0 { limits.nodes } else { 0 }),
         }
     }
 
     /// Empty a spare tree while retaining its node allocation.
     #[must_use]
-    pub fn reuse(mut tree: Tree, limits: &Limits) -> Builder {
+    pub fn reuse(tree: Tree, limits: &Limits) -> Builder {
+        let room = List::with_capacity(if limits.slots > 0 { limits.nodes } else { 0 });
+        Self::lend(tree, room, limits)
+    }
+
+    pub(crate) fn lend(mut tree: Tree, room: List<Node>, limits: &Limits) -> Builder {
+        let capacity = if limits.slots > 0 { limits.nodes } else { 0 };
+        assert!(room.capacity() == capacity, "splice room has the configured capacity");
+        assert!(room.is_empty(), "splice room is empty between builds");
         assert!(tree.nodes.capacity() == limits.nodes, "spare tree has the configured capacity");
         tree.nodes.clear();
         Builder {
@@ -80,7 +88,7 @@ impl Builder {
             focused: false,
             slots: List::with_capacity(limits.slots),
             next_slot: 0,
-            spare: List::with_capacity(limits.nodes),
+            spare: room,
         }
     }
 
@@ -482,6 +490,7 @@ impl Builder {
         let built = replace(&mut self.spare, List::with_capacity(0));
         let empty = replace(&mut self.tree.nodes, built);
         self.spare = empty;
+        assert!(self.spare.capacity() == self.limits.nodes, "splice returns the configured room");
         let old_slots = replace(&mut self.slots, List::with_capacity(self.limits.slots));
         for mut placed in old_slots.into_boxed() {
             if placed.slot.id != id {
@@ -533,6 +542,11 @@ impl Builder {
             let end = index.checked_add(size).expect("subtree end fits u32");
             ends.push(end).expect("spliced tree fits its depth capacity");
         }
+    }
+
+    pub(crate) fn into_parts(self) -> (Tree, List<Node>) {
+        assert!(self.open.is_empty(), "all tree nodes are closed");
+        (self.tree, self.spare)
     }
 
     /// Hand over a tree only after every open node has been closed.
