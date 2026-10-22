@@ -1092,7 +1092,7 @@ pub fn real_refresh() {
     world.spawn(|| issuer(Transport::Tls, Story::Rotate, (Ipv4Addr::LOCALHOST, 0).into()));
     world.spawn(|| Process::Client(Box::new(Client::new(Story::Rotate, Transport::Tls))));
     let clock = skein_shell::Clock::new();
-    drop(world.run(&clock, Duration::from_secs(5)));
+    drop(world.run(&clock, Duration::from_secs(10)));
 }
 
 /// Replay compares shared kernel trace and content-free owner facts.

@@ -145,14 +145,14 @@ impl Connection {
                 .expect("create verified TLS client");
         let mut socket = None;
         for address in (host.as_str(), 443).to_socket_addrs().expect("resolve provider") {
-            if let Ok(connected) = TcpStream::connect_timeout(&address, Duration::from_secs(10)) {
+            if let Ok(connected) = TcpStream::connect_timeout(&address, Duration::from_secs(20)) {
                 socket = Some(connected);
                 break;
             }
         }
         let socket = socket.expect("connect to real provider on port 443");
-        socket.set_read_timeout(Some(Duration::from_secs(30))).expect("set socket read timeout");
-        socket.set_write_timeout(Some(Duration::from_secs(30))).expect("set socket write timeout");
+        socket.set_read_timeout(Some(Duration::from_secs(60))).expect("set socket read timeout");
+        socket.set_write_timeout(Some(Duration::from_secs(60))).expect("set socket write timeout");
         Self {
             machine,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },

@@ -50,7 +50,7 @@ class Capture(unittest.TestCase):
                             "--fonts", str(fonts), "--mockups", str(FIXTURE / "mockups"), "--page", str(page),
                             "--ready-seconds", "2", "--out", str(out)]
                     run = subprocess.run([*args, str(FIXTURE / "blank-scene.json"), str(FIXTURE / "scene.json")],
-                                         capture_output=True, timeout=40)
+                                         capture_output=True, timeout=80)
                     self.assertEqual(run.returncode, 0, run.stderr.decode())
                     self.assertEqual(select.select([listener], [], [], 0)[0], [], "capture reached the machine's loopback")
                 capture = record.check(canon.loads((out / "capture.json").read_bytes(), "look-capture/1"))
@@ -127,13 +127,13 @@ class Capture(unittest.TestCase):
                 bad.write_bytes(canonical.record_bytes(value))
                 badout = root / "bad-out"
                 badargs = args[:-1] + [str(badout)]
-                refused = subprocess.run([*badargs, str(bad)], capture_output=True, timeout=5)
+                refused = subprocess.run([*badargs, str(bad)], capture_output=True, timeout=10)
                 self.assertEqual(refused.returncode, 2, refused.stderr.decode())
                 self.assertIn(b"regions.0.name: reserved", refused.stderr)
                 self.assertIn(b"regions.1.page.selector", refused.stderr)
                 self.assertFalse(badout.exists())
                 repeated = subprocess.run([*badargs, str(FIXTURE / "scene.json"), str(FIXTURE / "scene.json")],
-                                          capture_output=True, timeout=5)
+                                          capture_output=True, timeout=10)
                 self.assertEqual(repeated.returncode, 2, repeated.stderr.decode())
                 self.assertIn(b"repeated scene name", repeated.stderr)
                 self.assertFalse(badout.exists())
@@ -146,7 +146,7 @@ class Capture(unittest.TestCase):
                                              page=dict(role="button", name="Absent", match="exact")))
                 solo.write_bytes(canonical.record_bytes(value))
                 solo_out = root / "solo-out"
-                solo_run = subprocess.run([*args[:-1], str(solo_out), str(solo)], capture_output=True, timeout=10)
+                solo_run = subprocess.run([*args[:-1], str(solo_out), str(solo)], capture_output=True, timeout=20)
                 self.assertEqual(solo_run.returncode, 0, solo_run.stderr.decode())
                 solo_width = record.check(canon.loads((solo_out / "capture.json").read_bytes(), "look-capture/1"))["scenes"][0]["widths"][0]
                 for key in ("mockup", "structure", "pair"):
@@ -163,14 +163,14 @@ class Capture(unittest.TestCase):
                 origin_args = args.copy()
                 origin_args[origin_args.index("--page") + 1] = str(bad_page)
                 origin_args[-1] = str(origin_out)
-                origin_run = subprocess.run([*origin_args, str(FIXTURE / "scene.json")], capture_output=True, timeout=10)
+                origin_run = subprocess.run([*origin_args, str(FIXTURE / "scene.json")], capture_output=True, timeout=20)
                 self.assertEqual(origin_run.returncode, 1, origin_run.stderr.decode())
                 self.assertIn(b"serve: origin:", origin_run.stderr)
                 self.assertTrue((origin_out / "browser.log").is_file())
                 self.assertFalse((origin_out / "capture.json").exists())
                 self.assertEqual(list(root.glob("*.scratch-*")), [])
                 failed = subprocess.run([*badargs[:2], "/bin/false", *badargs[3:], str(FIXTURE / "scene.json")],
-                                        capture_output=True, timeout=5)
+                                        capture_output=True, timeout=10)
                 self.assertEqual(failed.returncode, 1, failed.stderr.decode())
                 self.assertTrue((badout / "browser.log").is_file())
                 self.assertFalse((badout / "capture.json").exists())
@@ -180,11 +180,11 @@ class Capture(unittest.TestCase):
                     fonts.chmod(0o700)
         elapsed = time.monotonic() - start
         print(f"look capture story: {elapsed:.3f} s", flush=True)
-        self.assertLess(elapsed, 10, "capture story exceeds its 10 second budget")
+        self.assertLess(elapsed, 20, "capture story exceeds its 20 second budget")
 
     def fonts(self, source, destination):
         args = [str(PACKAGE / "look/fonts"), source, str(destination)]
-        run = subprocess.run(args, capture_output=True, timeout=5)
+        run = subprocess.run(args, capture_output=True, timeout=10)
         self.assertEqual(run.returncode, 0, run.stderr.decode())
         data = run.stdout
         value = canon.loads(data[:-1], None)
@@ -193,18 +193,18 @@ class Capture(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o500)
         for path in destination.iterdir():
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o400)
-        refused = subprocess.run(args, capture_output=True, timeout=5)
+        refused = subprocess.run(args, capture_output=True, timeout=10)
         self.assertEqual(refused.returncode, 2, refused.stderr.decode())
         self.assertIn(b"exists", refused.stderr)
         incomplete = destination.parent / "incomplete-fonts"
         incomplete.mkdir(mode=0o700)
         bad_destination = destination.parent / "bad-fonts"
         badargs = [str(PACKAGE / "look/fonts"), str(incomplete), str(bad_destination)]
-        missing = subprocess.run(badargs, capture_output=True, timeout=5)
+        missing = subprocess.run(badargs, capture_output=True, timeout=10)
         self.assertEqual(missing.returncode, 2, missing.stderr.decode())
         self.assertIn(b"required regular family face is missing", missing.stderr)
         self.assertFalse(bad_destination.exists())
         (incomplete / "DejaVuSans.ttf").symlink_to(destination / "DejaVuSans.ttf")
-        linked = subprocess.run(badargs, capture_output=True, timeout=5)
+        linked = subprocess.run(badargs, capture_output=True, timeout=10)
         self.assertEqual(linked.returncode, 2, linked.stderr.decode())
         self.assertFalse(bad_destination.exists())

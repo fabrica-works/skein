@@ -139,9 +139,9 @@ class Live(unittest.TestCase):
             try:
                 yield capture.Hand(endpoint, self.live_out, 2)
             finally:
-                with socket.create_connection(endpoint, timeout=2):
+                with socket.create_connection(endpoint, timeout=4):
                     pass
-                thread.join(timeout=3)
+                thread.join(timeout=6)
                 self.assertFalse(thread.is_alive())
                 self.assertEqual(errors, [])
 

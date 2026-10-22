@@ -880,9 +880,9 @@ impl Runtime {
         peers: &mut peers::Peers<'_, '_>,
     ) -> (Outcome, Vec<Kept>) {
         let start = self.clock.now().now;
-        let deadline = start.saturating_add(Duration::from_secs(20));
-        // Reserve io's close window inside the run's twenty-second horizon.
-        let close_at = start.saturating_add(Duration::from_secs(18));
+        let deadline = start.saturating_add(Duration::from_secs(40));
+        // Reserve io's close window inside the run's forty-second horizon.
+        let close_at = start.saturating_add(Duration::from_secs(36));
         let mut faces = Vec::new();
         let mut done = vec![false; people.len()];
         let mut began = false;

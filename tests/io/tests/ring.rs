@@ -120,7 +120,7 @@ fn group_story(story: skein_io_world::processes::Story) {
     let process = Process::new(root, program.as_os_str().as_bytes(), story, true);
     let mut world = skein_world::real::World::new(Judge::default());
     world.spawn_with_fds(vec![root], || process);
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     outcome.procs[0].check();
 }
 
@@ -158,7 +158,7 @@ fn an_append_stream_on_redirected_regular_output_preserves_every_byte_and_closes
     let fd = Fd::new(file.into_raw_fd());
     let mut world = skein_world::real::World::new(Judge);
     world.spawn_with_fds(vec![fd], || Writer::new(fd, Story::Close, Duration::from_secs(1)));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(std::fs::read(path).expect("the stream output"), CONTENTS);
     assert_eq!(outcome.procs[0].failures(), 0);
     assert_eq!(outcome.procs[0].events.last(), Some(&Evidence::Closed));
@@ -186,7 +186,7 @@ fn a_childs_cpu_and_peak_join_the_reaped_childrens_usage_at_close() {
     let program = std::path::Path::new(env!("CARGO_BIN_EXE_io_process_fixture"));
     let mut world = skein_world::real::World::new(Judge { simulated: false });
     world.spawn_with_fds(vec![root], || Process::new(root, program.as_os_str().as_bytes()));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     outcome.procs[0].check(false);
 }
 
@@ -265,7 +265,7 @@ fn private_files_created_and_replaced_over_the_ring_have_private_modes() {
         let user = skein_shell::effective_user();
         let mut world = skein_world::real::World::new(Judge);
         world.spawn_with_fds(vec![root], || PrivateOwner::new(root, story, user));
-        let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+        let outcome = world.run(&Clock::new(), Duration::from_secs(2));
         outcome.procs[0].check(user);
         if matches!(story, Story::Create | Story::Replace) {
             assert_eq!(std::fs::metadata(path.join("secret")).unwrap().permissions().mode() & 0o777, 0o700);
@@ -317,6 +317,6 @@ fn a_second_root_of_a_locked_directory_hears_busy_over_the_ring() {
     let second = skein_shell::open_root(scratch.path()).expect("second independent root");
     let mut world = skein_world::real::World::new(Judge::single());
     world.spawn_with_fds(vec![first, second], || Owner::pair(first, second));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.procs[0].heard, [Heard::Locked, Heard::Busy, Heard::Locked]);
 }

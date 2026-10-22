@@ -25,7 +25,7 @@ fn run(make: fn(&Spawn, &Inherited) -> Script, acts: &[Act]) -> real::CheckedOut
     world.host(HostedProgram { program: Box::from(&b"hosted"[..]), make, instances: 1, operations: 8 });
     let root = open_root(std::path::Path::new(".")).expect("startup root");
     world.spawn_with_fds(vec![root], || Script::parent(root, acts));
-    world.run(&Clock::new(), Duration::from_secs(1))
+    world.run(&Clock::new(), Duration::from_secs(2))
 }
 
 #[test]
@@ -132,7 +132,7 @@ impl skein_world::Referee<Script> for AllocatingJudge {
 fn referee_storage_is_excluded_from_process_accounting() {
     let mut world = real::World::new_controlled_checked(|_| AllocatingJudge { storage: Vec::new() });
     world.spawn(|| Script::new(&[]));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert!(outcome.heap.as_ref().expect("root checked")[0].0 < 64 * 1024);
     drop(outcome);
 }

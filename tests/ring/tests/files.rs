@@ -248,7 +248,7 @@ fn an_open_through_dot_dot_racing_renames_is_submitted_again() {
     }
     let mut closing = BTreeSet::new();
     let (mut opened, mut refused) = (0_u32, Vec::new());
-    let deadline = world.later(skein_lib::Duration::from_secs(30));
+    let deadline = world.later(skein_lib::Duration::from_secs(60));
     while !renaming.is_empty() || !opening.is_empty() || !closing.is_empty() {
         let racing = opened < OPENS && world.kernel.resubmitted() == 0 && refused.is_empty();
         world.turn(deadline);

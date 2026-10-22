@@ -75,7 +75,7 @@ class HandWalk(unittest.TestCase):
 
                         def invoke(entry, args, status=0, input=''):
                             run = subprocess.run([str(PACKAGE / 'hand' / entry), address, *args],
-                                                 input=input, text=True, capture_output=True, timeout=10)
+                                                 input=input, text=True, capture_output=True, timeout=20)
                             self.assertNotIn(SECRET, run.stdout + run.stderr)
                             self.assertEqual(run.returncode, status, run.stderr + run.stdout)
                             self.assertEqual(run.stderr, '')
@@ -101,14 +101,14 @@ class HandWalk(unittest.TestCase):
                             canary.listen()
                             refused = subprocess.run(
                                 [str(PACKAGE / 'hand/browse'), f'127.0.0.1:{canary.getsockname()[1]}',
-                                 'go', '//elsewhere/'], capture_output=True, text=True, timeout=5)
+                                 'go', '//elsewhere/'], capture_output=True, text=True, timeout=10)
                             self.assertNotIn(SECRET, refused.stdout + refused.stderr)
                             self.assertEqual(refused.returncode, 2)
                             self.assertEqual(refused.stdout, '')
                             self.assertIn('PATH must start with /, not //', refused.stderr)
                             self.assertEqual(select.select([canary], [], [], 0)[0], [], 'invalid go made a call')
                         process.terminate()
-                        self.assertEqual(process.wait(timeout=10), 0, stderr.read_text())
+                        self.assertEqual(process.wait(timeout=20), 0, stderr.read_text())
                         self.assertEqual(process.stdout.read(), b'')
                         self.assertNotIn(SECRET, stderr.read_text())
                         self.assertNotIn(SECRET, (out / 'trouble.jsonl').read_text())
@@ -116,15 +116,15 @@ class HandWalk(unittest.TestCase):
                         if process.poll() is None:
                             process.terminate()
                             try:
-                                process.wait(timeout=10)
+                                process.wait(timeout=20)
                             except subprocess.TimeoutExpired:
                                 process.kill()
-                                process.wait(timeout=5)
+                                process.wait(timeout=10)
                         process.stdout.close()
         finally:
             server.shutdown()
             server.server_close()
-            thread.join(timeout=5)
+            thread.join(timeout=10)
             self.assertFalse(thread.is_alive(), 'fixture origin did not stop')
         elapsed = time.monotonic() - start
         print(f'hand walk: {elapsed:.3f} s', flush=True)

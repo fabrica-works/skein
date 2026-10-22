@@ -22,7 +22,7 @@ fn harness(setup: &Setup<'_>, expected: Vec<Box<[u8]>>) -> Harness {
 pub fn panic(setup: &Setup<'_>, address: &[u8], failed: Find) -> Outcome {
     let mut script = Script::new(Box::new([
         Step::Person(PersonStep::Go { address: address.into() }),
-        Step::Person(PersonStep::See { find: failed, within: Duration::from_secs(3) }),
+        Step::Person(PersonStep::See { find: failed, within: Duration::from_secs(6) }),
     ]));
     harness(setup, vec![Box::from(&b"Uncaught"[..])]).run(&mut [&mut script])
 }
@@ -87,7 +87,7 @@ pub fn write_refused(setup: &Setup<'_>, address: &[u8], script: &mut dyn Play, a
     };
     let mut reading = Script::new(Box::new([
         Step::Person(PersonStep::Go { address: b"/".as_slice().into() }),
-        Step::Person(PersonStep::See { find: loaded, within: Duration::from_secs(5) }),
+        Step::Person(PersonStep::See { find: loaded, within: Duration::from_secs(10) }),
         Step::Person(PersonStep::Gone { find: absent, within: Duration::from_secs(1) }),
     ]));
     let mut reader = After { ready: done, person: &mut reading };
@@ -142,14 +142,14 @@ pub fn typing_while_patched(
     let mut checking = Field {
         script: Script::new(Box::new([Step::Person(PersonStep::See {
             find: arrives.clone(),
-            within: Duration::from_secs(5),
+            within: Duration::from_secs(10),
         })])),
         find: field.clone(),
         typed: false,
     };
     let mut first = Sequence {
         before: Script::new(Box::new([
-            Step::Person(PersonStep::See { find: loaded, within: Duration::from_secs(5) }),
+            Step::Person(PersonStep::See { find: loaded, within: Duration::from_secs(10) }),
             Step::Compose { find: field, words: b"ab".as_slice().into() },
             Step::Person(PersonStep::Gone { find: arrives, within: Duration::from_secs(1) }),
         ])),
@@ -169,7 +169,7 @@ pub struct Shown<'a> {
 /// The story awaits `loaded` before its first move.
 #[must_use]
 pub fn back_and_forward(setup: &Setup<'_>, first: Shown<'_>, second: Shown<'_>, loaded: Find) -> Outcome {
-    let see = |find| Step::Person(PersonStep::See { find, within: Duration::from_secs(5) });
+    let see = |find| Step::Person(PersonStep::See { find, within: Duration::from_secs(10) });
     let go = |address: &[u8]| Step::Person(PersonStep::Go { address: address.into() });
     let mut script = Script::new(Box::new([
         see(loaded),

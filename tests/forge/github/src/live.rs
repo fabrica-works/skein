@@ -372,9 +372,9 @@ impl Connector {
         }
         let wire = outgoing.wire(&host)?;
         let addr = (host.as_str(), 443).to_socket_addrs()?.next().ok_or("live host has no address")?;
-        let mut socket = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(30))?;
-        socket.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
-        socket.set_write_timeout(Some(std::time::Duration::from_secs(30)))?;
+        let mut socket = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(60))?;
+        socket.set_read_timeout(Some(std::time::Duration::from_secs(60)))?;
+        socket.set_write_timeout(Some(std::time::Duration::from_secs(60)))?;
         let limits = client::Limits { read: 16384, send: 16384, records: 131_072 };
         let env = Env { now: Time::ZERO, wall: skein_shell::Clock::new().now().wall, limits };
         let name = skein_tls::Name::new(&host).ok_or("invalid TLS server name")?;

@@ -65,7 +65,7 @@ class LookCase(unittest.TestCase):
             os.chmod(parent, 0o700)
         self.temp.cleanup()
 
-    def cli(self, argv, *, env=None, timeout=90, cwd=None):
+    def cli(self, argv, *, env=None, timeout=180, cwd=None):
         environment = dict(os.environ if env is None else env, TMPDIR=str(self.scratch_space))
         return subprocess.run([str(x) for x in argv], env=environment, cwd=cwd or ROOT,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -90,7 +90,7 @@ class LookCase(unittest.TestCase):
     def capture(self, values):
         self.require_native()
         paths = [self.write_scene(value) for value in values]
-        result = self.cli(self.capture_args(paths), timeout=120)
+        result = self.cli(self.capture_args(paths), timeout=240)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
         out = self.base / 'out'
         self.assertEqual(out.stat().st_mode & 0o777, 0o700)

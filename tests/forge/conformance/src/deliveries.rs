@@ -95,7 +95,7 @@ impl Listener {
     }
 }
 fn receive(mut stream: TcpStream, tx: &Sender<(Received, Reply)>) -> io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(20)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut head = Vec::new();
     loop {
@@ -157,7 +157,7 @@ struct Scenario<'a> {
 impl Scenario<'_> {
     #[expect(clippy::disallowed_types, reason = "the recorder probes real deliveries against a wall clock deadline")]
     fn take(&mut self, events: &[&str], probe: Option<&str>, status: u16) -> Result<()> {
-        let until = Instant::now() + Duration::from_secs(10);
+        let until = Instant::now() + Duration::from_secs(20);
         let mut missing = events.to_vec();
         let mut checking = None;
         while !missing.is_empty() {

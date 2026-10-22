@@ -55,7 +55,7 @@ class LiveCapture(unittest.TestCase):
                         address = ready.decode().removeprefix('listening ').strip()
                         def browse(*args, input=''):
                             run = subprocess.run([str(PACKAGE / 'hand/browse'), address, *args],
-                                                 input=input, text=True, capture_output=True, timeout=10)
+                                                 input=input, text=True, capture_output=True, timeout=20)
                             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                             return run.stdout
                         browse('go', '/sign-in.html')
@@ -79,7 +79,7 @@ class LiveCapture(unittest.TestCase):
                             str(PACKAGE / 'look/capture'), '--browser', browser, '--chromium', chromium,
                             '--fonts', fonts, '--mockups', str(mockups), '--live', address,
                             '--live-out', str(hand_out), '--ready-seconds', '2', '--out', str(out), str(scene_path)],
-                            capture_output=True, timeout=40)
+                            capture_output=True, timeout=80)
                         self.assertEqual(run.returncode, 0, run.stderr.decode())
                         captured = record.check(canon.loads((out / 'capture.json').read_bytes(), 'look-capture/1'))
                         widths = captured['scenes'][0]['widths']
@@ -105,21 +105,21 @@ class LiveCapture(unittest.TestCase):
                         self.assertEqual((shot.width, shot.height), (800, 600))
                         self.assertIn('text field "Title" = "typed draft" [focused]', browse('outline'))
                         judged = subprocess.run([str(PACKAGE / 'look/check'), 'structure', '--capture', str(out), str(scene_path)],
-                                                capture_output=True, timeout=5)
+                                                capture_output=True, timeout=10)
                         self.assertEqual(judged.returncode, 0, judged.stdout.decode() + judged.stderr.decode())
                         process.terminate()
-                        self.assertEqual(process.wait(timeout=10), 0, stderr.read_text())
+                        self.assertEqual(process.wait(timeout=20), 0, stderr.read_text())
                     finally:
                         if process.poll() is None:
                             process.terminate()
                             try:
-                                process.wait(timeout=10)
+                                process.wait(timeout=20)
                             except subprocess.TimeoutExpired:
                                 process.kill()
-                                process.wait(timeout=5)
+                                process.wait(timeout=10)
                         process.stdout.close()
         finally:
             server.shutdown()
             server.server_close()
-            thread.join(timeout=5)
+            thread.join(timeout=10)
             self.assertFalse(thread.is_alive())

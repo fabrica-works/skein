@@ -238,7 +238,7 @@ fn fixture(hosted: bool) -> RecordingParent {
     }
     let root = open_root(Path::new(".")).expect("startup root");
     world.spawn_with_fds(vec![root], || Proc::Parent(RecordingParent::new(root)));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     let Proc::Parent(parent) = outcome.procs.into_iter().next().expect("parent") else {
         panic!("first process is the parent")
     };
@@ -275,7 +275,7 @@ fn kill_closes_a_descriptor_returned_before_the_child_reaps_it() {
         world.spawn_with_fds(vec![root], || {
             Proc::Script(Script::parent(root, &[Act::Spawn, Act::Signal(Signal::Kill), Act::Read(1), Act::Wait]))
         });
-        let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+        let outcome = world.run(&Clock::new(), Duration::from_secs(2));
         assert_eq!(outcome.killed.len(), 1);
         assert_eq!(
             std::fs::read_dir("/proc/self/fd").expect("descriptor table").count(),
@@ -364,7 +364,7 @@ fn colliding_host_tokens_and_cancel_targets_return_with_their_original_identity(
         let (reader, writer) = skein_shell::open_signal_pipe().expect("a real empty pipe");
         world.spawn_with_fds(vec![reader, writer], || CancelReader::new(reader, writer));
     }
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     for host in outcome.procs {
         assert_eq!(host.answers.len(), 4);
         let read = host.answers.iter().find(|complete| complete.op == Token::new(1)).expect("original read token");

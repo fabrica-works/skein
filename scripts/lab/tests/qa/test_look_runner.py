@@ -50,7 +50,7 @@ class RunnerBrowserSeams(LookCase):
                                              env={'PATH': '/usr/bin:/bin'}, scan=[])])
 
     def runner(self, *args):
-        return self.cli([LAB / 'lab', *args], env=self.environment, timeout=90)
+        return self.cli([LAB / 'lab', *args], env=self.environment, timeout=180)
 
     def validate(self, browser='absent'):
         settings = copy.deepcopy(self.settings)

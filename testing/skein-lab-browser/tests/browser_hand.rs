@@ -47,7 +47,9 @@ impl Origin {
                 if stopping.load(Ordering::Relaxed) {
                     break;
                 }
-                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).expect("fixture browser conversation");
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+                    .expect("fixture browser conversation");
                 let mut request = String::new();
                 BufReader::new(&stream).read_line(&mut request).expect("fixture browser conversation");
                 let path = request
@@ -87,7 +89,7 @@ struct Client {
 impl Client {
     fn call(&mut self, call: &Value) -> Value {
         let mut stream = TcpStream::connect(self.address).expect("connect hand listener");
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).expect("fixture browser conversation");
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(20))).expect("fixture browser conversation");
         let mut bytes = json::encode(call);
         bytes.push(b'\n');
         stream.write_all(&bytes).expect("fixture browser conversation");
@@ -465,7 +467,7 @@ fn browser_hand() {
     assert_eq!(field(&client.simple("trouble"), "more"), &number(0));
     client.call(&object([("call", string("history")), ("to", string("back"))]));
     assert!(Command::new("/bin/kill").args(["-TERM", &child.0.id().to_string()]).status().unwrap().success());
-    let deadline = reader.now().saturating_add(Duration::from_secs(10));
+    let deadline = reader.now().saturating_add(Duration::from_secs(20));
     loop {
         if let Some(status) = child.0.try_wait().unwrap() {
             assert!(status.success(), "{status}; {}", reader.stderr());

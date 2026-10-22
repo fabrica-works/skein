@@ -722,14 +722,14 @@ temper's draft section 11.
   The pending-check fact approves the pull while its head workflow is still
   in progress, tests Merge as Protected, and tests raw enqueue as UNPROCESSABLE
   with the required-check prefix. No case posts commit statuses. The merge
-  case waits up to 90 seconds for the head's ci to pass, admits through Merge
-  as Queued, and polls the pull up to 150 seconds while the group's own ci
+  case waits up to 180 seconds (90 seconds before the user's doubling of 10-22, provisional) for the head's ci to pass, admits through Merge
+  as Queued, and polls the pull up to 300 seconds (150 seconds before the user's doubling of 10-22, provisional) while the group's own ci
   runs. REST omits merge_commit_sha and the dialect reads the merged commit
   through GQ. The dequeue case sends a SQUASH ruleset and creates two commits
   with passing messages, putting FAIL only in the pull title. It records the
   repository's squash title setting and the group commit's message. The group
   branch appears asynchronously after enqueue; the case polls its branch
-  listing at most thirteen times, five seconds apart (sixty seconds), and
+  listing at most twenty-five times, five seconds apart (120 seconds; sixty seconds before the user's doubling of 10-22, provisional), and
   records the number of reads. A listing with 100 or more branches fails the
   fact as queue branches listing full; an exhausted poll fails it as queue
   group branch absent. A setting other than COMMIT_OR_PR_TITLE, or a passing

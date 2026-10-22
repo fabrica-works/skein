@@ -35,7 +35,7 @@ fn a_large_transfer_takes_short_sends_and_many_receives() {
     let mut from = first_sent;
     let mut sending = None;
     let mut receiving = None;
-    let deadline = world.later(Duration::from_secs(60));
+    let deadline = world.later(Duration::from_secs(120));
     while received.len() < LEN {
         assert!(world.clock.now().now < deadline, "the transfer finished in time");
         if sending.is_none() && usize::try_from(from).unwrap() < LEN {

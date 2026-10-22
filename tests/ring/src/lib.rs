@@ -14,7 +14,7 @@ use skein_lib::{Duration, Queue, Time, Token};
 use skein_shell::{Clock, Config, Kernel, Wait};
 
 /// How long a test waits for any one completion before it fails.
-pub const PATIENCE: Duration = Duration::from_secs(10);
+pub const PATIENCE: Duration = Duration::from_secs(20);
 
 /// A kernel driven by hand: records go down one at a time, and every
 /// completion is checked as it comes up.
