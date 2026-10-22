@@ -381,9 +381,9 @@ is mechanical, and Codex reads what needs reading.
     at the next refresh, so each machine's sign-in is the user's. Keys
     and tokens that don't refresh (the GitHub SSH key, the GitHub probe
     fixtures) the director copies where a mission needs them, 0600 in a
-    0700 directory, never into a worktree or a log. It reads no
-    credential, record or `auth.json`, and never sends a browser's final
-    address;
+    0700 directory, never into a worktree or a log. It reads none of
+    them, no credential record and no `auth.json`, and never sends a
+    browser's final address;
   - the code graph indexes the primary checkouts only, never a
     worktree, and `index_repository` and `delete_project` are the
     director's alone.
