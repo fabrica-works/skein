@@ -139,7 +139,9 @@ use different directories. Validation reads only the captured output,
 selected receipt and its token-owned log, with no global queue queries.
 
 The summary uses nextest counts from the verified log bytes and total time
-from `elapsed_s`; a custom gate may have no nextest summaries. Missing time
+from `elapsed_s`, measured from payload start to payload end. Queue wait,
+drain, settling and release time remain separate phase events; a custom
+gate may have no nextest summaries. Missing time
 cannot become a `? s` success. Post-run policy validation still precedes the
 cache write. Exact-tree and documentation-only reuse require the new cache
 format and matching policy; legitimate cached evidence needs no new heavy

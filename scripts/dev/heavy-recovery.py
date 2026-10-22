@@ -372,7 +372,7 @@ def publish_receipt(ledger, task):
                'policy': task['policy'], 'args': task['args'], 'outcome': task.get('outcome', 'refused'),
                'code': task['code'], 'payload_started': bool(task.get('payload_started')),
                'payload_ended': bool(task.get('payload_ended')), 'release_complete': True,
-               'cgroup_empty': True, 'elapsed_s': max(0.0, task['ended'] - task['submitted']),
+               'cgroup_empty': True, 'elapsed_s': max(0.0, task.get('payload_ended', 0) - task.get('payload_started', 0)) if task.get('payload_ended') else 0.0,
                'log': task['log'], 'log_sha256': digest}
     fault('receipt_ready', task['token'])
     atomic(path, receipt)
