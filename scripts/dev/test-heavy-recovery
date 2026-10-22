@@ -379,6 +379,29 @@ def configured_kache(lab):
     lab.done(child, 2)
     assert not marker.exists() and not lab.event('configured-cache', 'scope_enter')
     assert lab.event('configured-cache', 'refusal')
+    assert 'selected Cargo wrapper requires the shared kache.service' in (lab.path / 'configured-cache.client.txt').read_text()
+    lab.env['RUSTC_WRAPPER'] = ''
+    lab.done(lab.start('empty-dedicated', gate=True))
+    lab.env.pop('RUSTC_WRAPPER')
+    lab.env['CARGO_BUILD_RUSTC_WRAPPER'] = '/bin/true'
+    lab.done(lab.start('generic-override', gate=True))
+    lab.env.pop('CARGO_BUILD_RUSTC_WRAPPER')
+    nearer = lab.path / '.cargo'
+    nearer.mkdir()
+    (nearer / 'config.toml').write_text('[build]\nrustc-wrapper = "/bin/true"\n')
+    lab.done(lab.start('nearer-wrapper', gate=True))
+    # The legacy filename wins over config.toml at the same depth.
+    (nearer / 'config').write_text('[env]\nRUSTC_WRAPPER = {value="", force=true}\n')
+    lab.env['RUSTC_WRAPPER'] = 'kache'
+    lab.done(lab.start('forced-empty', gate=True))
+    (nearer / 'config').write_text('[env]\nRUSTC_WRAPPER = {value="fixture-bin/kache", force=true, relative=true}\n')
+    lab.done(lab.start('forced-relative', gate=True), 2)
+    lab.env['RUSTC_WRAPPER'] = ''
+    (nearer / 'config').write_text('[env]\nRUSTC_WRAPPER = "kache"\n')
+    lab.done(lab.start('unforced-masked', gate=True))
+    (nearer / 'config').write_text('[build]\nrustc-workspace-wrapper = "kache"\n')
+    lab.done(lab.start('independent-workspace', gate=True), 2)
+    (nearer / 'config').unlink()
     lab.env['PATH'] = previous
     lab.done(lab.start('progress'))
 

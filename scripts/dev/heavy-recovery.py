@@ -538,27 +538,56 @@ def safe_environment():
 
 
 def selects_kache():
-    # Cargo may select a wrapper through config even when no wrapper variable
-    # is exported. Inspect only wrapper selections, never credential files.
+    # Resolve the two independent Cargo wrapper slots in increasing config
+    # precedence, then apply [env] and dedicated/generic environment overrides.
     names = ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER',
              'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER')
-    selected = [os.environ.get(name, '') for name in names]
-    cargo_home = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo')))
-    directories = [cargo_home, *(parent / '.cargo' for parent in (Path.cwd(), *Path.cwd().parents))]
+    cargo_home = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo'))).resolve()
+    directories = [cargo_home, *(parent / '.cargo' for parent in reversed((Path.cwd(), *Path.cwd().parents)))]
+    build, settings, origins, seen = {}, {}, {}, set()
     for directory in directories:
         path = directory / 'config'
         if not path.is_file():
             path = directory / 'config.toml'
-        if not path.is_file():
+        if not path.is_file() or path.resolve() in seen:
             continue
+        seen.add(path.resolve())
         with path.open('rb') as source:
             config = tomllib.load(source)
-        build = config.get('build', {})
-        selected.extend(build.get(name, '') for name in ('rustc-wrapper', 'rustc-workspace-wrapper'))
+        if 'include' in config:
+            raise Refusal('Cargo configuration includes are outside the declared policy')
+        for field in ('rustc-wrapper', 'rustc-workspace-wrapper'):
+            if field in config.get('build', {}):
+                build[field] = config['build'][field]
+                origins[field] = directory.parent
         for name in names:
-            value = config.get('env', {}).get(name, '')
-            selected.append(value.get('value', '') if isinstance(value, dict) else value)
-    return any(isinstance(value, str) and 'kache' in value for value in selected)
+            if name in config.get('env', {}):
+                value = config['env'][name]
+                if isinstance(value, dict) and isinstance(settings.get(name), dict):
+                    settings[name].update(value)
+                else:
+                    settings[name] = value
+                origins[name] = directory.parent
+    environment = dict(os.environ)
+    for name, value in settings.items():
+        value = {'value': value} if isinstance(value, str) else value
+        if name not in environment or value.get('force', False):
+            setting = value['value']
+            if value.get('relative', False):
+                setting = str((origins[name] / setting).resolve())
+            environment[name] = setting
+    for field, dedicated in (('rustc-wrapper', 'RUSTC_WRAPPER'),
+                             ('rustc-workspace-wrapper', 'RUSTC_WORKSPACE_WRAPPER')):
+        generic = 'CARGO_BUILD_' + field.upper().replace('-', '_')
+        value = environment.get(dedicated, environment.get(generic, build.get(field, '')))
+        if not value:
+            continue
+        base = Path.cwd() if dedicated in environment or generic in environment else origins[field]
+        command = str(base / value) if '/' in value and not Path(value).is_absolute() else value
+        resolved = shutil.which(command, path=environment.get('PATH'))
+        if Path(value).name == 'kache' or (resolved and Path(resolved).resolve().name == 'kache'):
+            return True
+    return False
 
 
 def environment_file(path, env):
@@ -675,6 +704,8 @@ def submit(args, lane, tail_lines):
         if task['state'] == 'released' and (BASE / 'receipts' / (token + '.json')).is_file():
             break
         time.sleep(0.1)
+    if task.get('refusal'):
+        print('heavy: ' + task['refusal'], file=sys.stderr, flush=True)
     lines = Path(task['log']).read_text(errors='replace').splitlines()
     if len(lines) > tail_lines:
         print(f"heavy: … {len(lines) - tail_lines} earlier lines in {task['log']}")
@@ -741,7 +772,8 @@ def wrapper(token):
                 if selects_kache() and run(
                         ['systemctl', '--user', 'is-active', '--quiet', 'kache.service']).returncode:
                     task['state'], task['code'] = 'finishing', 2
-                    ledger.event(task, 'refusal', reason='shared kache service is not active')
+                    task['refusal'] = 'selected Cargo wrapper requires the shared kache.service; start that service or deliberately disable the selected wrapper'
+                    ledger.event(task, 'refusal', reason=task['refusal'])
                     ledger.save()
                     continue
                 task['state'] = 'launching'
