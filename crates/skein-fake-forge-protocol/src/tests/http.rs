@@ -148,7 +148,7 @@ fn a_merge_answers_200_with_no_body() {
     h.ask(
         b"POST",
         b"/api/v1/repos/org/repo/pulls/1/merge",
-        b"{\"Do\":\"squash\",\"head_commit_id\":\"0000000000000002000000000000000000000000\"}",
+        b"{\"Do\":\"squash\",\"head_commit_id\":\"975835de1c9756ce000000000000000200000000\"}",
     );
     assert_eq!(h.status(), 200);
     assert!(h.body().is_empty());
@@ -236,7 +236,7 @@ fn a_pull_with_nothing_to_merge_is_opened_201() {
 fn a_ci_status_has_no_creator_and_a_link_relative_to_the_origin() {
     let mut h = Harness::new(fixtures::config());
     assert_eq!(h.push(b"work"), 2);
-    h.ask(b"GET", b"/api/v1/repos/org/repo/commits/0000000000000002000000000000000000000000/status", b"");
+    h.ask(b"GET", b"/api/v1/repos/org/repo/commits/975835de1c9756ce000000000000000200000000/status", b"");
     assert_eq!(h.status(), 200);
     let body = h.body();
     assert!(bytes::find(&body, b"\"creator\":null").is_some());

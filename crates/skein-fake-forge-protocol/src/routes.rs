@@ -13,27 +13,22 @@ use skein_lib::{Decimal, List, Time, Wall, Writer};
 #[must_use]
 pub fn object(commit: u64) -> ObjectId {
     let mut bytes = [0; 32];
-    for (out, byte) in bytes.iter_mut().zip(commit.to_be_bytes()) {
+    for (out, byte) in bytes.iter_mut().zip(skein_fake_forge_domain::object_bytes(commit)) {
         *out = byte;
     }
     ObjectId { format: ObjectFormat::Sha1, bytes }
 }
-/// Only the first eight bytes may carry the fake's count.
+/// Only the shared SHA-1 spelling names a fake commit.
 #[must_use]
 pub fn commit(id: &ObjectId) -> Option<u64> {
     if id.format != ObjectFormat::Sha1 {
         return None;
     }
-    for byte in id.bytes.get(8..)? {
-        if *byte != 0 {
-            return None;
-        }
-    }
     let mut count = 0u64;
-    for byte in id.bytes.get(..8)? {
+    for byte in id.bytes.get(8..16)? {
         count = count.checked_mul(256)?.checked_add(u64::from(*byte))?;
     }
-    Some(count)
+    if object(count) == *id { Some(count) } else { None }
 }
 #[must_use]
 pub fn user(config: &Config, id: u64) -> d::User {

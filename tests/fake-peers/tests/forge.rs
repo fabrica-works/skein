@@ -282,7 +282,7 @@ fn a_setup_grant_lets_a_forbidden_bot_write_over_loopback() {
     let token = b"bot-token";
     store.token(bot, b"bot", &[b"all"], skein_lib::Secret::new(fixtures::boxed(token)));
     let target = "/api/v1/repos/org/repo/branches";
-    let body = br#"{"new_branch_name":"bot-work","old_ref_name":"0000000000000001000000000000000000000000"}"#;
+    let body = br#"{"new_branch_name":"bot-work","old_ref_name":"910a2dec89025cc1000000000000000100000000"}"#;
     let refused = world.exchange("POST", target, token, body);
     assert!(refused.starts_with(b"HTTP/1.1 403"), "{}", String::from_utf8_lossy(&refused));
     let granted = world.exchange(

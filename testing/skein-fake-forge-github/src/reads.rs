@@ -280,14 +280,9 @@ pub(crate) fn full(row: &Row) -> Option<Box<[u8]>> {
     let owner = service::joined(&row.owner, b"/")?;
     service::joined(&owner, &row.name)
 }
-// fake-forge.md, 4: the first eight bytes hold the domain count, big-endian;
-// the rest of the SHA-1 is zero. This spelling is shared with the Forgejo face.
+// fake-forge.md, 4: both faces share the domain's SHA-1 spelling.
 fn object(commit: u64) -> ObjectId {
-    let mut bytes = [0; 32];
-    for (out, byte) in bytes.iter_mut().zip(commit.to_be_bytes()) {
-        *out = byte;
-    }
-    ObjectId { format: ObjectFormat::Sha1, bytes }
+    skein_fake_forge_protocol::routes::object(commit)
 }
 pub(crate) fn commit(count: u64) -> api::Commit {
     object(count).bytes
@@ -302,9 +297,7 @@ fn optional_commit(value: Option<u64>) -> Option<api::Commit> {
     }
 }
 pub(crate) fn count(value: &api::Commit) -> Option<u64> {
-    let first = value.get(..8)?.try_into().ok()?;
-    let count = u64::from_be_bytes(first);
-    if commit(count) == *value { Some(count) } else { None }
+    skein_fake_forge_protocol::routes::commit(&ObjectId { format: ObjectFormat::Sha1, bytes: *value })
 }
 
 pub(crate) fn finish(

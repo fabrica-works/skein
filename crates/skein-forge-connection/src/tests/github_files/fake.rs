@@ -252,7 +252,7 @@ fn encode(response: service::Response) -> Box<[u8]> {
 
 pub(super) fn object(value: u64) -> skein_forge::api::Commit {
     let mut commit = [0; 32];
-    for (out, byte) in commit.iter_mut().zip(value.to_be_bytes()) {
+    for (out, byte) in commit.iter_mut().zip(domain::object_bytes(value)) {
         *out = byte;
     }
     commit

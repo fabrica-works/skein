@@ -56,6 +56,7 @@ mod hooks;
 mod issues;
 mod limits;
 mod next;
+mod object;
 mod observe;
 pub mod promises;
 mod pulls;
@@ -73,6 +74,7 @@ pub use domain::{Config, Domain, MAX_OUT, Metadata, Room, Skew, Tally, fire, ste
 pub use faults::{Rate, RateDenied, RateKey, rate};
 pub use git::{Object, Tree};
 pub use limits::{Limits, worst_case};
+pub use object::object_bytes;
 pub use observe::{Branches, Observation, Operation};
 pub use scenario::{
     advance, check, commit, commit_tree, grant, merge_commit, repository, set_failing, set_reachable, set_refusing,

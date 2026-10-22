@@ -10,12 +10,12 @@ const END: &[u8] = b" -->\n";
 #[must_use]
 pub fn commit(number: u64) -> client::Commit {
     let mut id = [0; 32];
-    id[..8].copy_from_slice(&number.to_be_bytes());
+    id[..20].copy_from_slice(&skein_fake_forge_domain::object_bytes(number));
     id
 }
 fn number(id: client::Commit) -> u64 {
     let mut bytes = [0; 8];
-    bytes.copy_from_slice(&id[..8]);
+    bytes.copy_from_slice(&id[8..16]);
     u64::from_be_bytes(bytes)
 }
 #[must_use]

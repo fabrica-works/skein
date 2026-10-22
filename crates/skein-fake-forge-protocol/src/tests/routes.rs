@@ -216,21 +216,48 @@ fn each_write_route_names_one_domain_write() {
 }
 
 #[test]
-fn commit_counts_have_only_the_first_eight_bytes_in_sha1() {
+fn commit_counts_round_trip_in_the_shared_sha1_spelling() {
     for (count, hex) in [
-        (0, b"0000000000000000000000000000000000000000"),
-        (1, b"0000000000000001000000000000000000000000"),
-        (u64::MAX, b"ffffffffffffffff000000000000000000000000"),
+        (0, b"e220a8397b1dcdaf000000000000000000000000"),
+        (1, b"910a2dec89025cc1000000000000000100000000"),
+        (2, b"975835de1c9756ce000000000000000200000000"),
+        (u64::MAX, b"e4d971771b652c20ffffffffffffffff00000000"),
     ] {
         let object = routes::object(count);
         assert_eq!(&*skein_forge::forgejo::id::write(&object), hex, "{count}");
+        assert_eq!(object.bytes.get(16..), Some([0; 16].as_slice()), "{count}");
         assert_eq!(routes::commit(&object), Some(count), "{count}");
     }
-    for byte in 8..32 {
+}
+
+#[test]
+fn count_zero_has_a_nonzero_id() {
+    assert_ne!(routes::object(0).bytes, [0; 32]);
+}
+
+#[test]
+fn the_first_256_counts_have_distinct_nonzero_short_forms() {
+    let mut short_forms = alloc::collections::BTreeSet::new();
+    for count in 0..=255 {
+        let hex = skein_forge::forgejo::id::write(&routes::object(count));
+        let short = hex.get(..7).expect("SHA-1 short form");
+        assert_ne!(short, b"0000000", "{count}");
+        assert!(short_forms.insert(skein_lib::bytes::copy_of(short)), "duplicate short form for {count}");
+    }
+    assert_eq!(short_forms.len(), 256);
+}
+
+#[test]
+fn a_changed_mix_count_or_tail_names_no_commit() {
+    for byte in 0..32 {
         let mut object = routes::object(1);
-        *object.bytes.get_mut(byte).expect("tail") = 1;
+        *object.bytes.get_mut(byte).expect("object byte") ^= 1;
         assert_eq!(routes::commit(&object), None, "byte {byte}");
     }
+}
+
+#[test]
+fn sha256_names_no_commit() {
     let mut object = routes::object(1);
     object.format = skein_forge::forgejo::id::ObjectFormat::Sha256;
     assert_eq!(routes::commit(&object), None, "sha256");

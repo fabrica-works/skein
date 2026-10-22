@@ -448,7 +448,7 @@ impl World {
         message: &str,
         files: Vec<a::File>,
     ) -> Result<String> {
-        let parent = u64::from_str_radix(parent.get(..16).ok_or("invalid fixture sha")?, 16)?;
+        let parent = u64::from_str_radix(parent.get(16..32).ok_or("invalid fixture sha")?, 16)?;
         let mut f = self.forge.borrow_mut();
         let config = f.config;
         let commit =
@@ -456,7 +456,10 @@ impl World {
                 .map_err(|_| "fixture commit refused")?;
         drop(f);
         self.call(repo, BOT, a::Op::Git(a::Git::Push { branch: boxed(branch.as_bytes()), commit, expected: None }))?;
-        Ok(format!("{commit:016x}000000000000000000000000"))
+        let mut bytes = [0; 32];
+        bytes[..20].copy_from_slice(&domain::object_bytes(commit));
+        let hex = skein_forge::github::id::write_commit(&bytes).ok_or("invalid fixture sha")?;
+        Ok(String::from_utf8(hex.to_vec())?)
     }
     pub fn fixtures() -> Result<Fixtures> {
         let key = fake::keys::KEYS[0].to_vec();

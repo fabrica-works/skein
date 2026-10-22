@@ -30,8 +30,7 @@ impl Group {
     }
 }
 
-/// fake-forge.md, 4: SHA-1 prints the big-endian count followed by twelve
-/// zero bytes, as the GitHub face's `reads::commit` does.
+/// fake-forge.md, 10.2: the branch names the head in the shared SHA-1 spelling.
 fn branch(base: &[u8], entry: QueueEntry, limit: u32) -> Result<Box<[u8]>, Error> {
     let number = Decimal::of(entry.number);
     let size = b"gh-readonly-queue/".len().checked_add(base.len()).ok_or(Error::TooLarge)?;
@@ -45,7 +44,7 @@ fn branch(base: &[u8], entry: QueueEntry, limit: u32) -> Result<Box<[u8]>, Error
     for part in [b"gh-readonly-queue/".as_slice(), base, b"/pr-", number.as_bytes(), b"-"] {
         out.put(part).expect("measured group branch");
     }
-    for byte in entry.head.to_be_bytes().into_iter().chain([0; 12]) {
+    for byte in crate::object_bytes(entry.head) {
         for nibble in [byte.checked_shr(4).expect("four-bit shift"), byte & 15] {
             let digit =
                 if nibble < 10 { b'0'.saturating_add(nibble) } else { b'a'.saturating_add(nibble.saturating_sub(10)) };

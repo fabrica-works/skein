@@ -302,8 +302,9 @@ domain, and holds no clock of its own.
   Forgejo answers with what it made or changed (an issue, a pull request,
   a comment, a review, an edited issue, a status, a branch) makes one call
   more, the domain's read of that, on the same request. A commit is a
-  40-digit SHA-1 id with the domain's count big-endian in its first eight
-  bytes and zeros after; any other id names none.
+  40-digit SHA-1 id: SplitMix64's finalizer of the domain's count, then the
+  count, each eight bytes big-endian, then four zero bytes; any other id
+  names none.
 - **Credentials.** The header is `Authorization: token <value>`; an unknown
   token is `401`. Tokens stay in this layer: no domain call, observation or
   tally holds one. The tally counts requests at the entrance: total, by route
@@ -992,9 +993,10 @@ These are small, and they land after forge-kit's steps on the fakes:
 - **The merge queue.** `Write::Enqueue { number, head }` refuses a moved
   head, as a merge does. An entry's group commit is the squash of its
   head onto the base's tip, or onto the entry ahead of it. That commit
-  becomes the head of `gh-readonly-queue/<base>/pr-<n>-<head>`, so the
-  domain's CI runs on it as on any head. Every queue group is modelled as
-  a squash, regardless of merge_method. Its message follows
+  becomes the head of `gh-readonly-queue/<base>/pr-<n>-<head>`, with `<head>`
+  in section 4's SHA-1 spelling, so the domain's CI runs on it as on any head.
+  Every queue group is modelled as a squash, regardless of merge_method.
+  Its message follows
   COMMIT_OR_PR_TITLE: one commit relative to the pull's base uses that
   commit's message, more than one uses the pull's title. The GitHub
   repository response advertises squash_merge_commit_title as

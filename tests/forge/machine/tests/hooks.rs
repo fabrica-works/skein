@@ -22,7 +22,7 @@ fn a_signed_push_is_answered_204_before_its_hint_goes_up() {
         hinted.hint.change,
         Change::BranchMoved {
             branch: bytes::copy_of(b"main"),
-            head: [0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            head: skein_fake_forge_protocol::routes::object(7).bytes,
             actor: 2
         }
     );

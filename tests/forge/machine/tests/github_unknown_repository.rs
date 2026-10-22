@@ -56,8 +56,7 @@ fn repository_is_found_on_the_second_installation() {
     let mut w = world(&[RESOLVE, RESOLVE, BRANCH]);
     w.call(1, REPO, Op::Read(Read::Branch { branch: Box::from(b"main".as_slice()) }));
     w.run_for(SECOND);
-    let mut commit = [0; 32];
-    commit[..8].copy_from_slice(&1_u64.to_be_bytes());
+    let commit = skein_fake_forge_protocol::routes::object(1).bytes;
     value(&w, 3, &Ok(Value::Commit(commit)));
     assert_eq!(w.requests().len(), START_REQUESTS + 3);
     assert!(w.script_done());

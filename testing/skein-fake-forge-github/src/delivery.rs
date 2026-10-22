@@ -527,7 +527,10 @@ impl crate::Service {
             Change::Push => Delivery::Push {
                 repository,
                 branch: branch.clone().ok_or(Problem::Config)?,
-                after: crate::reads::commit(commit.unwrap_or(0)),
+                after: match commit {
+                    Some(count) => crate::reads::commit(*count),
+                    None => [0; 32],
+                },
                 deleted: commit.is_none(),
                 sender: by.ok_or(Problem::Config)?,
             },

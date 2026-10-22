@@ -1,5 +1,5 @@
 use super::fixtures::{self, Harness, boxed};
-use crate::{Service, delivery};
+use crate::{Service, delivery, routes};
 use skein_fake_forge_domain::{
     self as domain,
     api::{Change, Check, Ended, JobRef},
@@ -7,23 +7,18 @@ use skein_fake_forge_domain::{
 use skein_forge::forgejo::{
     delivery::{Delivery, JobEnd, RefType},
     document::Body,
-    id::{ObjectFormat, ObjectId},
     request::ReviewEvent,
 };
 use skein_lib::Secret;
 const REPOSITORY: u64 = 2;
 const ITEM: u64 = 3;
-const COMMIT_SEVEN: ObjectId = ObjectId {
-    format: ObjectFormat::Sha1,
-    bytes: [0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-};
 fn decoded(post: &delivery::Post) -> Result<Delivery, skein_forge::forgejo::decode::Malformed> {
     fixtures::deliver(fixtures::delivery_event(post), &post.body, &fixtures::limits().documents)
 }
 
-const PUSH_BODY: &[u8] = br#"{"repository":{"id":2},"ref":"refs/heads/main","after":"0000000000000007000000000000000000000000","pusher":{"id":2}}"#;
+const PUSH_BODY: &[u8] = br#"{"repository":{"id":2},"ref":"refs/heads/main","after":"63cbe1e459320dd7000000000000000700000000","pusher":{"id":2}}"#;
 // openssl dgst -sha256 -hmac fixture-hook-secret, over PUSH_BODY with no newline.
-const PUSH_HEAD: &[u8] = b"POST /hooks/1 HTTP/1.1\r\nHost: 127.0.0.1:7200\r\nContent-Type: application/json\r\nContent-Length: 116\r\nX-Forgejo-Event: push\r\nX-Forgejo-Signature: 59d76cdeaea4277b5fe9055ba0c6f03f8c3ce07dfc2e298df9d624cce4c99df3\r\n\r\n";
+const PUSH_HEAD: &[u8] = b"POST /hooks/1 HTTP/1.1\r\nHost: 127.0.0.1:7200\r\nContent-Type: application/json\r\nContent-Length: 116\r\nX-Forgejo-Event: push\r\nX-Forgejo-Signature: e9688af42c3f662a0f3a6fb23533ee787529adec729a21cac826a3886e52e81d\r\n\r\n";
 
 fn hook(change: Change) -> domain::Request {
     domain::Request::Hook {
@@ -61,7 +56,7 @@ fn a_push_hook_is_delivered_as_one_signed_post_to_the_forges_path() {
         Ok(Delivery::Push {
             repository: REPOSITORY,
             reference: boxed(b"refs/heads/main"),
-            after: COMMIT_SEVEN,
+            after: routes::object(7),
             pusher: fixtures::PERSON
         })
     );
@@ -81,12 +76,12 @@ fn a_jobs_end_is_delivered_naming_its_commit() {
     let post = delivered(Change::Job);
     assert_eq!(
         &*post.body,
-        br#"{"run":{"repository":{"id":2},"commit_sha":"0000000000000007000000000000000000000000"}}"#
+        br#"{"run":{"repository":{"id":2},"commit_sha":"63cbe1e459320dd7000000000000000700000000"}}"#
     );
     assert_eq!(fixtures::delivery_event(&post), b"workflow_job_success");
     assert_eq!(
         decoded(&post),
-        Ok(Delivery::Job { end: JobEnd::Success, repository: REPOSITORY, commit: COMMIT_SEVEN })
+        Ok(Delivery::Job { end: JobEnd::Success, repository: REPOSITORY, commit: routes::object(7) })
     );
 }
 #[test]
@@ -100,7 +95,7 @@ fn a_failed_jobs_end_is_delivered_under_its_failure_event() {
     assert_eq!(fixtures::delivery_event(&post), b"workflow_job_failure");
     assert_eq!(
         decoded(&post),
-        Ok(Delivery::Job { end: JobEnd::Failure, repository: REPOSITORY, commit: COMMIT_SEVEN })
+        Ok(Delivery::Job { end: JobEnd::Failure, repository: REPOSITORY, commit: routes::object(7) })
     );
 }
 #[test]
@@ -178,18 +173,15 @@ fn a_domain_push_is_delivered_signed_to_the_world() {
     assert_eq!(harness.push(b"work"), 2);
     harness.run();
     let post = harness.delivered(b"push");
-    assert_eq!(&*post.body, br#"{"repository":{"id":2},"ref":"refs/heads/work","after":"0000000000000002000000000000000000000000","pusher":{"id":2}}"#);
+    assert_eq!(&*post.body, br#"{"repository":{"id":2},"ref":"refs/heads/work","after":"975835de1c9756ce000000000000000200000000","pusher":{"id":2}}"#);
     // openssl dgst -sha256 -hmac fixture-hook-secret, over the literal body above.
-    assert_eq!(&*post.head, b"POST /hooks/1 HTTP/1.1\r\nHost: 127.0.0.1:7200\r\nContent-Type: application/json\r\nContent-Length: 116\r\nX-Forgejo-Event: push\r\nX-Forgejo-Signature: 50992968a6fe1ac343d9d06a2300294cd5f968a95ebae27937467d665827fd90\r\n\r\n");
+    assert_eq!(&*post.head, b"POST /hooks/1 HTTP/1.1\r\nHost: 127.0.0.1:7200\r\nContent-Type: application/json\r\nContent-Length: 116\r\nX-Forgejo-Event: push\r\nX-Forgejo-Signature: 06e31c2c9354abfe7f536887dcaba9d19dc45d35781513c32b90c31fa249c6b8\r\n\r\n");
     assert_eq!(
         decoded(post),
         Ok(Delivery::Push {
             repository: REPOSITORY,
             reference: boxed(b"refs/heads/work"),
-            after: ObjectId {
-                format: ObjectFormat::Sha1,
-                bytes: [0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            },
+            after: routes::object(2),
             pusher: fixtures::PERSON
         })
     );
@@ -207,7 +199,7 @@ fn service_refuses_limits_without_a_worst_case() {
 fn a_signature_holds_for_its_body_only() {
     let post = delivered(Change::Push);
     let secret = Secret::new(boxed(fixtures::FIXTURE_SECRET));
-    let signature = *b"59d76cdeaea4277b5fe9055ba0c6f03f8c3ce07dfc2e298df9d624cce4c99df3";
+    let signature = *b"e9688af42c3f662a0f3a6fb23533ee787529adec729a21cac826a3886e52e81d";
     assert_eq!(delivery::sign(&secret, &post.body), signature);
     assert_ne!(delivery::sign(&secret, b"{}"), signature);
 }

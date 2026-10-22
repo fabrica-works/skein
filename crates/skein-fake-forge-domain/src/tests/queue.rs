@@ -125,7 +125,7 @@ fn one_entry_lands_at_its_group_and_deletes_branch() {
     let mut h = queue_harness(false);
     let (number, head, group) = admit(&mut h, b"alice", &[(b"src", b"one")]);
     let branch = group_branch(&h, group);
-    assert_eq!(branch.as_ref(), b"gh-readonly-queue/main/pr-1-0000000000000002000000000000000000000000");
+    assert_eq!(branch.as_ref(), b"gh-readonly-queue/main/pr-1-975835de1c9756ce000000000000000200000000");
     assert_eq!(h.domain.object(group).unwrap().parent, Some(FIRST));
     assert_ne!(group, head);
     h.settle();

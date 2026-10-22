@@ -63,8 +63,7 @@ fn github_locate_fills_the_repository_owner_row() {
     located(&mut w);
     w.call(2, REPO, branch());
     w.run_for(SECOND);
-    let mut commit = [0; 32];
-    commit[..8].copy_from_slice(&1_u64.to_be_bytes());
+    let commit = skein_fake_forge_protocol::routes::object(1).bytes;
     value(&w, 2, 1, &Ok(Value::Commit(commit)));
     assert_eq!(w.requests().len(), START + 2);
     assert!(w.script_done());
@@ -231,8 +230,7 @@ fn call_token_401_renews_without_replaying_the_call() {
     assert_eq!(w.git_tokens().len(), 2);
     w.call(3, REPO, branch());
     w.run_for(SECOND);
-    let mut commit = [0; 32];
-    commit[..8].copy_from_slice(&1_u64.to_be_bytes());
+    let commit = skein_fake_forge_protocol::routes::object(1).bytes;
     value(&w, 3, 1, &Ok(Value::Commit(commit)));
     assert_eq!(w.requests().len(), START + 5);
     assert!(w.script_done());
@@ -262,8 +260,7 @@ fn renewal_preserves_calls_until_old_full_expires() {
     assert_eq!(w.requests().len(), START + 2, "renewal has answered with a wait");
     w.call(2, REPO, branch());
     w.advance_to(due);
-    let mut commit = [0; 32];
-    commit[..8].copy_from_slice(&1_u64.to_be_bytes());
+    let commit = skein_fake_forge_protocol::routes::object(1).bytes;
     value(&w, 2, 1, &Ok(Value::Commit(commit)));
     // A later retry starts just before expiry; hold its response within its deadline.
     w.pause(Pause::Reading(0));

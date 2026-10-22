@@ -138,8 +138,7 @@ fn review_documents_keep_the_head_verdict_and_official_flag() {
                 id: 8,
                 user: d::User { id: 2, login: boxed(b"person"), is_admin: false, full_name: Box::from([]) },
                 state: expected,
-                commit_id: skein_forge::forgejo::id::read(b"0000000000000007000000000000000000000000")
-                    .expect("literal"),
+                commit_id: routes::object(7),
                 body: d::Body::Kept(boxed(b"review")),
                 submitted_at: Some(Wall::from_nanos(1_000_000_000)),
                 updated_at: None,

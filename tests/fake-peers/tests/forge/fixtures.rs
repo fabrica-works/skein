@@ -23,7 +23,7 @@ pub const USER: u64 = 1;
 pub const ONE_REPLY: usize = 1;
 // Setup creates commit 1; the tiny git caller stores and pushes the next commit.
 pub const PUSHED_COMMIT: u64 = 2;
-pub const WORK_BRANCH_BODY: &[u8] = br#"{"name":"work","commit":{"id":"0000000000000002000000000000000000000000"},"effective_branch_protection_name":""}"#;
+pub const WORK_BRANCH_BODY: &[u8] = br#"{"name":"work","commit":{"id":"975835de1c9756ce000000000000000200000000"},"effective_branch_protection_name":""}"#;
 pub fn address() -> SocketAddr {
     (Ipv4Addr::LOCALHOST, 0).into()
 }

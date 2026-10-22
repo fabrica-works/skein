@@ -78,8 +78,7 @@ fn world(third_origin: Option<&[u8]>, blob_redirect: Option<&[u8]>, calls: &[&'s
 }
 fn attempt() -> api::JobAttempt {
     // The first repository's initial commit starts the fixture's first run and job.
-    let mut head = [0; 32];
-    head[..8].copy_from_slice(&1_u64.to_be_bytes());
+    let head = skein_fake_forge_protocol::routes::object(1).bytes;
     api::JobAttempt { head, run: 1, job: 1, attempt: 1 }
 }
 fn read(world: &mut Machine, call: u64, max_bytes: u32) {

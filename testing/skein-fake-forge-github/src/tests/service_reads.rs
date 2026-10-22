@@ -38,10 +38,7 @@ fn github_fake_repository_reads_inside_reach() {
             let (_, Document::Branch(branch)) = h.decode(Kind::Branch, &response) else {
                 panic!("branch document");
             };
-            let mut expected = [0; 32];
-            for (out, byte) in expected.iter_mut().zip(h.first.to_be_bytes()) {
-                *out = byte;
-            }
+            let expected = skein_fake_forge_protocol::routes::object(h.first).bytes;
             assert_eq!(branch.commit, expected);
             assert_eq!(Some(branch.name.as_ref()), target.strip_prefix(b"/repos/acme/widgets/branches/"));
         }

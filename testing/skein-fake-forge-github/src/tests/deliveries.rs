@@ -405,6 +405,43 @@ fn github_fake_token_rates_distinguish_limited_crowded_and_free_304() {
 }
 
 #[test]
+fn a_deleted_branch_keeps_the_zero_after_sentinel() {
+    use skein_fake_forge_domain::{Request, api::Change as DomainChange};
+    let mut service = Service::new(f::config(), &f::limits(), 1).unwrap();
+    let hook = Request::Hook {
+        repository: f::boxed(b"acme/widgets"),
+        change: DomainChange::Push,
+        number: None,
+        branch: Some(f::boxed(b"main")),
+        commit: None,
+        by: Some(9),
+        body: None,
+        ended: None,
+        queue: None,
+    };
+    assert!(service.hook(&hook, wall(1200)).unwrap().is_none());
+    let page = rows(&request(&mut service, b"/app/hook/deliveries?per_page=1", None, wall(1203)));
+    let row = page.get(0).unwrap();
+    let target = github::request::encode(
+        &github::request::Request::LogDelivery { id: row.id, event: Box::new([]) },
+        &f::limits().github,
+    )
+    .unwrap()
+    .target;
+    let response = request(&mut service, &target, None, wall(1203));
+    let (_, doc) = f::decode_with(
+        github::decode::log_delivery_decoder(&row.event, &f::limits().github),
+        &response.body,
+        &f::limits().github,
+    );
+    let Document::Delivery(logged) = doc else { panic!("whole delivery") };
+    assert_eq!(
+        logged.delivery,
+        Delivery::Push { repository: 2, branch: f::boxed(b"main"), after: [0; 32], deleted: true, sender: 9 }
+    );
+}
+
+#[test]
 fn github_fake_queue_hooks_keep_enqueued_and_dequeued_reasons() {
     use skein_fake_forge_domain::{
         Request,

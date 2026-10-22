@@ -716,9 +716,7 @@ fn github_peer_keeps_a_continuation_until_the_followup_reply() {
 }
 
 fn commit_id(number: u64) -> api::Commit {
-    let mut id = [0; 32];
-    id[..8].copy_from_slice(&number.to_be_bytes());
-    id
+    skein_fake_forge_protocol::routes::object(number).bytes
 }
 fn failed_job() -> (World, Secret, api::JobAttempt) {
     let mut world = World::with_checks(
