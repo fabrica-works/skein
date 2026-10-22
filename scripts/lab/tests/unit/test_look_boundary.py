@@ -6,7 +6,7 @@ import unittest
 
 class Boundary(unittest.TestCase):
     def test_pure_modules_have_only_approved_imports_and_no_file_effects(self):
-        pure = {"canon", "scene", "outline", "style", "png", "picture", "record"}
+        pure = {"canon", "scene", "outline", "style", "png", "picture", "record", "checks"}
         allowed = {"json", "hashlib", "re", "dataclasses", "enum", "typing", "difflib", "math", "struct", "zlib"}
         root = Path(__file__).resolve().parents[2] / "look"
         for module in sorted(pure):

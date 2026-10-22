@@ -118,8 +118,8 @@ class Canonical(unittest.TestCase):
                 self.assertIsInstance(scene.read(data), list)
 
 
-def expectation(**changes):
-    return dict(id="font", width="phone", region="main", property="font-size", value="12px", cites="design 1", **changes)
+def expectation():
+    return dict(id="font", width="phone", region="main", property="font-size", value="12px", cites="design 1")
 
 
 def entry_expectation():
@@ -153,7 +153,10 @@ class SceneChecks(unittest.TestCase):
             ("expectations", expectation(), "value", x) for x in (1, None)] + [
             ("expectations", entry_expectation(), "count", x) for x in (-1, True, "1", None)] + [
             ("expectations", entry_expectation(), "entry", x) for x in ("", 1)] + [
-            ("departures", departure(), "signature", x) for x in ("", "/style/main/color", "a b", "é", "a\n", "\x7f", 1)]
+            ("departures", departure(), "signature", x) for x in ("", "/style/main/color", "a b", "é", "a\n", "\x7f", 1)] + [
+            ("departures", departure(), "id", x) for x in ("", "Bad", 1)] + [
+            ("departures", departure(), "width", x) for x in ("absent", [], None)] + [
+            ("departures", dict(id="entry", width="phone", entry="main", cites="spec"), "entry", x) for x in ("", 1)]
         for kind, item, key, bad in rows:
             with self.subTest(kind=kind, key=key, bad=bad):
                 value = valid()
@@ -195,10 +198,9 @@ class SceneChecks(unittest.TestCase):
                     self.assertIn(f"{kind}.0", {r.member for r in scene.read(canonical.record_bytes(value))})
 
     def test_ids_are_unique_within_and_across_both_lists(self):
-        for kind in ("expectations", "departures"):
+        for kind, item in (("expectations", expectation()), ("departures", departure())):
             with self.subTest(kind=kind):
                 value = valid()
-                item = expectation() if kind == "expectations" else departure()
                 value[kind] = [item, item.copy()]
                 self.assertIn(f"{kind}.1.id", {r.member for r in scene.read(canonical.record_bytes(value))})
         value = valid()
