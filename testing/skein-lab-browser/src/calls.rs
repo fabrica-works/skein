@@ -8,12 +8,7 @@ pub enum Call {
     Serve { origin: String, dir: String },
     Open { page: String, width: u32, height: u32, mobile: bool },
     Go { page: String, url: String },
-    Await { page: String, query: b::Query, seconds: u32 },
-    Find { page: String, query: b::Query },
-    Tree { page: String },
-    Select { page: String, selector: String },
-    Style { page: String, node: u64, properties: Vec<String> },
-    Shot { page: String, clip: Option<Rect>, scale: u8, file: String },
+    Read { page: String, read: Read },
     Trouble { page: String },
     Close { page: String },
 }
@@ -23,16 +18,91 @@ impl Call {
             Self::Serve { .. } => None,
             Self::Open { page, .. }
             | Self::Go { page, .. }
-            | Self::Await { page, .. }
-            | Self::Find { page, .. }
-            | Self::Tree { page }
-            | Self::Select { page, .. }
-            | Self::Style { page, .. }
-            | Self::Shot { page, .. }
+            | Self::Read { page, .. }
             | Self::Trouble { page }
             | Self::Close { page } => Some(page),
         }
     }
+}
+/// The reads shared by the capture and the hand (lab-browser.md, 3 and 8.10).
+#[derive(Debug)]
+pub enum Read {
+    Await(b::Query, u32),
+    Find(b::Query),
+    Tree,
+    Select(String),
+    Style(u64, Vec<String>),
+    Shot(Option<Rect>, u8, String),
+}
+impl Read {
+    pub fn request(
+        self,
+        page: skein_lib::Token,
+        op: skein_lib::Token,
+        properties_limit: u32,
+    ) -> Result<b::Request, Value> {
+        let look = match self {
+            Self::Await(query, seconds) => {
+                return Ok(b::Request::Await {
+                    page,
+                    op,
+                    query,
+                    expect: b::Expect::Present,
+                    within: skein_lib::Duration::from_secs(u64::from(seconds)),
+                });
+            }
+            Self::Find(query) => return Ok(b::Request::Find { page, op, query }),
+            Self::Tree => b::Look::Tree,
+            Self::Select(selector) => b::Look::Select { selector: selector.into_bytes().into() },
+            Self::Style(node, properties) => {
+                if properties.len() > usize::try_from(properties_limit).expect("property cap") {
+                    return Err(refused("limit", "style property count"));
+                }
+                let mut names = skein_lib::List::with_capacity(properties_limit);
+                for name in properties {
+                    names.push(name.into_bytes().into()).expect("property admitted");
+                }
+                b::Look::Style { node, properties: names }
+            }
+            Self::Shot(clip, scale, _) => b::Look::Shot { clip, scale },
+        };
+        Ok(b::Request::Look { page, op, look })
+    }
+}
+pub fn read_answer(event: &b::Event, op: skein_lib::Token) -> Option<Value> {
+    match event {
+        b::Event::Found { op: answer, seen: entries, more } if *answer == op => {
+            Some(object([("found", seen(entries)), ("more", number(*more))]))
+        }
+        b::Event::Met { op: answer, seen: entries } if *answer == op => Some(object([("met", seen(entries))])),
+        b::Event::Missed { op: answer, seen: entries, .. } if *answer == op => {
+            Some(object([("missed", seen(entries))]))
+        }
+        b::Event::Looked { op: answer, looked: look } if *answer == op => looked(look),
+        b::Event::Refused { op: answer, why } if *answer == op => Some(kit_refusal(*why)),
+        b::Event::Ready { .. }
+        | b::Event::Opened { .. }
+        | b::Event::Found { .. }
+        | b::Event::Met { .. }
+        | b::Event::Missed { .. }
+        | b::Event::Looked { .. }
+        | b::Event::Refused { .. }
+        | b::Event::Warned { .. }
+        | b::Event::Done { .. }
+        | b::Event::Address { .. }
+        | b::Event::Attribute { .. }
+        | b::Event::Snapshot { .. }
+        | b::Event::Screenshot { .. }
+        | b::Event::Trouble { .. }
+        | b::Event::Closed { .. } => None,
+    }
+}
+/// Parse section 3's read members without a page.
+pub fn parse_read(kind: &str, members: BTreeMap<String, Value>) -> Result<Read, String> {
+    let mut m = Members(members);
+    let read = m.read(kind)?;
+    m.end()?;
+    Ok(read)
 }
 struct Members(BTreeMap<String, Value>);
 impl Members {
@@ -80,6 +150,64 @@ impl Members {
             boxes: true,
         })
     }
+    fn read(&mut self, kind: &str) -> Result<Read, String> {
+        let m = self;
+        Ok(match kind {
+            "await" => Read::Await(m.query()?, m.unsigned("seconds")?),
+            "find" => Read::Find(m.query()?),
+            "tree" => Read::Tree,
+            "select" => Read::Select(m.text("selector")?),
+            "style" => {
+                let node = m.integer("node")?.try_into().map_err(|_| "node must be unsigned")?;
+                let Value::Array(values) = m.take("properties")? else {
+                    return Err("properties must be an array".into());
+                };
+                let properties = values
+                    .into_iter()
+                    .map(|value| match value {
+                        Value::String(s) if s.is_ascii() => Ok(s),
+                        Value::Object(_)
+                        | Value::Array(_)
+                        | Value::String(_)
+                        | Value::Number(_)
+                        | Value::Bool(_)
+                        | Value::Null => Err("property must be an ASCII string"),
+                    })
+                    .collect::<Result<_, _>>()?;
+                Read::Style(node, properties)
+            }
+            "shot" => {
+                let clip = match m.take("clip")? {
+                    Value::Null => None,
+                    Value::Object(members) => {
+                        let mut r = Members(members);
+                        let rect = Rect {
+                            x: r.integer("x")?,
+                            y: r.integer("y")?,
+                            width: r.integer("width")?.try_into().map_err(|_| "negative width")?,
+                            height: r.integer("height")?.try_into().map_err(|_| "negative height")?,
+                        };
+                        r.end()?;
+                        Some(rect)
+                    }
+                    Value::Array(_) | Value::String(_) | Value::Number(_) | Value::Bool(_) => {
+                        return Err("clip must be a rectangle or null".into());
+                    }
+                };
+                let scale = match m.integer("scale")? {
+                    1 => 1,
+                    2 => 2,
+                    _ => return Err("scale must be 1 or 2".into()),
+                };
+                let file = m.text("file")?;
+                if !shot_file(&file) {
+                    return Err("file must contain only normal relative components".into());
+                }
+                Read::Shot(clip, scale, file)
+            }
+            _ => return Err("unknown read".into()),
+        })
+    }
     fn end(self) -> Result<(), String> {
         if self.0.is_empty() { Ok(()) } else { Err(format!("unknown members: {:?}", self.0.keys())) }
     }
@@ -110,59 +238,9 @@ pub fn parse(line: &[u8]) -> Result<Call, String> {
             mobile: m.boolean("mobile")?,
         },
         "go" => Call::Go { page: m.text("page")?, url: m.text("url")? },
-        "await" => Call::Await { page: m.text("page")?, query: m.query()?, seconds: m.unsigned("seconds")? },
-        "find" => Call::Find { page: m.text("page")?, query: m.query()? },
-        "tree" => Call::Tree { page: m.text("page")? },
-        "select" => Call::Select { page: m.text("page")?, selector: m.text("selector")? },
-        "style" => {
+        "await" | "find" | "tree" | "select" | "style" | "shot" => {
             let page = m.text("page")?;
-            let node = m.integer("node")?.try_into().map_err(|_| "node must be unsigned")?;
-            let Value::Array(values) = m.take("properties")? else {
-                return Err("properties must be an array".into());
-            };
-            let properties = values
-                .into_iter()
-                .map(|value| match value {
-                    Value::String(s) if s.is_ascii() => Ok(s),
-                    Value::Object(_)
-                    | Value::Array(_)
-                    | Value::String(_)
-                    | Value::Number(_)
-                    | Value::Bool(_)
-                    | Value::Null => Err("property must be an ASCII string"),
-                })
-                .collect::<Result<_, _>>()?;
-            Call::Style { page, node, properties }
-        }
-        "shot" => {
-            let page = m.text("page")?;
-            let clip = match m.take("clip")? {
-                Value::Null => None,
-                Value::Object(members) => {
-                    let mut r = Members(members);
-                    let rect = Rect {
-                        x: r.integer("x")?,
-                        y: r.integer("y")?,
-                        width: r.integer("width")?.try_into().map_err(|_| "negative width")?,
-                        height: r.integer("height")?.try_into().map_err(|_| "negative height")?,
-                    };
-                    r.end()?;
-                    Some(rect)
-                }
-                Value::Array(_) | Value::String(_) | Value::Number(_) | Value::Bool(_) => {
-                    return Err("clip must be a rectangle or null".into());
-                }
-            };
-            let scale = match m.integer("scale")? {
-                1 => 1,
-                2 => 2,
-                _ => return Err("scale must be 1 or 2".into()),
-            };
-            let file = m.text("file")?;
-            if !shot_file(&file) {
-                return Err("file must contain only normal relative components".into());
-            }
-            Call::Shot { page, clip, scale, file }
+            Call::Read { page, read: m.read(&kind)? }
         }
         "trouble" => Call::Trouble { page: m.text("page")? },
         "close" => Call::Close { page: m.text("page")? },

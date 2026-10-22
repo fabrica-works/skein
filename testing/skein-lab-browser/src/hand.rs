@@ -8,7 +8,7 @@ use crate::{
     json::{self, Value, number, object, string},
     redact::Redact,
 };
-use calls::{Call, Part};
+use calls::{Call, LookCall, Part};
 use skein_browser::boundary::{self as b, Event, Request};
 use skein_fake_person::{Doing, Face, Find, Found, Why};
 use skein_fake_person_browser::BrowserFace;
@@ -518,6 +518,7 @@ impl Hand {
     fn answer(&mut self, call: Call, face: &mut BrowserFace<'_>, config: &Config) -> Result<Value, String> {
         let options = config.hand.as_ref().expect("hand form");
         match call {
+            Call::Look(look) => self.look(look, face, config),
             Call::Go(path) => {
                 if !calls::path(&path) {
                     return Ok(capture::refused("origin", "path must be on the origin"));
@@ -634,6 +635,77 @@ impl Hand {
                 Ok(self.evidence.take())
             }
         }
+    }
+    fn look(&mut self, look: LookCall, face: &mut BrowserFace<'_>, config: &Config) -> Result<Value, String> {
+        let op = self.rt.fresh();
+        let mut viewport = None;
+        let mut file = None;
+        let focus = matches!(&look, LookCall::Focus);
+        let request = match look {
+            LookCall::Viewport(size) => {
+                let own = config.hand.as_ref().expect("hand form");
+                let (width, height, mobile) = size.unwrap_or((own.width, own.height, own.mobile));
+                viewport = Some(object([(
+                    "viewport",
+                    object([("width", number(width)), ("height", number(height)), ("mobile", Value::Bool(mobile))]),
+                )]));
+                Ok(Request::Look {
+                    page: self.page,
+                    op,
+                    look: b::Look::Viewport {
+                        width,
+                        height,
+                        mobile,
+                        scheme: b::Scheme::Light,
+                        motion: b::Motion::Reduce,
+                    },
+                })
+            }
+            read @ (LookCall::Await(..)
+            | LookCall::Find(_)
+            | LookCall::Tree
+            | LookCall::Style(..)
+            | LookCall::Shot(..)
+            | LookCall::Focus) => {
+                let read = match read {
+                    LookCall::Await(query, seconds) => capture::Read::Await(query, seconds),
+                    LookCall::Find(query) => capture::Read::Find(query),
+                    LookCall::Tree | LookCall::Focus => capture::Read::Tree,
+                    LookCall::Style(node, properties) => capture::Read::Style(node, properties),
+                    LookCall::Shot(clip, scale, name) => {
+                        let name = format!("look/{name}");
+                        match super::prepare_look_shot(config, &name)? {
+                            Ok(target) => file = Some((name.clone(), target)),
+                            Err(answer) => return Ok(answer),
+                        }
+                        capture::Read::Shot(clip, scale, name)
+                    }
+                    LookCall::Viewport(_) => unreachable!("viewport handled"),
+                };
+                read.request(self.page, op, self.rt.benv.limits.properties)
+            }
+        };
+        let request = match request {
+            Ok(request) => request,
+            Err(answer) => return Ok(answer),
+        };
+        self.rt.ask(request);
+        let event = self.wait_event(op, face)?;
+        if let Event::Refused { why, .. } = event {
+            return Ok(capture::kit_refusal(why));
+        }
+        if let Event::Looked { looked: b::Looked::Viewport, .. } = event {
+            return viewport.ok_or_else(|| "unexpected viewport answer".into());
+        }
+        if let Event::Looked { looked: b::Looked::Shot(png), .. } = &event {
+            let (name, mut target) = file.expect("shot target");
+            target.write_all(png).map_err(|e| e.to_string())?;
+            return super::shot_answer(&name, png);
+        }
+        if focus && let Event::Looked { looked: b::Looked::Tree(entries), .. } = &event {
+            return Ok(focus_answer(entries));
+        }
+        capture::read_answer(&event, op).ok_or_else(|| format!("unexpected look answer: {event:?}"))
     }
     fn shutdown(&mut self) -> Result<(), String> {
         self.rt.closing = true;
@@ -786,6 +858,19 @@ impl Hand {
         Ok(object([("missed", Value::Array(observed))]))
     }
 }
+fn focus_answer(entries: &skein_lib::List<b::Entry>) -> Value {
+    // Focused ancestors may precede the focused part in document order.
+    // The document's RootWebArea does not name a focused part.
+    object([(
+        "focus",
+        entries
+            .iter()
+            .rfind(|entry| entry.states.focused && entry.role.as_ref() != b"RootWebArea")
+            .map_or(Value::Null, |entry| {
+                object([("role", json::bytes(&entry.role)), ("name", json::bytes(&entry.name))])
+            }),
+    )])
+}
 fn event_op(event: &Event) -> Option<Token> {
     match event {
         Event::Found { op, .. }
@@ -806,6 +891,39 @@ fn event_op(event: &Event) -> Option<Token> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn entry(depth: u32, role: &str, name: &str, focused: bool) -> b::Entry {
+        b::Entry {
+            node: None,
+            depth,
+            role: role.as_bytes().into(),
+            name: name.as_bytes().into(),
+            level: 0,
+            value: Box::new([]),
+            states: b::States { focused, disabled: false, checked: false, expanded: false, selected: false },
+            multiline: false,
+        }
+    }
+    #[test]
+    fn focus_skips_the_document_root_and_takes_the_last_focused_entry() {
+        let mut entries = skein_lib::List::with_capacity(5);
+        entries.push(entry(0, "RootWebArea", "", true)).unwrap();
+        assert_eq!(focus_answer(&entries), object([("focus", Value::Null)]));
+        entries.push(entry(1, "textbox", "Message", true)).unwrap();
+        assert_eq!(
+            focus_answer(&entries),
+            object([("focus", object([("role", string("textbox")), ("name", string("Message"))]))])
+        );
+        entries.clear();
+        entries.push(entry(0, "RootWebArea", "", true)).unwrap();
+        entries.push(entry(1, "group", "Draft", true)).unwrap();
+        entries.push(entry(2, "textbox", "Message", true)).unwrap();
+        entries.push(entry(3, "generic", "Caret", true)).unwrap();
+        entries.push(entry(1, "button", "Send", false)).unwrap();
+        assert_eq!(
+            focus_answer(&entries),
+            object([("focus", object([("role", string("generic")), ("name", string("Caret"))]))])
+        );
+    }
     fn accept(listener: &mut Listener, socket: u64, now: Time) -> Token {
         listener
             .event(

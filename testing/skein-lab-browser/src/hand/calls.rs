@@ -1,9 +1,9 @@
 //! The hand's typed calls and answers (lab-browser.md, 8.3).
 use crate::{
-    calls::refused,
+    calls::{self as capture, refused},
     json::{self, Value, object, string},
 };
-use skein_browser::boundary::{Go, Key, Seen};
+use skein_browser::boundary::{Go, Key, Rect, Seen};
 use skein_fake_person::{Find, Target, role_name, role_named};
 use skein_ui::Role;
 use std::collections::BTreeMap;
@@ -21,6 +21,7 @@ pub enum Call {
     Trouble,
     SignIn(String),
     Outline(Vec<Target>),
+    Look(LookCall),
 }
 impl Call {
     pub fn name(&self) -> &'static str {
@@ -37,8 +38,76 @@ impl Call {
             Self::Trouble => "trouble",
             Self::SignIn(_) => "sign-in",
             Self::Outline(_) => "outline",
+            Self::Look(look) => look.name(),
         }
     }
+}
+#[derive(Debug)]
+pub enum LookCall {
+    Viewport(Option<(u32, u32, bool)>),
+    Await(skein_browser::boundary::Query, u32),
+    Find(skein_browser::boundary::Query),
+    Tree,
+    Style(u64, Vec<String>),
+    Shot(Option<Rect>, u8, String),
+    Focus,
+}
+impl LookCall {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Viewport(_) => "look-viewport",
+            Self::Await(..) => "look-await",
+            Self::Find(_) => "look-find",
+            Self::Tree => "look-tree",
+            Self::Style(..) => "look-style",
+            Self::Shot(..) => "look-shot",
+            Self::Focus => "look-focus",
+        }
+    }
+}
+fn look(kind: &str, members: BTreeMap<String, Value>) -> Result<LookCall, String> {
+    if kind == "viewport" {
+        if members.is_empty() {
+            return Ok(LookCall::Viewport(None));
+        }
+        // The capture's open has the same three viewport members.
+        if members.contains_key("page") {
+            return Err("unknown member page".into());
+        }
+        let mut fields = members;
+        fields.insert("call".into(), string("open"));
+        fields.insert("page".into(), string("hand"));
+        if let capture::Call::Open { width, height, mobile, .. } =
+            capture::parse(&json::encode(&Value::Object(fields)))?
+        {
+            return Ok(LookCall::Viewport(Some((width, height, mobile))));
+        }
+        unreachable!("parsed open")
+    }
+    if kind == "focus" {
+        Members(members).end()?;
+        return Ok(LookCall::Focus);
+    }
+    Ok(match capture::parse_read(kind, members)? {
+        capture::Read::Await(query, seconds) => LookCall::Await(query, seconds),
+        capture::Read::Find(query) => LookCall::Find(query),
+        capture::Read::Tree => LookCall::Tree,
+        capture::Read::Style(node, properties) => LookCall::Style(node, properties),
+        capture::Read::Shot(clip, scale, file) => {
+            if !look_file(&file) {
+                return Err("file must have at most eight lowercase path segments ending in .png".into());
+            }
+            LookCall::Shot(clip, scale, file)
+        }
+        capture::Read::Select(_) => return Err("unknown look call".into()),
+    })
+}
+fn look_file(file: &str) -> bool {
+    let Some(stem) = file.strip_suffix(".png") else { return false };
+    stem.split('/').count() <= 8
+        && stem.split('/').all(|part| {
+            !part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
 }
 #[derive(Debug)]
 pub struct Name {
@@ -114,7 +183,11 @@ fn parse_call(line: &[u8]) -> Result<Call, String> {
         return Err("call must use canonical JSON".into());
     }
     let mut m = Members::object(value)?;
-    let call = match m.text("call")?.as_str() {
+    let kind = m.text("call")?;
+    if let Some(kind) = kind.strip_prefix("look-") {
+        return look(kind, m.0).map(Call::Look);
+    }
+    let call = match kind.as_str() {
         "press" => Call::Press(m.part()?),
         "type" => Call::Type(m.part()?, m.text("text")?),
         "key" => {
@@ -244,6 +317,91 @@ mod tests {
             assert!(parse(&canonical(case)).is_err(), "{case}");
         }
         assert!(parse(br#"{ "call":"address"}"#).is_err());
+    }
+    #[test]
+    fn look_calls_parse_members_and_keep_their_wire_names() {
+        for case in [
+            r#"{"call":"look-viewport"}"#,
+            r#"{"call":"look-viewport","width":390,"height":844,"mobile":true}"#,
+            r#"{"call":"look-await","role":"textbox","name":"Message","match":"exact","seconds":1}"#,
+            r#"{"call":"look-find","role":"textbox","name":"Message","match":"words"}"#,
+            r#"{"call":"look-tree"}"#,
+            r#"{"call":"look-style","node":42,"properties":["color"]}"#,
+            r#"{"call":"look-shot","clip":null,"scale":1,"file":"viewport.png"}"#,
+            r#"{"call":"look-shot","clip":{"x":-1,"y":2,"width":3,"height":4},"scale":2,"file":"a/b/c/d/e/f/g/h.png"}"#,
+            r#"{"call":"look-focus"}"#,
+        ] {
+            let bytes = canonical(case);
+            let call = parse(&bytes).unwrap();
+            let Value::Object(fields) = json::parse(&bytes).unwrap() else { panic!("object") };
+            assert_eq!(fields.get("call"), Some(&string(call.name())), "{case}");
+            for key in fields.keys() {
+                let mut wrong = fields.clone();
+                wrong.insert(key.clone(), Value::Bool(false));
+                // mobile's false value is valid; all other members reject a boolean.
+                if key != "mobile" {
+                    assert!(parse(&json::encode(&Value::Object(wrong))).is_err(), "{case} mistyped {key}");
+                }
+            }
+            let mut unknown = fields;
+            unknown.insert("page".into(), string("hand"));
+            assert!(parse(&json::encode(&Value::Object(unknown))).is_err(), "{case}");
+        }
+    }
+    #[test]
+    fn look_calls_refuse_partial_viewports_bad_finders_and_bad_files() {
+        for members in [
+            r#""width":390"#,
+            r#""height":844"#,
+            r#""mobile":true"#,
+            r#""width":390,"height":844"#,
+            r#""width":390,"mobile":true"#,
+            r#""height":844,"mobile":true"#,
+            r#""width":-1,"height":844,"mobile":true"#,
+            r#""width":390,"height":844,"mobile":null"#,
+        ] {
+            assert!(parse(&canonical(&format!(r#"{{"call":"look-viewport",{members}}}"#))).is_err(), "{members}");
+        }
+        for case in [
+            r#"{"call":"look-find","role":"textbox","name":"Message","match":"regexp"}"#,
+            r#"{"call":"look-find","role":1,"name":"Message","match":"exact"}"#,
+            r#"{"call":"look-find","name":"Message","match":"exact"}"#,
+            r#"{"call":"look-await","role":"textbox","name":"Message","match":"exact"}"#,
+            r#"{"call":"look-await","role":"textbox","name":"Message","match":"exact","seconds":-1}"#,
+            r#"{"call":"look-select","selector":"main"}"#,
+            r#"{"call":"look-style","node":-1,"properties":[]}"#,
+            r#"{"call":"look-style","node":1,"properties":[false]}"#,
+            r#"{"call":"look-shot","clip":null,"scale":3,"file":"ok.png"}"#,
+        ] {
+            let answer = parse(&canonical(case)).unwrap_err();
+            let Value::Object(fields) = answer else { panic!("refusal") };
+            assert_eq!(fields.get("refused"), Some(&string("call")), "{case}");
+        }
+        for file in [
+            "",
+            "/a.png",
+            "../a.png",
+            "a/../b.png",
+            "a//b.png",
+            "./a.png",
+            "a.PNG",
+            "A.png",
+            "a_b.png",
+            "a.b.png",
+            ".png",
+            "a.png/b",
+            "a/b/c/d/e/f/g/h/i.png",
+            "a\\b.png",
+            "a b.png",
+        ] {
+            let call = object([
+                ("call", string("look-shot")),
+                ("clip", Value::Null),
+                ("scale", json::number(1)),
+                ("file", string(file)),
+            ]);
+            assert!(parse(&json::encode(&call)).is_err(), "{file}");
+        }
     }
     #[test]
     fn paths_and_sign_in_query_and_count_bounds() {

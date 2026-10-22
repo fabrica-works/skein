@@ -606,51 +606,20 @@ impl Runtime {
                 }
                 Request::Go { page, op, to: b::Go::Address(url.into_bytes().into()) }
             }
-            Call::Await { query, seconds, .. } => Request::Await {
-                page,
-                op,
-                query,
-                expect: b::Expect::Present,
-                within: Duration::from_secs(u64::from(seconds)),
-            },
-            Call::Find { query, .. } => Request::Find { page, op, query },
-            Call::Tree { .. } => Request::Look { page, op, look: b::Look::Tree },
-            Call::Select { selector, .. } => {
-                Request::Look { page, op, look: b::Look::Select { selector: selector.into_bytes().into() } }
-            }
-            Call::Style { node, properties, .. } => {
-                if properties.len() > usize::try_from(self.benv.limits.properties).expect("property cap") {
-                    return Ok(calls::refused("limit", "style property count"));
-                }
-                let mut names = List::with_capacity(self.benv.limits.properties);
-                for name in properties {
-                    names.push(name.into_bytes().into()).expect("property admitted");
-                }
-                Request::Look { page, op, look: b::Look::Style { node, properties: names } }
-            }
-            Call::Shot { clip, scale, file, .. } => {
-                self.ask(Request::Look { page, op, look: b::Look::Shot { clip, scale } });
-                return match self.next_event()? {
-                    Event::Looked { op: answer, looked: b::Looked::Shot(png) } if answer == op => {
-                        shot(config, &file, &png)
-                    }
-                    Event::Refused { op: answer, why } if answer == op => Ok(calls::kit_refusal(why)),
-                    other @ (Event::Ready { .. }
-                    | Event::Opened { .. }
-                    | Event::Found { .. }
-                    | Event::Met { .. }
-                    | Event::Missed { .. }
-                    | Event::Done { .. }
-                    | Event::Warned { .. }
-                    | Event::Refused { .. }
-                    | Event::Address { .. }
-                    | Event::Attribute { .. }
-                    | Event::Snapshot { .. }
-                    | Event::Screenshot { .. }
-                    | Event::Looked { .. }
-                    | Event::Trouble { .. }
-                    | Event::Closed { .. }) => Err(format!("unexpected shot answer: {other:?}")),
+            Call::Read { read, .. } => {
+                let file = if let calls::Read::Shot(_, _, file) = &read { Some(file.clone()) } else { None };
+                let request = match read.request(page, op, self.benv.limits.properties) {
+                    Ok(request) => request,
+                    Err(answer) => return Ok(answer),
                 };
+                self.ask(request);
+                let event = self.next_event()?;
+                if let Event::Looked { op: answer, looked: b::Looked::Shot(png) } = &event
+                    && *answer == op
+                {
+                    return shot(config, &file.expect("shot file"), png);
+                }
+                return calls::read_answer(&event, op).ok_or_else(|| format!("unexpected read answer: {event:?}"));
             }
             Call::Trouble { .. } => {
                 let mut trouble = std::mem::take(&mut self.pages.get_mut(&name).expect("known page").trouble);
@@ -669,14 +638,6 @@ impl Runtime {
     fn answer(&mut self, op: Token, name: &str) -> Result<Value, String> {
         match self.next_event()? {
             Event::Done { op: answer } if answer == op => Ok(object([("done", string(name))])),
-            Event::Found { op: answer, seen, more } if answer == op => {
-                Ok(object([("found", calls::seen(&seen)), ("more", number(more))]))
-            }
-            Event::Met { op: answer, seen } if answer == op => Ok(object([("met", calls::seen(&seen))])),
-            Event::Missed { op: answer, seen, .. } if answer == op => Ok(object([("missed", calls::seen(&seen))])),
-            Event::Looked { op: answer, looked } if answer == op => {
-                calls::looked(&looked).ok_or_else(|| format!("unexpected look: {looked:?}"))
-            }
             Event::Refused { op: answer, why } if answer == op => Ok(calls::kit_refusal(why)),
             other @ (Event::Ready { .. }
             | Event::Opened { .. }
@@ -870,8 +831,29 @@ fn owner(event: &io::Event) -> Option<Token> {
         io::Event::Resized | io::Event::Window { .. } | io::Event::Shutdown { .. } => None,
     }
 }
+// lab-browser.md, 8.10: reserve a new file before asking Chromium.
+fn prepare_look_shot(config: &Config, file: &str) -> Result<Result<std::fs::File, Value>, String> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let mut parent = config.out.clone();
+    for component in file.split('/').take(file.split('/').count() - 1) {
+        parent.push(component);
+        match std::fs::symlink_metadata(&parent) {
+            Ok(m) if !m.is_dir() => return Ok(Err(calls::refused("call", "shot parent is not a directory"))),
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::DirBuilder::new().mode(0o700).create(&parent).map_err(|e| e.to_string())?;
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(config.out.join(file)) {
+        Ok(file) => Ok(Ok(file)),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(Err(calls::refused("call", "shot file exists"))),
+        Err(e) => Err(e.to_string()),
+    }
+}
 fn shot(config: &Config, file: &str, png: &[u8]) -> Result<Value, String> {
-    let (width, height) = calls::png_size(png)?;
+    let answer = shot_answer(file, png)?;
     let path = config.out.join(file);
     let mut parent = config.out.clone();
     for component in file.split('/').take(file.split('/').count() - 1) {
@@ -889,6 +871,10 @@ fn shot(config: &Config, file: &str, png: &[u8]) -> Result<Value, String> {
         return Ok(calls::refused("call", "shot target is not a regular file"));
     }
     std::fs::write(path, png).map_err(|e| e.to_string())?;
+    Ok(answer)
+}
+fn shot_answer(file: &str, png: &[u8]) -> Result<Value, String> {
+    let (width, height) = calls::png_size(png)?;
     Ok(object([(
         "shot",
         object([

@@ -10,7 +10,8 @@ use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    path::PathBuf,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         Arc,
@@ -129,6 +130,93 @@ fn part(call: &str, role: &str, name: &str, extra: impl IntoIterator<Item = (&'s
 fn wait(client: &mut Client, role: &str, name: &str, gone: bool) -> Value {
     client.call(&part("wait", role, name, [("gone", Value::Bool(gone)), ("seconds", number(1))]))
 }
+// lab-browser.md, 8.9: the hand's own desktop and the live scene's phone.
+const DESKTOP: (i64, i64) = (800, 600);
+const PHONE: (i64, i64) = (390, 844);
+fn look_finder(call: &str, role: &str, name: &str, extra: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
+    object(
+        [("call", string(call)), ("role", string(role)), ("name", string(name)), ("match", string("exact"))]
+            .into_iter()
+            .chain(extra),
+    )
+}
+fn look_shot(file: &str, clip: Value, scale: i64) -> Value {
+    object([("call", string("look-shot")), ("clip", clip), ("scale", number(scale)), ("file", string(file))])
+}
+fn check_png(answer: &Value, out: &Path, file: &str, size: (i64, i64)) {
+    let shot = field(answer, "shot");
+    assert_eq!(field(shot, "file"), &string(file));
+    let png = fs::read(out.join(file)).expect("read look shot PNG");
+    assert_eq!(&png[..16], b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR");
+    assert_eq!(
+        (
+            i64::from(u32::from_be_bytes(png[16..20].try_into().expect("four-byte PNG width"))),
+            i64::from(u32::from_be_bytes(png[20..24].try_into().expect("four-byte PNG height")))
+        ),
+        size
+    );
+    assert_eq!((integer(field(shot, "width")), integer(field(shot, "height"))), size);
+    assert_eq!(integer(field(shot, "bytes")), i64::try_from(png.len()).expect("PNG length fits i64"));
+    let digest = Command::new("sha256sum").arg(out.join(file)).output().expect("run sha256sum for shot evidence");
+    assert!(digest.status.success());
+    let digest = String::from_utf8(digest.stdout).expect("sha256sum emits UTF-8");
+    assert_eq!(text(field(shot, "sha256")), digest.split_whitespace().next().expect("sha256sum emits a digest"));
+}
+fn look_reads(client: &mut Client, out: &Path) {
+    let focused = object([("focus", object([("role", string("textbox")), ("name", string("Message"))]))]);
+    assert_eq!(client.simple("look-focus"), focused);
+    let viewport = object([("width", number(PHONE.0)), ("height", number(PHONE.1)), ("mobile", Value::Bool(true))]);
+    let Value::Object(mut fields) = viewport.clone() else { panic!("viewport") };
+    fields.insert("call".into(), string("look-viewport"));
+    assert_eq!(client.call(&Value::Object(fields)), object([("viewport", viewport)]));
+    let shot = client.call(&look_shot("phone.png", Value::Null, 1));
+    check_png(&shot, out, "look/phone.png", PHONE);
+    assert_eq!(client.simple("look-focus"), focused);
+    let met = client.call(&look_finder("look-await", "textbox", "Message", [("seconds", number(1))]));
+    assert!(matches!(field(&met, "met"), Value::Array(entries) if !entries.is_empty()));
+    let missed = client.call(&look_finder("look-await", "button", "Absent", [("seconds", number(0))]));
+    assert!(matches!(field(&missed, "missed"), Value::Array(_)));
+    let found = client.call(&look_finder("look-find", "textbox", "Message", []));
+    assert_eq!(field(&found, "more"), &number(0));
+    let Value::Array(entries) = field(&found, "found") else { panic!("found") };
+    let node = field(&entries[0], "node").clone();
+    let style = client.call(&object([
+        ("call", string("look-style")),
+        ("node", node),
+        ("properties", Value::Array(vec![string("display")])),
+    ]));
+    let style = field(&style, "style");
+    assert_eq!(field(field(style, "values"), "display"), &string("inline-block"));
+    let clip = field(style, "box").clone();
+    let size = (integer(field(&clip, "width")) * 2, integer(field(&clip, "height")) * 2);
+    let shot = client.call(&look_shot("regions/message.png", clip, 2));
+    check_png(&shot, out, "look/regions/message.png", size);
+    for dir in ["look", "look/regions"] {
+        assert_eq!(
+            fs::metadata(out.join(dir)).expect("look shot directory exists").permissions().mode() & 0o777,
+            0o700
+        );
+    }
+    let tree = client.simple("look-tree");
+    assert!(matches!(field(&tree, "tree"), Value::Array(entries) if !entries.is_empty()));
+    assert_eq!(
+        client.simple("look-viewport"),
+        object([(
+            "viewport",
+            object([("width", number(DESKTOP.0)), ("height", number(DESKTOP.1)), ("mobile", Value::Bool(false))])
+        )])
+    );
+    // A zero-sized clip would be refused protocol if it reached the kit.
+    let invalid_clip = object([("x", number(0)), ("y", number(0)), ("width", number(0)), ("height", number(0))]);
+    let original = fs::read(out.join("look/phone.png")).expect("read reserved look shot");
+    for file in ["../escape.png", "phone.png"] {
+        assert_eq!(field(&client.call(&look_shot(file, invalid_clip.clone(), 1)), "refused"), &string("call"));
+    }
+    assert_eq!(fs::read(out.join("look/phone.png")).expect("read reserved look shot"), original);
+    assert!(!out.join("escape.png").exists());
+    let shot = client.simple("shot");
+    check_png(&shot, out, "shots/0001.png", DESKTOP);
+}
 #[test]
 #[expect(
     clippy::too_many_lines,
@@ -210,6 +298,9 @@ fn browser_hand() {
     assert_eq!(field(field(&typed, "typed"), "value"), &string("Replacement"));
     let typed = client.call(&part("type", "text area", "Message", [("text", string("First"))]));
     assert_eq!(field(field(&typed, "typed"), "value"), &string("First"));
+    let look_start = reader.now();
+    look_reads(&mut client, &out);
+    eprintln!("hand look reads: {} ms", reader.now().as_nanos().saturating_sub(look_start.as_nanos()) / 1_000_000);
     assert_eq!(
         client.call(&object([("call", string("key")), ("key", string("Enter")), ("shift", Value::Bool(true))])),
         object([("keyed", string("Shift+Enter"))])
@@ -303,7 +394,7 @@ fn browser_hand() {
     client.call(&object([("call", string("go")), ("path", string("/"))]));
     let shot = client.simple("shot");
     let shot = field(&shot, "shot");
-    assert_eq!(field(shot, "file"), &string("shots/0001.png"));
+    assert_eq!(field(shot, "file"), &string("shots/0002.png"));
     let png = fs::read(out.join(text(field(shot, "file")))).unwrap();
     assert_eq!(integer(field(shot, "bytes")), i64::try_from(png.len()).unwrap());
     assert_eq!((integer(field(shot, "width")), integer(field(shot, "height"))), (800, 600));
