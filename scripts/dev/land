@@ -143,8 +143,10 @@ cache_read() {
     local lines=()
     [[ -f $1 ]] || return 1
     mapfile -t lines <"$1"
-    [[ ${#lines[@]} == 3 && ${lines[0]} == gate-evidence-v2 &&
-        ${lines[1]} == "$policy" && -n ${lines[2]} ]] || return 1
+    [[ ${#lines[@]} == 3 && ${lines[0]} == gate-evidence-v3 &&
+        ${lines[1]} == "$policy" &&
+        ${lines[2]} =~ \ passed:.*\ [0-9]+([.][0-9]+)?\ s\ in\ all$ &&
+        ${lines[2]} != *'? s'* ]] || return 1
     printf '%s\n' "${lines[2]}"
 }
 
@@ -172,15 +174,121 @@ gated_before() {
 prebuild_command='cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo nextest run --workspace --no-run'
 prebuild=${LAND_PREBUILD-$prebuild_command}
 
-# The gate's evidence, as one line: each nextest summary, in the order the
-# gate runs them, then the time the gate ran.
+# A successful heavy client is necessary, but its token-owned receipt is
+# the completion evidence (gate-policy.md, 3). Keep validation in land so
+# its implementation is included in the policy identity.
 evidence() {
-    local log=$1 secs=$2 parts label=$gate
-    parts=$(sed -E 's/\x1b\[[0-9;]*m//g' "$log" |
-        sed -nE 's/^ *Summary \[ *([0-9.]+)s\] ([0-9]+) tests? run: ([0-9]+) passed.*/\3 tests \/ \1 s/p' |
-        paste -sd ';' - | sed 's/;/; /g')
-    [[ $gate != *" "* ]] || label=gate
-    echo "$label passed: ${parts:+$parts; }$secs s in all"
+    python3 -I -B - "$1" "$tree" "$policy" "$gate" <<'PY'
+from decimal import Decimal
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def read_regular(path, kind):
+    # O_NOFOLLOW also closes the check/open race for the selected file.
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            require(stat.S_ISREG(os.fstat(source.fileno()).st_mode),
+                    f"{kind} is not a regular file")
+            return source.read()
+    except OSError:
+        raise ValueError(f"{kind} is missing, unreadable or a symlink") from None
+
+
+def unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "receipt JSON has duplicate fields")
+        result[key] = value
+    return result
+
+
+def invalid_constant(value):
+    raise ValueError("receipt JSON has a non-finite number")
+
+
+def main():
+    output, tree, policy, command = sys.argv[1:]
+    lines = Path(output).read_text().splitlines()
+    headers = [line for line in lines if line.startswith("heavy: queued task ")]
+    receipts = [line for line in lines if line.startswith("heavy: receipt ")]
+    require(len(headers) == 1, "expected exactly one queued gate header")
+    header = re.fullmatch(r"heavy: queued task ([0-9]+) in the gate lane token ([0-9a-f]{32})", headers[0])
+    require(header is not None, "malformed queued gate header or non-gate lane")
+    task_id, token = header.groups()
+    require(len(receipts) == 1, "expected exactly one receipt line")
+    selected = re.fullmatch(r"heavy: receipt (/.+) token ([0-9a-f]{32})", receipts[0])
+    require(selected is not None, "malformed receipt line")
+    require(lines[-1] == receipts[0], "receipt line must be the final heavy output")
+    receipt_path, receipt_token = selected.groups()
+    require(receipt_token == token, "receipt line token differs from queued gate token")
+    require(Path(receipt_path).name == token + ".json", "receipt filename differs from queued gate token")
+    try:
+        receipt = json.loads(read_regular(receipt_path, "receipt"),
+                             object_pairs_hook=unique_fields, parse_constant=invalid_constant)
+    except (json.JSONDecodeError, UnicodeError, RecursionError):
+        raise ValueError("receipt JSON is malformed") from None
+    fields = {"schema", "token", "id", "queue", "lane", "tree", "policy", "args",
+              "outcome", "code", "payload_started", "payload_ended", "release_complete",
+              "cgroup_empty", "elapsed_s", "log", "log_sha256"}
+    require(type(receipt) is dict and receipt.keys() == fields, "receipt schema fields are invalid")
+    expected = {"schema": "heavy-receipt-v1", "token": token, "id": task_id,
+                "lane": "gate", "tree": tree, "policy": policy,
+                "args": ["bash", "-c", command], "outcome": "completed"}
+    for field, value in expected.items():
+        require(receipt[field] == value, f"receipt {field} differs from requested gate")
+    require(re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", receipt["tree"]) is not None,
+            "receipt tree is malformed")
+    require(re.fullmatch(r"sha256:[0-9a-f]{64}", receipt["policy"]) is not None,
+            "receipt policy is malformed")
+    require(type(receipt["queue"]) is str and bool(receipt["queue"].strip()),
+            "receipt queue identity is missing")
+    require(type(receipt["code"]) is int and receipt["code"] == 0, "receipt code is not zero")
+    for field in ("payload_started", "payload_ended", "release_complete", "cgroup_empty"):
+        require(receipt[field] is True, f"receipt {field} is not true")
+    elapsed = receipt["elapsed_s"]
+    require(type(elapsed) in (int, float), "receipt elapsed_s is not numeric")
+    require((type(elapsed) is int or math.isfinite(elapsed)) and elapsed >= 0,
+            "receipt elapsed_s is not finite and nonnegative")
+    log = receipt["log"]
+    require(type(log) is str and Path(log).is_absolute() and Path(log).name == token + ".log",
+            "receipt log path does not name the token-owned absolute log")
+    digest = receipt["log_sha256"]
+    require(type(digest) is str and re.fullmatch(r"[0-9a-fA-F]{64}", digest) is not None,
+            "receipt log_sha256 is malformed")
+    contents = read_regular(log, "receipt log")
+    require(hashlib.sha256(contents).hexdigest() == digest.lower(), "receipt log SHA-256 differs")
+    # Summarize the bytes whose digest was checked, without reopening the log.
+    text = re.sub(r"\x1b\[[0-9;]*m", "", contents.decode("utf-8", errors="replace"))
+    summaries = re.findall(r"^ *Summary \[ *([0-9]+(?:\.[0-9]+)?)s\] [0-9]+ tests? run: ([0-9]+) passed.*$",
+                           text, re.MULTILINE)
+    parts = [f"{count} tests / {seconds} s" for seconds, count in summaries]
+    parts.append(f"{format(Decimal(str(elapsed)), 'f')} s in all")
+    label = "gate" if any(char.isspace() for char in command) else command
+    print(f"{label} passed: " + "; ".join(parts))
+
+
+try:
+    main()
+except (OSError, UnicodeError, ValueError):
+    # Field-specific errors contain no command, environment or JSON values.
+    error = sys.exc_info()[1]
+    reason = str(error) if isinstance(error, ValueError) and not isinstance(error, UnicodeError) else "receipt evidence could not be read or decoded"
+    print("land: invalid gate receipt: " + reason, file=sys.stderr)
+    sys.exit(1)
+PY
 }
 
 try=0
@@ -248,15 +356,15 @@ Resolve them, run git rebase --continue, then land again."
                 die 4 "the gate failed on $(git rev-parse --short HEAD)"
             fi
             cat "$out"
-            last=$(grep '^heavy: task ' "$out" | tail -n1 || true)
-            log=$(sed -nE 's/.* log (.*)$/\1/p' <<<"$last")
-            secs=$(sed -nE 's/^heavy: ran alone for ([0-9]+)s$/\1/p' "${log:-$out}" | tail -n1)
-            summary=$(evidence "${log:-$out}" "${secs:-?}")
+            if ! summary=$(evidence "$out"); then
+                rm -f "$out"
+                die 4 "the gate completion evidence was not accepted; nothing landed"
+            fi
             rm -f "$out"
             policy_recheck
             mkdir -p "$(dirname "$cache")"
             cache_tmp=$(mktemp "$cache_dir/.evidence.XXXXXX")
-            printf 'gate-evidence-v2\n%s\n%s\n' "$policy" "$summary" >"$cache_tmp"
+            printf 'gate-evidence-v3\n%s\n%s\n' "$policy" "$summary" >"$cache_tmp"
             mv -f "$cache_tmp" "$cache"
         fi
         policy_recheck

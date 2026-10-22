@@ -73,7 +73,8 @@ policy even when the checked tree differs only in documentation.
 
 `land` prepares after each rebase and before either exact-tree lookup or
 `Gate-Tree` reuse. A cache record has exactly three lines: the format
-`gate-evidence-v2`, the policy identity, and the result summary. Its
+`gate-evidence-v3`, the policy identity, and the result summary with a
+numeric total duration. v2 and policyless records cannot be reused. Its
 filename hashes tree, gate command and policy. A prior tree's trailer must
 name the same policy, its cache record must validate, and its tree must
 remain available for the documentation-only diff. Writes use a
@@ -88,6 +89,61 @@ differs from their computed identity. Revalidation must fail closed if the
 policy changes during a run; `land` checks again on cache hits as well.
 This identity is runtime evidence, separate from queue ordering and
 transport policy.
+
+### 3.1 Gate completion receipts
+
+A successful heavy client exit is necessary for new evidence. Before a
+cache write, commit amendment or push, `land` also validates the gate's
+token-owned completion receipt. The gate's captured output must contain
+exactly one submission header and exactly one receipt line:
+
+```text
+heavy: queued task ID in the gate lane token TOKEN
+heavy: receipt ABSOLUTE_PATH token TOKEN
+```
+
+The receipt line is the final line, after the payload tail and task summary.
+`ID` is a numeric string and `TOKEN` is a lowercase 32-hex UUID. Both lines
+must name the same token. Numeric task IDs alone are not completion evidence:
+queues may reuse them for unrelated work. Missing, duplicate or malformed
+protocol lines fail closed.
+
+The selected file is named `TOKEN.json`. Heavy writes it privately (0600)
+with an atomic rename only after the task's events and TSV completion,
+its owned cgroup is proved empty and terminal release is durable. A failed
+task may also produce a receipt; only successful completion is accepted.
+The JSON object has exactly these fields:
+
+| Field | Required value |
+|---|---|
+| `schema` | `heavy-receipt-v1` |
+| `token`, `id` | Strings matching the submission header |
+| `queue` | Nonempty queue identity string |
+| `lane` | `gate` |
+| `tree` | The requested Git `HEAD^{tree}`, 40 or 64 hex digits |
+| `policy` | The requested `sha256:` policy identity |
+| `args` | Exactly `["bash", "-c", GATE_COMMAND]` as submitted by `land` |
+| `outcome`, `code` | `completed` and integer zero (boolean is invalid) |
+| `payload_started`, `payload_ended` | Both boolean true |
+| `release_complete`, `cgroup_empty` | Both boolean true |
+| `elapsed_s` | Finite nonnegative JSON number (boolean is invalid) |
+| `log` | Absolute path to the completed `TOKEN.log` |
+| `log_sha256` | 64-hex SHA-256 digest of that log's bytes |
+
+`land` parses JSON as data, refuses duplicate fields, checks the header ID
+and token, current tree, policy, arguments and every completion field, and
+rehashes the selected log. Receipt and log must be readable regular files,
+opened without following a final symlink. Missing or corrupted files fail
+closed. Their absolute paths need no fixed queue root: isolated queues may
+use different directories. Validation reads only the captured output,
+selected receipt and its token-owned log, with no global queue queries.
+
+The summary uses nextest counts from the verified log bytes and total time
+from `elapsed_s`; a custom gate may have no nextest summaries. Missing time
+cannot become a `? s` success. Post-run policy validation still precedes the
+cache write. Exact-tree and documentation-only reuse require the new cache
+format and matching policy; legitimate cached evidence needs no new heavy
+submission or rereading of historical queue logs.
 
 ## 4. Bounds and tests
 
@@ -112,3 +168,12 @@ changes, semantic flags/configuration and wrapper changes, helper changes,
 legacy refusal, export propagation, and mutation during a gate. A separate
 lightweight validation uses the installed Chromium 147 executable, without
 launching a browser session, building crates or running the full gate.
+
+The fake heavy writes real token-owned JSON receipts and completed logs.
+Faults cover reused numeric IDs with an old build success, stale valid
+receipts, absent or duplicate protocol lines, binding and completion
+mismatches, cancellation, malformed JSON, missing or altered logs, invalid
+durations and file types. Refusals must leave the candidate commit, local
+main and accepted cache untouched. These fixtures exercise `land`'s consumer
+boundary; queue lifecycle and durable receipt publication need heavy's
+separate recovery fixtures.

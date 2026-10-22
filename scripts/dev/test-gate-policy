@@ -30,21 +30,148 @@ class PolicyFixtures(unittest.TestCase):
                     "GIT_CONFIG_NOSYSTEM": "1", "FIXTURE_CALLS": str(self.root / "calls")}
         for name in ("land", "gate-policy.sh", "kit.sh"):
             shutil.copy(KIT / name, self.kit / name)
-        self.script(self.kit / "heavy", '''#!/usr/bin/env bash
-set -eu
-lane=build
-while (($#)); do
-    case $1 in
-    --gate) lane=gate; shift ;;
-    --tail) shift 2 ;;
-    *) break ;;
-    esac
-done
-printf '%s %s %s\n' "$lane" "$SKEIN_TEST_CHROMIUM" "$SKEIN_GATE_POLICY_ID" >>"$FIXTURE_CALLS"
-echo 'heavy: queued task 1 in gate'
-"$@"
-echo 'heavy: ran alone for 0s'
-echo 'heavy: task 1 (gate) exit 0, waited 0s, ran 0s'
+        self.script(self.kit / "heavy", r'''#!/usr/bin/env python3
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import uuid
+
+os.umask(0o077)
+args = sys.argv[1:]
+lane = "build"
+while args:
+    if args[0] == "--gate":
+        lane = "gate"
+        args = args[1:]
+    elif args[0] == "--tail":
+        args = args[2:]
+    else:
+        break
+with open(os.environ["FIXTURE_CALLS"], "a") as calls:
+    calls.write(f'{lane} {os.environ["SKEIN_TEST_CHROMIUM"]} {os.environ["SKEIN_GATE_POLICY_ID"]}\n')
+token = uuid.uuid4().hex
+fault = os.environ.get("FIXTURE_RECEIPT_FAULT", "")
+header = f"heavy: queued task 1 in the {lane} lane token {token}"
+if fault == "legacy_header":
+    header = "heavy: queued task 1 in the gate lane"
+if fault == "non_gate_header":
+    header = f"heavy: queued task 1 in the build lane token {token}"
+if fault == "malformed_header_token":
+    header = "heavy: queued task 1 in the gate lane token malformed"
+if fault != "missing_header":
+    print(header, flush=True)
+if fault == "duplicate_header":
+    print(header, flush=True)
+tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+if lane == "build":
+    sys.stdout.buffer.write(result.stdout)
+    sys.exit(result.returncode)
+state = Path(os.environ["DEV_TMP"]) / "isolated queue"
+receipts = state / "receipts"
+logs = state / "logs with spaces"
+receipts.mkdir(parents=True, exist_ok=True)
+logs.mkdir(parents=True, exist_ok=True)
+log = logs / (token + ".log")
+log.write_bytes(result.stdout)
+receipt = dict(schema="heavy-receipt-v1", token=token, id="1", queue="isolated-fixture",
+               lane=lane, tree=tree, policy=os.environ["SKEIN_GATE_POLICY_ID"], args=args,
+               outcome="completed", code=result.returncode, payload_started=True,
+               payload_ended=True, release_complete=True, cgroup_empty=True,
+               elapsed_s=0.25, log=str(log), log_sha256=hashlib.sha256(result.stdout).hexdigest())
+if fault == "old_build_same_id":
+    # A queued cancellation finds an older build's successful numeric-ID row.
+    old = state / "old-build.log"
+    old.write_text("heavy: ran alone for 7s\n")
+    (state / "heavy.tsv").write_text(f"1\tbuild\told\t0\t7\t0\t0\t.\t{old}\n")
+    print(f"heavy: task 1 (build) exit 0, waited 0s, ran 7s, log {old}")
+    sys.exit(0)
+changes = {
+    "wrong_token": ("token", "f" * 32), "wrong_id": ("id", "2"), "numeric_id": ("id", 1),
+    "wrong_lane": ("lane", "build"), "wrong_tree": ("tree", "f" * 40),
+    "wrong_policy": ("policy", "sha256:" + "f" * 64), "wrong_args": ("args", ["true"]),
+    "cancelled": ("outcome", "cancelled"), "failed_code": ("code", 1),
+    "boolean_code": ("code", False), "payload_not_started": ("payload_started", False),
+    "payload_not_ended": ("payload_ended", False), "release_incomplete": ("release_complete", False),
+    "scope_not_empty": ("cgroup_empty", False), "duration_string": ("elapsed_s", "?"),
+    "duration_bool": ("elapsed_s", True), "duration_negative": ("elapsed_s", -1),
+    "duration_nan": ("elapsed_s", float("nan")), "duration_infinite": ("elapsed_s", float("inf")),
+    "empty_queue": ("queue", ""), "non_string_queue": ("queue", 1),
+    "wrong_schema": ("schema", "heavy-receipt-v0"), "wrong_log_name": ("log", str(logs / "other.log")),
+    "relative_log": ("log", token + ".log"), "wrong_digest": ("log_sha256", "0" * 64),
+}
+if fault in changes:
+    key, value = changes[fault]
+    receipt[key] = value
+if fault == "missing_duration":
+    del receipt["elapsed_s"]
+if fault == "extra_field":
+    receipt["unknown"] = True
+path = receipts / (token + ".json")
+temporary = path.with_suffix(".tmp")
+temporary.write_text(json.dumps(receipt))
+temporary.replace(path)
+if fault == "malformed_json":
+    path.write_text("{broken")
+if fault == "duplicate_field":
+    path.write_text(path.read_text()[:-1] + ', "code": 0}')
+if fault == "non_object_json":
+    path.write_text("[]")
+if fault == "receipt_symlink":
+    target = path.with_suffix(".saved")
+    path.rename(target)
+    path.symlink_to(target)
+if fault == "receipt_directory":
+    path.unlink()
+    path.mkdir()
+if fault == "receipt_fifo":
+    path.unlink()
+    os.mkfifo(path)
+if fault == "missing_receipt_file":
+    path.unlink()
+if fault == "unreadable_receipt":
+    path.chmod(0)
+if fault == "mutated_log":
+    log.write_bytes(b"mutated completed log\n")
+if fault == "missing_log":
+    log.unlink()
+if fault == "unreadable_log":
+    log.chmod(0)
+if fault == "log_symlink":
+    target = log.with_suffix(".saved")
+    log.rename(target)
+    log.symlink_to(target)
+if fault == "log_directory":
+    log.unlink()
+    log.mkdir()
+if fault == "log_fifo":
+    log.unlink()
+    os.mkfifo(log)
+if fault == "wrong_filename":
+    target = path.with_name("other.json")
+    path.rename(target)
+    path = target
+if fault == "stale_valid_receipt":
+    path = next(candidate for candidate in receipts.glob("*.json") if candidate != path)
+    token = path.stem
+sys.stdout.buffer.write(result.stdout)
+print("heavy: task 1 (gate) exit 0, waited 0s, ran 0s", flush=True)
+line_token = "f" * 32 if fault == "wrong_line_token" else token
+line = f"heavy: receipt {path} token {line_token}"
+if fault == "relative_receipt":
+    line = f"heavy: receipt {path.name} token {line_token}"
+if fault == "malformed_receipt_line":
+    line = f"heavy: receipt {path} token malformed"
+if fault != "missing_receipt_line":
+    print(line)
+if fault == "duplicate_receipt":
+    print(line)
+if fault == "output_after_receipt":
+    print("heavy: late output")
+sys.exit(result.returncode)
 ''')
         for name, version in (("rustc", "rustc 1.fixture"), ("cargo", "cargo 1.fixture"),
                               ("rustdoc", "rustdoc 1.fixture")):
@@ -119,7 +246,7 @@ echo 'heavy: task 1 (gate) exit 0, waited 0s, ran 0s'
         self.land()
         self.assertEqual(len(self.calls()), 1)
         cache = next((self.root / "tmp/gates/repo").iterdir())
-        self.assertEqual(cache.read_text().splitlines()[:2], ["gate-evidence-v2", policy])
+        self.assertEqual(cache.read_text().splitlines()[:2], ["gate-evidence-v3", policy])
         self.assertEqual(cache.stat().st_mode & 0o777, 0o600)
 
     def test_docs_only_same_policy_reuses(self):
@@ -166,7 +293,10 @@ echo 'heavy: task 1 (gate) exit 0, waited 0s, ran 0s'
     def test_legacy_and_mismatched_records_are_invalid(self):
         self.land()
         cache = next((self.root / "tmp/gates/repo").iterdir())
-        for record in ("true passed: legacy\n", "gate-evidence-v2\nsha256:wrong\npassed\n"):
+        policy = self.git("log", "-1", "--format=%(trailers:key=Gate-Policy,valueonly)").strip()
+        for record in ("true passed: legacy\n", f"gate-evidence-v2\n{policy}\ntrue passed: ? s in all\n",
+                       "gate-evidence-v3\nsha256:wrong\ntrue passed: 0 s in all\n",
+                       f"gate-evidence-v3\n{policy}\ntrue passed: ? s in all\n"):
             cache.write_text(record)
             self.retry()
             before = len(self.calls())
@@ -181,6 +311,87 @@ echo 'heavy: task 1 (gate) exit 0, waited 0s, ran 0s'
         (cache / old_key).write_text("legacy passed\n")
         self.land()
         self.assertEqual(len(self.calls()), 1)
+
+    def test_receipt_faults_refuse_before_cache_amend_or_main(self):
+        faults = (
+            "old_build_same_id", "missing_header", "duplicate_header", "missing_receipt_line",
+            "legacy_header", "non_gate_header", "malformed_header_token", "relative_receipt",
+            "malformed_receipt_line", "missing_receipt_file", "wrong_line_token", "wrong_token",
+            "wrong_id", "numeric_id", "wrong_lane",
+            "wrong_tree", "wrong_policy", "wrong_args", "cancelled", "failed_code", "boolean_code",
+            "payload_not_started", "payload_not_ended", "release_incomplete", "scope_not_empty",
+            "missing_duration", "duration_string", "duration_bool", "duration_negative", "duration_nan",
+            "duration_infinite", "empty_queue", "non_string_queue", "wrong_schema", "malformed_json",
+            "duplicate_field", "non_object_json", "extra_field", "mutated_log", "missing_log",
+            "wrong_log_name", "relative_log", "wrong_digest", "wrong_filename", "duplicate_receipt",
+            "output_after_receipt", "receipt_symlink", "receipt_directory", "receipt_fifo",
+            "log_symlink", "log_directory", "log_fifo",
+        )
+        if os.geteuid() != 0:
+            faults += ("unreadable_log", "unreadable_receipt")
+        head = self.git("rev-parse", "HEAD").strip()
+        for fault in faults:
+            with self.subTest(fault=fault):
+                result = self.land({"FIXTURE_RECEIPT_FAULT": fault}, check=False)
+                self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+                self.assertIn("invalid gate receipt:", result.stderr)
+                self.assertIn("completion evidence was not accepted", result.stderr)
+                self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+                self.assertEqual(self.git("rev-parse", "HEAD").strip(), head)
+                self.assertFalse((self.root / "tmp/gates/repo").exists())
+
+    def test_stale_valid_receipt_with_same_numeric_id_cannot_reuse(self):
+        self.land()
+        cache = next((self.root / "tmp/gates/repo").iterdir())
+        cache.unlink()
+        self.retry()
+        head = self.git("rev-parse", "HEAD").strip()
+        result = self.land({"FIXTURE_RECEIPT_FAULT": "stale_valid_receipt"}, check=False)
+        self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+        self.assertIn("receipt line token differs", result.stderr)
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), head)
+        self.assertFalse(list(cache.parent.iterdir()))
+
+    def test_receipt_duration_and_completed_log_supply_summary(self):
+        gate = "printf '\\033[32mSummary [ 1.2s] 3 tests run: 3 passed\\033[0m\\n'"
+        result = self.land(gate=gate)
+        self.assertIn("gate passed: 3 tests / 1.2 s; 0.25 s in all", result.stdout)
+        self.assertNotIn("? s", result.stdout)
+        self.retry()
+        self.land(gate=gate)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_docs_only_v2_record_cannot_reuse(self):
+        self.land()
+        cache = next((self.root / "tmp/gates/repo").iterdir())
+        cache.write_text(cache.read_text().replace("gate-evidence-v3", "gate-evidence-v2"))
+        self.advance_main_docs()
+        result = self.land()
+        self.assertNotIn("differs from this tree only in docs/ Markdown", result.stderr)
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_default_gate_requires_receipt_for_new_candidate(self):
+        self.script(self.repo / "scripts/check.sh", "#!/bin/sh\nexit 0\n")
+        self.git("add", "scripts/check.sh")
+        self.git("commit", "-qm", "gate")
+        head = self.git("rev-parse", "HEAD").strip()
+        result = self.run_command([str(self.kit / "land"), "--local"], check=False,
+                                  extra={"FIXTURE_RECEIPT_FAULT": "missing_receipt_line"})
+        self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), head)
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        result = self.run_command([str(self.kit / "land"), "--local"])
+        self.assertIn("scripts/check.sh passed: 0.25 s in all", result.stdout)
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_prebuild_header_cannot_supply_gate_evidence(self):
+        (self.repo / "Cargo.toml").write_text("# prebuild boundary fixture\n")
+        self.git("add", "Cargo.toml")
+        self.git("commit", "-qm", "prebuild boundary")
+        result = self.land({"LAND_PREBUILD": "true"})
+        self.assertEqual([line.split()[0] for line in self.calls()], ["build", "gate"])
+        self.assertIn("true passed: 0.25 s in all", result.stdout)
 
     def test_policy_mutation_during_gate_refuses_evidence(self):
         gate = 'printf "# mutation\\n" >> "$SKEIN_TEST_CHROMIUM"'
