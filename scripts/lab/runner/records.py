@@ -85,7 +85,7 @@ def subject_refusals(value):
 
 def lab_refusals(value):
     out = []
-    lab = shape(value, ("runner", "python", "programs", "driver", "cost"), (), "lab", out)
+    lab = shape(value, ("runner", "python", "programs", "driver", "cost"), ("browser",), "lab", out)
     if not digest_value(lab.get("runner")):
         out.append(Refusal("lab.runner", "expected a tree digest"))
     if type(lab.get("python")) is not str or not lab["python"]:
@@ -107,6 +107,11 @@ def lab_refusals(value):
                 out.append(Refusal(m + ".sha256", "expected a digest"))
         if paths != sorted(set(paths)):
             out.append(Refusal("lab.programs", "paths must be unique and sorted"))
+    if "browser" in lab:
+        browser = shape(lab["browser"], ("chromium", "fonts"), (), "lab.browser", out)
+        out.extend(chromium_refusals(browser.get("chromium"), "lab.browser.chromium"))
+        if not digest_value(browser.get("fonts")):
+            out.append(Refusal("lab.browser.fonts", "expected a tree digest"))
     driver = lab.get("driver")
     if driver is not None:
         d = shape(driver, ("program", "model", "effort", "config"), (), "lab.driver", out)
@@ -206,7 +211,7 @@ def signature_value(text):
 
 
 FINDING_ID = re.compile(r'F-(?:[0-9]{4}|[1-9][0-9]{4,})\Z')
-CLASSES = ('world', 'fake', 'below', 'tools', 'experiment', 'lab')
+CLASSES = ('world', 'fake', 'below', 'tools', 'experiment', 'lab', 'look')
 FINDING_FIELDS = {
     'candidate': ('signature', 'kind', 'summary', 'run', 'key', 'seed', 'failure'),
     'occurred': ('run', 'key', 'seed', 'failure'),
@@ -288,6 +293,7 @@ def fix_refusals(value, finding_class):
         return [Refusal('fix.class', 'confirmed class required')]
     fields = (('experiment',) if finding_class == 'experiment' else
               ('runner_commit', 'tests') if finding_class == 'lab' else
+              ('repository', 'commit', 'expectations', 'product_commit') if finding_class == 'look' else
               ('repository', 'commit', 'tests', 'product_commit'))
     obj = shape(value, fields, (), 'fix', out)
     for field in fields:
@@ -296,10 +302,23 @@ def fix_refusals(value, finding_class):
             valid = digest_value(item)
         elif field in ('commit', 'product_commit', 'runner_commit'):
             valid = commit_value(item)
-        elif field == 'tests':
+        elif field in ('tests', 'expectations'):
             valid = type(item) is list and bool(item) and all(text_value(t) for t in item) and len(set(item)) == len(item)
         else:
             valid = text_value(item) and item.startswith('/')
         if not valid:
             out.append(Refusal('fix.' + field, 'missing or invalid fix evidence'))
+    return out
+
+
+def chromium_refusals(value, member):
+    out = []
+    obj = shape(value, ('path', 'sha256', 'version'), (), member, out)
+    path = obj.get('path')
+    if type(path) is not str or not path.startswith('/') or '\x00' in path:
+        out.append(Refusal(member + '.path', 'expected an absolute path'))
+    if not digest_value(obj.get('sha256')):
+        out.append(Refusal(member + '.sha256', 'expected a digest'))
+    if not text_value(obj.get('version')):
+        out.append(Refusal(member + '.version', 'expected nonempty text'))
     return out

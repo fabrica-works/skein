@@ -243,6 +243,33 @@ class Files(unittest.TestCase):
             self.act('close', recheck=self.corrected)
         self.assertEqual(before, self.lab.read('findings/F-0001.jsonl'))
 
+    def test_look_cli_expectations_and_host_product_proof_refusal(self):
+        for n in (1, 2, 3):
+            self.publish(n, str(n))
+        self.publish(4, attempt=2)
+        self.lock.__exit__(None, None, None)
+        try:
+            commands = [['class', 'look'], ['file'], ['take', '--by', 'person'],
+                        ['fix', '--repository', '/untrusted/repository', '--commit', 'a' * 40,
+                         '--expectation', 'desktop', '--expectation', 'mobile', '--product-commit', 'b' * 40]]
+            for command in commands:
+                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+                    status = cli.main(['finding', 'F-0001', *command], lab_root=self.lab.root, finding_time=T)
+                self.assertEqual(status, 0, error.getvalue())
+            self.assertEqual(self.events()[-1]['fix']['expectations'], ['desktop', 'mobile'])
+        finally:
+            self.lock = self.lab.lock()
+            self.lock.__enter__()
+        for n in (1, 2, 3):
+            self.publish(10 + n, str(n), 'pass', key=self.corrected)
+        before = self.lab.read('findings/F-0001.jsonl')
+        with self.assertRaisesRegex(Refused, 'Git ancestry.*provenance is not proof'):
+            self.act('close', recheck=self.corrected)
+        self.assertEqual(before, self.lab.read('findings/F-0001.jsonl'))
+        fix = self.events()[-1]['fix']
+        with self.assertRaisesRegex(Refused, 'Git ancestry.*provenance is not proof'):
+            finding_store._carriage_fact(self.lab, 'look', fix, self.corrected, {}, {})
+
     def test_unchanged_experiment_is_not_a_fix(self):
         self.ready()
         with self.assertRaisesRegex(Refused, 'must differ'):

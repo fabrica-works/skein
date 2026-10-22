@@ -30,8 +30,8 @@ directories 0500. Existing content is verified before reuse.
 
 Create `settings.json` in the lab before validation, as **canonical JSON with
 one final newline**. Its `lab-settings/1` record has `costs`, `driver`, and
-`triager`, with optional `about`. `costs` maps experiment cost names to objects
-with exactly these positive integer fields: `ready_seconds`, `command_seconds`,
+`triager`, with optional `about` and `browser`. `costs` maps experiment cost
+names to objects with exactly these positive integer fields: `ready_seconds`, `command_seconds`,
 `stop_seconds`, `driver_seconds`, `driver_actions`, `driver_input_tokens`.
 There are no default cost values. For experiments with `driver: null`, settings
 `driver` and `triager` can both be null; no driver host or report is needed.
@@ -40,12 +40,26 @@ For agent experiments, `driver` is the key's driver object (lab.md, 2.3), and
 This slice validates their input shapes and declared driver executable identity;
 it does not run a driver or check its effective inventory.
 
+Optional `browser` is null or an object with `program` (absolute executable
+path), `chromium` (`path`, `sha256`, `version`), and `fonts` (`path`, `tree`).
+Chromium's path is absolute and resolved; its digest and the fonts directory's
+tree digest must match the files. Only an experiment using a `{browser.*}`
+template checks these settings. Its key gains `lab.browser`, with `chromium`
+and the fonts tree digest as `fonts`, and the browser program joins `programs`.
+The run rechecks them before provisioning. Other experiments ignore `browser`
+entirely, including missing paths, stale digests and malformed values.
+
 The experiment is the directory defined by lab.md, section 4. It and its
 `experiment.json` must contain no links or special files. Files named by
 process `files` are checked as templates at the process's place in the DAG;
 rendering a dependent file waits for the predecessor captures. Executable
-paths use immutable experiment/artifact inputs or literal absolute system
-paths. Each declared system program and runner helper is resolved, hashed
+paths use immutable experiment/artifact inputs, runner programs, browser
+program/Chromium templates or literal absolute system paths.
+`{runner}` is the runner's directory; `{runner}/look/capture` must be an
+executable regular file outside `tests/`, covered by the runner tree identity.
+`{browser.program}`, `{browser.chromium}` and `{browser.fonts}` name the
+settings' paths. All four templates are known everywhere.
+Each declared system program and runtime system helper is resolved, hashed
 and included in `key.lab.programs`. Seeds, scratch and captures are excluded
 from keys. The runner tree excludes `tests/`.
 
@@ -189,9 +203,9 @@ Each `findings/F-NNNN.jsonl` line is canonical `lab-finding/1`, with `event`,
 `t` (UTC milliseconds) and `by`. Candidates retain signature/kind/summary and
 run/key/seed/failure identity; occurrences and reopenings retain that failure
 identity. Proposed class/title/reason remains distinct from owner `classed`.
-The six classes are exactly `world`, `fake`, `below`, `tools`, `experiment`,
-`lab`. An omitted `--by` on owner commands records `uid:<uid>`; `take` requires
-`--by`. Reserved actors `runner` and `triager` cannot confirm a class or act
+The seven classes are exactly `world`, `fake`, `below`, `tools`, `experiment`,
+`lab`, `look` (a page's appearance). An omitted `--by` on owner commands records
+`uid:<uid>`; `take` requires `--by`. Reserved actors `runner` and `triager` cannot confirm a class or act
 as an owner.
 
 Filing needs a fail/flaky verdict from exactly three judged seeds, a rerun of
@@ -213,6 +227,10 @@ experiment, `--experiment DIGEST` names the retained corrected experiment,
 which must differ from the original. For lab, use `--runner-commit FULL_OID
 --test OWN_TEST [--test ...]`. Missing, unknown or mixed-class fix members
 refuse. Findings write no product repository, forge issue or message.
+For look, use `--repository /absolute/path --commit FULL_OID --expectation
+NAME [--expectation ...] --product-commit FULL_OID`: unique expectation names
+that fail before the stylesheet fix and pass after it. Its host close and
+recurrence need the same product ancestry proof as other product classes.
 
 The host completes experiment-class close/reopen verification. It checks the
 retained key's digest and shape, frozen experiment bytes, and frozen subject

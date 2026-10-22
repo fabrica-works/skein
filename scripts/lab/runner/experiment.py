@@ -1,7 +1,7 @@
 """Experiment decisions over records and supplied facts; no filesystem access."""
 import re
 from . import canonical
-from .records import (COST_FIELDS, NAME, Refusal, Refused, digest_value, lab_refusals,
+from .records import (COST_FIELDS, NAME, Refusal, Refused, chromium_refusals, digest_value, lab_refusals,
                       positive, relative, shape, signature_value, subject_refusals)
 
 
@@ -114,6 +114,32 @@ def template_uses(experiment, files):
                         yield f"{m}.files.{j}.from", files[entry["from"]], phase, process, False
 
 
+def uses_browser(experiment, files):
+    for _member, text, _phase, _process, _executable in template_uses(experiment, files):
+        try:
+            if any(placeholder and name.startswith('browser.') for placeholder, name in _parts(text)):
+                return True
+        except Refused:
+            continue
+    return False
+
+
+def browser_settings_refusals(value):
+    out = []
+    obj = shape(value, ('program', 'chromium', 'fonts'), (), 'settings.browser', out)
+    program = obj.get('program')
+    if type(program) is not str or not program.startswith('/') or '\x00' in program:
+        out.append(Refusal('settings.browser.program', 'expected an absolute path'))
+    out.extend(chromium_refusals(obj.get('chromium'), 'settings.browser.chromium'))
+    fonts = shape(obj.get('fonts'), ('path', 'tree'), (), 'settings.browser.fonts', out)
+    path = fonts.get('path')
+    if type(path) is not str or not path.startswith('/') or '\x00' in path:
+        out.append(Refusal('settings.browser.fonts.path', 'expected an absolute path'))
+    if not digest_value(fonts.get('tree')):
+        out.append(Refusal('settings.browser.fonts.tree', 'expected a tree digest'))
+    return out
+
+
 def validate(experiment, subject, settings, facts):
     out = []
     exp = shape(experiment, ("format", "name", "cost", "dirs", "processes", "actions", "driver",
@@ -126,7 +152,7 @@ def validate(experiment, subject, settings, facts):
     subject = subject if type(subject) is dict else {}
     artifacts = subject.get("artifacts")
     artifacts = artifacts if type(artifacts) is dict else {}
-    settings = shape(settings, ("format", "costs", "driver", "triager"), ("about",), "settings", out)
+    settings = shape(settings, ("format", "costs", "driver", "triager"), ("about", "browser"), "settings", out)
     if settings.get("format") != "lab-settings/1":
         out.append(Refusal("settings.format", "expected lab-settings/1"))
     costs = settings.get("costs")
@@ -154,6 +180,25 @@ def validate(experiment, subject, settings, facts):
     available_artifacts = available_artifacts if type(available_artifacts) in (list, tuple, set) else ()
     known = facts.get("known")
     known = known if type(known) is dict else {}
+    browser_available = False
+    if uses_browser(exp, files):
+        browser = settings.get('browser')
+        problems = browser_settings_refusals(browser)
+        out.extend(problems)
+        if not problems:
+            browser_available = True
+            actual = facts.get('browser')
+            actual = actual if type(actual) is dict else {}
+            chromium = actual.get('chromium')
+            if (type(chromium) is not dict or any(chromium.get(k) != browser['chromium'][k]
+                                                 for k in ('path', 'sha256'))):
+                out.append(Refusal('settings.browser.chromium', 'host identity differs from configured Chromium'))
+            if actual.get('fonts') != browser['fonts']['tree']:
+                out.append(Refusal('settings.browser.fonts', 'host tree differs from configured fonts'))
+            program = programs.get(browser['program'])
+            if (type(program) is not dict or program.get('regular') is not True
+                    or program.get('exec') is not True or not digest_value(program.get('sha256'))):
+                out.append(Refusal('settings.browser.program', 'expected an executable regular file with known identity'))
 
     directories = _list(exp.get("dirs"), "dirs", out)
     dirs = set()
@@ -305,6 +350,11 @@ def validate(experiment, subject, settings, facts):
             immutable = False
             if name == "experiment":
                 available = immutable = True
+            elif name == "runner":
+                available = immutable = True
+            elif name in ('browser.program', 'browser.chromium', 'browser.fonts'):
+                available = browser_available
+                immutable = name in ('browser.program', 'browser.chromium')
             elif name == "source":
                 available = subject.get("source") is not None and facts.get("source_available") is True
             elif len(bits) == 2 and bits[0] == "artifact":
@@ -339,13 +389,18 @@ def validate(experiment, subject, settings, facts):
                 out.append(Refusal(member, error.refusal.why))
                 continue
             metadata = programs.get(path)
+            runner = known.get('runner')
+            if type(runner) is str and path.startswith(runner + '/'):
+                suffix = path[len(runner) + 1:]
+                if not relative(suffix) or suffix.split('/')[0] == 'tests':
+                    out.append(Refusal(member, 'runner program must be in its tree outside tests/'))
             if (not path.startswith("/") or type(metadata) is not dict
                     or metadata.get("regular") is not True or metadata.get("exec") is not True
                     or not digest_value(metadata.get("sha256"))):
                 out.append(Refusal(member, "program must be an absolute executable regular file with known identity"))
         if ".reads." in member or ".writes." in member:
             # These paths are roots in a tool's view, not shell expressions.
-            if not text.startswith(("/", "{experiment}", "{artifact.", "{source}", "{dir.", "{proc.")) or ".." in text.split("/"):
+            if not text.startswith(("/", "{experiment}", "{runner}", "{browser.", "{artifact.", "{source}", "{dir.", "{proc.")) or ".." in text.split("/"):
                 out.append(Refusal(member, "expected a contained absolute template path"))
 
     for i, entry in enumerate(_list(exp.get("faults"), "faults", out)):

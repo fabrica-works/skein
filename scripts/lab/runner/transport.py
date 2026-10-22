@@ -26,6 +26,33 @@ def _receive(connection, size):
     return data
 
 
+def _runtime_known(lab, key):
+    """Recheck requested browser inputs before provisioning and supply their paths."""
+    from .cli import _browser_facts, _runner_root
+    known = {'runner': str(_runner_root())}
+    if 'browser' not in key['lab']:
+        return known
+    try:
+        settings = canonical.loads(lab.read('settings.json'))
+        browser = settings.get('browser')
+        paths, facts, problems = _browser_facts(browser)
+        if problems:
+            raise RuntimeError('; '.join(str(p) for p in problems))
+        expected = key['lab']['browser']
+        if (browser['chromium'] != expected['chromium']
+                or any(facts['chromium'][k] != expected['chromium'][k] for k in ('path', 'sha256'))):
+            raise RuntimeError('settings.browser.chromium')
+        if facts['fonts'] != expected['fonts']:
+            raise RuntimeError('settings.browser.fonts')
+        program = {k: facts['program'][k] for k in ('path', 'sha256')}
+        if program not in key['lab']['programs']:
+            raise RuntimeError('settings.browser.program')
+        known.update(paths)
+    except (OSError, Refused, RuntimeError) as error:
+        raise RuntimeError('browser changed before provision: ' + str(error)) from error
+    return known
+
+
 def worker(endpoint, token):
     """Only the transient unit calls this package entry point."""
     import fcntl
@@ -58,6 +85,7 @@ def worker(endpoint, token):
                 if canonical.digest(key) != spec['key'] or key['lab']['runner'] != _runner_digest():
                     raise RuntimeError('runner or key changed before provision')
                 _subject(lab, key['subject'])
+                known = _runtime_known(lab, key)
                 for program in key['lab']['programs']:
                     current = _program(program['path'])
                     if any(current[k] != program[k] for k in ('path', 'sha256')):
@@ -65,7 +93,9 @@ def worker(endpoint, token):
                 exp_path = 'store/experiments/' + key['experiment']
                 if canonical.tree_digest(store.walk(lab.root / exp_path)) != key['experiment']:
                     raise RuntimeError('experiment changed before provision')
-                record = Run(lab, spec).run(admitted=lambda: connection.sendall(b'A'))
+                run = Run(lab, spec)
+                run.state.data['known'].update(known)
+                record = run.run(admitted=lambda: connection.sendall(b'A'))
                 interrupted = next((e['detail'] for e in record['errors'] if e['what'] == 'interrupted'), None)
                 if interrupted is not None:
                     return 128 + int(getattr(signal, interrupted))

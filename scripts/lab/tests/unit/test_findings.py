@@ -51,6 +51,7 @@ class Lifecycle(unittest.TestCase):
         self.confirmed(finding_class)
         fix = ({'experiment': P} if finding_class == 'experiment' else
                {'runner_commit': 'a' * 40, 'tests': ['unit.finding']} if finding_class == 'lab' else
+               {'repository': '/repository', 'commit': 'a' * 40, 'expectations': ['page'], 'product_commit': 'b' * 40} if finding_class == 'look' else
                {'repository': '/repository', 'commit': 'a' * 40, 'tests': ['world::replays'], 'product_commit': 'b' * 40})
         self.add('fixed', fix=fix)
         return fix
@@ -140,11 +141,12 @@ class Lifecycle(unittest.TestCase):
         rate = findings.reproduction(self.state(), self.records)
         self.assertEqual((rate['numerator'], rate['denominator']), (1, 2))
 
-    def test_exact_six_classes_and_each_fix_field_required(self):
-        self.assertEqual(CLASSES, ('world', 'fake', 'below', 'tools', 'experiment', 'lab'))
+    def test_exact_seven_classes_and_each_fix_field_required(self):
+        self.assertEqual(CLASSES, ('world', 'fake', 'below', 'tools', 'experiment', 'lab', 'look'))
         for finding_class in CLASSES:
             fix = ({'experiment': P} if finding_class == 'experiment' else
                    {'runner_commit': 'a' * 40, 'tests': ['own::test']} if finding_class == 'lab' else
+                   {'repository': '/repo', 'commit': 'a' * 40, 'expectations': ['page'], 'product_commit': 'b' * 40} if finding_class == 'look' else
                    {'repository': '/repo', 'commit': 'a' * 40, 'tests': ['lowest::test'], 'product_commit': 'b' * 40})
             self.assertFalse(fix_refusals(fix, finding_class))
             for field in fix:
@@ -153,6 +155,19 @@ class Lifecycle(unittest.TestCase):
             self.assertTrue(fix_refusals({**fix, 'untrusted': True}, finding_class))
         for tests in ([], [''], ['same', 'same'], 'test'):
             self.assertTrue(fix_refusals({'runner_commit': 'a' * 40, 'tests': tests}, 'lab'))
+
+    def test_look_fix_expectations_and_verified_carriage(self):
+        fix = self.fixed('look')
+        self.assertEqual(self.state()['class'], 'look')
+        for expectations in ([], [''], ['same', 'same'], 'page', [{}]):
+            self.assertTrue(fix_refusals({**fix, 'expectations': expectations}, 'look'))
+        for field, item in (('repository', 'relative'), ('commit', 'short'), ('product_commit', None), ('tests', ['world'])):
+            self.assertTrue(fix_refusals({**fix, field: item}, 'look'))
+        with self.assertRaisesRegex(Refused, 'carriage'):
+            self.add('rechecked', key=Q, verdict=findings.snapshot(Q, self.records[Q]))
+        self.recheck(fix)
+        self.add('closed')
+        self.assertEqual(self.state()['state'], 'closed')
 
     def test_close_refuses_missing_false_or_unavailable_ancestry_and_same_key(self):
         fix = self.fixed('below')

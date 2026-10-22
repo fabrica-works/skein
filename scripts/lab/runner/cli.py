@@ -11,7 +11,7 @@ import subprocess
 import stat
 import sys
 from . import canonical, evidence, experiment, finding_store, judge, store
-from .records import Refusal, Refused, digest_value, subject_refusals
+from .records import CLASSES, Refusal, Refused, digest_value, relative, subject_refusals
 
 
 def _program(path):
@@ -22,6 +22,30 @@ def _program(path):
     if not executable:
         raise Refused(path, "program has no owner execute bit")
     return {"path": resolved, "sha256": store.file_digest(data), "regular": True, "exec": True}
+
+
+def _runner_root():
+    return Path(__file__).resolve().parent.parent
+
+
+def _browser_facts(browser):
+    """Read only an explicitly requested browser's host identities."""
+    known, facts, problems = {}, {}, []
+    problems.extend(experiment.browser_settings_refusals(browser))
+    if problems:
+        return known, facts, problems
+    known.update({'browser.program': browser['program'], 'browser.chromium': browser['chromium']['path'],
+                  'browser.fonts': browser['fonts']['path']})
+    for field, path in (('program', browser['program']), ('chromium', browser['chromium']['path'])):
+        try:
+            facts[field] = _program(path)
+        except (OSError, Refused) as error:
+            problems.append(Refusal('settings.browser.' + field, str(error)))
+    try:
+        facts['fonts'] = canonical.tree_digest(store.walk(browser['fonts']['path']))
+    except (OSError, Refused) as error:
+        problems.append(Refusal('settings.browser.fonts', str(error)))
+    return known, facts, problems
 
 
 def _subject(lab, identity):
@@ -119,7 +143,8 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
         subject, subject_path, subject_available = {}, lab.root / "store/subjects/missing", False
     exp_id = canonical.tree_digest(store.entries(files))
     exp_path = lab.root / "store/experiments" / exp_id
-    known = {"experiment": str(exp_path), "source": str(subject_path / "source")}
+    known = {"experiment": str(exp_path), "source": str(subject_path / "source"),
+             "runner": str(_runner_root())}
     known.update({"artifact." + name: str(subject_path / "artifacts" / name)
                   for name in subject.get("artifacts", {})})
     texts = {}
@@ -134,6 +159,16 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
     for name, item in subject.get("artifacts", {}).items():
         executables[known["artifact." + name]] = {"regular": True, "exec": item["exec"], "sha256": item["sha256"]}
     system = {}
+    browser_facts = {}
+    browser_used = experiment.uses_browser(exp, texts)
+    if browser_used:
+        browser_known, browser_facts, problems = _browser_facts(settings.get('browser'))
+        known.update(browser_known)
+        out.extend(problems)
+        if 'program' in browser_facts:
+            metadata = browser_facts['program']
+            executables[known['browser.program']] = metadata
+            system[metadata['path']] = {k: metadata[k] for k in ('path', 'sha256')}
     # Invalid or run-specific templates are left to the pure validator.
     for member, text, _, _, executable in experiment.template_uses(exp, texts):
         if not executable:
@@ -143,6 +178,12 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
             if path in executables:
                 continue
             if path.startswith(str(exp_path) + "/") or path.startswith(str(subject_path) + "/"):
+                continue
+            if path.startswith(known['runner'] + '/'):
+                suffix = path[len(known['runner']) + 1:]
+                if relative(suffix) and suffix.split('/')[0] != 'tests':
+                    data, executable_bit = store.read_regular(path)
+                    executables[path] = {'regular': True, 'exec': executable_bit, 'sha256': store.file_digest(data)}
                 continue
             metadata = _program(path)
             executables[path] = metadata
@@ -174,13 +215,16 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
     facts = {**_machine_facts(lab), "subject_available": subject_available,
              "source_available": subject_available and subject.get("source") is not None,
              "artifacts_available": list(subject.get("artifacts", {})), "experiment_files": texts,
-             "executables": executables, "known": known, "driver_host": driver_available}
+             "executables": executables, "known": known, "driver_host": driver_available,
+             "browser": browser_facts}
     out.extend(experiment.validate(exp, subject, settings, facts))
     if out:
         return None, out
     lab_inputs = {"runner": _runner_digest(),
                   "python": sys.version.split()[0], "programs": sorted(system.values(), key=lambda p: p["path"]),
                   "driver": driver, "cost": {"name": exp["cost"], **settings["costs"][exp["cost"]]}}
+    if browser_used:
+        lab_inputs['browser'] = {'chromium': settings['browser']['chromium'], 'fonts': browser_facts['fonts']}
     value = experiment.key(exp_id, subject, lab_inputs)
     identity = canonical.digest(value)
     lab.capture("experiments", exp_id, files)
@@ -251,8 +295,7 @@ def _new_seed(previous):
 
 
 def _runner_digest():
-    runner_root = Path(__file__).resolve().parent.parent
-    return canonical.tree_digest(store.walk(runner_root, exclude=("tests",)))
+    return canonical.tree_digest(store.walk(_runner_root(), exclude=("tests",)))
 
 
 def _artifact(text):
@@ -282,11 +325,12 @@ def main(argv=None, *, lab_root=None, finding_time=None):
         command = actions.add_parser(action)
         command.add_argument('--by', default='uid:' + str(os.getuid()), required=action == 'take')
         if action == 'class':
-            command.add_argument('finding_class', choices=('world', 'fake', 'below', 'tools', 'experiment', 'lab'))
+            command.add_argument('finding_class', choices=CLASSES)
         elif action == 'fix':
             command.add_argument('--repository')
             command.add_argument('--commit')
             command.add_argument('--test', action='append')
+            command.add_argument('--expectation', action='append')
             command.add_argument('--product-commit')
             command.add_argument('--experiment', dest='corrected_experiment')
             command.add_argument('--runner-commit')
@@ -315,6 +359,7 @@ def main(argv=None, *, lab_root=None, finding_time=None):
                 fix = None
                 if args.action == 'fix':
                     fields = {'repository': args.repository, 'commit': args.commit, 'tests': args.test,
+                              'expectations': args.expectation,
                               'product_commit': args.product_commit, 'experiment': args.corrected_experiment,
                               'runner_commit': args.runner_commit}
                     fix = {k: v for k, v in fields.items() if v is not None}
