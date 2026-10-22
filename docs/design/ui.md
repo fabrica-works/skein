@@ -347,7 +347,9 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
   fragment may leave slots of its own, filled in a second pass: slots
   nest two deep, never more, and a slot at the third depth stays
   loading. A slot's id survives the insertions before it within a pass,
-  and the limits count every pass.
+  and the limits count every pass. Splicing's scratch, a tree's room,
+  is reserved with a builder only when its limits allow slots: a tree
+  without them never splices.
 - **A slot left empty** shows as loading, and one its owner cannot show
   says so in its owner's words; neither breaks the tree.
 
@@ -443,7 +445,10 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
   and whether it links, a drawing's data); *value*, writing a field's
   value when its write count moved, or removing it. A patch carries no
   token, key or slot reference: they stay the view's, and a change to
-  them alone needs no patch.
+  them alone needs no patch. Its payloads are its own, each in a box
+  made as the diff emits it (an insert's nodes, a text's runs, an
+  attribute's whole set), so a queued patch is a few words, whatever it
+  carries.
 - **Never replaced while it can be updated,** so the platform keeps
   focus, caret, selection, composition and scroll across a patch.
 - **A focus request** travels with the attributes: a node inserted with
@@ -452,9 +457,11 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
   applied. The builder asserts at most one per tree.
 - **Bounded:** each node of either tree takes part in at most one
   structural patch (an insert, a remove or a move), and each matched
-  node in at most three more (an attribute, a text and a value), so a
-  diff fits the limit on patches derived from the limit on nodes
-  (section 15).
+  node in at most three more (an attribute, a text and a value). A
+  matched pair shares its one structural patch, a move, so with M pairs
+  a diff emits at most (old − M) + (new − M) + M + 3M patches: four a
+  node at most, which is how the limit on patches follows from the limit
+  on nodes (section 15).
 - **The view,** `skein_ui::View`, keeps the last tree, whose ids the
   shell sees, and a spare, both reserved at start:
 
@@ -741,8 +748,9 @@ builder asserts each before it allocates.
 - **`worst_case(&Limits)`** gives the most heap skein-ui's own containers
   hold under them, bookkeeping included and allocator overhead excluded:
   the view's two trees and a builder's, splicing's scratch, the diff's
-  tables and patches, the Markdown reader's scratch, a scene; nothing
-  when a product overflows.
+  tables and patches (the queue's slots, and the boxed attributes of at
+  most one attribute patch a node), the Markdown reader's scratch, a
+  scene; nothing when a product overflows.
 - **An owner derives the numbers;** skein-ui holds none (policy above,
   numbers below). An application derives its limits from its own: every
   window of its state full and every text at its most bytes, each phrase

@@ -363,7 +363,7 @@ the turn, which the inbox calls when a report waits and no turn runs:
     fetch reads the stream on, after a piece of it
     history shows the step's address, printed by its codec
     the step's effects, to their parts or the shell's own code (11)
-  patches ← the state machine builds
+  patches ← the state machine builds                into the queue reserved at start
   the page applies them, a focus request too        an unknown node: a panic
   a new entry: its top, its heading focused, unless a focus request moved
   back or forward: the scroll the entry kept
