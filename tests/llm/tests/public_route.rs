@@ -217,3 +217,69 @@ fn the_public_request_id_reaches_the_report() {
             .collect();
     assert_eq!(requests, [b"public-fixture".as_slice()]);
 }
+
+fn plan_response_without_type_world(headers: &str) -> skein_llm_world::World {
+    let rest = [
+        b"data: {\"type\":\"response.created\"}\n\n".as_slice(),
+        &skein_llm_world::events(&[
+            skein_llm_world::TEXT_ADDED,
+            skein_llm_world::TEXT_DELTA,
+            skein_llm_world::TEXT_DONE,
+            skein_llm_world::TERMINAL,
+        ]),
+    ]
+    .concat();
+    // The captured response's first HTTP chunk is exactly 24 bytes (hex 18).
+    let mut wire =
+        format!("HTTP/1.1 200 OK\r\n{headers}Transfer-Encoding: chunked\r\n\r\n18\r\nevent: response.created\n\r\n")
+            .into_bytes();
+    wire.extend_from_slice(format!("{:x}\r\n", rest.len()).as_bytes());
+    wire.extend_from_slice(&rest);
+    wire.extend_from_slice(b"\r\n0\r\n\r\n");
+    let mut world = skein_llm_world::World::new(
+        skein_llm_world::public_call(1),
+        skein_llm_world::limits_for(skein_llm::Provider::OpenAi),
+        wire,
+        545,
+    );
+    world.fragmentation(1, 3);
+    world.request(skein_llm::client::Request::Start);
+    world.run();
+    world.assert_once();
+    world
+}
+
+#[test]
+fn public_plan_accepts_event_stream_without_content_type() {
+    // The handwritten chunked body must reach its terminal under one-byte cuts.
+    let world = plan_response_without_type_world("");
+    assert!(world.seen.iter().any(|event| matches!(
+        event,
+        skein_llm::client::Event::Completed { completion, .. }
+            if completion.stop == skein_llm::Stop::EndTurn
+    )));
+}
+
+#[test]
+fn public_plan_still_accepts_case_and_parameters() {
+    let world = plan_response_without_type_world("cOnTeNt-TyPe: TeXt/EvEnT-StReAm ; charset=utf-8\r\n");
+    assert!(world.seen.iter().any(|event| matches!(event, skein_llm::client::Event::Completed { .. })));
+}
+
+#[test]
+fn public_plan_still_rejects_explicit_wrong_and_duplicate_types() {
+    for (headers, expected) in [
+        ("Content-Type: application/json\r\n", "response is not an event stream (content-type: application/json)"),
+        (
+            "Content-Type: text/event-stream\r\ncontent-type: text/event-stream\r\n",
+            "response is not an event stream (content-type: duplicate)",
+        ),
+    ] {
+        let world = plan_response_without_type_world(headers);
+        assert!(world.seen.iter().any(|event| matches!(
+            event,
+            skein_llm::client::Event::Failed { failure: skein_llm::Failure::Protocol, detail, .. }
+                if detail.as_ref() == expected.as_bytes()
+        )));
+    }
+}
