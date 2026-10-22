@@ -149,13 +149,21 @@ class HandCommands(unittest.TestCase):
                                     input=b'', capture_output=True, timeout=5, check=False)
             self.assertEqual(result.returncode, 3, result.stderr)
 
-    def test_sign_in_reads_one_line_from_stdin(self):
+    def test_sign_in_more_than_one_line_is_a_usage_error_and_never_connects(self):
+        # 8.8: its standard input is one line, the link; more is a usage error, and nothing is sent.
         link = 'http://127.0.0.1:12345/sign-in?invented-credential-0001'
-        call, status, stdout, stderr = self.exchange([], canonical(dict(opened='http://127.0.0.1:12345/sign-in?<link>')),
-                                                    stdin=(link + '\nunused second line\n').encode(), command='sign-in')
-        self.assertEqual(call, dict(call='sign-in', link=link))
-        self.assertEqual(status, 0, stderr)
-        self.assertNotIn(b'invented-credential', stdout + stderr)
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            listener.setblocking(False)
+            address = '%s:%s' % listener.getsockname()
+            run = subprocess.run([str(LAB / 'hand' / 'sign-in'), address],
+                                 input=(link + '\nunused second line\n').encode(), capture_output=True, timeout=5)
+            self.assertEqual(run.returncode, 2, run.stderr)
+            self.assertEqual(run.stdout, b'')
+            self.assertNotIn(b'invented-credential', run.stdout + run.stderr)
+            with self.assertRaises(BlockingIOError):
+                listener.accept()
 
     def test_sign_in_one_link_is_redacted(self):
         link = 'http://127.0.0.1:12345/sign-in?invented-credential-0001'

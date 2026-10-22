@@ -699,8 +699,10 @@ skein-lab-browser hand --chromium PATH --fonts DIR --scratch DIR --out DIR
   JSON line (section 3's form), and reads one line, its answer; the
   program then closes the connection. Calls are answered one at a time,
   in the order their connections were accepted. A connection that has
-  not sent a whole line within 10 seconds, or sends more than 128 KiB,
-  is closed unanswered.
+  not sent a whole line within 10 seconds of its turn (when the program
+  starts reading it, the connections before it answered or closed), or
+  sends more than 128 KiB, is closed unanswered: a caller stalled ahead
+  of it delays a queued call, and never costs it its answer.
 - **A loopback listener, not a socket in a directory** (qa-web.md's
   6.1 named one): skein's io has no Unix sockets, and a listener on
   port 0 reported by a ready line is how the lab's processes meet
@@ -899,8 +901,10 @@ scripts/lab/hand/sign-in ADDRESS
 - **Its endpoint is its own** (lab.md, 6.2): `ADDRESS` is its fixed
   argument, a loopback address and port, and no operand of the agent's
   names another: a path is checked as 8.3 has it, before any call.
-- **`sign-in`** reads one line, the link, from its standard input,
-  sends `sign-in`, and prints the answer, redacted by the program.
+- **`sign-in`** reads its standard input, one line, the link, sends
+  `sign-in`, and prints the answer, redacted by the program. An empty
+  input, or more than one line, is a usage error (2), and nothing is
+  sent.
 - **In a product's experiment:** the process `browser`,
   `["{browser.program}", "hand", ...]`, after the product's server, its
   ready line `listening ` captured as `address`; the seed's action

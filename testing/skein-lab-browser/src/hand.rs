@@ -28,7 +28,9 @@ const INTERRUPTED: &str = "termination requested";
 struct Connection {
     socket: Token,
     number: u64,
-    deadline: Time,
+    // lab-browser.md, 8.2: 10 seconds for its line from its turn, when
+    // its reading starts; a queued connection's line waits unread.
+    deadline: Option<Time>,
     bytes: Vec<u8>,
     reading: bool,
     complete: bool,
@@ -78,7 +80,7 @@ impl Listener {
                         Connection {
                             socket,
                             number: self.accepted,
-                            deadline: now.saturating_add(Duration::from_secs(10)),
+                            deadline: None,
                             bytes: Vec::new(),
                             reading: false,
                             complete: false,
@@ -94,7 +96,9 @@ impl Listener {
                 match up {
                     stream::Up::Bytes(bytes) => {
                         connection.bytes.extend_from_slice(&bytes);
-                        if connection.bytes.len() > LINE + 1 || now >= connection.deadline {
+                        if connection.bytes.len() > LINE + 1
+                            || connection.deadline.is_some_and(|deadline| now >= deadline)
+                        {
                             connection.complete = true;
                             connection.bytes.clear();
                             self.requests.push_back(io::Request::Abort { entity: connection.socket });
@@ -143,7 +147,7 @@ impl Listener {
     }
     pub(super) fn fire(&mut self, now: Time) {
         for connection in self.connections.values_mut() {
-            if !connection.complete && now >= connection.deadline {
+            if !connection.complete && connection.deadline.is_some_and(|deadline| now >= deadline) {
                 connection.complete = true;
                 connection.bytes.clear();
                 self.requests.push_back(io::Request::Abort { entity: connection.socket });
@@ -155,6 +159,7 @@ impl Listener {
             && !connection.complete
         {
             connection.reading = true;
+            connection.deadline.get_or_insert(now.saturating_add(Duration::from_secs(10)));
             self.requests.push_back(io::Request::Stream {
                 stream: connection.socket,
                 down: stream::Down::Demand {
@@ -838,7 +843,7 @@ mod tests {
         assert!(listener.connections[&second].reading);
     }
     #[test]
-    fn listener_line_limit_and_deadline_from_accept_close_unanswered() {
+    fn listener_line_limit_and_deadline_from_its_turn_close_unanswered() {
         for (length, accepted) in [(LINE, true), (LINE + 1, false)] {
             let mut listener = Listener::new("127.0.0.1:0".parse().unwrap());
             let owner = accept(&mut listener, 1, Time::ZERO);
@@ -850,17 +855,30 @@ mod tests {
         let mut listener = Listener::new("127.0.0.1:0".parse().unwrap());
         let first = accept(&mut listener, 1, Time::ZERO);
         let second = accept(&mut listener, 2, Time::ZERO);
-        listener.fire(Time::ZERO.saturating_add(Duration::from_millis(9999)));
+        let at = |millis| Time::ZERO.saturating_add(Duration::from_millis(millis));
+        listener.fire(at(0));
+        listener.fire(at(9999));
         assert!(!listener.connections[&first].complete);
-        assert!(!listener.connections[&second].complete);
-        listener.fire(Time::ZERO.saturating_add(Duration::from_secs(10)));
+        listener.fire(at(10_000));
         assert!(listener.connections[&first].complete);
-        assert!(listener.connections[&second].complete);
         assert!(listener.call().is_none());
         assert!(
-            !listener.connections[&second].reading,
-            "queued connection expires from its accept, before any line read"
+            !listener.connections[&second].complete && !listener.connections[&second].reading,
+            "a queued connection keeps its line unread past the first's expiry"
         );
+        listener.event(io::Event::Closed { owner: first }, at(10_000)).unwrap();
+        listener.fire(at(10_000));
+        assert!(listener.connections[&second].reading, "its turn starts its 10 seconds");
+        bytes(&mut listener, second, b"{}\n", at(10_001));
+        assert_eq!(listener.call().map(|(owner, n, _)| (owner, n)), Some((second, 2)));
+        let mut listener = Listener::new("127.0.0.1:0".parse().unwrap());
+        let only = accept(&mut listener, 1, at(0));
+        listener.fire(at(5000));
+        listener.fire(at(14_999));
+        assert!(!listener.connections[&only].complete);
+        listener.fire(at(15_000));
+        assert!(listener.connections[&only].complete);
+        assert!(listener.call().is_none());
     }
     #[test]
     fn trouble_log_and_memory_limits_redaction_and_drain() {
