@@ -403,7 +403,15 @@ def configured_kache(lab):
     lab.done(lab.start('unforced-masked', gate=True))
     (nearer / 'config').write_text('[build]\nrustc-workspace-wrapper = "kache"\n')
     lab.done(lab.start('independent-workspace', gate=True), 2)
+    aliases = lab.path / 'wrapper-aliases'
+    aliases.mkdir()
+    (aliases / 'cache-proxy').symlink_to(lab.path / 'fixture-bin/kache')
+    configured_path = str(aliases) + ':' + lab.env['PATH']
+    (nearer / 'config').write_text('[env]\nRUSTC_WRAPPER = {value="cache-proxy", force=true}\n'
+        'PATH = {value=' + json.dumps(configured_path) + ', force=true}\n')
+    lab.done(lab.start('forced-path-alias', gate=True), 2)
     (nearer / 'config').unlink()
+    lab.done(lab.start('direct-rustc', args=['rustc', '-vV']))
     lab.env['PATH'] = previous
     lab.done(lab.start('progress'))
 

@@ -584,7 +584,7 @@ def safe_environment():
 def selects_kache():
     # Resolve the two independent Cargo wrapper slots in increasing config
     # precedence, then apply [env] and dedicated/generic environment overrides.
-    names = ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER',
+    names = ('PATH', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER',
              'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER')
     cargo_home = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo'))).resolve()
     directories = [cargo_home, *(parent / '.cargo' for parent in reversed((Path.cwd(), *Path.cwd().parents)))]
@@ -596,8 +596,13 @@ def selects_kache():
         if not path.is_file() or path.resolve() in seen:
             continue
         seen.add(path.resolve())
-        with path.open('rb') as source:
-            config = tomllib.load(source)
+        try:
+            with path.open('rb') as source:
+                config = tomllib.load(source)
+        except (OSError, ValueError):
+            raise Refusal('cannot resolve Cargo wrapper configuration') from None
+        if not isinstance(config.get('build', {}), dict) or not isinstance(config.get('env', {}), dict):
+            raise Refusal('cannot resolve Cargo wrapper configuration')
         if 'include' in config:
             raise Refusal('Cargo configuration includes are outside the declared policy')
         for field in ('rustc-wrapper', 'rustc-workspace-wrapper'):
@@ -615,6 +620,8 @@ def selects_kache():
     environment = dict(os.environ)
     for name, value in settings.items():
         value = {'value': value} if isinstance(value, str) else value
+        if not isinstance(value, dict) or not isinstance(value.get('value'), str):
+            raise Refusal('cannot resolve Cargo wrapper configuration')
         if name not in environment or value.get('force', False):
             setting = value['value']
             if value.get('relative', False):
@@ -624,6 +631,8 @@ def selects_kache():
                              ('rustc-workspace-wrapper', 'RUSTC_WORKSPACE_WRAPPER')):
         generic = 'CARGO_BUILD_' + field.upper().replace('-', '_')
         value = environment.get(dedicated, environment.get(generic, build.get(field, '')))
+        if not isinstance(value, str):
+            raise Refusal('cannot resolve Cargo wrapper configuration')
         if not value:
             continue
         base = Path.cwd() if dedicated in environment or generic in environment else origins[field]
