@@ -118,6 +118,12 @@ impl Reader {
         std::fs::read_to_string(&self.stderr).expect("program stderr")
     }
     pub fn answer(&mut self) -> Value {
+        let line = self.line();
+        let value = json::parse(&line).unwrap_or_else(|e| panic!("answer JSON: {e}; {}", self.stderr()));
+        assert_eq!(json::encode(&value), line, "answer must be canonical");
+        value
+    }
+    pub fn line(&mut self) -> Vec<u8> {
         let deadline = self.now().saturating_add(Duration::from_secs(10));
         io::down(
             &mut self.io,
@@ -140,10 +146,7 @@ impl Reader {
                     panic!("program stdout ended: {up:?}; {}", self.stderr());
                 };
                 assert!(bytes.ends_with(b"\n"), "answer missing newline: {}", self.stderr());
-                let line = &bytes[..bytes.len() - 1];
-                let value = json::parse(line).unwrap_or_else(|e| panic!("answer JSON: {e}; {}", self.stderr()));
-                assert_eq!(json::encode(&value), line, "answer must be canonical");
-                return value;
+                return bytes[..bytes.len() - 1].to_vec();
             }
             assert!(self.now() < deadline, "answer deadline passed: {}", self.stderr());
             self.pause();

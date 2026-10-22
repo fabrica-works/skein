@@ -809,7 +809,8 @@ main
 - **The proxy takes all but the origin:** the hand starts Chromium
   with 2.4's proxy, and with Chromium's implicit loopback bypass
   removed and the origin alone bypassing it
-  (`--proxy-bypass-list=HOST:PORT;<-loopback>`). So every request but
+  (`--proxy-bypass-list=<-loopback>;HOST:PORT`). Chromium applies bypass
+  rules last-wins. So every request but
   the origin's, another loopback port's among them, reaches the proxy,
   which refuses and records it (2.4). In a cluster the hand has no
   namespace of its own (lab.md, 4.3), and needs none.

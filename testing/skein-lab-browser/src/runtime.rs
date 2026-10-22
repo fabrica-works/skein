@@ -1,4 +1,6 @@
 //! Chromium, origin listeners, proxy and standard pipes on skein-world's Ring.
+#[path = "hand.rs"]
+pub(crate) mod hand;
 use crate::{
     calls::{self, Call},
     config::Config,
@@ -115,6 +117,9 @@ struct Runtime {
     child_closed: bool,
     closing: bool,
     serial: u64,
+    listener: Option<hand::Listener>,
+    signals: Option<Token>,
+    interrupted: bool,
 }
 pub fn run(config: &Config) -> Result<(), String> {
     std::fs::create_dir_all(&config.out).map_err(|e| e.to_string())?;
@@ -123,7 +128,7 @@ pub fn run(config: &Config) -> Result<(), String> {
     let scratch = config.scratch.to_str().ok_or("scratch path must be UTF-8")?;
     std::fs::create_dir_all(config.scratch.join("fontconfig")).map_err(|e| e.to_string())?;
     std::fs::write(&font_path, crate::config::fonts(fonts, scratch)).map_err(|e| e.to_string())?;
-    let mut runtime = Runtime::new()?;
+    let mut runtime = Runtime::new(false)?;
     runtime.until_proxy()?;
     runtime.spawn(config, &font_path)?;
     let ready = runtime.next_event()?;
@@ -146,11 +151,17 @@ pub fn run(config: &Config) -> Result<(), String> {
     runtime.shutdown()
 }
 impl Runtime {
-    fn new() -> Result<Self, String> {
+    fn new(hand: bool) -> Result<Self, String> {
         let bl = browser::Limits { screenshot: 16 << 20, message: 24 << 20, ..browser::Limits::default() };
-        eprintln!(
-            "skein-lab-browser limits: browser={bl:?}; call=1048576; origins=8; file=8388608; origin-bytes=67108864; origin-files=4096; proxy-line=8192; network=64"
-        );
+        if hand {
+            eprintln!(
+                "skein-lab-browser limits: browser={bl:?}; call=131072; call-seconds=10; origins=1; proxy-line=8192; network=64; trouble=4096"
+            );
+        } else {
+            eprintln!(
+                "skein-lab-browser limits: browser={bl:?}; call=1048576; origins=8; file=8388608; origin-bytes=67108864; origin-files=4096; proxy-line=8192; network=64"
+            );
+        }
         // Four child slots, two standard pipes, eight origins with sixteen connections,
         // and the proxy with sixteen connections; extra slots cover closing sockets.
         let il = io::Limits {
@@ -169,7 +180,17 @@ impl Runtime {
         let operations = io::operations(&il).expect("operations fit");
         let ring = Ring::new(operations + 1, vec![operations, 1]).map_err(|e| format!("io_uring: {e:?}"))?;
         let mut io = Io::new(&il);
-        let input = io.adopt_read_pipe(kernel::Fd::new(0)).map_err(|_| "adopt stdin")?;
+        let input = if hand {
+            Token::new(u64::MAX - 3)
+        } else {
+            io.adopt_read_pipe(kernel::Fd::new(0)).map_err(|_| "adopt stdin")?
+        };
+        let signals = if hand {
+            let fd = skein_shell::open_termination_signals().map_err(|e| format!("termination signals: {e}"))?;
+            Some(io.adopt_signals(fd).map_err(|_| "adopt termination signals")?)
+        } else {
+            None
+        };
         let output = io.adopt_write_pipe(kernel::Fd::new(1), None).map_err(|_| "adopt stdout")?;
         Ok(Self {
             io,
@@ -200,6 +221,9 @@ impl Runtime {
             child_closed: false,
             closing: false,
             serial: 100,
+            listener: None,
+            signals,
+            interrupted: false,
         })
     }
     fn fresh(&mut self) -> Token {
@@ -218,6 +242,16 @@ impl Runtime {
             config.scratch.join("profile").as_os_str().as_bytes(),
         );
         command.args = capture_args(&command.args, self.proxy.address.expect("bound proxy"));
+        if let Some(hand) = &config.hand {
+            let mut args = command.args.into_boxed().into_vec();
+            let initial = args.pop().expect("initial URL");
+            args.push(format!("--proxy-bypass-list=<-loopback>;{}", hand.authority).into_bytes().into());
+            args.push(initial);
+            command.args = List::with_capacity(u32::try_from(args.len()).expect("args fit"));
+            for arg in args {
+                command.args.push(arg).expect("args room");
+            }
+        }
         let mut env = List::with_capacity(command.env.len() + 1);
         for variable in &command.env {
             env.push(variable.clone()).expect("env room");
@@ -278,6 +312,9 @@ impl Runtime {
     fn write(&mut self, value: &Value) -> Result<(), String> {
         let mut bytes = json::encode(value);
         bytes.push(b'\n');
+        self.write_raw(bytes)
+    }
+    fn write_raw(&mut self, bytes: Vec<u8>) -> Result<(), String> {
         self.output_room = false;
         self.stream(
             self.output,
@@ -389,6 +426,10 @@ impl Runtime {
                 self.requests.push_back(request);
             }
         }
+        if let Some(listener) = &mut self.listener {
+            listener.fire(time.now);
+            self.requests.extend(listener.requests.drain(..));
+        }
         self.requests.extend(self.proxy.requests.drain(..));
         while self.io.takes() {
             let Some(request) = self.requests.pop_front() else {
@@ -420,6 +461,10 @@ impl Runtime {
     }
     fn browser_events(&mut self) {
         while let Some(event) = self.events.pop() {
+            if self.listener.is_some() {
+                self.answers.push_back(event);
+                continue;
+            }
             match event {
                 Event::Trouble { page, trouble, text } => {
                     let kind = match trouble {
@@ -453,6 +498,11 @@ impl Runtime {
     fn io_event(&mut self, event: io::Event) -> Result<(), String> {
         let owner = owner(&event);
         if let Some(owner) = owner {
+            if let Some(listener) = &mut self.listener
+                && listener.owns(owner)
+            {
+                return listener.event(event, self.ienv.now);
+            }
             if self.proxy.owns(owner) {
                 return self.proxy.event(event);
             }
@@ -517,6 +567,7 @@ impl Runtime {
                 }
             }
             io::Event::Failed { owner, error } => return Err(format!("io {owner:?}: {error:?}")),
+            io::Event::Shutdown { .. } => self.interrupted = true,
             unexpected @ (io::Event::Listening { .. }
             | io::Event::Accepted { .. }
             | io::Event::Connecting { .. }
@@ -524,8 +575,7 @@ impl Runtime {
             | io::Event::Output { .. }
             | io::Event::Usage { .. }
             | io::Event::Resized
-            | io::Event::Window { .. }
-            | io::Event::Shutdown { .. }) => return Err(format!("unexpected io event: {unexpected:?}")),
+            | io::Event::Window { .. }) => return Err(format!("unexpected io event: {unexpected:?}")),
         }
         Ok(())
     }

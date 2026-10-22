@@ -12,6 +12,7 @@ struct Connection {
     socket: Token,
     line: Vec<u8>,
     replying: bool,
+    reply: Vec<u8>,
 }
 pub struct Proxy {
     pub address: Option<SocketAddr>,
@@ -22,6 +23,7 @@ pub struct Proxy {
     refusals: Vec<String>,
     extra: u64,
     stopping: bool,
+    hand: bool,
 }
 impl Proxy {
     pub fn new() -> Self {
@@ -37,7 +39,11 @@ impl Proxy {
             refusals: Vec::new(),
             extra: 0,
             stopping: false,
+            hand: false,
         }
+    }
+    pub fn for_hand(&mut self) {
+        self.hand = true;
     }
     pub fn owns(&self, owner: Token) -> bool {
         owner == OWNER || self.connections.contains_key(&owner)
@@ -74,7 +80,8 @@ impl Proxy {
                 } else {
                     let owner = Token::new(self.next);
                     self.next += 1;
-                    self.connections.insert(owner, Connection { socket, line: Vec::new(), replying: false });
+                    self.connections
+                        .insert(owner, Connection { socket, line: Vec::new(), replying: false, reply: REPLY.to_vec() });
                     self.requests.push_back(io::Request::Bind { socket, owner });
                     self.demand(
                         socket,
@@ -91,14 +98,23 @@ impl Proxy {
                         connection.line.extend_from_slice(&bytes);
                         let host = first_line(&connection.line);
                         connection.replying = true;
+                        if self.hand
+                            && let Some(host) = &host
+                        {
+                            let body = format!("skein-lab-browser: {host} is not this page's origin\n");
+                            connection.reply = format!("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes();
+                        }
+                        let length = u32::try_from(connection.reply.len()).expect("reply fits");
                         if let Some(host) = host {
                             self.record(host);
                         }
-                        self.demand(socket, stream::Read::Nothing, u32::try_from(REPLY.len()).expect("reply fits"));
+                        self.demand(socket, stream::Read::Nothing, length);
                     }
                     stream::Up::Room => {
-                        self.requests
-                            .push_back(io::Request::Stream { stream: socket, down: stream::Down::Send(REPLY.into()) });
+                        self.requests.push_back(io::Request::Stream {
+                            stream: socket,
+                            down: stream::Down::Send(connection.reply.clone().into()),
+                        });
                         self.requests.push_back(io::Request::Close { entity: socket });
                     }
                     stream::Up::End => {

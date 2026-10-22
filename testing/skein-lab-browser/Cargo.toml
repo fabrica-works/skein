@@ -15,6 +15,9 @@ skein-world.workspace = true
 skein-json.workspace = true
 skein-browser.workspace = true
 skein-fake-person-browser.workspace = true
+skein-fake-person.workspace = true
+skein-ui.workspace = true
+skein-ui-web.workspace = true
 
 [dev-dependencies]
 skein-scratch.workspace = true

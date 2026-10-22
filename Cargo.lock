@@ -982,12 +982,15 @@ name = "skein-lab-browser"
 version = "0.0.0"
 dependencies = [
  "skein-browser",
+ "skein-fake-person",
  "skein-fake-person-browser",
  "skein-io",
  "skein-json",
  "skein-lib",
  "skein-scratch",
  "skein-shell",
+ "skein-ui",
+ "skein-ui-web",
  "skein-world",
 ]
 
