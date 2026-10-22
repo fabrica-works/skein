@@ -220,6 +220,13 @@ second, which is why it is skein's (testing-strategy.md, 7).
     the trace that simulator.md, section 3 names. Without it, the trace is
     as before.
 
+Both in-loop worlds refuse `Stop` and `Continue` to hosted children with
+`InvalidArgument` (EINVAL). Holding one needs its host's readiness, steps
+and deadlines set aside by the scheduler, which no story needs yet.
+Supervised binaries accept both; `TreeStatus.stopped_pids` and
+`continued_pids` retain identities observed alive and successfully sent
+STOP and CONT by the keeper. Neither signal counts as cleanup.
+
 ## 6. Layout
 
 ```

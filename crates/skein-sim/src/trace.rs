@@ -259,6 +259,8 @@ impl Summary {
                     Signal::Interrupt => 2,
                     Signal::Terminate => 15,
                     Signal::Kill => 9,
+                    Signal::Stop => 19,
+                    Signal::Continue => 18,
                 },
             },
             Op::ReadSignal { fd } => Summary::ReadSignal { fd: *fd },

@@ -197,7 +197,7 @@ fn owner_signals_target_the_child_or_group_running_and_exited() {
     use crate::kernel::{Signal, Target};
     for exited in [false, true] {
         for target in [Target::Child, Target::Group] {
-            for signal in [Signal::Interrupt, Signal::Terminate, Signal::Kill] {
+            for signal in [Signal::Interrupt, Signal::Terminate, Signal::Kill, Signal::Stop, Signal::Continue] {
                 let mut rig = Rig::new(Limits { sockets: 2, ..limits() });
                 let (child, pipe, waiting) = child_with_input(&mut rig);
                 let waiting = if exited {

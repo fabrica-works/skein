@@ -91,6 +91,10 @@ pub struct TreeStatus {
     pub terminated_pids: Vec<u32>,
     /// Identities observed alive and successfully sent KILL by the keeper.
     pub killed_pids: Vec<u32>,
+    /// Identities observed alive and successfully sent STOP by the keeper.
+    pub stopped_pids: Vec<u32>,
+    /// Identities observed alive and successfully sent CONT by the keeper.
+    pub continued_pids: Vec<u32>,
     /// A live member needed KILL, including a cgroup member racing the pidfd scan.
     pub forced_cleanup: bool,
 }
@@ -103,6 +107,8 @@ impl TreeStatus {
             interrupted_pids: Vec::new(),
             terminated_pids: Vec::new(),
             killed_pids: Vec::new(),
+            stopped_pids: Vec::new(),
+            continued_pids: Vec::new(),
             forced_cleanup: false,
         }
     }

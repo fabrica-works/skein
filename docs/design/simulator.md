@@ -151,8 +151,14 @@ the kernel's: each child's pidfd, its pipes, its exit and its group.
   program the machine runs may start a child of its own, which joins its
   group unless the program leaves it; the minimal machine's program that
   does so stands in for a command that leaves a descendant behind. A
-  signal to the group reaches every member, a hosted service included,
-  as a termination signal on its signal source.
+  signal to the group reaches every member, a hosted service included.
+- **Stop and continue.** `Stop` holds a modeled program's work and exit
+  until `Continue`; continuing a running member changes nothing. INT, TERM
+  and `Kill` still end a stopped modeled program. Both in-loop worlds refuse
+  `Stop` and `Continue` to a hosted child with `InvalidArgument`: holding one
+  needs its host's readiness, steps and deadlines set aside by the scheduler,
+  which no story needs yet. A group holding a hosted member refuses as a
+  whole before any member changes.
 - **Observed, then reaped.** A `Wait` that does not reap completes at
   the exit and leaves the child the simulator's zombie: still in its
   group, its usage not yet its parent's. The reaping `Wait` releases it.

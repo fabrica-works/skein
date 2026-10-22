@@ -572,6 +572,10 @@ pub enum Signal {
     Terminate,
     /// End the recipient without allowing it to handle the signal (`SIGKILL`).
     Kill,
+    /// Suspend the recipient until continued (`SIGSTOP`); it cannot handle this signal.
+    Stop,
+    /// Resume a stopped recipient (`SIGCONT`); otherwise change nothing.
+    Continue,
 }
 
 /// A signal's recipient, selected by the pidfd's owner (kernel.md, section 6.2).

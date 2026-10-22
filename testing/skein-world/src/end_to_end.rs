@@ -393,6 +393,8 @@ impl Host for Binary {
                 Signal::Interrupt => &mut self.tree_status.interrupted_pids,
                 Signal::Terminate => &mut self.tree_status.terminated_pids,
                 Signal::Kill => &mut self.tree_status.killed_pids,
+                Signal::Stop => &mut self.tree_status.stopped_pids,
+                Signal::Continue => &mut self.tree_status.continued_pids,
             };
             history.extend(delivered);
             history.sort_unstable();

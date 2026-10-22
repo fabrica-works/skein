@@ -3,7 +3,7 @@ use skein_io::kernel::{Done, Op};
 use skein_lib::Queue;
 
 #[path = "fixtures.rs"]
-mod fixtures;
+pub(super) mod fixtures;
 use fixtures::{CLOSE, END, HostedInput, INPUT, INPUT_BYTES, ONE_RECORD, READ, WRITE, hosted_input, submit};
 
 #[test]

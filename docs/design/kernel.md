@@ -484,9 +484,10 @@ documentation, with each operation's errors; the decisions behind it:
   with `PIDFD_SIGNAL_PROCESS_GROUP` for the group the child leads, which
   the kernel floor has. No record carries a PID: the pidfd names the
   child, and through it the group the child leads, so no signal reaches a
-  stranger. `Interrupt` sends `SIGINT`, `Terminate` sends `SIGTERM`, and
-  `Kill` sends `SIGKILL`; an interrupt, like a termination, may be handled
-  by its recipient. The unreaped leader is still a member of its group, so a
+  stranger. `Interrupt` sends `SIGINT`, `Terminate` sends `SIGTERM`,
+  `Kill` sends `SIGKILL`, `Stop` suspends with `SIGSTOP`, and `Continue`
+  resumes with `SIGCONT` (a no-op unless stopped); an interrupt, like a
+  termination, may be handled by its recipient. The unreaped leader is still a member of its group, so a
   signal to a group whose other members are gone succeeds and changes
   nothing.
 - **Pipes** are the parent's ends of what `Spawn` made, read and written
@@ -679,8 +680,8 @@ documentation, with each operation's errors; the decisions behind it:
   `cgroup.procs`, which moves the whole process, every thread.
 - **`CgroupCounts`** reads `cpu.stat`'s user and system time, and, where
   the files are, `memory.peak` and `memory.events`'s `oom_kill`.
-- **`SignalCgroup`** takes any of `Interrupt`, `Terminate`, or `Kill`,
-  and reads the `cgroup.procs` of the cgroup and of each
+- **`SignalCgroup`** takes any of `Interrupt`, `Terminate`, `Kill`,
+  `Stop`, or `Continue`, and reads the `cgroup.procs` of the cgroup and of each
   cgroup beneath it. For each PID it opens a pidfd, then checks by the
   process's `/proc/<pid>/cgroup`, compared a path segment at a time, that
   it is in the tree, then signals it

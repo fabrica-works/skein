@@ -601,6 +601,7 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
                                 .map(|()| Done::Nothing),
                             Signal::Terminate => skein_shell::write_service_signal(writer, ServiceSignal::Terminate)
                                 .map(|()| Done::Nothing),
+                            Signal::Stop | Signal::Continue => Err(Error::InvalidArgument),
                             Signal::Kill => {
                                 self.kill(child_host);
                                 Ok(Done::Nothing)

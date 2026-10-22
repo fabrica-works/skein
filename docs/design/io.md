@@ -970,8 +970,8 @@ private root or file owned by anyone else is refused, saying so.
 - **Exit** is a wait on the pidfd, through the ring (`waitid`). It
   observes the exit without reaping the child (`WNOWAIT`): the child
   stays unreaped, holding its PID, until io closes it.
-- **Signals** (`Interrupt`, `Terminate`, or `Kill`) go to the child alone,
-  or to its process group: `Signal` names which (`Target::Child` or
+- **Signals** (`Interrupt`, `Terminate`, `Kill`, `Stop`, or `Continue`) go
+  to the child alone, or to its process group: `Signal` names which (`Target::Child` or
   `Target::Group`). Both go through the child's pidfd,
   `pidfd_send_signal`, the group's with the kernel's
   process-group scope, which reaches the group the child leads from its

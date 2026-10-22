@@ -292,6 +292,8 @@ pub(super) fn signal_child(pidfd: Fd, signal: Signal, to: Target) -> Result<Done
         Signal::Interrupt => libc::SIGINT,
         Signal::Terminate => libc::SIGTERM,
         Signal::Kill => libc::SIGKILL,
+        Signal::Stop => libc::SIGSTOP,
+        Signal::Continue => libc::SIGCONT,
     };
     // SAFETY: pidfd_send_signal takes no borrowed memory when siginfo is null.
     let sent = unsafe {

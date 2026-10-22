@@ -9,6 +9,9 @@ use skein_io::kernel::{Done, Error, Exit, Fd, Op, Pipe, Signal, Spawn, Way};
 use crate::run::{BRIEFLY, Run, unexpected, usize_of};
 use crate::{Backend, Check};
 
+// One millisecond gives the ring a timed wait while the child is stopped.
+const STOPPED_WAIT: skein_lib::Duration = skein_lib::Duration::from_millis(1);
+
 const MESSAGE: &[u8] = b"skein pipe echo";
 
 #[derive(Debug)]
@@ -106,6 +109,32 @@ pub fn processes<B: Backend>(backend: &mut B, executable: &[u8]) -> Processes {
         run.call(process, Op::Wait { pidfd, reap: true });
         run.close(process, pidfd);
     }
+    let echo = command(
+        executable,
+        root,
+        &[b"echo", b"0", b"1"],
+        &[Pipe { child: 0, way: Way::In, parent: None }, Pipe { child: 1, way: Way::Out, parent: None }],
+    );
+    let (pidfd, pipes) = spawned(run.call(process, Op::Spawn { spawn: Box::new(echo) }));
+    let [input, output] = pipes.as_slice() else { unexpected("echo input and output", &pipes) };
+    let to = skein_io::kernel::Target::Child;
+    assert_eq!(
+        run.call(process, Op::Signal { pidfd, signal: Signal::Stop, to }).result,
+        Ok(Done::Nothing),
+        "Stop succeeds"
+    );
+    run.close(process, *input);
+    let waiting = run.start(process, Op::Wait { pidfd, reap: false });
+    assert!(run.within(process, waiting, STOPPED_WAIT).is_none(), "a stopped child cannot exit on input EOF");
+    assert_eq!(
+        run.call(process, Op::Signal { pidfd, signal: Signal::Continue, to }).result,
+        Ok(Done::Nothing),
+        "Continue succeeds"
+    );
+    assert_eq!(run.wait(process, waiting).result, Ok(Done::Exit(Exit::Code(0))), "continued child exits on input EOF");
+    run.call(process, Op::Wait { pidfd, reap: true });
+    run.close(process, *output);
+    run.close(process, pidfd);
     run.close(process, root);
     run.finish();
     Processes { echoed, eof, echo_exit, status_exit, never_waited, signalled, killed_exit }

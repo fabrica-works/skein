@@ -37,6 +37,8 @@ pub(super) enum WaitState {
 pub(super) struct Child {
     pub program: Program,
     pub exit: Option<Exit>,
+    pub stopped: bool,
+    pub held_exit: Option<Exit>,
     pub wait_state: WaitState,
     pub group: u64,
     pub usage: Resources,
@@ -537,10 +539,20 @@ impl Sim {
             }
             Op::Signal { pidfd, signal, to } => {
                 let child_id = self.process(pid).pidfds[&pidfd];
+                let group = self.process(pid).children[&child_id].group;
+                if (signal == Signal::Stop || signal == Signal::Continue)
+                    && self.processes.iter().any(|process| {
+                        process.children.iter().any(|(&id, child)| {
+                            child.service.is_some() && (id == child_id || (to == Target::Group && child.group == group))
+                        })
+                    })
+                {
+                    self.complete(pid, token, Op::Signal { pidfd, signal, to }, Err(Error::InvalidArgument));
+                    return;
+                }
                 match to {
                     Target::Child => self.signal_member(pid, child_id, signal),
                     Target::Group => {
-                        let group = self.process(pid).children[&child_id].group;
                         let members: Vec<_> = self
                             .processes
                             .iter()
@@ -554,8 +566,10 @@ impl Sim {
                             .collect();
                         for (parent, id) in members {
                             let child = self.process_mut(parent).children.get_mut(&id).expect("group member");
-                            child.descendant_running = false;
-                            if child.exit.is_some() {
+                            if signal != Signal::Stop && signal != Signal::Continue {
+                                child.descendant_running = false;
+                            }
+                            if child.exit.is_some() && !child.descendant_running {
                                 for pipe in &mut child.pipes {
                                     pipe.ended = true;
                                 }
@@ -658,11 +672,24 @@ impl Sim {
             Signal::Interrupt => 2,
             Signal::Terminate => 15,
             Signal::Kill => 9,
+            Signal::Stop => {
+                self.process_mut(parent).children.get_mut(&child_id).expect("child").stopped = true;
+                return;
+            }
+            Signal::Continue => {
+                let child = self.process_mut(parent).children.get_mut(&child_id).expect("child");
+                child.stopped = false;
+                if let Some(exit) = child.held_exit.take() {
+                    self.exit_child(parent, child_id, exit);
+                }
+                self.wake_pipe(parent, child_id);
+                return;
+            }
         };
         let delivered = match signal {
             Signal::Interrupt => Some(skein_io::kernel::ServiceSignal::Interrupt),
             Signal::Terminate => Some(skein_io::kernel::ServiceSignal::Terminate),
-            Signal::Kill => None,
+            Signal::Kill | Signal::Stop | Signal::Continue => None,
         };
         let service = self.process(parent).children[&child_id].service;
         match (delivered, service) {
@@ -674,6 +701,7 @@ impl Sim {
                 }
             }
             (Some(_), None) | (None, Some(_) | None) => {
+                self.process_mut(parent).children.get_mut(&child_id).expect("child").stopped = false;
                 self.exit_child(parent, child_id, Exit::Signal(number));
             }
         }
@@ -711,6 +739,8 @@ impl Sim {
                     Child {
                         program,
                         exit,
+                        stopped: false,
+                        held_exit: None,
                         wait_state: WaitState::Unobserved,
                         group: child_id,
                         usage: Resources::ZERO,
@@ -766,6 +796,11 @@ impl Sim {
 
     fn send_pipe(&mut self, pid: Pid, token: Token, op: Op, fd: Fd) {
         let end = self.process(pid).pipe_fds[&fd];
+        if self.process(pid).children[&end.child].stopped {
+            self.process_mut(pid).children.get_mut(&end.child).expect("child").pipes[end.index].waiting = Some(token);
+            self.park(pid, token, op);
+            return;
+        }
         let (program, exit, ended) = {
             let child = &self.process(pid).children[&end.child];
             (child.program, child.exit, child.pipes[end.index].ended)
@@ -909,6 +944,10 @@ impl Sim {
 
     fn exit_child(&mut self, pid: Pid, child_id: u64, exit: Exit) {
         let child = self.process_mut(pid).children.get_mut(&child_id).expect("child");
+        if child.stopped {
+            child.held_exit = Some(exit);
+            return;
+        }
         child.exit = Some(exit);
         for pipe in &mut child.pipes {
             pipe.ended = !child.descendant_running;
@@ -966,6 +1005,9 @@ impl Sim {
 
     fn echo_room(&self, pid: Pid, child_id: u64, input_index: usize) -> bool {
         let child = &self.process(pid).children[&child_id];
+        if child.stopped {
+            return false;
+        }
         let (input, output) = match child.program {
             Program::Echo { input, output } => (input, Some(output)),
             Program::Service => {
@@ -1179,7 +1221,38 @@ mod tests {
     }
 
     #[test]
+    fn hosted_service_refuses_stop_and_continue_without_delaying_termination() {
+        use super::closed_input::fixtures::{HostedInput, ONE_RECORD, READ, WRITE, hosted_input, submit};
+        for to in [skein_io::kernel::Target::Child, skein_io::kernel::Target::Group] {
+            let HostedInput { mut sim, parent, child, .. } = hosted_input();
+            let pidfd = *sim.process(parent).pidfds.keys().next().expect("hosted child");
+            let fd = sim.open_signal_source(child);
+            submit(&mut sim, child, READ, Op::ReadSignal { fd });
+            let mut completes = Queue::with_capacity(ONE_RECORD);
+            for signal in [Signal::Stop, Signal::Continue] {
+                submit(&mut sim, parent, WRITE, Op::Signal { pidfd, signal, to });
+                sim.reap(parent, &mut completes);
+                assert_eq!(completes.pop().expect("refused signal").result, Err(Error::InvalidArgument));
+            }
+            submit(&mut sim, parent, WRITE, Op::Signal { pidfd, signal: Signal::Terminate, to });
+            sim.reap(parent, &mut completes);
+            assert_eq!(completes.pop().expect("termination sent").result, Ok(Done::Nothing));
+            sim.reap(child, &mut completes);
+            assert_eq!(
+                completes.pop().expect("termination delivered at once").result,
+                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+            );
+        }
+    }
+
+    #[test]
     fn terminating_a_child_wakes_each_waiting_output_pipe_once() {
+        for stopped in [false, true] {
+            terminating_child(stopped);
+        }
+    }
+
+    fn terminating_child(stopped: bool) {
         let mut sim = Sim::new(1, Config::calm());
         let pid = sim.spawn_process();
         let root = sim.root(pid, Handle::new(1));
@@ -1218,6 +1291,10 @@ mod tests {
         let Ok(Done::Spawned { pidfd }) = spawned.result else { unreachable!("the child and its pipes are created") };
         assert_eq!(pipes.len(), 2);
 
+        if stopped {
+            let member = sim.process(pid).pidfds[&pidfd];
+            sim.signal_member(pid, member, Signal::Stop);
+        }
         submits.push(Submit { op: Token::new(1), kind: Op::Wait { pidfd, reap: false } });
         submits.push(Submit { op: Token::new(2), kind: Op::PipeRead { fd: pipes[0], buf: Box::new([0; 1]) } });
         submits.push(Submit { op: Token::new(3), kind: Op::PipeRead { fd: pipes[1], buf: Box::new([0; 1]) } });
@@ -1231,7 +1308,8 @@ mod tests {
         assert_eq!(completes.len(), 4);
         let mut seen = [false; 4];
         while let Some(complete) = completes.pop() {
-            let index = usize::try_from(complete.op.raw() - 1).expect("the submitted token");
+            let index = usize::try_from(complete.op.raw().checked_sub(1).expect("positive submitted token"))
+                .expect("the submitted token");
             assert!(!seen[index], "one completion per token");
             seen[index] = true;
             match complete.op.raw() {
