@@ -63,6 +63,8 @@ struct Page {
     load_due: Option<Time>,
     closed: bool,
     css: look::Css,
+    // The loader id whose inspector sheet draws the caret steady (browser.md, 5.1).
+    caret_document: Option<Box<[u8]>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -555,6 +557,7 @@ impl Browser {
                         navigating: false,
                         opening: true,
                         css: look::Css::Disabled,
+                        caret_document: None,
                         load: None,
                         load_due: None,
                         closed: false,

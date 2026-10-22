@@ -34,6 +34,9 @@ pub(super) enum Step {
     Box,
     Metrics,
     Exists,
+    ShotFrame,
+    CaretSheet,
+    CaretText,
     ShotMetrics,
     Shot,
 }
@@ -47,6 +50,7 @@ enum TextNode {
 #[derive(Debug)]
 pub(super) struct State {
     front: u64,
+    document: Option<Box<[u8]>>,
     values: List<Property>,
     faces: List<Face>,
     text_nodes: Vec<TextNode>,
@@ -56,6 +60,7 @@ impl State {
     fn new() -> State {
         State {
             front: 0,
+            document: None,
             values: List::with_capacity(0),
             faces: List::with_capacity(0),
             text_nodes: Vec::new(),
@@ -134,33 +139,55 @@ impl Browser {
             }
             Look::Tree => self.look_issue(env, token, b"Accessibility.getFullAXTree", &Params::Empty, Step::Tree),
             Look::Select { .. } => self.look_issue(env, token, b"DOM.getDocument", &Params::Root, Step::SelectRoot),
-            Look::Style { .. } => {
+            Look::Style { .. } | Look::Shot { .. } => {
                 if let Some(state) = self.look_state_mut(token) {
                     *state = State::new();
                 }
-                if let Some(super::Page { css: Css::Enabled, .. }) = self.page(page) {
-                    self.look_issue(env, token, b"DOM.getDocument", &Params::Root, Step::StyleRoot);
-                } else {
-                    for pending in &self.pending {
-                        if let PendingKind::Step(other, super::Step::Look(Step::Enable)) = pending.kind
-                            && self.op_page(other) == Some(page)
-                        {
-                            if let Some(op) = self.op_mut(token) {
-                                op.due = Some(env.now.saturating_add(env.limits.poll));
-                            }
-                            return;
+                // One CSS enable and one caret installation per page at a time.
+                for pending in &self.pending {
+                    if let PendingKind::Step(
+                        other,
+                        super::Step::Look(Step::Enable | Step::ShotFrame | Step::CaretSheet | Step::CaretText),
+                    ) = pending.kind
+                        && self.op_page(other) == Some(page)
+                    {
+                        if let Some(op) = self.op_mut(token) {
+                            op.due = Some(env.now.saturating_add(env.limits.poll));
                         }
+                        return;
                     }
+                }
+                if let Some(super::Page { css: Css::Enabled, .. }) = self.page(page) {
+                    self.look_css_ready(env, token);
+                } else {
                     self.look_issue(env, token, b"CSS.enable", &Params::Empty, Step::Enable);
                 }
             }
-            Look::Shot { clip, scale } => match clip {
+        }
+    }
+
+    fn look_css_ready(&mut self, env: &Env<Limits>, token: Token) {
+        let Some(Operation { kind: OpKind::Look { look, .. }, .. }) = self.op(token) else { return };
+        match look {
+            Look::Style { .. } => {
+                self.look_issue(env, token, b"DOM.getDocument", &Params::Root, Step::StyleRoot);
+            }
+            Look::Shot { .. } => {
+                self.look_issue(env, token, b"Page.getFrameTree", &Params::Empty, Step::ShotFrame);
+            }
+            Look::Viewport { .. } | Look::Tree | Look::Select { .. } => {}
+        }
+    }
+
+    fn capture_look_shot(&mut self, env: &Env<Limits>, token: Token) {
+        if let Some(Operation { kind: OpKind::Look { look: Look::Shot { clip, scale }, .. }, .. }) = self.op(token) {
+            match clip {
                 Some(clip) => {
                     let params = Params::Shot { clip: *clip, scale: *scale };
                     self.look_issue(env, token, b"Page.captureScreenshot", &params, Step::Shot);
                 }
                 None => self.look_issue(env, token, b"Page.getLayoutMetrics", &Params::Empty, Step::ShotMetrics),
-            },
+            }
         }
     }
 
@@ -257,6 +284,9 @@ impl Browser {
             | Step::Selected
             | Step::Enable
             | Step::StyleRoot
+            | Step::ShotFrame
+            | Step::CaretSheet
+            | Step::CaretText
             | Step::ShotMetrics
             | Step::Shot => self.finish_refused(token, Refusal::Protocol),
         }
@@ -324,7 +354,7 @@ impl Browser {
                 {
                     page.css = Css::Enabled;
                 }
-                self.look_issue(env, token, b"DOM.getDocument", &Params::Root, Step::StyleRoot);
+                self.look_css_ready(env, token);
             }
             Step::StyleRoot => {
                 nested_u64(result, b"root", b"nodeId").ok_or(Refusal::Protocol)?;
@@ -447,6 +477,36 @@ impl Browser {
             Step::Exists => {
                 nested_u64(result, b"node", b"backendNodeId").ok_or(Refusal::Gone)?;
                 self.style_done(token, env.limits.text);
+            }
+            Step::ShotFrame => {
+                let frame =
+                    result.get(b"frameTree").ok_or(Refusal::Protocol)?.get(b"frame").ok_or(Refusal::Protocol)?;
+                let document = field_text(frame, b"loaderId").ok_or(Refusal::Protocol)?;
+                let frame = field_text(frame, b"id").ok_or(Refusal::Protocol)?;
+                let limit = usize::try_from(env.limits.text).expect("text fits usize");
+                if document.len() > limit || frame.len() > limit {
+                    return Err(Refusal::Limit);
+                }
+                let page = self.op_page(token).ok_or(Refusal::Protocol)?;
+                if self.page(page).ok_or(Refusal::Gone)?.caret_document.as_deref() == Some(document.as_ref()) {
+                    self.capture_look_shot(env, token);
+                } else {
+                    self.look_state_mut(token).ok_or(Refusal::Protocol)?.document = Some(document);
+                    self.look_issue(env, token, b"CSS.createStyleSheet", &Params::Frame(&frame), Step::CaretSheet);
+                }
+            }
+            Step::CaretSheet => {
+                let sheet = field_text(result, b"styleSheetId").ok_or(Refusal::Protocol)?;
+                if sheet.len() > usize::try_from(env.limits.text).expect("text fits usize") {
+                    return Err(Refusal::Limit);
+                }
+                self.look_issue(env, token, b"CSS.setStyleSheetText", &Params::CaretSheet(&sheet), Step::CaretText);
+            }
+            Step::CaretText => {
+                let document = self.look_state_mut(token).ok_or(Refusal::Protocol)?.document.take();
+                let page = self.op_page(token).ok_or(Refusal::Protocol)?;
+                self.page_mut(page).ok_or(Refusal::Gone)?.caret_document = document;
+                self.capture_look_shot(env, token);
             }
             Step::ShotMetrics => {
                 let viewport = result.get(b"cssVisualViewport").ok_or(Refusal::Protocol)?;
@@ -615,3 +675,7 @@ fn node_missing(message: &[u8]) -> bool {
         || contains(message, b"Cannot find node")
         || contains(message, b"No node with given id")
 }
+
+#[cfg(test)]
+#[path = "look_tests.rs"]
+mod tests;

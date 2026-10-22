@@ -9,6 +9,8 @@ use skein_json::writer::{Encoder, Limits as JsonLimits};
 #[derive(Debug)]
 pub(crate) enum Params<'a> {
     Empty,
+    Frame(&'a [u8]),
+    CaretSheet(&'a [u8]),
     Dialog { accept: bool },
     Document,
     Root,
@@ -53,6 +55,16 @@ impl Params<'_> {
         json.object_start();
         match self {
             Params::Empty => {}
+            Params::Frame(frame) => {
+                json.key(b"frameId");
+                json.string(frame);
+            }
+            Params::CaretSheet(sheet) => {
+                json.key(b"styleSheetId");
+                json.string(sheet);
+                json.key(b"text");
+                json.string(b"* { caret-animation: manual !important }");
+            }
             Params::Dialog { accept } => {
                 json.key(b"accept");
                 json.boolean(*accept);

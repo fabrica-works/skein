@@ -169,8 +169,32 @@ fn look_reads(client: &mut Client, out: &Path) {
     let Value::Object(mut fields) = viewport.clone() else { panic!("viewport") };
     fields.insert("call".into(), string("look-viewport"));
     assert_eq!(client.call(&Value::Object(fields)), object([("viewport", viewport)]));
+    let found = client.call(&look_finder("look-find", "textbox", "Message", []));
+    let Value::Array(entries) = field(&found, "found") else { panic!("found") };
+    let caret_style = object([
+        ("call", string("look-style")),
+        ("node", field(&entries[0], "node").clone()),
+        ("properties", Value::Array(vec![string("caret-color")])),
+    ]);
+    let before = client.call(&caret_style);
     let shot = client.call(&look_shot("phone.png", Value::Null, 1));
     check_png(&shot, out, "look/phone.png", PHONE);
+    // browser.md, 5.1: a focused textarea draws one picture through its blink interval.
+    let digest = field(field(&shot, "shot"), "sha256");
+    let clock = skein_shell::Clock::new();
+    let mut next = clock.now().now;
+    for index in 1..10 {
+        next = next.saturating_add(Duration::from_millis(150));
+        let delay = next.as_nanos().saturating_sub(clock.now().now.as_nanos());
+        std::thread::sleep(std::time::Duration::from_nanos(delay));
+        let answer = client.call(&look_shot(&format!("caret-{index}.png"), Value::Null, 1));
+        assert_eq!(field(field(&answer, "shot"), "sha256"), digest);
+    }
+    let after = client.call(&caret_style);
+    assert_eq!(
+        field(field(field(&after, "style"), "values"), "caret-color"),
+        field(field(field(&before, "style"), "values"), "caret-color")
+    );
     assert_eq!(client.simple("look-focus"), focused);
     let met = client.call(&look_finder("look-await", "textbox", "Message", [("seconds", number(1))]));
     assert!(matches!(field(&met, "met"), Value::Array(entries) if !entries.is_empty()));
