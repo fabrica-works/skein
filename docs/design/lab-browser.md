@@ -1066,7 +1066,7 @@ answers to the lab alone.
 | `look-tree` | | section 3's `tree` |
 | `look-style` | `node`; `properties` | section 3's `style` |
 | `look-shot` | `clip`, `scale`; `file` | section 3's `shot`, written to `--out`'s `look/` (8.1) |
-| `look-focus` | | `{"focus":{"role","name"}}`, the tree's entry whose states hold `focused`, or `{"focus":null}` |
+| `look-focus` | | `{"focus":{"role","name"}}`, the tree's last entry in document order whose states hold `focused`, the document's root left out (Chromium reports it focused too); none: `{"focus":null}` |
 
 - **A viewport change keeps the page:** the kit's viewport holds until
   the next (browser.md, 5.1), and changing it neither reloads nor
