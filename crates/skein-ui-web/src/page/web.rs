@@ -24,6 +24,7 @@ type Listener = (String, Closure<dyn FnMut(web_sys::Event)>);
 pub struct Dom {
     document: Rc<Mounted>,
     listeners: Vec<Listener>,
+    fold: RefCell<super::fold::Fold>,
     _resize: Closure<dyn FnMut(js_sys::Array, ResizeObserver)>,
 }
 
@@ -108,12 +109,25 @@ impl Dom {
                 .expect("mount accepts its listener");
             listeners.push((kind.into(), listener));
         }
-        Self { document, listeners, _resize: resize }
+        Self { document, listeners, fold: RefCell::new(super::fold::Fold::default()), _resize: resize }
     }
 
     /// Release the page's borrow before replay: focus may report synchronously.
     pub fn apply(&self, ops: &[Op]) {
         self.document.apply(ops);
+        let location = self.document.document.default_view().expect("mounted document has its window").location();
+        let address = format!(
+            "{}{}",
+            location.pathname().expect("page path is readable"),
+            location.search().expect("page query is readable")
+        );
+        if self.fold.borrow_mut().moved(address.as_bytes()) {
+            let details = self.document.mount.query_selector_all("details[open]").expect("disclosure selector");
+            for index in 0..details.length() {
+                let detail: Element = details.item(index).expect("selected disclosure exists").unchecked_into();
+                detail.remove_attribute("open").expect("disclosure can be folded");
+            }
+        }
     }
 }
 
