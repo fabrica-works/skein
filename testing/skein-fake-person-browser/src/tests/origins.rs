@@ -7,16 +7,15 @@ pub(super) fn response(path: &str) -> Vec<u8> {
     response_body(path, b"http://{address}/", &[])
 }
 fn response_body(path: &str, body: &[u8], peers: &[(Box<[u8]>, String)]) -> Vec<u8> {
-    let mut pages = serve::Pages::new(
-        vec![serve::Page {
-            path: b"/".as_slice().into(),
-            kind: b"text/html".as_slice().into(),
-            body: body.into(),
-            headers: vec![],
-        }],
-        Time::ZERO,
-        Wall::EPOCH,
-    );
+    let pages = vec![serve::Page {
+        path: b"/".as_slice().into(),
+        kind: b"text/html".as_slice().into(),
+        body: body.into(),
+        headers: vec![],
+    }];
+    served(serve::Pages::new(pages, Time::ZERO, Wall::EPOCH), path, peers)
+}
+fn served(mut pages: serve::Pages, path: &str, peers: &[(Box<[u8]>, String)]) -> Vec<u8> {
     pages.address("127.0.0.1:9090");
     pages.peers(peers);
     assert!(pages.pending());
@@ -84,4 +83,21 @@ fn origin_bodies_replace_peer_and_server_placeholders() {
         &[(b"neighbor".as_slice().into(), "127.0.0.1:8080".into())],
     );
     assert!(wire.ends_with(b"127.0.0.1:8080/127.0.0.1:9090/127.0.0.1:8080"));
+}
+
+#[test]
+fn verbatim_origins_serve_placeholders_as_written() {
+    let body = b"{neighbor}/{address}/{neighbor}";
+    let pages = vec![serve::Page {
+        path: b"/".as_slice().into(),
+        kind: b"text/html".as_slice().into(),
+        body: body.as_slice().into(),
+        headers: vec![],
+    }];
+    let wire = served(
+        serve::Pages::verbatim(pages, Time::ZERO, Wall::EPOCH, 0),
+        "/",
+        &[(b"neighbor".as_slice().into(), "127.0.0.1:8080".into())],
+    );
+    assert!(wire.ends_with(body));
 }

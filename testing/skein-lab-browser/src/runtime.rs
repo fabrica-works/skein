@@ -608,7 +608,7 @@ impl Runtime {
             Ok(pages) => pages,
             Err((why, detail)) => return Ok(calls::refused(why, detail)),
         };
-        let pages = Pages::numbered(
+        let pages = Pages::verbatim(
             pages,
             self.ienv.now,
             self.ienv.wall,

@@ -87,6 +87,15 @@ fn browser_program() {
     assert_eq!(met.len(), 1);
     assert_eq!(field(&met[0], "name"), &string("Fixture heading"));
     assert_ne!(field(&met[0], "box"), &Value::Null);
+    let written = call(object([
+        ("call", string("find")),
+        ("page", string("p")),
+        ("role", string("StaticText")),
+        ("name", string("Served as written: {address}")),
+        ("match", string("exact")),
+    ]));
+    let Value::Array(written) = field(&written, "found") else { panic!("found array") };
+    assert_eq!(written.len(), 1, "a served file is its bytes, its placeholders as written");
     let tree = call(object([("call", string("tree")), ("page", string("p"))]));
     let Value::Array(tree) = field(&tree, "tree") else { panic!("tree array") };
     assert!(tree.iter().any(|entry| field(entry, "role") == &string("heading")
