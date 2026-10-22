@@ -597,9 +597,21 @@ def replay(lab):
     assert lab.events() == events
 
 
-def late_launch(lab):
+def late_launch(lab, release_crash=False):
     # The real systemd-run client is delayed before StartTransientUnit. The
     # wrapper dies and recovery releases first. The late unit cannot payload.
+    policy_marker, helper_marker = lab.path / 'policy-executed', lab.path / 'policy-child'
+    if release_crash:
+        runtime = Path(lab.env['SKEIN_TEST_CHROMIUM'])
+        helper = ('from pathlib import Path; import time; Path(' + repr(str(helper_marker)) +
+                  ').write_text("child"); time.sleep(120)')
+        runtime.write_text('#!/usr/bin/env python3\nimport os,subprocess\nfrom pathlib import Path\n'
+            'if os.environ.get("HEAVY_TASK"):\n'
+            '    Path(' + repr(str(policy_marker)) + ').write_text("preflight")\n'
+            '    subprocess.Popen([' + repr(sys.executable) + ', "-c", ' + repr(helper) + '], '
+            'stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)\n'
+            'print("Chromium 147.0.7727.101")\n')
+        lab.arm('release_saved')
     shim = lab.path / 'bin'
     shim.mkdir()
     real = lab.call(['which', 'systemd-run']).stdout.strip()
@@ -616,9 +628,40 @@ def late_launch(lab):
     gate = lab.start('gate', gate=True, args=['touch', str(marker_payload)])
     wait_for(marker.exists, 'deferred scope creation')
     lab.kill_wrapper('gate')
-    lab.released('gate')
+    if release_crash:
+        reconciler = lab.barrier('release_saved', 'gate')
+        assert lab.task('gate')['state'] == 'released'
+        lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.timer'])
+        os.kill(reconciler, signal.SIGKILL)
+        lab.disarm('release_saved')
+        task = lab.task('gate')
+        transport = lab.base / (task['token'] + '.env')
+        assert transport.exists(), 'crash must retain the delayed launch environment'
+    else:
+        lab.released('gate')
     proceed.touch()
     wait_for(lambda: not live(int(marker.read_text())), 'late launcher ended')
+    if release_crash:
+        assert not policy_marker.exists() and not helper_marker.exists(), 'late launch executed policy tools'
+        properties = lab.call(['systemctl', '--user', 'show', task['unit'],
+                              '--property=ControlGroup,ActiveState,LoadState']).stdout
+        group = next((line.split('=', 1)[1] for line in properties.splitlines() if line.startswith('ControlGroup=')), '')
+        cg = Path('/sys/fs/cgroup') / group.lstrip('/') if group else None
+        empty = not cg or not cg.exists() or 'populated 0' in (cg / 'cgroup.events').read_text()
+        assert empty, 'late cgroup populated'
+        assert transport.exists(), 'cleanup was not deferred across the crash'
+        lab.call([HEAVY, '--reconcile'])
+        assert not transport.exists(), 'released transport cleanup was not replayed'
+        receipt_path = lab.base / 'receipts' / (task['token'] + '.json')
+        receipt_before = receipt_path.read_bytes()
+        lab.call([HEAVY, '--reconcile'])
+        assert receipt_path.read_bytes() == receipt_before, 'sealed receipt changed'
+        lab.call(['systemctl', '--user', 'reset-failed', lab.prefix + '-reconcile.service'])
+        lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.timer'])
+        (lab.path / 'late-launch-proof.json').write_text(json.dumps({
+            'retained_env_used': True, 'pre_guard_policy_executed': False, 'detached_child_created': False,
+            'late_cgroup_empty': empty, 'unit_properties': properties, 'transport_cleanup_replayed': True,
+            'sealed_receipt_immutable': True}, indent=2) + '\n')
     assert not marker_payload.exists(), 'late creation ran payload'
     lab.done(gate, 137)
     lab.env['PATH'] = lab.env['PATH'].split(':', 1)[1]
@@ -945,6 +988,7 @@ def main():
              ('boot-change', lambda lab: descendants(lab, 'boot')),
              ('prepaused', prepaused), ('maintenance', maintenance), ('concurrent', concurrent),
              ('journal-replay', replay), ('late-launch', late_launch),
+             ('late-launch-release-crash', lambda lab: late_launch(lab, True)),
              ('cancelled-reused-id', cancelled_reused_id), ('stale-pause-5s', stale_pause),
              ('receipt-publication', publication_crash), ('real147-land-cache', real_land),
              ('receipt-fsync', lambda lab: publication_crash(lab, 'receipt_fsynced')),

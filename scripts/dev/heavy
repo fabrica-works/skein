@@ -36,11 +36,8 @@ prepare_gate_policy() {
     fi
 }
 case ${1:-} in
-    --payload)
-        # Policy is prepared inside the contained task, before payload start.
-        if [[ ${HEAVY_LANE:-} == gate ]]; then prepare_gate_policy "${2:-}"; fi
-        ;;
-    --task|--observe|--reconcile|--install-reconciler|--remove-reconciler|--maintenance-pause|--maintenance-resume|--check-recovery|--repair-group|--group-held|--record-refusal) ;;
+    # The Python payload guard must precede every policy executable.
+    --payload|--task|--observe|--reconcile|--install-reconciler|--remove-reconciler|--maintenance-pause|--maintenance-resume|--check-recovery|--repair-group|--group-held|--record-refusal) ;;
     *)
         disk_floor heavy || {
             python3 "$kit/heavy-recovery.py" --record-refusal disk-floor || true

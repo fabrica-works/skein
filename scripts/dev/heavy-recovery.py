@@ -371,8 +371,13 @@ def finish(ledger, task):
                  cgroup_empty=True, cgroup=task.get('cgroup'))
     ledger.event(task, 'task_completion', code=task['code'])
     ledger.save()
-    env_file = BASE / (task['token'] + '.env')
-    env_file.unlink(missing_ok=True)
+    fault('release_saved', task['token'])
+    cleanup_transport(task)
+
+
+def cleanup_transport(task):
+    (BASE / (task['token'] + '.env')).unlink(missing_ok=True)
+    sync_dir(BASE)
 
 
 def publish_receipt(ledger, task):
@@ -502,6 +507,7 @@ def reconcile(ledger):
         if task['state'] == 'queued' and queue_available:
             ensure_observer(task)
         if task['state'] == 'released':
+            cleanup_transport(task)
             publish_receipt(ledger, task)
         if task['state'] in ('submitted', 'queued', 'released'):
             continue
@@ -880,6 +886,31 @@ def gc(token, serial):
     phase(token, 'gc_end:' + str(serial))
 
 
+def prepare_payload_policy(token):
+    # Called only after the durable ownership guard marks this cgroup active.
+    # All runtime version launchers and their descendants belong to its scope.
+    names = ('SKEIN_GATE_POLICY_ID', 'SKEIN_TEST_CHROMIUM', 'SKEIN_TEST_FONTS', 'SKEIN_GATE_POLICY_HELPER')
+    result = run(['bash', '-c', 'source "$1"; gate_policy_prepare || exit 2; '
+                  'printf "%s\\0" "$SKEIN_GATE_POLICY_ID" "$SKEIN_TEST_CHROMIUM" '
+                  '"$SKEIN_TEST_FONTS" "$SKEIN_GATE_POLICY_HELPER"',
+                  'heavy-policy', KIT / 'gate-policy.sh'])
+    values = result.stdout.split('\0')
+    with locked() as ledger:
+        task = ledger.tasks[token]
+        if task['state'] != 'active':
+            return False
+        expected = os.environ.get('SKEIN_GATE_POLICY_ID')
+        if result.returncode or len(values) != 5 or values[0] != task['policy'] or (
+                expected and values[0] != expected):
+            task.update(state='finishing', code=2, outcome='refused',
+                        refusal='submitted gate policy no longer validates at contained entry')
+            ledger.event(task, 'refusal', reason=task['refusal'])
+            ledger.save()
+            return False
+        os.environ.update(zip(names, values[:4]))
+    return True
+
+
 def payload(token):
     with locked() as ledger:
         task = ledger.tasks[token]
@@ -892,11 +923,6 @@ def payload(token):
             raise Refusal('payload cgroup population cannot be proved')
         task['cgroup'] = group
         task['state'] = 'active'
-        if task['lane'] == 'gate' and os.environ.get('SKEIN_GATE_POLICY_ID') != task['policy']:
-            task.update(state='finishing', code=2, outcome='refused')
-            ledger.event(task, 'refusal', reason='submitted policy differs at payload entry')
-            ledger.save()
-            return 2
         if task['lane'] == 'gate' and task['tree'] != 'unversioned' and (
                 run(['git', 'rev-parse', 'HEAD^{tree}']).stdout.strip() != task['tree'] or
                 run(['git', 'status', '--porcelain']).stdout.strip()):
@@ -908,6 +934,8 @@ def payload(token):
         ledger.save()
         args, lane = task['args'], task['lane']
     if lane == 'gate':
+        if not prepare_payload_policy(token):
+            return 2
         phase(token, 'settle_begin')
         settle = int(os.environ.get('HEAVY_SETTLE', '120'))
         start = time.monotonic()
