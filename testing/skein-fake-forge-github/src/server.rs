@@ -611,6 +611,10 @@ fn answer(server: &mut Server, service: &Service, limits: &Limits, outcome: Outc
         }
     }
 }
+// http.md, 5.4: these statuses have no reply stream.
+fn status_has_no_body(status: u16) -> bool {
+    status == 204 || status == 304
+}
 fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut location: Option<Box<[u8]>>) {
     if location.is_none() {
         location = reply.location.take();
@@ -653,7 +657,8 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
     if let Some(location) = location {
         headers.push(Header { name: bytes::copy_of(b"Location"), value: location }).expect("location slot");
     }
-    let length = u64::try_from(reply.body.len()).expect("bounded reply");
+    let bodyless = status_has_no_body(reply.status);
+    let length = if bodyless { 0 } else { u64::try_from(reply.body.len()).expect("bounded reply") };
     if length > 0 {
         headers
             .push(Header { name: bytes::copy_of(b"Content-Type"), value: bytes::copy_of(reply.content_type.bytes()) })
@@ -665,12 +670,12 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
     server.requests.push(http::Request::Respond(http::Response {
         status: reply.status,
         headers: headers.into_boxed(),
-        body: if reply.status == 204 { http::Body::None } else { http::Body::Length(length) },
+        body: if bodyless { http::Body::None } else { http::Body::Length(length) },
         close: false,
     }));
     if length > 0 {
         reply_room(server, limits);
-    } else if reply.status != 204 {
+    } else if !bodyless {
         server.requests.push(http::Request::Reply(Down::Finish));
     }
 }
