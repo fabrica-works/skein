@@ -34,7 +34,9 @@ def archive(members, form=tarfile.USTAR_FORMAT):
 class RunnerCase(unittest.TestCase):
     def setUp(self):
         os.umask(0o077)
-        self.temp = tempfile.TemporaryDirectory(prefix='m2-qa-')
+        # On disk, above the lab's floor (/tmp may be a small tmpfs), and short
+        # enough for the runner's sockets beneath the invented home.
+        self.temp = tempfile.TemporaryDirectory(prefix='m2-qa-', dir='/var/tmp')
         self.base = Path(self.temp.name)
         self.addCleanup(self.clean)
         self.home = self.base / 'home'
@@ -87,7 +89,7 @@ class RunnerCase(unittest.TestCase):
     def run_lab(self, subject):
         self.write()
         result = self.command([LAB, 'run', self.experiment, '--subject', subject, '--seed', '7'])
-        records = list((self.store / 'runs').glob('*/run.json'))
+        records = list(self.store.glob('keys/*/*/runs/*/run.json'))
         if not records:
             diagnostic = result.stderr.decode(errors='replace')
             if any(word in diagnostic.lower() for word in ('systemd', 'bubblewrap', 'bwrap', 'namespace', 'cgroup', 'user manager', 'disk')):

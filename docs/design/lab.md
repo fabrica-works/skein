@@ -734,8 +734,9 @@ and `dirs/<D>/`.
   and what was found (6.1), its actions and observed turns, its end, the
   report's and the transcript's files (6.3, 6.4);
 - `failures`, each `{"id", "signature", "kind", "summary", "evidence"}`;
-  `undecided`, each `{"check", "reason"}`; `errors`, each `{"what",
-  "detail"}`;
+  `undecided`, each `{"check", "reason"}` (a command left unavailable,
+  5.1, as `<group>/<name>`: `actions/consume`); `errors`, each
+  `{"what", "detail"}`;
 - `bounds` and `usage` (6.5); `about`, the machine (2.3).
 
 The evidence line (`lab-evidence/1`) is `{"run", "seed", "attempt",

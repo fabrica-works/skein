@@ -42,7 +42,7 @@ class AwaitQA(RunnerCase):
         self.assertIn('bound/command_seconds/old', [f['signature'] for f in record['failures']])
         command = next(c for c in record['commands'] if c['name'] == 'old')
         self.assertIsNone(command['awaited'])
-        self.assertTrue(any(x['check'] == 'consume' for x in record['undecided']), record)
+        self.assertTrue(any(x['check'] == 'actions/consume' for x in record['undecided']), record)
 
     def test_nonzero_action_does_not_wait_for_missing_line(self):
         self.exp['processes'] = [self.service()]
