@@ -14,13 +14,13 @@ def read(data: bytes):
     def bad(member, why):
         errors.append(Refusal(member, why))
 
-    def shape(obj, fields, member):
+    def shape(obj, fields, member, optional=()):
         if type(obj) is not dict:
             bad(member, "expected an object")
             return {}
         for key in sorted(set(fields) - obj.keys()):
             bad((member + "." + key).lstrip("."), "missing member")
-        for key in sorted(obj.keys() - set(fields)):
+        for key in sorted(obj.keys() - set(fields) - set(optional)):
             bad((member + "." + key).lstrip("."), "unknown member")
         return obj
 
@@ -72,7 +72,7 @@ def read(data: bytes):
                     bad(f"{prefix}.{index}.name", "repeated name")
                 seen.add(obj["name"])
 
-    shape(value, ("format", "name", "widths", "mockup", "page", "regions", "names", "expectations", "departures"), "")
+    shape(value, ("format", "name", "widths", "mockup", "page", "regions", "names", "expectations", "departures"), "", ("words",))
     name(value, "name")
     widths = array(value, "widths", True)
     unique(widths, "widths")
@@ -113,13 +113,15 @@ def read(data: bytes):
     width_names = {w["name"] for w in widths if type(w) is dict and type(w.get("name")) is str}
     region_names = {r["name"] for r in regions if type(r) is dict and type(r.get("name")) is str}
     ids = set()
-    for kind in ("expectations", "departures"):
-        for index, item in enumerate(array(value, kind)):
+    word_regions = set()
+    for kind in ("expectations", "departures", "words"):
+        for index, item in enumerate([] if kind == "words" and kind not in value else array(value, kind)):
             member = f"{kind}.{index}"
             common = ("id", "width", "cites")
             by_entry = type(item) is dict and ("entry" in item or (kind == "expectations" and "count" in item))
-            fields = (("entry", "count") if by_entry else ("region", "property", "value")) if kind == "expectations" else (
-                ("entry",) if by_entry else ("signature",))
+            fields = ("region", "data") if kind == "words" else (
+                (("entry", "count") if by_entry else ("region", "property", "value")) if kind == "expectations" else (
+                    ("entry",) if by_entry else ("signature",)))
             item = shape(item, common + fields, member)
             identity = item.get("id")
             if type(identity) is not str or not NAME.fullmatch(identity):
@@ -131,7 +133,37 @@ def read(data: bytes):
             if type(item.get("width")) is not str or item["width"] not in width_names:
                 bad(member + ".width", "expected a scene width name")
             text(item, "cites", member + ".cites", True)
-            if by_entry:
+            if kind == "words":
+                if value.get("mockup") is None:
+                    bad(member, "requires a mockup")
+                region, width = item.get("region"), item.get("width")
+                if type(region) is not str or region not in region_names:
+                    bad(member + ".region", "expected a scene region name")
+                elif type(width) is str:
+                    if (width, region) in word_regions:
+                        bad(member + ".region", "words repeated at this width")
+                    word_regions.add((width, region))
+                patterns = item.get("data")
+                if type(patterns) is not list:
+                    bad(member + ".data", "expected an array")
+                    patterns = []
+                seen = set()
+                for offset, pattern in enumerate(patterns):
+                    field = f"{member}.data.{offset}"
+                    if type(pattern) is not str:
+                        bad(field, "expected text")
+                        continue
+                    if pattern in seen:
+                        bad(field, "repeated pattern")
+                    seen.add(pattern)
+                    try:
+                        compiled = re.compile(pattern)
+                    except re.error as error:
+                        bad(field, "invalid pattern: " + str(error))
+                    else:
+                        if compiled.search("") is not None:
+                            bad(field, "pattern matches empty text")
+            elif by_entry:
                 text(item, "entry", member + ".entry", True)
                 if kind == "expectations" and (type(item.get("count")) is not int or item["count"] < 0):
                     bad(member + ".count", "expected a nonnegative integer")

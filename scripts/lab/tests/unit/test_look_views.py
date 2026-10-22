@@ -1,6 +1,9 @@
 """Structure, style and content decisions (lab-browser.md, 5.3)."""
+from pathlib import Path
 import unittest
-from look import outline, picture, style
+from unittest.mock import Mock
+from look import capture, outline, picture, record, style
+from .test_look_scene import valid
 
 
 def entry(node, depth, role, name="", level=0):
@@ -36,6 +39,49 @@ class Structure(unittest.TestCase):
         self.assertIsNone(picture.content(tree, 4))
         self.assertIsNone(picture.content(tree, None))
         self.assertIsNone(picture.content(None, 1))
+
+    def test_words_are_static_text_descendants_in_tree_order(self):
+        tree = [entry(1, 0, "main", "Top"), entry(2, 1, "heading", "Inbox"),
+                entry(3, 2, "StaticText", "Inbox "), entry(4, 1, "button", "2"),
+                entry(5, 2, "StaticText", "2"), entry(6, 3, "InlineTextBox", "2"),
+                entry(7, 1, "StaticText", "Hint"), entry(8, 0, "StaticText", "Outside")]
+        self.assertEqual(picture.words(tree, 1), ["Inbox ", "2", "Hint"])
+        self.assertEqual(picture.words(tree, 2), ["Inbox "])
+        self.assertEqual(picture.words(tree, 4), ["2"])
+        self.assertEqual(picture.words(tree, 7), [])
+        self.assertEqual(picture.words(tree, 8), [])
+        for source, node in ((tree, 9), (tree, None), (None, 1), ([], 1)):
+            with self.subTest(tree=source, node=node):
+                self.assertIsNone(picture.words(source, node))
+
+
+class CaptureWords(unittest.TestCase):
+    def test_served_and_live_parts_take_words_from_the_existing_tree(self):
+        tree = [entry(1, 0, "main", "Inbox"), entry(2, 1, "StaticText", "Inbox "),
+                entry(3, 1, "StaticText", "2")]
+        refused = dict(refused="protocol", detail="tree failed")
+        for live in (False, True):
+            for answer, expected in ((dict(tree=tree), ["Inbox ", "2"]),
+                                     (dict(tree=[]), None), (refused, None)):
+                with self.subTest(live=live, tree=answer):
+                    scene = valid()
+                    if live:
+                        scene["page"] = dict(live="/", ready=scene["page"]["ready"], focus=None)
+                    program, hand = Mock(), Mock()
+                    program.call.return_value = dict(done=True, trouble=[])
+                    hand.call.side_effect = lambda call, **kw: {
+                        "look-viewport": {}, "address": dict(address="http://127.0.0.1:1/"),
+                        "look-focus": dict(focus=None), "trouble": dict(trouble=[], more=0)}[call]
+                    engine = capture.Capture(program, Path("unused"), 1, dict(page="http://127.0.0.1:1"), hand)
+                    engine.write = Mock(return_value=record.file("unused", b""))
+                    engine.shot = Mock(return_value=refused)
+                    answers = {"await": dict(met=[]), "tree": answer,
+                               "find": dict(found=[dict(node=1)], more=0),
+                               "style": dict(style=dict(box=None, values={}, faces=[]))}
+                    engine.read = Mock(side_effect=lambda call, *args, **kw: answers[call])
+                    _, parts, _, _ = engine.side(scene, scene["widths"][0], "page", "unused")
+                    self.assertEqual(parts[0]["words"], expected)
+                    self.assertEqual([c.args[0] for c in engine.read.call_args_list], ["await", "tree", "find", "style"])
 
 
 class Style(unittest.TestCase):

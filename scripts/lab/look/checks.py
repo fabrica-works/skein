@@ -1,5 +1,8 @@
 """Checks over a scene and its captured values (lab-browser.md, 5.4)."""
+import difflib
+import hashlib
 import json
+import re
 from typing import NamedTuple
 from . import outline, style as values
 
@@ -9,6 +12,7 @@ BOX = ("x", "y", "width", "height")
 class Result(NamedTuple):
     fails: list[tuple[str, str]]
     undecided: list[str]
+    notes: tuple[str, ...] = ()
 
 
 def _label(text):
@@ -133,7 +137,8 @@ def _expectations(scene, width):
 
 def _finish(scene, width, kind, differences, undecided):
     departures = [d for d in scene["departures"] if d["width"] == width["name"]
-                  and ("style" if d.get("signature", "").startswith("style/") else "structure") == kind]
+                  and ("style" if d.get("signature", "").startswith("style/") else
+                       "words" if d.get("signature", "").startswith("words/") else "structure") == kind]
     used, failures = set(), {}
     for tail, summary, entry in differences:
         accepted = False
@@ -258,3 +263,62 @@ def style(scene: dict, width: dict) -> Result:
                 differences.append((f"style/{region['name']}/{prop}",
                                     f"page {got}, expected {want} ({sources[prop]})", None))
     return _finish(scene, width, "style", differences, undecided)
+
+
+def _word_span(words):
+    tail = _encoded(" ".join(words[:8]))
+    if len(words) > 8:
+        digest = hashlib.sha256(" ".join(words).encode("utf-8")).hexdigest()[:8]
+        tail += f"/{len(words)}w-{digest}"
+    return tail
+
+
+def words(scene: dict, width: dict) -> Result:
+    differences, undecided, notes = [], [], []
+    regions = {region["name"]: region for region in width["regions"]}
+    for item in scene.get("words", []):
+        if item["width"] != width["name"]:
+            continue
+        prefix = _prefix(scene, width) + "/" + item["id"]
+        pair = regions[item["region"]]
+        texts, reasons = [], []
+        for side in ("mockup", "page"):
+            part = pair[side]
+            if _refused(part):
+                reasons.append(f"{prefix}: {side} {_reason(part)}")
+            elif side == "mockup" and not part["found"]:
+                reasons.append(f"{prefix}: mockup not found")
+            elif part["found"]:
+                if part.get("words") is None:
+                    reasons.append(f"{prefix}: {side} words absent or null")
+                else:
+                    texts.append(" ".join(part["words"]))
+        undecided.extend(reasons)
+        if reasons or not pair["page"].get("found"):
+            continue
+        for pattern in item["data"]:
+            compiled = re.compile(pattern)
+            matches = [list(compiled.finditer(text)) for text in texts]
+            for side, spans in zip(("mockup", "page"), matches):
+                for match in spans:
+                    span = match.group()
+                    if any(char.isspace() for char in span):
+                        reasons.append(f"{prefix}: {side} data {pattern} matched white space in {span!r}")
+            if reasons:
+                undecided.extend(reasons)
+                break
+            if not any(matches):
+                notes.append(f"{prefix}: data {pattern} matched nothing")
+            texts = [compiled.sub("#", text) for text in texts]
+        if reasons:
+            continue
+        a, b = (text.split() for text in texts)
+        for opcode, i, j, k, l in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+            if opcode == "equal":
+                continue
+            summary = f"region {item['region']}: mockup {' '.join(a[i:j])!r}, page {' '.join(b[k:l])!r}"
+            if opcode in ("delete", "replace"):
+                differences.append((f"words/{item['region']}/missing/" + _word_span(a[i:j]), summary, None))
+            if opcode in ("insert", "replace"):
+                differences.append((f"words/{item['region']}/extra/" + _word_span(b[k:l]), summary, None))
+    return _finish(scene, width, "words", differences, undecided)._replace(notes=tuple(notes))

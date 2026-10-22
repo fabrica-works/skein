@@ -20,6 +20,28 @@ def sample():
 
 
 class Record(unittest.TestCase):
+    def test_found_parts_accept_words_null_and_old_records(self):
+        for words in (None, [], ["Inbox ", "2", "é"]):
+            with self.subTest(words=words):
+                value = sample()
+                part = value["scenes"][0]["widths"][0]["regions"][0]["page"]
+                self.assertNotIn("words", part)
+                self.assertEqual(record.check(value), value)
+                part["words"] = words
+                self.assertEqual(record.check(canon.loads(canonical.record_bytes(value), "look-capture/1")), value)
+
+    def test_refuses_mistyped_words_and_words_on_missing_parts(self):
+        for words in ("Inbox", {}, 1, [None], ["Inbox", 2]):
+            with self.subTest(words=words), self.assertRaises(Refused) as caught:
+                value = sample()
+                value["scenes"][0]["widths"][0]["regions"][0]["page"]["words"] = words
+                record.check(value)
+            self.assertEqual(caught.exception.refusal.member, "region.page.words")
+        value = sample()
+        value["scenes"][0]["widths"][0]["regions"][0]["page"] = dict(found=False, words=[])
+        with self.assertRaises(Refused):
+            record.check(value)
+
     def test_file_entry_has_prefixed_digest_and_exact_byte_count(self):
         self.assertEqual(record.file("empty.txt", b""), {
             "path": "empty.txt", "bytes": 0,

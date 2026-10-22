@@ -35,10 +35,10 @@ class Focus(unittest.TestCase):
         scene, width = fixture()
         scene['page'] = dict(live='/chat', ready=scene['page']['ready'], focus=None)
         width['page']['focus'] = dict(role='button', name='Send')
-        self.assertEqual(checks.structure(scene, width, '', ''), ([], []))
+        self.assertEqual(checks.structure(scene, width, '', ''), checks.Result([], []))
         scene['page']['focus'] = dict(role='textbox', name='Message', match='exact')
         scene['departures'] = [dict(id='accepted', width=width['name'], signature='focus/page', cites='design 1')]
-        self.assertEqual(checks.structure(scene, width, '', ''), ([], []))
+        self.assertEqual(checks.structure(scene, width, '', ''), checks.Result([], []))
         width['page']['focus'] = dict(role='textbox', name='Message')
         self.assertEqual(tails(checks.structure(scene, width, '', '')), ['departure-gone/accepted'])
 

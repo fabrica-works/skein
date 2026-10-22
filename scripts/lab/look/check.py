@@ -51,7 +51,7 @@ def main(argv=None):
     fails, undecided = [], []
     try:
         parser = Arguments(description=__doc__, add_help=False)
-        parser.add_argument("kind", choices=("structure", "style"))
+        parser.add_argument("kind", choices=("structure", "style", "words"))
         parser.add_argument("--capture", required=True, type=Path, action="append")
         parser.add_argument("scenes", nargs="+", type=Path)
         args = parser.parse_args(argv)
@@ -100,13 +100,17 @@ def main(argv=None):
                                 undecided.append(f"{prefix}/{side}: {error}")
                                 texts.append(None)
                         result = checks.structure(value, width, *texts)
-                    else:
+                    elif args.kind == "style":
                         result = checks.style(value, width)
+                    else:
+                        result = checks.words(value, width)
                 except (ValueError, Refused, RecursionError) as error:
                     undecided.append(f"{prefix}: {error}")
                     continue
                 fails.extend((prefix + "/" + tail, summary) for tail, summary in result.fails)
                 undecided.extend(result.undecided)
+                for note in result.notes:
+                    print(note, file=sys.stderr)
     for signature, summary in fails:
         print(canonical.dumps({"fail": signature, "summary": summary}).decode("utf-8"))
     for reason in undecided:

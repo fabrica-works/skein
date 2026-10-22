@@ -61,7 +61,10 @@ def _part(value, member):
     if not value["found"]:
         _shape(value, "found", member)
         return
-    _shape(value, "found more box values faces shot", member)
+    _shape(value, "found more box values faces shot" + (" words" if "words" in value else ""), member)
+    if value.get("words") is not None:
+        _require(type(value["words"]) is list and all(type(v) is str for v in value["words"]),
+                 member + ".words", "expected null or a list of text")
     _int(value["more"], member + ".more")
     box = value["box"]
     if box is not None:

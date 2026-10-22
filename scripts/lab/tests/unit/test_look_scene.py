@@ -130,6 +130,74 @@ def departure():
     return dict(id="accepted", width="phone", signature="style/main/color", cites="design 3")
 
 
+def words_entry():
+    return dict(id="main-words", width="phone", region="main", data=[], cites="design 5")
+
+
+class SceneWords(unittest.TestCase):
+    def test_optional_words_and_distinct_regions_at_each_width(self):
+        value = valid()
+        for entries in (None, [], [dict(words_entry(), data=[r"\d+", r"\d\d:\d\d"])]):
+            with self.subTest(words=entries):
+                if entries is not None:
+                    value["words"] = entries
+                self.assertEqual(scene.read(canonical.record_bytes(value)), value)
+        value["widths"].append(dict(value["widths"][0], name="desktop"))
+        value["regions"].append(dict(value["regions"][0], name="other"))
+        value["words"] = [words_entry(), dict(words_entry(), id="desktop-words", width="desktop"),
+                          dict(words_entry(), id="other-words", region="other")]
+        self.assertEqual(scene.read(canonical.record_bytes(value)), value)
+
+    def test_refuses_each_invalid_member(self):
+        rows = [("id", x) for x in ("", "Bad", 1)] + [
+            (key, x) for key in ("width", "region") for x in ("absent", [], None)] + [
+            ("cites", x) for x in ("", 0, None)] + [("data", x) for x in ({}, "x", None)]
+        for key, bad in rows:
+            with self.subTest(key=key, bad=bad):
+                value = dict(valid(), words=[dict(words_entry(), **{key: bad})])
+                self.assertIn("words.0." + key, {r.member for r in scene.read(canonical.record_bytes(value))})
+        for key in words_entry():
+            with self.subTest(missing=key):
+                item = words_entry()
+                del item[key]
+                value = dict(valid(), words=[item])
+                self.assertIn("words.0." + key, {r.member for r in scene.read(canonical.record_bytes(value))})
+        value = dict(valid(), words=[dict(words_entry(), extra=True)])
+        self.assertIn("words.0.extra", {r.member for r in scene.read(canonical.record_bytes(value))})
+
+    def test_refuses_list_and_entry_types_and_patterns(self):
+        for entries, member in ((None, "words"), ({}, "words"), ([None], "words.0"),
+                                ([[]], "words.0"), (["x"], "words.0")):
+            with self.subTest(entries=entries):
+                value = dict(valid(), words=entries)
+                self.assertIn(member, {r.member for r in scene.read(canonical.record_bytes(value))})
+        for patterns, member in (([1], "words.0.data.0"), ([None], "words.0.data.0"),
+                                 (["["], "words.0.data.0"), ([""], "words.0.data.0"),
+                                 ([r"\d*"], "words.0.data.0"), ([r"\d+", r"\d+"], "words.0.data.1")):
+            with self.subTest(patterns=patterns):
+                value = dict(valid(), words=[dict(words_entry(), data=patterns)])
+                self.assertIn(member, {r.member for r in scene.read(canonical.record_bytes(value))})
+
+    def test_requires_mockup_and_region_once_per_width(self):
+        value = dict(valid(), words=[words_entry()])
+        value["mockup"] = value["regions"][0]["mockup"] = None
+        self.assertIn("words.0", {r.member for r in scene.read(canonical.record_bytes(value))})
+        value = dict(valid(), words=[words_entry(), dict(words_entry(), id="again")])
+        self.assertEqual({r.member for r in scene.read(canonical.record_bytes(value))}, {"words.1.region"})
+
+    def test_ids_unique_across_all_three_lists(self):
+        for kind, item in (("expectations", expectation()), ("departures", departure()), ("words", words_entry())):
+            with self.subTest(kind=kind):
+                value = dict(valid(), words=[words_entry()])
+                if kind == "words":
+                    value["words"].append(dict(words_entry(), width="absent"))
+                    member = "words.1.id"
+                else:
+                    value[kind] = [dict(item, id="main-words")]
+                    member = "words.0.id"
+                self.assertIn(member, {r.member for r in scene.read(canonical.record_bytes(value))})
+
+
 class SceneChecks(unittest.TestCase):
     def test_accepts_both_expectation_and_departure_forms(self):
         value = valid()

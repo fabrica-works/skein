@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from runner import canonical, checks as runner_checks
 from look import check, checks, record, style
-from .test_look_scene import valid, expectation, entry_expectation, departure
+from .test_look_scene import valid, expectation, entry_expectation, departure, words_entry
 
 REFUSED = dict(refused="protocol", detail="call failed")
 
@@ -93,7 +93,7 @@ class Order(unittest.TestCase):
 class Structure(unittest.TestCase):
     def test_base_agreement_has_no_failures_or_undecided(self):
         scene, width = fixture()
-        self.assertEqual(checks.structure(scene, width, 'main\n  link "Inbox"\n', 'main\n  link "Inbox"\n'), ([], []))
+        self.assertEqual(checks.structure(scene, width, 'main\n  link "Inbox"\n', 'main\n  link "Inbox"\n'), checks.Result([], []))
 
     def test_missing_extra_and_same_signature_entries_are_grouped(self):
         scene, width = fixture()
@@ -105,7 +105,7 @@ class Structure(unittest.TestCase):
     def test_entry_expectation_overrides_mockup_count(self):
         scene, width = fixture()
         scene["expectations"] = [entry_expectation()]
-        self.assertEqual(checks.structure(scene, width, 'main\n  link "Inbox"\n', 'main\n'), ([], []))
+        self.assertEqual(checks.structure(scene, width, 'main\n  link "Inbox"\n', 'main\n'), checks.Result([], []))
 
     def test_scene_without_mockup_reports_extras(self):
         scene, width = fixture(False)
@@ -114,7 +114,7 @@ class Structure(unittest.TestCase):
     def test_scene_without_mockup_uses_expectations_alone(self):
         scene, width = fixture(False)
         scene["expectations"] = [dict(entry_expectation(), entry="main", count=1)]
-        self.assertEqual(checks.structure(scene, width, None, "main\n"), ([], []))
+        self.assertEqual(checks.structure(scene, width, None, "main\n"), checks.Result([], []))
 
     def test_missed_and_refused_readiness_have_side_signatures(self):
         scene, width = fixture()
@@ -149,7 +149,7 @@ class Structure(unittest.TestCase):
     def test_no_mockup_or_expectation_does_not_require_region(self):
         scene, width = fixture(False)
         width["regions"][0]["page"] = dict(found=False)
-        self.assertEqual(checks.structure(scene, width, None, ""), ([], []))
+        self.assertEqual(checks.structure(scene, width, None, ""), checks.Result([], []))
 
     def test_structure_reports_region_order(self):
         scene, width = fixture()
@@ -168,7 +168,7 @@ class Structure(unittest.TestCase):
     def test_departure_by_signature_accepts_all_its_entries(self):
         scene, width = fixture()
         scene["departures"] = [dict(departure(), signature="missing/button")]
-        self.assertEqual(checks.structure(scene, width, "banner\n  button\nmain\n  button\n", "banner\nmain\n"), ([], []))
+        self.assertEqual(checks.structure(scene, width, "banner\n  button\nmain\n  button\n", "banner\nmain\n"), checks.Result([], []))
 
     def test_unused_departure_belongs_to_its_check(self):
         scene, width = fixture()
@@ -181,8 +181,8 @@ class Structure(unittest.TestCase):
         scene, width = fixture()
         scene["expectations"] = [dict(expectation(), width="desktop")]
         scene["departures"] = [dict(departure(), width="desktop")]
-        self.assertEqual(checks.structure(scene, width, "", ""), ([], []))
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.structure(scene, width, "", ""), checks.Result([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_refused_outline_preserves_explicit_expectations(self):
         scene, width = fixture()
@@ -209,14 +209,14 @@ class Structure(unittest.TestCase):
                 with self.subTest(side=side_name, part=part_value, decide=decide):
                     scene, width = fixture()
                     width["regions"][0][side_name] = part_value
-                    self.assertEqual(decide(scene, width), ([], [f"chat/phone/main: {side_name} {why}"]))
+                    self.assertEqual(decide(scene, width), checks.Result([], [f"chat/phone/main: {side_name} {why}"]))
 
 
 class Style(unittest.TestCase):
     def test_base_values_faces_and_boxes_agree(self):
         scene, width = fixture()
         width["regions"][0]["page"]["faces"][0]["glyphs"] = 100
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_each_expected_property_has_its_own_signature(self):
         rows = [(prop, ("values", prop), "different") for prop in style.PROPERTIES] + [
@@ -249,13 +249,13 @@ class Style(unittest.TestCase):
         scene, width = fixture(False)
         scene["expectations"] = [expectation()]
         width["regions"][0]["page"]["values"]["font-size"] = "13px"
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_faces_expectation_uses_sorted_families_and_web_marker(self):
         scene, width = fixture(False)
         scene["expectations"] = [dict(expectation(), property="faces", value="A (web), B")]
         width["regions"][0]["page"]["faces"] = [dict(family="B", custom=False, glyphs=2), dict(family="A", custom=True, glyphs=1)]
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_shown_difference_skips_box_members(self):
         for a, b in ((box(), None), (None, box())):
@@ -269,19 +269,19 @@ class Style(unittest.TestCase):
         scene, width = fixture()
         scene["expectations"] = [dict(expectation(), property="shown", value="no")]
         width["regions"][0]["page"]["box"] = None
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_departure_accepts_style_difference(self):
         scene, width = fixture()
         width["regions"][0]["page"]["values"]["color"] = "red"
         scene["departures"] = [departure()]
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_both_hidden_parts_have_no_box_difference(self):
         scene, width = fixture()
         for side_name in ("mockup", "page"):
             width["regions"][0][side_name]["box"] = None
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
 
     def test_missing_mockup_still_uses_property_expectations(self):
         scene, width = fixture()
@@ -294,7 +294,123 @@ class Style(unittest.TestCase):
     def test_missing_page_has_no_style_failure(self):
         scene, width = fixture()
         width["regions"][0]["page"] = dict(found=False)
-        self.assertEqual(checks.style(scene, width), ([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
+
+
+def words_fixture(a, b, data=()):
+    scene, width = fixture()
+    scene["words"] = [dict(words_entry(), data=list(data))]
+    width["regions"][0].update(mockup=part(words=a), page=part(words=b))
+    return scene, width
+
+
+class Words(unittest.TestCase):
+    def test_runs_split_differently_agree(self):
+        scene, width = words_fixture(["Inbox ", "2"], ["Inbox 2"])
+        self.assertEqual(checks.words(scene, width), checks.Result([], []))
+
+    def test_data_cut_on_both_sides_and_across_runs(self):
+        for a, b in ((["At 09:16"], ["At 09:18"]), (["At ", "09:16"], ["At 09:18"])):
+            with self.subTest(mockup=a, page=b):
+                scene, width = words_fixture(a, b, [r"\d\d:\d\d"])
+                self.assertEqual(checks.words(scene, width), checks.Result([], []))
+
+    def test_changed_word_beside_data_still_signs(self):
+        scene, width = words_fixture(["12 min ago"], ["12 mins ago"], [r"\d+"])
+        result = checks.words(scene, width)
+        self.assertEqual(tails(result), ["words/main/missing/min", "words/main/extra/mins"])
+        self.assertEqual(result.undecided, [])
+        self.assertEqual(result.notes, ())
+        for _, summary in result.fails:
+            self.assertIn("'min'", summary)
+            self.assertIn("'mins'", summary)
+
+    def test_data_patterns_apply_in_declared_order_and_replace_every_match(self):
+        scene, width = words_fixture(["09:16 09:16"], ["09:18 09:18"], [r"09:16", r"09:18", "#"])
+        self.assertEqual(checks.words(scene, width), checks.Result([], []))
+
+    def test_data_match_with_any_white_space_is_undecided(self):
+        for text, pattern in (("12 min", r"\d+ min"), ("12\tmin", r"\d+\smin"),
+                              ("12\nmin", r"\d+\smin"), ("12\u00a0min", r"\d+\smin")):
+            for side_name in ("mockup", "page"):
+                with self.subTest(text=text, side=side_name):
+                    scene, width = words_fixture(["unchanged"], ["unchanged"], [pattern])
+                    width["regions"][0][side_name]["words"] = [text]
+                    result = checks.words(scene, width)
+                    self.assertEqual(result.fails, [])
+                    self.assertEqual(result.undecided, [f"chat/phone/main-words: {side_name} data {pattern} matched white space in {text!r}"])
+
+    def test_stale_pattern_is_only_a_note(self):
+        scene, width = words_fixture(["Inbox"], ["Inbox"], [r"\d+"])
+        self.assertEqual(checks.words(scene, width), checks.Result([], [], (r"chat/phone/main-words: data \d+ matched nothing",)))
+
+    def test_delete_insert_replace_and_encoded_signatures(self):
+        rows = [("Inbox Send", "Inbox", ["words/main/missing/Send"]),
+                ("Inbox", "Inbox Send", ["words/main/extra/Send"]),
+                ("Inbox Send", "Inbox Post", ["words/main/missing/Send", "words/main/extra/Post"]),
+                ("é/\"% > ._~-", "", ["words/main/missing/%C3%A9%2F%22%25%20%3E%20._~-"])]
+        for a, b, expected in rows:
+            with self.subTest(mockup=a, page=b):
+                scene, width = words_fixture([a], [b])
+                result = checks.words(scene, width)
+                self.assertEqual(tails(result), expected)
+                self.assertEqual(result.undecided, [])
+
+    def test_moved_word_signs_both_where_it_left_and_arrived(self):
+        scene, width = words_fixture(["one two three"], ["two three one"])
+        self.assertEqual(tails(checks.words(scene, width)), ["words/main/missing/one", "words/main/extra/one"])
+
+    def test_repeated_words_are_compared_without_junk_heuristic(self):
+        scene, width = words_fixture(["start " + "word " * 210], ["word " * 210 + "end"])
+        self.assertEqual(tails(checks.words(scene, width)), ["words/main/missing/start", "words/main/extra/end"])
+
+    def test_long_span_bound_and_complete_summary(self):
+        for text, expected in (("one two three four five six seven eight", "one%20two%20three%20four%20five%20six%20seven%20eight"),
+                               ("one two three four five six seven eight nine", "one%20two%20three%20four%20five%20six%20seven%20eight/9w-5d8c5119")):
+            for a, b, kind in (([text], [], "missing"), ([], [text], "extra")):
+                with self.subTest(text=text, kind=kind):
+                    scene, width = words_fixture(a, b)
+                    result = checks.words(scene, width)
+                    self.assertEqual(tails(result), ["words/main/" + kind + "/" + expected])
+                    self.assertIn(text, result.fails[0][1])
+
+    def test_departure_accepts_words_and_is_gone_only_in_words(self):
+        scene, width = words_fixture(["Inbox"], [])
+        scene["departures"] = [dict(departure(), signature="words/main/missing/Inbox")]
+        self.assertEqual(checks.words(scene, width), checks.Result([], []))
+        width["regions"][0]["page"]["words"] = ["Inbox"]
+        self.assertEqual(tails(checks.words(scene, width)), ["departure-gone/accepted"])
+        self.assertEqual(checks.structure(scene, width, "", ""), checks.Result([], []))
+        self.assertEqual(checks.style(scene, width), checks.Result([], []))
+
+    def test_absent_words_list_and_other_widths_do_not_judge_regions(self):
+        scene, width = fixture()
+        width["regions"][0]["mockup"] = REFUSED
+        self.assertEqual(checks.words(scene, width), checks.Result([], []))
+        scene["words"] = [dict(words_entry(), width="desktop")]
+        scene["departures"] = [dict(departure(), width="desktop", signature="words/main/missing/Inbox")]
+        self.assertEqual(checks.words(scene, width), checks.Result([], []))
+
+    def test_missing_refused_and_old_parts_are_undecided_per_entry(self):
+        rows = [("mockup", dict(found=False), "not found"),
+                ("mockup", REFUSED, "protocol: call failed"), ("page", REFUSED, "protocol: call failed")]
+        rows += [(side, part(**changes), "words absent or null")
+                 for side in ("mockup", "page") for changes in ({}, dict(words=None))]
+        for side_name, value, why in rows:
+            with self.subTest(side=side_name, part=value):
+                scene, width = words_fixture(["Inbox"], ["Inbox"])
+                scene["regions"].append(dict(scene["regions"][0], name="other"))
+                scene["words"].append(dict(words_entry(), id="other-words", region="other"))
+                width["regions"].append(dict(width["regions"][0], name="other", mockup=part(words=["Send"]), page=part(words=[])))
+                width["regions"][0][side_name] = value
+                result = checks.words(scene, width)
+                self.assertEqual(tails(result), ["words/other/missing/Send"])
+                self.assertEqual(result.undecided, [f"chat/phone/main-words: {side_name} {why}"])
+
+    def test_missing_page_signs_nothing(self):
+        scene, width = words_fixture(["Inbox"], ["Inbox"])
+        width["regions"][0]["page"] = dict(found=False)
+        self.assertEqual(checks.words(scene, width), checks.Result([], []))
 
 
 class Command(unittest.TestCase):
@@ -336,6 +452,34 @@ class Command(unittest.TestCase):
         self.width["regions"][0]["page"]["values"]["font-size"] = "14px"
         self.assertEqual(self.run_check("style"), (1, [dict(fail="chat/phone/style/main/font-size",
                                                           summary="page 14px, expected normal (mockup)")]))
+
+    def words_scene(self):
+        self.scene["words"] = [words_entry()]
+        data = canonical.record_bytes(self.scene)
+        self.scene_path.write_bytes(data)
+        self.capture["scenes"][0]["scene"] = record.file("scene.json", data)["sha256"]
+        self.width["regions"][0].update(mockup=part(words=["Inbox"]), page=part(words=["Inbox"]))
+
+    def test_words_statuses_and_lines_without_reading_outlines(self):
+        self.words_scene()
+        (self.root / "mockup.txt").unlink()
+        (self.root / "page.txt").unlink()
+        self.assertEqual(self.run_check("words"), (0, []))
+        self.width["regions"][0]["page"]["words"] = []
+        self.assertEqual(self.run_check("words"), (1, [dict(fail="chat/phone/words/main/missing/Inbox",
+                                                          summary="region main: mockup 'Inbox', page ''")]))
+        del self.width["regions"][0]["page"]["words"]
+        self.assertEqual(self.run_check("words"), (2, [dict(undecided="chat/phone/main-words: page words absent or null")]))
+
+    def test_words_stale_data_note_is_printed_only_on_stderr(self):
+        self.words_scene()
+        self.scene["words"][0]["data"] = [r"\d+"]
+        data = canonical.record_bytes(self.scene)
+        self.scene_path.write_bytes(data)
+        self.capture["scenes"][0]["scene"] = record.file("scene.json", data)["sha256"]
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(self.run_check("words"), (0, []))
+        self.assertEqual(stderr.getvalue(), "chat/phone/main-words: data \\d+ matched nothing\n")
 
     def test_undecided_only_has_status_two(self):
         self.width["regions"][0]["mockup"] = dict(found=False)

@@ -27,6 +27,21 @@ def content(tree, node):
     return None
 
 
+def words(tree, node):
+    if tree is None or node is None:
+        return None
+    for index, entry in enumerate(tree):
+        if entry["node"] == node:
+            names = []
+            for child in tree[index + 1:]:
+                if child["depth"] <= entry["depth"]:
+                    break
+                if child["role"] == "StaticText":
+                    names.append(child["name"])
+            return names
+    return None
+
+
 def _grey(row):
     out = bytearray(len(row))
     for i in range(0, len(row), 3):

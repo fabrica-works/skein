@@ -266,6 +266,8 @@ class Capture:
         parts, contents = [], []
         for region in scene["regions"]:
             part, node = self.part(region[side], base + "/" + region["name"] + ".png", live)
+            if part.get("found"):
+                part["words"] = picture.words(tree, node)
             parts.append(part)
             contents.append(picture.content(tree, node) if part.get("found") else None)
         extra = {"focus": self.hand.call("look-focus")["focus"]} if live else {}
