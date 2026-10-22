@@ -15,8 +15,8 @@ from look import canon, png, record
 
 PACKAGE = Path(__file__).resolve().parents[2]
 FIXTURE = Path(__file__).with_name("look")
-DEFAULT_BROWSER = "/home/free/src/rust/tmp/lab/browser/skein-lab-browser"
-DEFAULT_CHROMIUM = "/home/free/.local/opt/chromium-147.0.7727.101/usr/lib/chromium/chromium"
+DEFAULT_BROWSER = str(Path.home() / "src/rust/tmp/lab/browser/skein-lab-browser")
+DEFAULT_CHROMIUM = str(Path.home() / ".local/opt/chromium-147.0.7727.101/usr/lib/chromium/chromium")
 
 
 class Capture(unittest.TestCase):
