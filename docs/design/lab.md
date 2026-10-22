@@ -728,7 +728,8 @@ and `dirs/<D>/`.
   `bound_bytes`, `tree_peak_bytes`); its output's files;
 - `commands`: each seed action, collection and check, as a process,
   with its status and lines (7.2); a seed action that awaits a line,
-  its `awaited`, `{"ms", "capture"}` once seen, or null;
+  its `awaited`, `{"ms", "captures"}` once seen, as a process's
+  captures, or null;
 - `driver`: its host's invocation, the inventory it was checked against
   and what was found (6.1), its actions and observed turns, its end, the
   report's and the transcript's files (6.3, 6.4);
