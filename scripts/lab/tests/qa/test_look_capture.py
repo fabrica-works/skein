@@ -1,5 +1,4 @@
 """Real program and Chromium: records, continued reads and three views."""
-import unittest
 from . import LookCase, finder, scene, sha
 
 
@@ -304,8 +303,6 @@ line-height:14px;letter-spacing:0px;padding:0;border:0;box-shadow:1px 2px 3px rg
         self.assertEqual(len(faces_rows), 1, section)
         self.assertNotIn('≠', faces_rows[0])
 
-    @unittest.skip('Chromium shows a scrollbar on a scrolling desktop page, and the viewport shot loses its 15 px: '
-                   'waits for --hide-scrollbars in skein-lab-browser (M3); qa-b-m2 closing.md')
     def test_smallest_viewport_and_largest_width_are_accepted(self):
         value = scene(paired=False)
         value['widths'] = [dict(name='one', width=1, height=1, mobile=False),
