@@ -26,6 +26,11 @@ pub(super) fn route(method: Method, bytes: &[u8], limits: &Limits) -> Result<Rou
         [admin, users, person, orgs] if &**admin == b"admin" && &**users == b"users" && &**orgs == b"orgs" => {
             (Method::Post, Some(WriteKind::NewOrg), Request::CreateOrg { person: person.clone(), name: Box::from([]) })
         }
+        [orgs, org, repos] if &**orgs == b"orgs" && &**repos == b"repos" => (
+            Method::Post,
+            Some(WriteKind::NewRepository),
+            Request::CreateRepository { org: org.clone(), name: Box::from([]), private: false },
+        ),
         [orgs, org, teams] if &**orgs == b"orgs" && &**teams == b"teams" => match method {
             Method::Get => (Method::Get, None, Request::Teams { org: org.clone(), page: page(&target.query)? }),
             Method::Post => (
@@ -86,7 +91,8 @@ pub(super) fn write(json: &mut Encoder, answer: &super::Answer) {
             }
             json.array_end();
         }
-        super::Answer::Hook(_)
+        super::Answer::CreatedRepository(_)
+        | super::Answer::Hook(_)
         | super::Answer::Hooks(_)
         | super::Answer::Token(_)
         | super::Answer::Tokens(_)

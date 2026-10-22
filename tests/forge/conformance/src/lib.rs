@@ -2,6 +2,7 @@
 mod cases;
 mod cli;
 pub mod component;
+pub mod create_repository;
 mod deliveries;
 pub mod facts;
 mod fixture;

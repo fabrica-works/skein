@@ -95,6 +95,7 @@ pub fn documents(seed: u64) -> Vec<Reply> {
         | Answer::Reviews(_)
         | Answer::Branch(_)
         | Answer::Org(_)
+        | Answer::CreatedRepository(_)
         | Answer::Hook(_)
         | Answer::Error(_) => true,
         Answer::Token(_)
@@ -317,6 +318,7 @@ fn vary(answer: &mut Answer, seed: u64) {
                 value.id += seed;
             }
         }
+        Answer::CreatedRepository(v) => v.id += seed,
         Answer::Org(v) => v.id += seed,
         Answer::Team(v) => v.id += seed,
         Answer::Teams(values) => {
@@ -381,6 +383,14 @@ fn known(rows: &[Reply], answer: &Answer) -> bool {
 // Reuse the moved setup values without constructing every recorded request for
 // each reply; a single setup request table above supplies all lookup rows.
 fn setup_replies(seed: u64, compact: bool) -> Vec<(&'static str, Answer, Document, Vec<Row>)> {
+    let mut created = cases::setup::created_repository(true);
+    created.id += seed;
+    if compact {
+        created.full_name = Box::from(*b"o/r");
+        created.default_branch = Box::from(*b"m");
+        created.clone_url = Box::from(*b"http://h/o/r.git");
+        created.ssh_url = Box::from(*b"ssh://h/o/r.git");
+    }
     let mut org = fixtures::org();
     org.id += seed;
     let mut hook = fixtures::hook(1, false, false);
@@ -389,6 +399,12 @@ fn setup_replies(seed: u64, compact: bool) -> Vec<(&'static str, Answer, Documen
         hook.events = Box::from([Box::from(*b"push")]);
     }
     vec![
+        (
+            "setup-repository-created",
+            Answer::CreatedRepository(created.clone()),
+            Document::CreatedRepository(created),
+            vec![],
+        ),
         ("setup-org-made", Answer::Org(org.clone()), Document::Org(org), vec![]),
         ("setup-team-made", Answer::Team(fixtures::team()), Document::Team(fixtures::team()), vec![]),
         (
@@ -497,6 +513,7 @@ fn shorten(answer: &mut Answer) {
         | Answer::Run(_)
         | Answer::Branch(_)
         | Answer::Org(_)
+        | Answer::CreatedRepository(_)
         | Answer::Team(_)
         | Answer::Error(_) => {}
     }

@@ -599,6 +599,14 @@ fn setup_org_cases() -> Vec<(&'static str, Request)> {
     edited.units.pulls = Access::Read;
     edited.units.actions = Access::None;
     vec![
+        (
+            "setup-repository-created",
+            Request::CreateRepository { org: Box::from(*b"creation"), name: Box::from(*b"starter"), private: true },
+        ),
+        (
+            "setup-repository-created-public",
+            Request::CreateRepository { org: Box::from(*b"creation"), name: Box::from(*b"public"), private: false },
+        ),
         ("setup-org-made", make_org()),
         ("setup-org-made-again", make_org()),
         ("setup-org-read", Request::Org { name: org() }),

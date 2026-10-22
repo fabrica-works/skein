@@ -257,6 +257,23 @@ forge differs.
    and repaired as 4.5 says. With none adopted, the run ends `Done`
    after step 5.
 
+The Forgejo dialect also provides `CreateRepository { org, name, private }`
+for the owner to make a person's first repository: `POST
+/api/v1/orgs/{org}/repos`, the org encoded as one path segment. Its JSON
+body fixes `auto_init` to `true` and `default_branch` to `main`; Forgejo
+writes the README. The answer is `Document::CreatedRepository`, with
+`id`, `full_name`, `default_branch`, `clone_url` and `ssh_url`, sufficient
+to adopt and clone the repository. The existing repository-read document
+carries settings rather than clone URLs, so creation has its own document.
+The owner grants the bot access with `AddCollaborator` and adopts the
+repository; a worker pushes the starter workflow through git.
+
+As with `CreateOrg`, refusal statuses are preserved for the caller:
+`409` names an existing repository, `422` an invalid name, `404` a missing
+org, and `401` or `403` a caller who cannot create it. The shared request
+transport retains its encoding bounds, malformed-answer and connection
+failures. The creation codec adds no retry or transport policy.
+
 ### 4.4 Converging, bounds and failures
 
 - **From Forgejo, every time.** A second run with nothing changed

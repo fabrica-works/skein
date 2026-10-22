@@ -6,6 +6,7 @@ mod hooks;
 mod orgs;
 mod pin;
 mod protection;
+mod repositories;
 use crate::forgejo::{
     client,
     decode::Malformed,

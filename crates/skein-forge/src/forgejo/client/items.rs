@@ -137,6 +137,7 @@ fn target(request: &Request, out: &mut Target) {
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }

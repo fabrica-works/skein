@@ -64,6 +64,15 @@ pub struct OrgAnswer {
 }
 pub fn org_answers() -> Vec<OrgAnswer> {
     let mut cases = Vec::new();
+    for (case, private) in [("setup-repository-created", true), ("setup-repository-created-public", false)] {
+        let repository = created_repository(private);
+        cases.push(org_answer(
+            case,
+            Document::CreatedRepository(repository.clone()),
+            vec![],
+            Answer::CreatedRepository(repository),
+        ));
+    }
     for case in ["setup-org-made", "setup-org-read"] {
         cases.push(org_answer(case, Document::Org(fixtures::org()), vec![], Answer::Org(fixtures::org())));
     }
@@ -120,4 +129,24 @@ pub fn hook_answers() -> Vec<OrgAnswer> {
         cases.push(org_answer(case, Document::Listed { skipped: 0 }, rows, Answer::Hooks(hooks.into_boxed_slice())));
     }
     cases
+}
+
+pub fn created_repository(private: bool) -> skein_forge::forgejo::document::CreatedRepository {
+    if private {
+        skein_forge::forgejo::document::CreatedRepository {
+            id: 1,
+            full_name: Box::from(*b"creation/starter"),
+            default_branch: Box::from(*b"main"),
+            clone_url: Box::from(*b"http://127.0.0.1:3000/creation/starter.git"),
+            ssh_url: Box::from(*b"ssh://free@localhost/creation/starter.git"),
+        }
+    } else {
+        skein_forge::forgejo::document::CreatedRepository {
+            id: 2,
+            full_name: Box::from(*b"creation/public"),
+            default_branch: Box::from(*b"main"),
+            clone_url: Box::from(*b"http://127.0.0.1:3000/creation/public.git"),
+            ssh_url: Box::from(*b"ssh://free@localhost/creation/public.git"),
+        }
+    }
 }

@@ -28,6 +28,7 @@ pub(crate) enum WriteKind {
     Collaborator,
     HookConfig,
     NewOrg,
+    NewRepository,
     NewTeam,
     Pull,
     Comment,
@@ -51,6 +52,16 @@ pub(crate) fn fields(kind: WriteKind) -> &'static [Field] {
         WriteKind::NewHook => super::hooks::fields(),
         WriteKind::Collaborator => const { &[field(b"permission", Read::Text, true)] },
         WriteKind::HookConfig => super::hooks::config(),
+        WriteKind::NewRepository => {
+            const {
+                &[
+                    field(b"name", Read::Text, true),
+                    field(b"private", Read::Boolean, true),
+                    field(b"auto_init", Read::Boolean, true),
+                    field(b"default_branch", Read::Text, true),
+                ]
+            }
+        }
         WriteKind::NewOrg => const { &[field(b"username", Read::Text, true), field(b"visibility", Read::Text, true)] },
         WriteKind::NewTeam => {
             const {
@@ -119,6 +130,7 @@ pub(crate) fn element(kind: WriteKind) -> Option<Kind> {
         | WriteKind::NewHook
         | WriteKind::NewToken
         | WriteKind::Scope
+        | WriteKind::NewRepository
         | WriteKind::NewOrg
         | WriteKind::NewTeam
         | WriteKind::NewUser
@@ -346,6 +358,7 @@ impl BodyDecoder {
                 | Request::UserOf { .. }
                 | Request::Org { .. }
                 | Request::CreateOrg { .. }
+                | Request::CreateRepository { .. }
                 | Request::Teams { .. }
                 | Request::CreateTeam { .. }
                 | Request::EditTeam { .. }
@@ -405,6 +418,14 @@ impl BodyDecoder {
             spec.includes_all_repositories = value;
             return Ok(());
         }
+        if let Request::CreateRepository { private, .. } = &mut self.request {
+            if key == b"private" {
+                *private = value;
+            } else if !value {
+                return Err(Malformed::Value { field: key });
+            }
+            return Ok(());
+        }
         if let Request::CreateUser { must_change_password, .. } = &mut self.request {
             *must_change_password = value;
             return Ok(());
@@ -453,6 +474,13 @@ impl BodyDecoder {
                 crate::forgejo::client::orgs::team_text(spec, key, text)?;
             }
             Request::CreateOrg { name, .. } => org_name(name, key, text)?,
+            Request::CreateRepository { name, .. } => {
+                if key == b"name" {
+                    *name = text;
+                } else if text.as_ref() != b"main" {
+                    return Err(Malformed::Value { field: key });
+                }
+            }
             Request::CreateUser { login, email, full_name, password, .. } => match key {
                 b"username" => *login = text,
                 b"email" => *email = text,
@@ -593,6 +621,7 @@ impl BodyDecoder {
             | Request::UserOf { .. }
             | Request::Org { .. }
             | Request::CreateOrg { .. }
+            | Request::CreateRepository { .. }
             | Request::Teams { .. }
             | Request::CreateTeam { .. }
             | Request::EditTeam { .. }

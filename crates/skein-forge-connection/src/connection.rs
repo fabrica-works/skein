@@ -1057,6 +1057,7 @@ fn raw_request(request: &request::Request) -> bool {
         | request::Request::UserOf { .. }
         | request::Request::Org { .. }
         | request::Request::CreateOrg { .. }
+        | request::Request::CreateRepository { .. }
         | request::Request::Teams { .. }
         | request::Request::CreateTeam { .. }
         | request::Request::EditTeam { .. }

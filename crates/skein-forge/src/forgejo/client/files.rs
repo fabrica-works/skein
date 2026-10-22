@@ -63,6 +63,7 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
     target(request, &mut write);
     Ok(Encoded { method: Method::Get, target: write.writer.expect("writing pass").finish(), body: None })
 }
+#[expect(clippy::too_many_lines, reason = "exhaustive request selection lists every dialect request")]
 fn target(request: &Request, out: &mut Target) {
     match request {
         Request::PullFiles { at, number, page } => {
@@ -147,6 +148,7 @@ fn target(request: &Request, out: &mut Target) {
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }

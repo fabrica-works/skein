@@ -707,6 +707,7 @@ fn repository_scoped(request: &Request) -> bool {
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }
@@ -775,6 +776,7 @@ fn table(service: &Service, request: &Request, user: u64) -> Option<documents::A
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }

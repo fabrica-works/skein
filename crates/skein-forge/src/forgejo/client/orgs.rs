@@ -42,7 +42,8 @@ pub(crate) fn fields(kind: SetupKind) -> &'static [Field] {
             }
         }
         SetupKind::Teams => &[],
-        SetupKind::Hook
+        SetupKind::CreatedRepository
+        | SetupKind::Hook
         | SetupKind::Hooks
         | SetupKind::Config
         | SetupKind::Events
@@ -119,6 +120,10 @@ fn target(request: &Request, out: &mut Target) -> Method {
             out.put(b"/api/v1/orgs/");
             out.segment(name);
             Method::Get
+        }
+        Request::CreateRepository { org, .. } => {
+            org_target(out, org, b"/repos");
+            Method::Post
         }
         Request::CreateOrg { person, .. } => {
             out.put(b"/api/v1/admin/users/");
@@ -232,6 +237,18 @@ fn body(json: &mut Encoder, request: &Request) {
         | Request::DeleteRepoHook { .. }
         | Request::OrgHooks { .. }
         | Request::DeleteOrgHook { .. } => unreachable!("hook has no body"),
+        Request::CreateRepository { name, private, .. } => {
+            json.object_start();
+            json.key(b"name");
+            json.string(name);
+            json.key(b"private");
+            json.boolean(*private);
+            json.key(b"auto_init");
+            json.boolean(true);
+            json.key(b"default_branch");
+            json.string(b"main");
+            json.object_end();
+        }
         Request::CreateOrg { name, .. } => {
             json.object_start();
             json.key(b"username");
@@ -400,7 +417,8 @@ impl Orgs {
                     }
                     SetupKind::Team => Document::Team(core::mem::replace(&mut self.team, document::team())),
                     SetupKind::Teams => Document::Listed { skipped: 0 },
-                    SetupKind::Hook
+                    SetupKind::CreatedRepository
+                    | SetupKind::Hook
                     | SetupKind::Hooks
                     | SetupKind::Config
                     | SetupKind::Events

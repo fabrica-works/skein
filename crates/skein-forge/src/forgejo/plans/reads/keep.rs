@@ -52,6 +52,7 @@ pub(crate) fn keep_document(document: &d::Document, forge: u16, tables: &mut Tab
         d::Document::Permission(permission) => keep_user(&permission.user, forge, tables),
         d::Document::Token(_)
         | d::Document::Org(_)
+        | d::Document::CreatedRepository(_)
         | d::Document::Hook(_)
         | d::Document::Team(_)
         | d::Document::ApiSettings(_)
@@ -117,6 +118,7 @@ pub(super) fn page_bound(request: &Request) -> Option<u32> {
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }
@@ -166,6 +168,7 @@ pub fn long(heard: &Heard) -> bool {
             d::Document::Token(_)
             | d::Document::User(_)
             | d::Document::Org(_)
+            | d::Document::CreatedRepository(_)
             | d::Document::Hook(_)
             | d::Document::Team(_)
             | d::Document::ApiSettings(_)

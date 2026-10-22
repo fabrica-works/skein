@@ -311,6 +311,7 @@ pub(crate) fn account(event: Event) -> Result<skein_forge::forgejo::document::Us
                 Document::User(user) => Ok(user),
                 Document::Token(_)
                 | Document::Org(_)
+                | Document::CreatedRepository(_)
                 | Document::Hook(_)
                 | Document::Team(_)
                 | Document::ApiSettings(_)

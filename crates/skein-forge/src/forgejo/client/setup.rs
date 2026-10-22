@@ -17,6 +17,7 @@ pub(crate) enum SetupKind {
     Event,
     Account,
     Org,
+    CreatedRepository,
     Team,
     Teams,
     Units,
@@ -43,6 +44,7 @@ pub(crate) fn fields(kind: SetupKind) -> &'static [Field] {
         }
         SetupKind::Tokens | SetupKind::Scopes | SetupKind::Scope => &[],
         SetupKind::Org | SetupKind::Team | SetupKind::Teams | SetupKind::Units => super::orgs::fields(kind),
+        SetupKind::CreatedRepository => super::repositories::fields(),
         SetupKind::Account => {
             const {
                 &[
@@ -137,6 +139,7 @@ impl Setup {
                     | SetupKind::Config
                     | SetupKind::Events
                     | SetupKind::Event
+                    | SetupKind::CreatedRepository
                     | SetupKind::Org
                     | SetupKind::Team
                     | SetupKind::Teams
@@ -167,6 +170,7 @@ pub(crate) fn element(kind: SetupKind) -> Option<Kind> {
         SetupKind::Hook
         | SetupKind::Config
         | SetupKind::Event
+        | SetupKind::CreatedRepository
         | SetupKind::Org
         | SetupKind::Team
         | SetupKind::Units

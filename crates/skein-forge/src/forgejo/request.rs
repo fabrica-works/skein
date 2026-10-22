@@ -98,6 +98,12 @@ pub enum Request {
         person: Box<[u8]>,
         name: Box<[u8]>,
     },
+    /// Makes an organization repository with a README and default branch `main`.
+    CreateRepository {
+        org: Box<[u8]>,
+        name: Box<[u8]>,
+        private: bool,
+    },
     /// Lists one page of an organization's teams.
     Teams {
         org: Box<[u8]>,

@@ -356,15 +356,16 @@ fn unauthorized_heads_are_drained_and_counted_in_the_bound() {
     const CONNECTIONS: u64 = 4;
     // Includes the git compact buffers, Basic credential, bounded parent frontier
     // and target_bytes reserved for the host's bound origin.
-    const BASE_BYTES: u64 = 10_121_852;
+    // The tally reserves its 75 route entries.
+    const BASE_BYTES: u64 = 10_122_068;
     const HEAD_BYTES: u64 = 4_664;
     let config = fixtures::config();
     let mut limits = fixtures::limits();
     let deliveries = crate::delivery::worst_case(&limits, &config).unwrap();
     assert_eq!(crate::worst_case(&limits, &config), Some(BASE_BYTES + CONNECTIONS * HEAD_BYTES + deliveries));
-    assert_eq!(crate::worst_case(&limits, &config), Some(10_140_508 + deliveries));
+    assert_eq!(crate::worst_case(&limits, &config), Some(10_140_724 + deliveries));
     limits.http.head += 1;
-    assert_eq!(crate::worst_case(&limits, &config), Some(10_140_652 + deliveries));
+    assert_eq!(crate::worst_case(&limits, &config), Some(10_140_868 + deliveries));
     let mut h = Harness::new(config);
     h.ask_as(b"GET", b"/api/v1/user", b"", b"wrong-token");
     assert_eq!(h.status(), 401);

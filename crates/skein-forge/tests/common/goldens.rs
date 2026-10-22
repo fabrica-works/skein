@@ -12,6 +12,7 @@
 use skein_forge::forgejo::request::Method;
 pub fn answer(name: &str) -> &'static [u8] {
     match name {
+        "setup-repository-created" => br#"{"id":1,"full_name":"creation/starter","default_branch":"main","clone_url":"http://127.0.0.1:3000/creation/starter.git","ssh_url":"ssh://free@localhost/creation/starter.git"}"#,
         "user" => br#"{"id":2,"login":"writer","is_admin":false,"full_name":""}"#,
         "settings-api" => br#"{"max_response_items":2,"default_paging_num":30}"#,
         "repository-by-id" => br#"{"id":1,"owner":{"id":1,"login":"fixture"},"name":"specimen","object_format_name":"sha1","default_branch":"main","default_merge_style":"merge","allow_merge_commits":true,"allow_squash_merge":true,"allow_rebase":true,"html_url":"http://127.0.0.1:3000/fixture/specimen"}"#,
@@ -53,6 +54,7 @@ pub fn answer(name: &str) -> &'static [u8] {
 }
 pub fn request(name: &str) -> (Method, &'static [u8], &'static [u8]) {
     match name {
+        "setup-repository-created" => (Method::Post, b"/api/v1/orgs/creation/repos", br#"{"name":"starter","private":true,"auto_init":true,"default_branch":"main"}"#),
         "repo-hooks" => (Method::Get, b"/api/v1/repos/acme/widgets/hooks?page=1&limit=2", b""),
         "repo-hook-create" => (Method::Post, b"/api/v1/repos/acme/widgets/hooks", br#"{"type":"forgejo","config":{"url":"https://hooks.example/","content_type":"json","secret":"example-hook"},"events":["push"],"active":true}"#),
         "repo-hook-edit" => (Method::Patch, b"/api/v1/repos/acme/widgets/hooks/7", br#"{"config":{"url":"https://hooks.example/","content_type":"json","secret":"example-hook"},"events":["push"],"active":true}"#),

@@ -31,6 +31,7 @@ pub(crate) fn fields(kind: SetupKind) -> &'static [Field] {
         | SetupKind::Events
         | SetupKind::Event
         | SetupKind::Account
+        | SetupKind::CreatedRepository
         | SetupKind::Org
         | SetupKind::Team
         | SetupKind::Teams

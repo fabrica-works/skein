@@ -100,6 +100,7 @@ pub fn expected(answer: Answer) -> (Document, Vec<Row>) {
         | Answer::Comments(_)
         | Answer::Pull(_)
         | Answer::Org(_)
+        | Answer::CreatedRepository(_)
         | Answer::Team(_)
         | Answer::Teams(_)
         | Answer::Hook(_)

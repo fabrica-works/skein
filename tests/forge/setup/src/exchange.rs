@@ -228,6 +228,7 @@ fn decode(request: &Request, status: u16, body: &[u8], limits: &fake::Limits) ->
         other @ (Document::Hook(_)
         | Document::Token(_)
         | Document::Org(_)
+        | Document::CreatedRepository(_)
         | Document::Team(_)
         | Document::User(_)
         | Document::ApiSettings(_)

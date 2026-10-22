@@ -65,6 +65,14 @@ pub enum MergeStyle {
     ManuallyMerged,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct CreatedRepository {
+    pub id: u64,
+    pub full_name: Box<[u8]>,
+    pub default_branch: Box<[u8]>,
+    pub clone_url: Box<[u8]>,
+    pub ssh_url: Box<[u8]>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Repository {
     pub id: u64,
     pub owner: User,
@@ -121,6 +129,7 @@ pub enum Document {
     User(User),
     ApiSettings(ApiSettings),
     Repository(Repository),
+    CreatedRepository(CreatedRepository),
     Search {
         ok: bool,
     },

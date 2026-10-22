@@ -523,6 +523,7 @@ fn forgejo_row_bound(request: &request::Request) -> Option<u32> {
         | Request::DeleteRepoHook { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::User
         | Request::ApiSettings
         | Request::RepositoryById { .. }

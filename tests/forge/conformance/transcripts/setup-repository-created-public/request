@@ -1,0 +1,8 @@
+POST /api/v1/orgs/creation/repos HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 74
+Connection: close
+
+{"name":"public","private":false,"auto_init":true,"default_branch":"main"}

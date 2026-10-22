@@ -22,6 +22,7 @@ use reviews::ReviewKind;
 pub(crate) mod hooks;
 pub(crate) mod orgs;
 pub(crate) mod reachable;
+pub(crate) mod repositories;
 pub(crate) mod setup;
 mod start;
 pub(crate) mod writes;
@@ -49,6 +50,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::DeleteOrgHook { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }
@@ -112,6 +114,7 @@ pub struct Decoder {
 enum DecoderState {
     Error(writes::Error),
     Start(start::Start),
+    CreatedRepository(repositories::CreatedRepository),
     Reachable(reachable::Reachable),
     Setup(setup::Setup),
     Orgs(orgs::Orgs),
@@ -125,6 +128,7 @@ enum DecoderState {
 #[must_use]
 pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
     let kind = match request {
+        Request::CreateRepository { .. } => Kind::Setup(setup::SetupKind::CreatedRepository),
         Request::Org { .. } | Request::CreateOrg { .. } => Kind::Setup(setup::SetupKind::Org),
         Request::CreateTeam { .. } | Request::EditTeam { .. } => Kind::Setup(setup::SetupKind::Team),
         Request::Teams { .. } => Kind::Setup(setup::SetupKind::Teams),
@@ -184,6 +188,9 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
         Kind::Setup(kind @ (setup::SetupKind::Hook | setup::SetupKind::Hooks)) => {
             DecoderState::Hooks(hooks::Hooks::new(kind, limits))
         }
+        Kind::Setup(setup::SetupKind::CreatedRepository) => {
+            DecoderState::CreatedRepository(repositories::CreatedRepository::new())
+        }
         Kind::Setup(kind) => DecoderState::Setup(setup::Setup::new(kind, limits)),
         Kind::Reachable(kind) => DecoderState::Reachable(reachable::Reachable::new(kind)),
         Kind::Error => DecoderState::Error(writes::Error::new()),
@@ -220,6 +227,7 @@ pub fn step(decoder: &mut Decoder, limits: &Limits, event: &tokenizer::Event) ->
             DecoderState::Files(state) => state.step(movement, &decoder.walk),
             DecoderState::Actions(state) => state.step(movement, &decoder.walk),
             DecoderState::Reachable(state) => state.step(movement, limits),
+            DecoderState::CreatedRepository(state) => state.step(movement),
             DecoderState::Start(state) => state.step(movement, decoder.walk.parent()),
             DecoderState::Reviews(state) => state.step(movement, &decoder.walk),
             DecoderState::Branches(state) => state.step(movement, &decoder.walk, limits),
@@ -238,6 +246,7 @@ pub fn keep_after(decoder: &mut Decoder, after: u64) {
         | DecoderState::Error(_)
         | DecoderState::Files(_)
         | DecoderState::Actions(_)
+        | DecoderState::CreatedRepository(_)
         | DecoderState::Start(_)
         | DecoderState::Reviews(_)
         | DecoderState::Branches(_) => {}
