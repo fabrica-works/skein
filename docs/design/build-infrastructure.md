@@ -95,8 +95,13 @@ are submitted, enqueuing, queued, waiting, launching, active, finishing, closing
 and released. A gate additionally records the groups found running and
 the groups found paused before its pause intent.
 
-The tree is Git `HEAD^{tree}`, separate from commit identity. A gate
-refuses a changed or dirty tree before payload entry. Runtime preparation
+Admission captures both the candidate commit and its Git `HEAD^{tree}`.
+A versioned gate requires a clean index and worktree, with no merge or
+rebase in progress, at admission, contained entry, immediately after
+settling before command start, and at command completion. A changed
+commit, tree, index, worktree or merge/rebase state refuses completion
+with an instruction to rerun land. The receipt's tree remains separate
+from the commit identity retained in task metadata. Runtime preparation
 compares a supplied policy with the computed policy at submission and
 inside containment; payload entry also compares with the persisted
 submitted identity. It never replaces that expected identity.
@@ -109,14 +114,26 @@ A release occurs only after neither contains processes. Old boot IDs do
 not authorize skipping the current unit check.
 
 The cgroup payload guard takes the host lock and verifies an unreleased
-launching token and a live wrapper before it starts a command. Therefore
-a systemd unit creation delayed past orphan release cannot run a payload.
+launching token, a live wrapper, the boot identity and its owned populated
+cgroup before any policy preparation or requested command. It durably
+marks that scope active before executing Chromium, compiler, Cargo or
+other policy version launchers. Their descendants, including detached
+helpers, belong to the same scope and its release proof. A systemd unit
+creation delayed past orphan release cannot execute policy tools or the
+requested payload. Transport environment-file removal is replayed for
+released tokens after a crash between durable release and unlink; this
+cleanup does not change a sealed log or receipt.
 Unit names are unique for the token and are never reused. Finishing a
 payload kills private daemons in the same cgroup before freeing capacity.
 The shared kache daemon runs in its own active user service; heavy refuses
-a kache wrapper selected through environment or Cargo configuration if
-that service is inactive, and never lazily
-starts kache inside a task. Collection connects to the existing service.
+an effective kache wrapper if that service is inactive, and never lazily
+starts kache inside a task. Selection follows Cargo's increasing config
+precedence, `[env]` force/relative settings and PATH, generic
+`CARGO_BUILD_*` overrides, then dedicated wrapper overrides. An empty
+dedicated override disables only its wrapper slot; the workspace wrapper
+is independent. Masked global settings do not require kache. Refusals give
+the caller the service/override remedy without printing configuration or
+environment values. Collection connects to the existing service.
 
 Before resuming a group, recovery checks the durable maintenance holds.
 The gate remains durable through every resume until the final release
@@ -141,6 +158,17 @@ fails visibly.
 killed queued wrapper and a killed submitter. It does not depend on queue
 terminal rows. A temporarily unavailable queue fails closed: the next
 timer activation retries without releasing its persisted gate hold.
+
+Existing waiting clients inspect systemd's reported recovery service and
+timer state. A failed/missing service, an inactive timer or an unreadable
+snapshot produces actionable recovery instructions. Clients continue
+waiting on reported service/timer failures, retaining task ownership;
+an unreadable snapshot returns nonzero without cancelling the task.
+Elapsed task age and delayed ticks never establish failure or a timeout.
+For storage failure, free space, restore/restart the same recovery service
+if needed, and run `heavy --reconcile` with the same queue configuration
+and `DEV_TMP`. Retain the ledger; do not delete/reset it. Reconciliation
+is replayable. Rerun land when completion is recovered with exit 137.
 
 `heavy --maintenance-pause GROUP` saves an operator hold before applying
 it. `heavy --maintenance-resume GROUP` clears that hold and resumes only
@@ -216,7 +244,17 @@ maintenance holds during a gate, two gates with builds, journal replay and
 late systemd creation. Assertions check exclusion through cgroup release,
 progress, one release per token, private descendant death and shared
 daemon survival. The fixture uses short reconciler intervals without
-changing production task timeouts or test-suite budgets. Raw artifacts
+changing production task timeouts or test-suite budgets. ENOSPC injection
+at snapshot, journal and log-sealing writes requires the same isolated
+fixture flag/path contract; it never fills the shared filesystem. These
+cases assert caller diagnostics, retained ownership, no false successful
+receipt, and progress/idempotence after restoring the same service and
+ledger. A release-flush crash followed by delayed launch checks that no
+policy launcher/helper runs, the late cgroup empties and transport cleanup
+replays. Active policy-helper descendants also undergo cgroup release.
+Candidate cases mutate commits, index/worktree and rebase state after
+settling, during payload and after receipt, including expected-old ref
+failure. Raw artifacts
 include each case's ledger, event journal, logs, probe, descendant cgroup
 evidence and cleanup receipt.
 
@@ -238,3 +276,39 @@ samples, not performance budgets. Cache collection uses a fixture executable, le
 Fault barriers and boot overrides require the explicit recovery-fixture
 flag and paths beneath the isolated DEV_TMP. No full repository gate is
 part of this recovery fixture.
+
+
+## 7. Quiet migration, queue replacement and rollback
+
+Before fleet installation, stop old `heavy` and `land` submissions and
+account for every legacy caller, wrapper, queued/running entry and TSV
+writer. Drain all of them; absence of Cargo processes or a completion-only
+TSV does not prove the queue is quiet. Record intentional pauses and
+restore them as explicit maintenance holds where appropriate. Install
+`heavy` and `land` together at a stable kit path, with one ledger shared
+by every caller of each dedicated queue, only after this accounting and
+drain. Do not mix legacy TSV writers with the durable ledger's writers.
+Install and verify that queue's independent reconciler before admitting
+new submissions.
+
+Never reset or replace a live queue or erase its ledger. Enqueue recovery
+uses a persisted bare numeric queue ID; it cannot prove identity after a
+reset/replacement. Replacement requires stopping submissions and the same
+complete accounting/drain, including callers, wrappers, observers,
+unfinished tokens and pause/resume intent, before changing queue identity
+or selecting a fresh state directory. Retain the retired ledger and
+evidence. A normal daemon restart keeps its config/data identity and
+ledger. After reboot restore that queue and its user services, including
+recovery and the shared kache service when selected, then reconcile with
+the same configuration and state. Resolve recovered nonzero completions
+by rerunning land.
+
+For rollback, stop new submissions and account for/drain every new token,
+caller, wrapper and queue entry using the new kit. Explicitly resolve all
+maintenance holds and resume requests with the new maintenance commands;
+a drained task list alone does not resolve them. Remove the reconciler
+with the new kit while its helpers still exist, then restore old `heavy`
+and old `land` together. Do not swap binaries first or leave an old client
+paired with the new recovery path. The old cache namespace and the new
+receipt/cache files can remain; rollback requires no destructive cache or
+ledger cleanup.

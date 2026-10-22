@@ -142,8 +142,16 @@ The summary uses nextest counts from the verified log bytes and total time
 from `elapsed_s`, measured from payload start to payload end. Queue wait,
 drain, settling and release time remain separate phase events; a custom
 gate may have no nextest summaries. Missing time
-cannot become a `? s` success. Post-run policy validation still precedes the
-cache write. Exact-tree and documentation-only reuse require the new cache
+cannot become a `? s` success. Post-run policy validation and a clean candidate commit/tree check precede
+the cache write. `land` captures the candidate commit after rebase and
+checks HEAD, branch, index, worktree and merge/rebase state before
+accepting evidence, writing cache, constructing an amendment and pushing.
+It builds that amendment from the saved commit's tree, parents, author and
+message, then updates the candidate branch with the saved commit as the
+expected old value. The push names the resulting verified commit ID
+explicitly and uses the ordinary non-force fast-forward contract. Drift
+refuses with an instruction to rerun land. An uncooperative mutation after
+a check cannot substitute another tree into that explicit push object. Exact-tree and documentation-only reuse require the new cache
 format and matching policy; legitimate cached evidence needs no new heavy
 submission or rereading of historical queue logs.
 
@@ -159,6 +167,9 @@ scripts' arbitrary inputs, and non-allow-listed `[env]` values are outside
 the semantic configuration model. Cargo configuration `include` directives
 are refused rather than leaving included semantic settings unidentified. The gate command and repository tree
 still distinguish changes to declared commands and fixture sources.
+Clean-candidate checks detect persistent mutations at their boundaries;
+they do not lock the working directory against a mutation restored between
+checks. The explicit pushed commit object always retains its verified tree.
 Configuration changes in the selected fields can conservatively invalidate
 evidence even when a higher-precedence setting masks them. Resources can
 change after validation; pre/post checks detect persistent changes but do
