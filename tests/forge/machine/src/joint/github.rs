@@ -236,9 +236,15 @@ impl Github {
                         peer.heads.push_back(startup);
                         world.starts.written += u64::from(startup);
                     }
-                    for (at, line) in peer.pipe.request_lines().iter().enumerate() {
+                    // Earlier lines are complete; only the last observed line can gain bytes.
+                    let mut first = peer.line_indices.len();
+                    if peer.line_indices.last().is_some_and(|index| !world.lines[*index].ends_with(b"\r\n")) {
+                        first -= 1;
+                    }
+                    for (at, line) in peer.pipe.request_lines().iter().enumerate().skip(first) {
                         if let Some(index) = peer.line_indices.get(at) {
-                            world.lines[*index].clone_from(line);
+                            let saved = &mut world.lines[*index];
+                            saved.extend_from_slice(&line[saved.len()..]);
                         } else {
                             peer.line_indices.push(world.lines.len());
                             world.lines.push(line.clone());

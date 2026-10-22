@@ -151,3 +151,100 @@ fn github_capacity_facts_are_kept_for_the_owner() {
         [Event::Fact { forge: FORGE, fact: skein_forge_connection::Fact::Unkept { installation: 2 } }]
     ));
 }
+
+#[test]
+fn a_github_joint_renews_each_installations_token_before_it_expires() {
+    let mut limits = fixtures::limits();
+    limits.renew_before = Duration::from_secs(600);
+    limits.log_poll = Duration::from_secs(5);
+    let mut world =
+        Joint::github(SEED, 0, limits, fixtures::github_settings(), fixtures::shared(), joint::checks(1000));
+    world.action(Request::Installations { forge: FORGE, accepted: Box::from([1, 2]) });
+    world.action(Request::Connect { forge: FORGE, access: fixtures::github_access() });
+    for _ in 0..1000 {
+        world.run_for(Duration::from_nanos(1_000_000));
+        if world.connected == 1 {
+            break;
+        }
+    }
+    assert_eq!(world.connected, 1);
+    assert_eq!(world.git_tokens.len(), 2);
+    let initial: Vec<_> = world
+        .git_tokens
+        .iter()
+        .map(|event| {
+            let Event::GitToken { forge, installation, account, token, expires } = event else {
+                panic!("git token event")
+            };
+            assert_eq!(*forge, FORGE);
+            assert!(matches!(
+                (*installation, account.id, account.login.as_ref()),
+                (1, 22, b"acme") | (2, 23, b"example")
+            ));
+            assert!(*expires > world.env.wall);
+            (*installation, token.clone(), *expires)
+        })
+        .collect();
+    let life = skein_fake_forge_github::installations::TOKEN_LIFE;
+    world.run_for(Duration::from_nanos(life.as_nanos() - limits.renew_before.as_nanos() + SECOND.as_nanos()));
+    assert_eq!(world.git_tokens.len(), 4);
+    for (installation, token, expires) in initial {
+        let renewed: Vec<_> = world
+            .git_tokens
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    Event::GitToken { installation: id, .. } if *id == installation
+                )
+            })
+            .collect();
+        assert_eq!(renewed.len(), 2);
+        let Event::GitToken { forge, account, token: next, expires: later, .. } = renewed[1] else {
+            panic!("renewed git token")
+        };
+        assert_eq!(*forge, FORGE);
+        assert_eq!(account.id, if installation == 1 { 22 } else { 23 });
+        assert_eq!(account.login.as_ref(), if installation == 1 { b"acme".as_slice() } else { b"example" });
+        assert!(next.expose() != token.expose(), "renewal mints a different token");
+        assert!(*later > expires);
+        assert!(world.env.wall < expires, "renewal completes before the old token expires");
+    }
+    assert!(world.stopped.is_empty());
+    assert_eq!(world.connected, 1);
+}
+
+#[test]
+fn the_joints_request_lines_are_the_same_after_many_polls() {
+    const POLLS: u64 = 128;
+    let mut limits = fixtures::limits();
+    limits.log_poll = Duration::from_secs(5);
+    let mut world =
+        Joint::github(SEED, 0, limits, fixtures::github_settings(), fixtures::shared(), joint::checks(1000));
+    world.action(Request::Installations { forge: FORGE, accepted: Box::from([1, 2]) });
+    world.action(Request::Connect { forge: FORGE, access: fixtures::github_access() });
+    world.run_for(SECOND);
+    let mut expected: Vec<_> = [
+        "GET /app/installations?per_page=100&page=1",
+        "GET /app/installations?per_page=100&page=2",
+        "POST /app/installations/1/access_tokens",
+        "POST /app/installations/1/access_tokens",
+        "POST /app/installations/2/access_tokens",
+        "POST /app/installations/2/access_tokens",
+        "POST /graphql",
+    ]
+    .map(|line| format!("{line} HTTP/1.1\r\n").into_bytes())
+    .into();
+    assert_eq!(world.request_lines(), expected);
+    for poll in 1..=POLLS {
+        world.run_for(limits.log_poll);
+        expected.push(b"GET /app/hook/deliveries?per_page=8 HTTP/1.1\r\n".to_vec());
+        assert_eq!(world.request_lines(), expected, "poll {poll}");
+        assert_eq!(world.request_counts().written, poll);
+        assert_eq!(world.request_counts().cut_in_head, 0);
+        assert_eq!(world.tally().total, 7 + poll);
+    }
+    assert_eq!(world.start_counts().written, 7);
+    assert_eq!(world.start_counts().served, 7);
+    assert!(world.stopped.is_empty());
+    assert_eq!(world.connected, 1);
+}

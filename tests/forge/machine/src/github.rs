@@ -98,6 +98,7 @@ impl Fake {
             accounts: fixture_accounts(),
             person: Box::from(b"alice".as_slice()),
         };
+        let installation_slots = 3;
         let limits = Limits {
             deliveries: skein_fake_forge_github::delivery::Limits { entries: 64, payload_bytes: 32768 },
             http: skein_http::server::Limits {
@@ -118,7 +119,12 @@ impl Fake {
                     .expect("manifest lists fit"),
                 target_bytes: 1024,
             },
-            installations: installations::Limits { installations: 3, tokens: 4, listed: 2 },
+            // Each installation has Full and Contents tokens, with old and renewed generations overlapping.
+            installations: installations::Limits {
+                installations: installation_slots,
+                tokens: installation_slots * 2 * 2,
+                listed: 2,
+            },
             pages: pages::Limits { states: 3, manifest_bytes: 2048 },
             page: 2,
             body: 4096,
