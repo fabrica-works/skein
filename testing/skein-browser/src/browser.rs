@@ -431,7 +431,8 @@ impl Browser {
         if queued
             && (method.starts_with(b"Accessibility.")
                 || method.starts_with(b"DOM.")
-                || method.starts_with(b"CSS.")
+                // The shot's CSS setup can run during navigation; CSS reads wait.
+                || method.starts_with(b"CSS.get")
                 || method == b"Runtime.evaluate"
                 || address)
         {

@@ -37,6 +37,9 @@ pub fn drive(world: &mut World, limits: Limits) {
     let mut writer = Writer::new(usize::try_from(len).unwrap());
     base64::encode(base64::Alphabet::Standard, &bytes, &mut writer).unwrap();
     world.png = String::from_utf8(writer.finish().into_vec()).unwrap();
+    // Exercise the shot's retained document identity and stylesheet id at text.
+    world.loader = text.clone();
+    world.sheet = text.clone();
     world.ask(Request::Look { page: Token::new(3), op: Token::new(32), look: Look::Shot { clip: None, scale: 2 } });
     match world.above.pop().unwrap() {
         Event::Looked { looked: Looked::Tree(entries), .. } => {

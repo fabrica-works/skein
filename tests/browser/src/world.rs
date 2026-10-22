@@ -41,6 +41,8 @@ pub struct World {
     pub border: String,
     pub metrics: String,
     pub png: String,
+    pub loader: String,
+    pub sheet: String,
     pub frontend: u64,
     pub gone: bool,
     pub disabled: bool,
@@ -50,6 +52,7 @@ pub struct World {
     fault: Option<(Vec<u8>, Fault)>,
     delayed: VecDeque<Vec<u8>>,
     outstanding: BTreeMap<u64, Time>,
+    document: u64,
 }
 
 impl Default for World {
@@ -82,6 +85,8 @@ impl World {
             border: r#"{"model":{"border":[10.25,20.5,110.75,20.5,110.75,60.9,10.25,60.9]}}"#.into(),
             metrics: r#"{"cssLayoutViewport":{"pageX":0,"pageY":0},"cssVisualViewport":{"pageX":0,"pageY":0,"clientWidth":390,"clientHeight":844}}"#.into(),
             png: "iVBORw0KGgo=".into(),
+            loader: "l0".into(),
+            sheet: "sh1".into(),
             frontend: 7,
             gone: false,
             disabled: false,
@@ -91,6 +96,7 @@ impl World {
             fault: None,
             delayed: VecDeque::new(),
             outstanding: BTreeMap::new(),
+            document: 0,
         }
     }
 
@@ -168,6 +174,13 @@ impl World {
                         self.outstanding.insert(id, self.env.now.saturating_add(self.env.limits.answer));
                         let method = root.get(b"method").and_then(|method| method.text()).expect("method");
                         let session = root.get(b"sessionId").and_then(|session| session.text());
+                        if method.as_ref() == b"Page.navigate"
+                            || method.as_ref() == b"Page.reload"
+                            || method.as_ref() == b"Page.navigateToHistoryEntry"
+                        {
+                            self.document = self.document.checked_add(1).expect("world document id");
+                            self.loader = format!("l{}", self.document);
+                        }
                         if method.as_ref() == b"DOM.getNodeForLocation" {
                             let params = root.get(b"params").expect("hit test params");
                             let x = params.get(b"x").and_then(|value| value.i64()).expect("hit x");
@@ -270,6 +283,11 @@ impl World {
 
     fn reply(&self, method: &[u8], params: Option<skein_browser::wire::decode::Value<'_>>) -> String {
         match method {
+            b"Page.getFrameTree" => {
+                return format!(r#"{{"frameTree":{{"frame":{{"id":"f1","loaderId":"{}"}}}}}}"#, self.loader);
+            }
+            b"CSS.createStyleSheet" => return format!(r#"{{"styleSheetId":"{}"}}"#, self.sheet),
+            b"CSS.setStyleSheetText" => return "{}".into(),
             b"Accessibility.getFullAXTree" => return self.tree.clone(),
             b"CSS.getComputedStyleForNode" => return self.styles.clone(),
             b"CSS.getPlatformFontsForNode" => {

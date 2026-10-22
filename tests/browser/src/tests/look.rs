@@ -218,18 +218,103 @@ fn shot_sends_the_document_clip_scale_and_capture_beyond_viewport() {
     let clip = Rect { x: 10, y: 2000, width: 80, height: 40 };
     let Looked::Shot(png) = looked(ask(&mut world, Look::Shot { clip: Some(clip), scale: 2 })) else { panic!("shot") };
     assert_eq!(png.as_ref(), b"\x89PNG\r\n\x1a\n");
-    assert_eq!(commands(&world), [("Page.captureScreenshot".into(), r#"{"format":"png","clip":{"x":10,"y":2000,"width":80,"height":40,"scale":2},"captureBeyondViewport":true}"#.into())]);
+    assert_eq!(commands(&world), [
+        ("CSS.enable".into(), "{}".into()),
+        ("Page.getFrameTree".into(), "{}".into()),
+        ("CSS.createStyleSheet".into(), r#"{"frameId":"f1"}"#.into()),
+        ("CSS.setStyleSheetText".into(), r#"{"styleSheetId":"sh1","text":"* { caret-animation: manual !important }"}"#.into()),
+        ("Page.captureScreenshot".into(), r#"{"format":"png","clip":{"x":10,"y":2000,"width":80,"height":40,"scale":2},"captureBeyondViewport":true}"#.into()),
+    ]);
 }
 #[test]
 fn shot_without_clip_reads_the_visual_viewport_first() {
     let mut world = world(Limits::default());
     world.metrics = r#"{"cssVisualViewport":{"pageX":5.5,"pageY":30.5,"clientWidth":390,"clientHeight":844}}"#.into();
     looked(ask(&mut world, Look::Shot { clip: None, scale: 1 }));
-    assert_eq!(commands(&world)[0].0, "Page.getLayoutMetrics");
     assert_eq!(
-        commands(&world)[1].1,
+        commands(&world).iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>(),
+        [
+            "CSS.enable",
+            "Page.getFrameTree",
+            "CSS.createStyleSheet",
+            "CSS.setStyleSheetText",
+            "Page.getLayoutMetrics",
+            "Page.captureScreenshot",
+        ]
+    );
+    assert_eq!(
+        commands(&world)[5].1,
         r#"{"format":"png","clip":{"x":5,"y":30,"width":390,"height":844,"scale":1},"captureBeyondViewport":true}"#
     );
+}
+#[test]
+fn second_shot_in_the_same_document_reuses_the_caret_sheet() {
+    let mut world = world(Limits::default());
+    looked(ask(&mut world, Look::Shot { clip: None, scale: 1 }));
+    notify(
+        &mut world,
+        b"{\"method\":\"Page.navigatedWithinDocument\",\"sessionId\":\"s1\",\"params\":{\"frameId\":\"f1\"}}\0",
+    );
+    world.sent.clear();
+    looked(ask(&mut world, Look::Shot { clip: None, scale: 1 }));
+    assert_eq!(
+        commands(&world).iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>(),
+        ["Page.getFrameTree", "Page.getLayoutMetrics", "Page.captureScreenshot"]
+    );
+    world.assert_commands_settled();
+}
+#[test]
+fn shot_in_a_new_document_installs_a_new_caret_sheet() {
+    let mut world = world(Limits::default());
+    looked(ask(&mut world, Look::Shot { clip: None, scale: 1 }));
+    let previous = world.loader.clone();
+    world.ask(Request::Go { page: PAGE, op: Token::new(5), to: skein_browser::boundary::Go::Reload });
+    assert!(matches!(world.above.pop(), Some(Event::Done { op }) if op == Token::new(5)));
+    assert_ne!(world.loader, previous);
+    world.sent.clear();
+    looked(ask(&mut world, Look::Shot { clip: None, scale: 1 }));
+    assert_eq!(
+        commands(&world).iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>(),
+        [
+            "Page.getFrameTree",
+            "CSS.createStyleSheet",
+            "CSS.setStyleSheetText",
+            "Page.getLayoutMetrics",
+            "Page.captureScreenshot",
+        ]
+    );
+    world.assert_commands_settled();
+}
+#[test]
+fn shot_setup_faults_settle_once_and_allow_a_retry() {
+    for method in [b"CSS.enable".as_slice(), b"Page.getFrameTree", b"CSS.createStyleSheet", b"CSS.setStyleSheetText"] {
+        for (fault, late) in [(Fault::Error, false), (Fault::Drop, false), (Fault::Delay, false), (Fault::Delay, true)]
+        {
+            let mut world = world(Limits::default());
+            world.fault(method, fault);
+            world.ask(Request::Look { page: PAGE, op: READ, look: Look::Shot { clip: None, scale: 1 } });
+            assert_eq!(commands(&world).last().unwrap().0.as_bytes(), method);
+            if fault != Fault::Error {
+                assert!(world.above.is_empty());
+                if fault == Fault::Drop || late {
+                    world.tick(Time::from_nanos(world.env.limits.answer.as_nanos()));
+                }
+                world.release_delayed();
+            }
+            let event = world.above.pop().expect("shot terminal after fault");
+            if fault == Fault::Delay && !late {
+                looked(event);
+            } else {
+                refused(event, if fault == Fault::Error { Refusal::Protocol } else { Refusal::Timeout });
+                assert!(!commands(&world).iter().any(|(m, _)| m == "Page.captureScreenshot"));
+            }
+            assert!(world.above.is_empty());
+            world.assert_commands_settled();
+            looked(ask(&mut world, Look::Shot { clip: None, scale: 1 }));
+            assert!(world.above.is_empty());
+            world.assert_commands_settled();
+        }
+    }
 }
 #[test]
 fn shot_at_screenshot_is_kept_and_past_screenshot_refused() {

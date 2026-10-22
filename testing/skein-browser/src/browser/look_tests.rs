@@ -47,7 +47,8 @@ impl Peer {
         self.reply(method, params, b"result", result);
     }
     fn reply(&mut self, method: &[u8], params: &[u8], field: &[u8], result: &[u8]) {
-        let command = self.browser.outgoing.pop_front().expect("next command");
+        let index = self.browser.sendable().expect("next command is sendable");
+        let command = self.browser.outgoing.remove(index).expect("next command");
         let bytes = command.bytes.strip_suffix(&[0]).expect("CDP delimiter");
         let document = Document::parse(bytes, self.env.limits.command).expect("encoded command");
         assert_eq!(document.root().get(b"method").expect("method").text().expect("method text").as_ref(), method);
@@ -99,6 +100,12 @@ fn check_shot(event: Event) {
 #[test]
 fn first_viewport_shot_installs_caret_before_capture() {
     Peer::new().first_shot();
+}
+#[test]
+fn shot_during_navigation_can_send_its_caret_setup() {
+    let mut peer = Peer::new();
+    peer.browser.page_mut(PAGE).expect("page").navigating = true;
+    peer.first_shot();
 }
 #[test]
 fn clipped_shot_installs_caret_and_reuses_enabled_css() {
