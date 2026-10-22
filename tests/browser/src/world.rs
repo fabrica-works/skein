@@ -284,7 +284,22 @@ impl World {
             }
             b"DOM.getBoxModel" => return self.border.clone(),
             b"DOM.pushNodesByBackendIdsToFrontend" => {
-                return format!("{{\"nodeIds\":[{}]}}", if self.gone { 0 } else { self.frontend });
+                let backend = params
+                    .and_then(|p| p.get(b"backendNodeIds"))
+                    .and_then(|a| a.array())
+                    .and_then(|mut a| a.next())
+                    .and_then(|n| n.u64())
+                    .expect("pushed backend");
+                return format!(
+                    "{{\"nodeIds\":[{}]}}",
+                    if self.gone {
+                        0
+                    } else if backend == 7 {
+                        self.frontend
+                    } else {
+                        backend
+                    }
+                );
             }
             b"Page.captureScreenshot" => return format!("{{\"data\":\"{}\"}}", self.png),
             b"Page.getLayoutMetrics" => return self.metrics.clone(),

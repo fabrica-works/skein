@@ -30,6 +30,7 @@ body {margin:0}
 @media (width:390px) and (prefers-color-scheme:light) and (prefers-reduced-motion:reduce) {#media {color:rgb(0,128,0)}}
 </style><h1>First</h1><div role="none"><h3>Second</h3></div>
 <div id="media">Media</div><div id="part">Own text<span style="font-family:'DejaVu Serif'">Descendant</span><div><span style="font-family:Fixture">Nested web face</span></div></div>
+<textarea id="field">Control text</textarea><input id="entry" placeholder="Placeholder text">
 <div id="hidden">Hidden</div><button aria-label='Quote " slash \ café'>Named</button>"#;
 
 fn start() -> (Scratch, Child, Reader) {
@@ -420,5 +421,28 @@ fn shot_cannot_follow_an_output_link_outside_its_directory() {
     );
     assert!(!outside.exists(), "shot must stay under --out: {answer:?}");
     assert!(matches!(field(&answer, "refused"), Value::String(_)), "{answer:?}");
+    finish(&mut child, &mut reader);
+}
+
+#[test]
+fn style_faces_include_form_control_text() {
+    let (scratch, mut child, mut reader) = start();
+    let address = serve(&scratch, &mut child, &mut reader, "fixture", FIXTURE);
+    open(&mut child, &mut reader, PAGE);
+    go(&mut child, &mut reader, PAGE, &address);
+    for (selector, glyphs) in [("#field", 12), ("#entry", 16)] {
+        let node = select(&mut child, &mut reader, selector);
+        let answer = call(
+            &mut child,
+            &mut reader,
+            &format!(r#"{{"call":"style","node":{node},"page":{PAGE:?},"properties":[]}}"#),
+        );
+        let Value::Array(faces) = field(field(&answer, "style"), "faces") else { panic!("{selector}: {answer:?}") };
+        assert_eq!(
+            faces.iter().map(|face| integer(field(face, "glyphs"))).sum::<i64>(),
+            glyphs,
+            "{selector}: {answer:?}"
+        );
+    }
     finish(&mut child, &mut reader);
 }

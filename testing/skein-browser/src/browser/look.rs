@@ -29,6 +29,7 @@ pub(super) enum Step {
     Values,
     Children,
     Texts,
+    TextFront,
     Faces,
     Box,
     Metrics,
@@ -38,11 +39,17 @@ pub(super) enum Step {
 }
 
 #[derive(Debug)]
+enum TextNode {
+    Frontend(u64),
+    Backend(u64),
+}
+
+#[derive(Debug)]
 pub(super) struct State {
     front: u64,
     values: List<Property>,
     faces: List<Face>,
-    text_nodes: Vec<u64>,
+    text_nodes: Vec<TextNode>,
     rect: Option<Rect>,
 }
 impl State {
@@ -201,7 +208,16 @@ impl Browser {
     fn next_face(&mut self, env: &Env<Limits>, token: Token) -> Result<(), Refusal> {
         let state = self.look_state_mut(token).ok_or(Refusal::Protocol)?;
         match state.text_nodes.pop() {
-            Some(node) => self.look_issue(env, token, b"CSS.getPlatformFontsForNode", &Params::Node(node), Step::Faces),
+            Some(TextNode::Frontend(node)) => {
+                self.look_issue(env, token, b"CSS.getPlatformFontsForNode", &Params::Node(node), Step::Faces);
+            }
+            Some(TextNode::Backend(node)) => self.look_issue(
+                env,
+                token,
+                b"DOM.pushNodesByBackendIdsToFrontend",
+                &Params::Push(node),
+                Step::TextFront,
+            ),
             None => {
                 let front = state.front;
                 self.look_issue(env, token, b"DOM.getBoxModel", &Params::Node(front), Step::Box);
@@ -223,7 +239,13 @@ impl Browser {
                 }
             }
             Step::Push => self.finish_refused(token, Refusal::Gone),
-            Step::Values | Step::Children | Step::Texts | Step::Faces | Step::Metrics | Step::Exists => {
+            Step::Values
+            | Step::Children
+            | Step::Texts
+            | Step::TextFront
+            | Step::Faces
+            | Step::Metrics
+            | Step::Exists => {
                 let why = if node_missing(message) { Refusal::Gone } else { Refusal::Protocol };
                 self.finish_refused(token, why);
             }
@@ -371,6 +393,13 @@ impl Browser {
                 }
                 self.next_face(env, token)?;
             }
+            Step::TextFront => {
+                let front = first_frontend(result).ok_or(Refusal::Protocol)?;
+                if front == 0 {
+                    return Err(Refusal::Gone);
+                }
+                self.look_issue(env, token, b"CSS.getPlatformFontsForNode", &Params::Node(front), Step::Faces);
+            }
             Step::Faces => {
                 let fonts = field_array(result, b"fonts").ok_or(Refusal::Protocol)?;
                 let state = self.look_state_mut(token).ok_or(Refusal::Protocol)?;
@@ -447,7 +476,7 @@ impl Browser {
     }
 }
 
-fn text_nodes(root: Value<'_>) -> Result<Vec<u64>, Refusal> {
+fn text_nodes(root: Value<'_>) -> Result<Vec<TextNode>, Refusal> {
     let mut stack = Vec::new();
     let mut texts = Vec::new();
     stack.push(root);
@@ -458,10 +487,14 @@ fn text_nodes(root: Value<'_>) -> Result<Vec<u64>, Refusal> {
             && !field_text(node, b"nodeValue").ok_or(Refusal::Protocol)?.is_empty()
         {
             let id = field_u64(node, b"nodeId").ok_or(Refusal::Protocol)?;
-            if id == 0 {
-                return Err(Refusal::Gone);
-            }
-            texts.push(id);
+            // Chromium can leave internal control text without a frontend id.
+            // Its backend id can be pushed before asking for its fonts.
+            let text = if id == 0 {
+                TextNode::Backend(field_u64(node, b"backendNodeId").ok_or(Refusal::Protocol)?)
+            } else {
+                TextNode::Frontend(id)
+            };
+            texts.push(text);
         }
         for key in [b"children".as_slice(), b"shadowRoots".as_slice(), b"pseudoElements".as_slice()] {
             if let Some(children) = field_array(node, key) {

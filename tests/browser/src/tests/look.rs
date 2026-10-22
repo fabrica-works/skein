@@ -466,3 +466,18 @@ fn style_family_names_merge_before_boundary_text_is_cut() {
         [(b"Family".as_slice(), 3), (b"Family".as_slice(), 5)]
     );
 }
+
+#[test]
+fn style_pushes_text_that_has_only_a_backend_id() {
+    let mut world = world(Limits::default());
+    world.children = r#"[{"nodeId":0,"backendNodeId":80,"nodeType":3,"nodeValue":"Control"}]"#.into();
+    world.fonts.insert(80, r#"{"fonts":[{"familyName":"Control","isCustomFont":false,"glyphCount":7}]}"#.into());
+    let Looked::Style { faces, .. } = looked(ask(&mut world, style(&[]))) else { panic!("style") };
+    assert_eq!((faces.len(), faces.get(0).unwrap().glyphs), (1, 7));
+    let calls = commands(&world);
+    let push = calls
+        .iter()
+        .position(|(m, p)| m == "DOM.pushNodesByBackendIdsToFrontend" && p == r#"{"backendNodeIds":[80]}"#)
+        .expect("text pushed");
+    assert_eq!(calls[push + 1], ("CSS.getPlatformFontsForNode".into(), r#"{"nodeId":80}"#.into()));
+}

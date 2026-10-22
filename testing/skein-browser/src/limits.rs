@@ -91,8 +91,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let persons = u64::from(limits.persons).checked_mul(512_u64.checked_add(text)?)?;
     let pages =
         u64::from(limits.pages).checked_mul(1024_u64.checked_add(command)?.checked_add(text.checked_mul(3)?)?)?;
-    // A style retains at most one text-node id per byte of its bounded DOM message.
-    let text_nodes = message.checked_mul(u64::try_from(size_of::<u64>()).ok()?)?;
+    // A style retains a frontend or backend id and its discriminant for each
+    // text node, at most one node per byte of its bounded DOM message.
+    let text_nodes = message.checked_mul(u64::try_from(size_of::<u64>()).ok()?.checked_mul(2)?)?;
     // Whole family names remain distinct until the merged answer is cut at text.
     let face_names = u64::from(limits.entries).checked_mul(message)?;
     // Each attribute operation owns a selector and an attribute name.
