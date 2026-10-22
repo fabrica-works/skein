@@ -63,6 +63,29 @@ Each declared system program and runtime system helper is resolved, hashed
 and included in `key.lab.programs`. Seeds, scratch and captures are excluded
 from keys. The runner tree excludes `tests/`.
 
+A process's `files` entry is either `{"path", "from"}`, a rendered text file,
+or `{"path", "tree"}`, a subject artifact's uncompressed POSIX USTAR archive.
+Validation refuses unknown artifacts, other archive formats, links and special
+members, repeated or uncontained names, files listed before their directory,
+and overlapping destinations across either kind of entry. Immediately before
+spawn, after rendering text files, trees are unpacked without following links:
+files 0400 (0500 with owner execute), directories and the tree root 0500.
+Archive contents are never templates.
+
+A seed action may declare `await: {"process", "stream", "prefix", "capture"}`.
+All four members are required; the process must exist, the stream is stdout
+or stderr, the prefix is literal text without CR, LF or NUL, and the capture
+matches `[a-z][a-z0-9-]*`. Collections, checks and tools refuse `await`.
+The first matching line ending after the action starts supplies `{action.A.C}`
+to later seed actions, collections and checks; processes, tools and executable
+paths cannot use it. The action advances once both its command exits 0 and
+its line arrives, in either order, within one `command_seconds` from spawn.
+A nonzero, cancelled or timed-out command advances without awaiting. A missing
+line fails `bound/command_seconds/A` and leaves commands needing its capture
+unavailable. Such an action alone gains `awaited` in its command record: null
+until seen, then `{"ms", "captures": {C: VALUE}}`; the timeline records an
+`awaited` event with `name` and `captures`, as it records ready captures.
+
 Validation reads machine facts without starting experiment processes: cgroup
 v2, a user manager socket, enabled user namespaces, `systemd-run`, `bwrap`, and
 the disk floor from `tmp/machine.env` (`PLAN_MIN_DISK_GB`, otherwise the

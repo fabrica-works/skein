@@ -5,6 +5,7 @@ from pathlib import Path
 import select
 import signal
 import socket
+import stat
 import sys
 
 
@@ -55,6 +56,8 @@ def server(args):
                 command = connection.recv(1024)
                 if command == b'exit':
                     return 17
+                if command == b'fresh':
+                    print('fresh invented-word', flush=True)
                 connection.sendall(b'private-canary')
 
 
@@ -71,6 +74,25 @@ def main():
                 return 20
         signal.signal(signal.SIGTERM, lambda _sig, _frame: sys.exit(0))
         print('ready dependent', flush=True)
+        while True:
+            signal.pause()
+    if mode == 'request-fresh':
+        host, port = args[0].split(':')
+        with socket.create_connection((host, int(port))) as connection:
+            connection.sendall(b'fresh')
+            return 0 if connection.recv(1024) == b'private-canary' else 20
+    if mode == 'capture-stdin':
+        return 0 if sys.stdin.read() == 'invented-word\n' else 21
+    if mode == 'tree-reader':
+        root = Path(args[0])
+        for path, expected in ((root, 0o500), (root / 'nested', 0o500),
+                               (root / 'nested/index', 0o400), (root / 'run', 0o500)):
+            if stat.S_IMODE(path.stat().st_mode) != expected:
+                return 22
+        if (root / 'nested/index').read_bytes() != b'{unrendered}\n':
+            return 23
+        signal.signal(signal.SIGTERM, lambda _sig, _frame: sys.exit(0))
+        print('ready read-only-tree', flush=True)
         while True:
             signal.pause()
     if mode == 'exit-service':

@@ -39,7 +39,7 @@ class Run:
         self.interrupt = None
         self.items = {}
         self.texts = {f['path']: f['data'].decode('utf-8', 'strict') for f in store.snapshot(lab.root / exp_base)
-                      if any(f['path'] == x['from'] for p in self.exp['processes'] for x in p.get('files', []))}
+                      if any(f['path'] == x.get('from') for p in self.exp['processes'] for x in p.get('files', []))}
         subject = canonical.loads(lab.read('store/subjects/' + self.key['subject'] + '/subject.json'))
         absolute = lambda path: str(lab.root / path)
         known = {'experiment': absolute(exp_base), 'source': absolute('store/subjects/' + self.key['subject'] + '/source'),
@@ -97,8 +97,12 @@ class Run:
             record['memory']['bound_bytes'] = definition['memory_bytes']
         else:
             self.command_records.append(record)
+            if group == 'actions' and 'await' in self.exp['actions'][self.state.data['index']]:
+                record['awaited'] = None
         cwd = self.state.data['known'].get('proc.' + name + '.dir', str(self.lab.root / self.base)) if group == 'processes' else str(self.lab.root / self.base)
         for file in effect['files']:
+            if 'tree' in file:
+                continue
             target = self.base + '/scratch/' + name + '/' + file['path']
             fd = self.lab.create_file(target)
             try:
@@ -106,6 +110,10 @@ class Run:
                 os.fsync(fd)
             finally:
                 os.close(fd)
+        for file in effect['files']:
+            if 'tree' in file:
+                data = self.lab.read('store/subjects/' + self.key['subject'] + '/artifacts/' + file['tree'])
+                self.lab.unpack_tree(self.base + '/scratch/' + name + '/' + file['path'], data)
         stdin_fd = os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)
         outputs = {}
         try:
@@ -172,6 +180,13 @@ class Run:
             record = self.records[request['name']]
             record.update(ready_ms=self.ms(), captures=request['captures'])
             self.timeline('ready', name=request['name'], captures=request['captures'])
+        elif op == 'awaited':
+            record = next(c for c in self.command_records if c['group'] == 'actions' and c['name'] == request['name'])
+            result = record['exit']
+            timed_out = any(b['name'] == 'command_seconds' and b['who'] == request['name'] for b in self.state.data['bounds'])
+            if not timed_out and (result is None or result.get('status') == 0 and not result['stopped'] and not result['killed']):
+                record['awaited'] = dict(ms=request['ms'], captures=request['captures'])
+            self.timeline('awaited', ms=request['ms'], name=request['name'], captures=request['captures'])
         elif op == 'signal_first':
             if self.host.signal_first('proc-' + request['name'], signal.SIGTERM):
                 self.feed('signalled', name=request['name'])
@@ -186,11 +201,18 @@ class Run:
         elif op == 'cancel_command':
             self.cancel_command(request['name'])
         elif op == 'bound':
+            if request['name'] == 'command_seconds':
+                for record in self.command_records:
+                    if record['group'] == 'actions' and record['name'] == request['who'] and 'awaited' in record:
+                        record['awaited'] = None
             self.failures.append(checks.failure(f"bound/{request['name']}/{request['who']}", 'bound', 'cost class bound passed'))
             self.timeline('bound', name=request['name'], who=request['who'])
         elif op == 'unavailable':
             self.undecided.append(dict(check=request['group'] + '/' + request['name'], reason=request['reason']))
-            self.command_records.append(dict(group=request['group'], name=request['name'], skipped=request['reason']))
+            record = dict(group=request['group'], name=request['name'], skipped=request['reason'])
+            if request['group'] == 'actions' and any(a['name'] == request['name'] and 'await' in a for a in self.exp['actions']):
+                record['awaited'] = None
+            self.command_records.append(record)
             self.timeline('unavailable', **{k: v for k, v in request.items() if k != 'op'})
         elif op == 'cut':
             self.timeline('cut', phase=request['phase'])
@@ -314,6 +336,9 @@ class Run:
             elif group == 'checks' and item['cancelled'] and not item['timed_out']:
                 self.undecided.append(dict(check=name, reason='check cut by process stop or interruption'))
             if group == 'actions':
+                timed_out = any(b['name'] == 'command_seconds' and b['who'] == name for b in self.state.data['bounds'])
+                if 'awaited' in record and (result.get('status') != 0 or item['cancelled'] or result['killed'] or timed_out):
+                    record['awaited'] = None
                 self.failures.extend(checks.action(name, record))
             if group == 'collect':
                 try:

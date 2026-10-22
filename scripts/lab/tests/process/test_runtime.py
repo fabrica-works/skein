@@ -1,5 +1,6 @@
 """Actual user units, spawns and cgroups. Capability denials are explicit skips."""
 import json
+import io
 import os
 from pathlib import Path
 import select
@@ -8,6 +9,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from runner import canonical, evidence, finding_store, store
@@ -168,6 +170,60 @@ class Runtime(unittest.TestCase):
         self.assertEqual(rendered.read_text(), record['processes']['server']['captures']['address'])
         self.assertTrue(record['processes']['server']['exit']['stopped'])
         self.assertEqual(entries[0]['outcome'], 'pass')
+        self.assert_empty(record)
+
+    def test_action_awaits_fresh_process_line_and_next_action_receives_capture_on_stdin(self):
+        self.experiment()
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['actions'] = [dict(name='refresh', argv=self.command('request-fresh', '{proc.server.ready.address}'), env={},
+                               **{'await': dict(process='server', stream='stdout', prefix='fresh ', capture='word')}),
+                          dict(name='use', argv=self.command('capture-stdin'), env={}, stdin='{action.refresh.word}\n')]
+        path.write_bytes(canonical.record_bytes(exp))
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 0, stderr)
+        key_path, _entries, records = self.records()
+        record = records[0]
+        refresh, use = record['commands'][:2]
+        self.assertEqual(refresh['awaited']['captures'], {'word': 'invented-word'})
+        self.assertNotIn('awaited', use)
+        self.assertEqual(use['exit']['status'], 0)
+        root = self.lab_root / key_path / 'runs' / record['run']
+        self.assertEqual((root / use['stdin']['path']).read_text(), 'invented-word\n')
+        events = [canonical.loads(line + b'\n') for line in (root / 'events.jsonl').read_bytes().splitlines()]
+        awaited = next(e for e in events if e['event'] == 'awaited')
+        self.assertEqual({k: awaited[k] for k in ('ms', 'captures')}, refresh['awaited'])
+        self.assertEqual(awaited['name'], 'refresh')
+        self.assert_empty(record)
+
+    def test_artifact_tree_is_read_only_before_process_readiness(self):
+        contents = io.BytesIO()
+        with tarfile.open(fileobj=contents, mode='w', format=tarfile.USTAR_FORMAT) as output:
+            for name, kind, mode, data in [('nested', tarfile.DIRTYPE, 0o755, b''),
+                                           ('nested/index', tarfile.REGTYPE, 0o644, b'{unrendered}\n'),
+                                           ('run', tarfile.REGTYPE, 0o755, b'#!/bin/sh\n')]:
+                info = tarfile.TarInfo(name)
+                info.type, info.mode, info.size = kind, mode, len(data)
+                output.addfile(info, io.BytesIO(data))
+        data = contents.getvalue()
+        subject = dict(format='lab-subject/1', commit='a' * 40, source=canonical.tree_digest([]),
+                       artifacts={'bundle': dict(sha256=store.file_digest(data), bytes=len(data), exec=False)})
+        self.subject = canonical.digest(subject)
+        with store.open_lab(self.lab_root) as lab:
+            lab.capture('subjects', self.subject,
+                        [dict(path='subject.json', data=canonical.record_bytes(subject), exec=False),
+                         dict(path='artifacts/bundle', data=data, exec=False)], empty_dirs=('source',))
+        self.experiment()
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['processes'] = [dict(name='reader', argv=self.command('tree-reader', '{proc.reader.dir}/web'), env={},
+                                  files=[dict(path='web', tree='bundle')], memory_bytes=None,
+                                  ready=[dict(stream='stdout', prefix='ready ', capture='tree')])]
+        path.write_bytes(canonical.record_bytes(exp))
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 0, stderr)
+        record = self.records()[2][0]
+        self.assertEqual(record['processes']['reader']['captures'], {'tree': 'read-only-tree'})
         self.assert_empty(record)
 
     def test_unexpected_stop_cuts_seed_actions_and_still_checks(self):

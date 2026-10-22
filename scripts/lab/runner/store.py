@@ -7,7 +7,7 @@ from pathlib import Path
 import stat
 import subprocess
 import secrets
-from . import canonical
+from . import canonical, tree
 from .records import NAME, Refused, digest_value, relative, subject_refusals
 
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -248,6 +248,31 @@ class Lab:
                            0o600, dir_fd=fd)
         finally:
             os.close(fd)
+
+    def unpack_tree(self, path, data):
+        """Create a fresh read-only tree; every component is opened no-follow."""
+        members = tree.members(data)
+        parent, name = self._parent(path, create=True)
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent)
+        finally:
+            os.close(parent)
+        for member, kind, executable, contents in members:
+            target = path + '/' + member
+            if kind == 'directory':
+                os.close(self.directory(target, create=True))
+            else:
+                fd = self.create_file(target)
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(contents)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), 0o500 if executable else 0o400)
+                    os.fsync(stream.fileno())
+        root = self.directory(path)
+        try:
+            self._freeze(root)
+        finally:
+            os.close(root)
 
     def replace_derived(self, path, value):
         if path.rsplit('/', 1)[-1] != 'verdict.json' and path != 'findings/index.json':

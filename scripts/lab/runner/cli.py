@@ -217,6 +217,17 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
              "artifacts_available": list(subject.get("artifacts", {})), "experiment_files": texts,
              "executables": executables, "known": known, "driver_host": driver_available,
              "browser": browser_facts}
+    facts['artifact_bytes'] = {}
+    for i, process in enumerate(exp.get('processes', []) if type(exp.get('processes')) is list else []):
+        if type(process) is not dict or type(process.get('files', [])) is not list:
+            continue
+        for j, entry in enumerate(process.get('files', [])):
+            name = entry.get('tree') if type(entry) is dict else None
+            if type(name) is str and name in subject.get('artifacts', {}) and name not in facts['artifact_bytes']:
+                try:
+                    facts['artifact_bytes'][name] = lab.read(f'store/subjects/{subject_id}/artifacts/{name}')
+                except (OSError, Refused) as error:
+                    out.append(Refusal(f'processes.{i}.files.{j}.tree', str(error)))
     out.extend(experiment.validate(exp, subject, settings, facts))
     if out:
         return None, out

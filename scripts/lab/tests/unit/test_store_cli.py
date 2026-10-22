@@ -199,3 +199,36 @@ class Filesystem(unittest.TestCase):
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
             cli.main(['run'], lab_root=self.root / 'lab')
         self.assertEqual(error.exception.code, 2)
+
+    def test_cli_supplies_artifact_tree_bytes_and_refuses_bad_archives_without_run(self):
+        from .test_tree import GOOD, archive
+        exp, _, settings, facts, _ = fixture()
+        directory = self.root / 'experiment'
+        directory.mkdir()
+        helper = self.root / 'helper'
+        helper.write_bytes(b'helper')
+        helper.chmod(0o700)
+        exp['processes'] = [dict(name='server', argv=[str(helper)], env={},
+                                  ready=[dict(stream='stdout', prefix='ready ', capture=None)], memory_bytes=None,
+                                  files=[dict(path='web', tree='bundle')])]
+        exp.update(actions=[], collect=[], checks=[])
+        (directory / 'experiment.json').write_bytes(canonical.record_bytes(exp))
+        self.lab.write_once('settings.json', canonical.record_bytes(settings))
+        artifact = self.root / 'bundle'
+        with patch.object(store, 'git_source', return_value=('a' * 40, [])), \
+             patch.object(cli, '_machine_facts', return_value=facts), \
+             patch.object(cli, '_runner_digest', return_value=D), \
+             patch.object(cli.sys, 'executable', str(helper)), \
+             patch.object(cli.shutil, 'which', return_value=None):
+            for data, expected in ((archive(GOOD), 0), (b'invalid archive', 2)):
+                artifact.write_bytes(data)
+                with self.lab.lock():
+                    subject = store.capture_subject(self.lab, '/invented-repository', 'HEAD', [], [('bundle', artifact)])
+                output, errors = io.StringIO(), io.StringIO()
+                with redirect_stdout(output), redirect_stderr(errors):
+                    code = cli.main(['validate', str(directory), '--subject', subject], lab_root=self.lab.root)
+                self.assertEqual(code, expected, errors.getvalue())
+                if code == 2:
+                    self.assertIn('processes.0.files.0.tree', errors.getvalue())
+                    self.assertEqual(output.getvalue(), '')
+        self.assertEqual(list(self.lab.root.glob('keys/*/*/runs')), [])

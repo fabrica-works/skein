@@ -1,6 +1,6 @@
 """Experiment decisions over records and supplied facts; no filesystem access."""
 import re
-from . import canonical
+from . import canonical, tree
 from .records import (COST_FIELDS, NAME, Refusal, Refused, chromium_refusals, digest_value, lab_refusals,
                       positive, relative, shape, signature_value, subject_refusals)
 
@@ -260,7 +260,10 @@ def validate(experiment, subject, settings, facts):
         destinations = set()
         for j, entry in enumerate(_list(p.get("files", []), m + ".files", out)):
             fm = f"{m}.files.{j}"
-            f = shape(entry, ("path", "from"), (), fm, out)
+            f = shape(entry, ("path",), ("from", "tree"), fm, out)
+            if ('from' in f) == ('tree' in f):
+                out.append(Refusal(fm + '.from', 'expected exactly one of from or tree'))
+                out.append(Refusal(fm + '.tree', 'expected exactly one of from or tree'))
             path = f.get("path")
             if not relative(path):
                 out.append(Refusal(fm + ".path", "expected contained relative path"))
@@ -268,11 +271,23 @@ def validate(experiment, subject, settings, facts):
                 out.append(Refusal(fm + ".path", "overlapping destination"))
             else:
                 destinations.add(path)
-            source = f.get("from")
-            if not relative(source) or source not in files:
-                out.append(Refusal(fm + ".from", "missing or uncontained experiment file"))
-            elif type(files[source]) is not str:
-                out.append(Refusal(fm + ".from", "template must be UTF-8 text"))
+            if 'from' in f:
+                source = f['from']
+                if not relative(source) or source not in files:
+                    out.append(Refusal(fm + ".from", "missing or uncontained experiment file"))
+                elif type(files[source]) is not str:
+                    out.append(Refusal(fm + ".from", "template must be UTF-8 text"))
+            if 'tree' in f:
+                artifact = f['tree']
+                contents = facts.get('artifact_bytes', {})
+                contents = contents if type(contents) is dict else {}
+                if type(artifact) is not str or artifact not in artifacts or artifact not in available_artifacts:
+                    out.append(Refusal(fm + '.tree', 'unknown or unavailable subject artifact'))
+                else:
+                    try:
+                        tree.members(contents.get(artifact))
+                    except Refused as error:
+                        out.append(Refusal(fm + '.tree', error.refusal.why))
 
     ancestors = {p: set(deps) for p, deps in after.items()}
     for _ in range(len(processes)):
@@ -308,13 +323,29 @@ def validate(experiment, subject, settings, facts):
         placeholder_lab["driver"] = {k: v for k, v in t.items() if k not in ("triage_seconds", "triage_tokens")}
         out.extend(Refusal("settings.triager" + r.member[len("lab.driver"):], r.why)
                    for r in lab_refusals(placeholder_lab) if r.member.startswith("lab.driver"))
+    action_captures = {}
     for group, items in groups.items():
         for i, item in enumerate(items):
             m = f"driver.tools.{i}" if group == "tools" else f"{group}.{i}"
             if group != "processes":
                 extra = ("scan",) if group == "collect" else (("reads", "writes") if group == "tools" else ())
-                optional = () if group == "tools" else ("stdin",)
+                optional = () if group == "tools" else (("stdin", "await") if group == 'actions' else ("stdin",))
                 p = shape(item, ("name", "argv", "env") + extra, optional, m, out)
+                if group == 'actions' and 'await' in p:
+                    am = m + '.await'
+                    rule = shape(p['await'], ('process', 'stream', 'prefix', 'capture'), (), am, out)
+                    if type(rule.get('process')) is not str or rule['process'] not in processes:
+                        out.append(Refusal(am + '.process', 'unknown process'))
+                    if rule.get('stream') not in ('stdout', 'stderr'):
+                        out.append(Refusal(am + '.stream', 'expected stdout or stderr'))
+                    prefix = rule.get('prefix')
+                    if type(prefix) is not str or any(c in prefix for c in '\r\n\0'):
+                        out.append(Refusal(am + '.prefix', 'expected literal line prefix'))
+                    capture = rule.get('capture')
+                    if type(capture) is not str or not NAME.fullmatch(capture):
+                        out.append(Refusal(am + '.capture', 'invalid name'))
+                    elif type(p.get('name')) is str:
+                        action_captures[p['name']] = (i, capture)
                 if group == "collect":
                     for j, path in enumerate(_list(p.get("scan"), m + ".scan", out)):
                         if not relative(path):
@@ -372,6 +403,11 @@ def validate(experiment, subject, settings, facts):
                 available = bits[1] in processes and bits[3] in captures.get(bits[1], ())
                 if phase == "processes":
                     available = available and bits[1] in ancestors.get(process, ()) and bits[1] != process
+            elif len(bits) == 3 and bits[0] == 'action':
+                declaration = action_captures.get(bits[1])
+                available = (declaration is not None and bits[2] == declaration[1]
+                             and (phase in ('collect', 'checks')
+                                  or phase == 'actions' and int(member.split('.')[1]) > declaration[0]))
             elif name == "collect.dir":
                 available = phase == "collect"
             elif len(bits) == 2 and bits[0] == "collected":

@@ -177,6 +177,21 @@ def run_refusals(value):
             out.append(Refusal('run.' + field, 'expected list'))
     if type(obj.get('processes')) is not dict:
         out.append(Refusal('run.processes', 'expected named processes'))
+    for i, command in enumerate(obj.get('commands', []) if type(obj.get('commands')) is list else []):
+        if type(command) is dict and 'awaited' in command:
+            m = f'run.commands.{i}.awaited'
+            if command.get('group') != 'actions':
+                out.append(Refusal(m, 'only seed actions await a line'))
+            if command['awaited'] is not None:
+                awaited = shape(command['awaited'], ('ms', 'captures'), (), m, out)
+                ms = awaited.get('ms')
+                if type(ms) is not int or not 0 <= ms <= SAFE:
+                    out.append(Refusal(m + '.ms', 'expected nonnegative safe milliseconds'))
+                captures = awaited.get('captures')
+                if (type(captures) is not dict or len(captures) != 1
+                        or any(type(k) is not str or not NAME.fullmatch(k) or type(v) is not str
+                               for k, v in captures.items())):
+                    out.append(Refusal(m + '.captures', 'expected one named text capture'))
     for i, failure in enumerate(obj.get('failures', []) if type(obj.get('failures')) is list else []):
         m = f'run.failures.{i}'
         f = shape(failure, ('id', 'signature', 'kind', 'summary', 'evidence'), (), m, out)

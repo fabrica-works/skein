@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from runner import canonical, cli, evidence, judge, store
+from runner import canonical, cli, evidence, judge, records, store
 from runner.records import Refused
 from .fixtures import D
 
@@ -25,6 +25,35 @@ class Timeline(unittest.TestCase):
         self.assertEqual(written[0], ('run/events.jsonl', dict(format='lab-event/1', event='exit',
                                                             ms=17, name='server', status=101)))
         self.assertEqual(written[1][1]['ms'], 99)
+
+    def test_awaited_event_and_record_share_observed_time_and_capture(self):
+        from types import SimpleNamespace
+        from runner.loop import Run
+        written = []
+        run = Run.__new__(Run)
+        run.base = 'run'
+        run.lab = SimpleNamespace(append_line=lambda path, value: written.append(value))
+        run.ms = lambda: 99
+        run.state = SimpleNamespace(data={'bounds': []})
+        command = dict(name='refresh', group='actions', exit=None, awaited=None)
+        ordinary = dict(name='other', group='actions', exit=None)
+        run.command_records = [command, ordinary]
+        run.effect(dict(op='awaited', name='refresh', ms=17, captures={'word': 'invented-word'}))
+        self.assertEqual(command['awaited'], dict(ms=17, captures={'word': 'invented-word'}))
+        self.assertEqual(written[0], dict(format='lab-event/1', event='awaited', ms=17,
+                                         name='refresh', captures={'word': 'invented-word'}))
+        self.assertNotIn('awaited', ordinary)
+        command.update(exit=dict(status=1, stopped=False, killed=False), awaited=None)
+        run.effect(dict(op='awaited', name='refresh', ms=18, captures={'word': 'late'}))
+        self.assertIsNone(command['awaited'])
+        command.update(exit=dict(status=0, stopped=False, killed=False), awaited=dict(ms=17, captures={'word': 'invented-word'}))
+        run.failures = []
+        run.state.data['bounds'].append(dict(name='command_seconds', who='refresh', ms=19))
+        run.effect(dict(op='bound', name='command_seconds', who='refresh'))
+        self.assertIsNone(command['awaited'])
+        run.effect(dict(op='awaited', name='refresh', ms=18, captures={'word': 'late'}))
+        self.assertIsNone(command['awaited'])
+        self.assertNotIn('awaited', ordinary)
 
 
 def run_record(number, seed, outcome='pass', attempt=1):
@@ -50,6 +79,27 @@ class Evidence(unittest.TestCase):
     def publish(self, record):
         with self.lab.lock():
             evidence.publish(self.lab, self.key_path, record)
+
+    def test_optional_awaited_record_roundtrip_and_refusals_preserve_ordinary_records(self):
+        ordinary = dict(group='actions', name='ordinary', exit=dict(status=0))
+        awaiting = dict(group='actions', name='refresh', awaited=None)
+        record = run_record(1, '1')
+        record['commands'] = [ordinary, awaiting]
+        self.assertEqual(records.run_refusals(record), [])
+        awaiting['awaited'] = dict(ms=17, captures={'word': 'invented-word'})
+        self.publish(record)
+        saved = canonical.loads(self.lab.read(self.key_path + '/runs/' + record['run'] + '/run.json'))
+        self.assertEqual(saved['commands'], record['commands'])
+        self.assertNotIn('awaited', saved['commands'][0])
+        for value, member in (({}, 'ms'), (dict(ms=-1, captures={'word': 'value'}), 'ms'),
+                               (dict(ms=True, captures={'word': 'value'}), 'ms'),
+                               (dict(ms=1, captures={}), 'captures'),
+                               (dict(ms=1, captures={'Bad': 'value'}), 'captures'),
+                               (dict(ms=1, captures={'word': None}), 'captures'),
+                               (dict(ms=1, capture='value'), 'capture')):
+            awaiting['awaited'] = value
+            with self.subTest(value=value):
+                self.assertIn('run.commands.1.awaited.' + member, [r.member for r in records.run_refusals(record)])
 
     def test_three_seeds_and_additive_rerun_replace_only_derived_verdict(self):
         old_records = []
