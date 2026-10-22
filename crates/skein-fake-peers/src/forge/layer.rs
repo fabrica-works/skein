@@ -158,7 +158,7 @@ macro_rules! entry {
                 },
                 (Server::Github(server), Service::Github(service), Limits::Github(limits)) => {
                     let mut events = Queue::with_capacity(github::MAX_UP);
-                    github::$github(server, service, &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* &mut events, below);
+                    github::$github(server, service, $($domain,)? &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* &mut events, below);
                     translate(&mut events, above);
                 }
                 (Server::Forgejo(_), Service::Forgejo(_) | Service::Github(_), Limits::Github(_))
@@ -170,8 +170,8 @@ macro_rules! entry {
     }
 }
 entry!(start => start, start);
-entry!(up_with_domain => up_with_domain, up; domain: forgejo::Hosted<'_>, event: Up);
-entry!(resume_with_domain => resume_with_domain, resume; domain: forgejo::Hosted<'_>);
+entry!(up_with_domain => up_with_domain, up_with_domain; domain: forgejo::Hosted<'_>, event: Up);
+entry!(resume_with_domain => resume_with_domain, resume_with_domain; domain: forgejo::Hosted<'_>);
 entry!(close => close, close);
 entry!(closed => closed, closed);
 pub(super) fn down(
@@ -257,4 +257,27 @@ pub(super) fn admitted(
         below,
     );
     translate(&mut events, above);
+}
+
+impl super::Peer {
+    /// The hosted GitHub layer, including its installation store and git records.
+    #[must_use]
+    pub fn github_layer(&self) -> Option<&github::Service> {
+        match &self.service {
+            Service::Github(service) => Some(service),
+            Service::Forgejo(_) => None,
+        }
+    }
+    /// Scenario access to installations and token minting on the hosted GitHub layer.
+    pub fn github_layer_mut(&mut self) -> Option<&mut github::Service> {
+        match &mut self.service {
+            Service::Github(service) => Some(service),
+            Service::Forgejo(_) => None,
+        }
+    }
+    /// Recent private git calls, without their credentials.
+    #[must_use]
+    pub fn git_calls(&self) -> Option<&Queue<github::GitCall>> {
+        Some(self.github_layer()?.git_calls())
+    }
 }

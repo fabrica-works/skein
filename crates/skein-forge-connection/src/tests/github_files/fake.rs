@@ -343,12 +343,14 @@ fn github_service(page: u32) -> service::Service {
         body: f::BODY_ROOM,
         response: 8192,
         blob_records: 16,
+        git_records: 16,
     };
     service::Service::new(
         service::Config {
             deliveries: skein_fake_forge_github::delivery::Config::standard(),
             rate_quota: 5000,
             rate_window: Duration::from_secs(3600),
+            token_life: installations::TOKEN_LIFE,
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(b"http://logs.example.test".as_slice()),
             third_origin: None,

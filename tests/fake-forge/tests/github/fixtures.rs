@@ -35,6 +35,7 @@ pub fn limits() -> fake::Limits {
         body: 4096,
         response: 16384,
         blob_records: 2,
+        git_records: 16,
     }
 }
 pub fn config() -> fake::Config {
@@ -63,6 +64,7 @@ pub fn config() -> fake::Config {
     fake::Config {
         rate_quota: 5000,
         rate_window: Duration::from_secs(3600),
+        token_life: skein_fake_forge_github::installations::TOKEN_LIFE,
         deliveries: fake::delivery::Config::standard(),
         base: Box::from(b"http://127.0.0.1:3000".as_slice()),
         blob: Box::from(b"http://127.0.0.1:3001".as_slice()),

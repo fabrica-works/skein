@@ -8,6 +8,8 @@ mod answers;
 mod auth;
 mod comment_edit;
 mod enqueue;
+mod git;
+pub use git::{GitCall, Minted};
 mod mutations;
 pub use skein_fake_forge_protocol::Faults;
 pub mod app;
@@ -22,7 +24,9 @@ mod reads;
 mod routes;
 pub mod server;
 pub mod service;
-pub use server::{Event, MAX_DOWN, MAX_UP, Server, close, closed, down, resume, start, up};
+pub use server::{
+    Event, MAX_DOWN, MAX_UP, Server, close, closed, down, resume, resume_with_domain, start, up, up_with_domain,
+};
 pub use service::{Config, Limits, Problem, Service, worst_case};
 mod texts;
 mod writes;

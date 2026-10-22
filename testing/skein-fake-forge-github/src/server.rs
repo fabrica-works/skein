@@ -5,6 +5,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use skein_fake_forge_domain as domain;
+use skein_fake_forge_protocol::{Hosted, git};
 use skein_forge::github::request::Method;
 use skein_http::{Header, Method as HttpMethod, server as http};
 use skein_lib::{
@@ -109,6 +110,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(List::<Header>::worst_case(limits.http.headers)?.checked_mul(2)?)?
         .checked_add(u64::from(limits.http.head).checked_mul(2)?)?
         .checked_add(Intake::worst_case(limits.body)?)?
+        .checked_add(crate::git::worst_case(limits)?)?
         // A conditional repository read retains its admission and a quoted digest.
         .checked_add(u64::try_from(size_of::<crate::rates::Admission>()).ok()?)?
         .checked_add(u64::try_from(crate::reads::REPOSITORY_ETAG_BYTES).ok()?)?
@@ -155,6 +157,29 @@ pub fn up(
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
+    up_inner(server, service, env, event, None, above, below);
+}
+/// Receives bytes while borrowing the domain for private git store calls.
+pub fn up_with_domain(
+    server: &mut Server,
+    service: &mut Service,
+    hosted: Hosted<'_>,
+    env: &Env<Limits>,
+    event: Up,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    up_inner(server, service, env, event, Some(hosted), above, below);
+}
+fn up_inner(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    event: Up,
+    hosted: Option<Hosted<'_>>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
     match server.state {
         State::New | State::Closing | State::Closed => return,
         State::Reading | State::Receiving | State::Body | State::Waiting | State::Streaming => {}
@@ -174,7 +199,7 @@ pub fn up(
         &mut server.events,
         below,
     );
-    resume(server, service, env, above, below);
+    resume_inner(server, service, env, hosted, above, below);
 }
 /// The host routes only this connection's reply and lends the shared domain for follow-up reads.
 pub fn down(
@@ -194,13 +219,31 @@ pub fn down(
         return;
     }
     let Some(pending) = server.pending.take() else { return };
-    let outcome = service.finish(pending, result, ReplyTo::new(server.owner), domain);
+    let (outcome, git_pending) = match pending.kind {
+        crate::service::PendingKind::Git(pending) => {
+            let response = crate::git::render(pending.name, result, &env.limits);
+            (Outcome::Reply(response), Some(pending))
+        }
+        kind @ (crate::service::PendingKind::Mutation(_)
+        | crate::service::PendingKind::CommentEdit(_)
+        | crate::service::PendingKind::Read(_)
+        | crate::service::PendingKind::Enqueue(_)
+        | crate::service::PendingKind::Conditional { .. }
+        | crate::service::PendingKind::Write(_)
+        | crate::service::PendingKind::Blob
+        | crate::service::PendingKind::EditReach { .. }) => {
+            (service.finish(Pending { kind, rate: pending.rate }, result, ReplyTo::new(server.owner), domain), None)
+        }
+    };
     // A request's reads and write continuations finish before its answer is lost.
     // Drawing here keeps a merge's preliminary reads from losing its write.
     let outcome = match outcome {
         call @ (Outcome::Call(_, _) | Outcome::Admit(_)) => call,
         Outcome::Reply(reply) => {
             if service.rng.chance(service.faults.drop) {
+                if let Some(pending) = &git_pending {
+                    service.record_git(pending, reply.status);
+                }
                 close(server, service, env, above, below);
                 return;
             }
@@ -213,6 +256,12 @@ pub fn down(
             })
         }
     };
+    if let Some(pending) = git_pending {
+        match &outcome {
+            Outcome::Reply(response) => service.record_git(&pending, response.status),
+            Outcome::Call(_, _) | Outcome::Admit(_) => unreachable!("git finishes with one reply"),
+        }
+    }
     answer(server, service, &env.limits, outcome, above);
     resume(server, service, env, above, below);
 }
@@ -240,12 +289,33 @@ pub fn resume(
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
+    resume_inner(server, service, env, None, above, below);
+}
+/// Resumes a connection while borrowing the domain for private git store calls.
+pub fn resume_with_domain(
+    server: &mut Server,
+    service: &mut Service,
+    hosted: Hosted<'_>,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    resume_inner(server, service, env, Some(hosted), above, below);
+}
+fn resume_inner(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    mut hosted: Option<Hosted<'_>>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
     for _ in 0..8u32 {
         if above.room() < 2 || below.room() < 2 {
             break;
         }
         if let Some(event) = server.events.pop() {
-            event_up(server, service, env, event, above, below);
+            event_up(server, service, env, event, hosted.as_mut(), above, below);
             // The host records this entrance before another buffered head can arrive.
             if server.head.is_some() {
                 break;
@@ -327,6 +397,7 @@ fn event_up(
     service: &mut Service,
     env: &Env<Limits>,
     event: http::Event,
+    hosted: Option<&mut Hosted<'_>>,
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
@@ -340,6 +411,17 @@ fn event_up(
                 }
             }
             server.head = Some(snapshot);
+            if !server.blob
+                && let Some(Ok(name)) = git::name(&call.target)
+                && name.repository()
+                && let Err(status) = service.git_access(call.header(b"authorization"), env.wall)
+            {
+                let pending = crate::git::Pending { name, minted: service.git_identity(call.header(b"authorization")) };
+                service.record_git(&pending, status);
+                server.requests.push(http::Request::Discard);
+                respond(server, &env.limits, crate::logs::empty(status), None);
+                return;
+            }
             server.call = Some(call);
             server.body.clear();
             server.state = State::Body;
@@ -347,13 +429,20 @@ fn event_up(
         }
         http::Event::Body(Up::Bytes(chunk)) => {
             if server.body.append(&chunk).is_err() {
+                if let Some(call) = &server.call
+                    && let Some(Ok(name)) = git::name(&call.target)
+                {
+                    let pending =
+                        crate::git::Pending { name, minted: service.git_identity(call.header(b"authorization")) };
+                    service.record_git(&pending, 413);
+                }
                 server.requests.push(http::Request::Discard);
                 respond(server, &env.limits, answers::refusal(413, crate::texts::PAYLOAD_TOO_LARGE, &env.limits), None);
             } else {
                 demand(server, &env.limits);
             }
         }
-        http::Event::Body(Up::End) => dispatch(server, service, env, above),
+        http::Event::Body(Up::End) => dispatch(server, service, env, hosted, above),
         http::Event::Body(Up::Room) | http::Event::Closed => {}
         http::Event::Reply(Up::Room) => {
             let reply = server.reply.as_ref().expect("reply stream");
@@ -384,7 +473,13 @@ fn event_up(
         }
     }
 }
-fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above: &mut Queue<Event>) {
+fn dispatch(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    hosted: Option<&mut Hosted<'_>>,
+    above: &mut Queue<Event>,
+) {
     let call = server.call.take().expect("accepted head");
     server.issue_write = call.method == HttpMethod::Post && call.target.ends_with(b"/issues");
     if server.blob {
@@ -399,6 +494,10 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
             ReplyTo::new(server.owner),
         );
         answer(server, service, &env.limits, outcome, above);
+        return;
+    }
+    if let Some(name) = git::name(&call.target) {
+        dispatch_git(server, service, env, hosted, &call, name, above);
         return;
     }
     let method = match call.method {
@@ -463,6 +562,38 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
         );
         answer(server, service, &env.limits, outcome, above);
     }
+}
+fn dispatch_git(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    hosted: Option<&mut Hosted<'_>>,
+    call: &http::Call,
+    name: Result<git::Name, git::Unrouted>,
+    above: &mut Queue<Event>,
+) {
+    let body = if server.body.is_empty() {
+        Box::new([])
+    } else {
+        server.body.meet(Read::Fill(server.body.len())).expect("whole body")
+    };
+    let method = if call.method == HttpMethod::Post { Method::Post } else { Method::Get };
+    let outcome = service.git_request(
+        &Request {
+            validator: None,
+            method,
+            target: &call.target,
+            body: &body,
+            authorization: call.header(b"authorization"),
+            version: None,
+            agent: false,
+        },
+        name,
+        env.wall,
+        ReplyTo::new(server.owner),
+        hosted,
+    );
+    answer(server, service, &env.limits, outcome, above);
 }
 fn answer(server: &mut Server, service: &Service, limits: &Limits, outcome: Outcome, above: &mut Queue<Event>) {
     match outcome {
@@ -579,19 +710,20 @@ mod tests {
                 value: bytes::copy_of(skein_forge::github::pin::API_VERSION.as_bytes()),
             },
         ]);
-        event_up(&mut server, &mut service, &env, http::Event::Call(call), &mut above, &mut below);
+        event_up(&mut server, &mut service, &env, http::Event::Call(call), None, &mut above, &mut below);
         drop(server.requests.pop());
         event_up(
             &mut server,
             &mut service,
             &env,
             http::Event::Body(Up::Bytes(bytes::copy_of(body))),
+            None,
             &mut above,
             &mut below,
         );
         if server.state == State::Body {
             drop(server.requests.pop());
-            event_up(&mut server, &mut service, &env, http::Event::Body(Up::End), &mut above, &mut below);
+            event_up(&mut server, &mut service, &env, http::Event::Body(Up::End), None, &mut above, &mut below);
         } else {
             drop(server.requests.pop());
         }
@@ -607,5 +739,71 @@ mod tests {
         let (status, retained) = intake(b"body!");
         assert_eq!(status, 413);
         assert!(retained <= BODY_BOUND);
+    }
+}
+
+#[cfg(test)]
+mod git_tests {
+    use super::*;
+    use crate::{GitCall, Minted, service::PendingKind, tests::fixtures};
+
+    #[test]
+    fn a_git_record_uses_the_status_after_a_server_fault() {
+        let mut h = fixtures::Harness::new();
+        h.service.faults.server_error = 1000;
+        let owner = Token::new(77);
+        let mut server = Server::new(owner, &h.limits).expect("fixture HTTP server");
+        server.state = State::Waiting;
+        let minted = Some(Minted { installation: 1, mint: 1 });
+        server.pending =
+            Some(Pending { rate: None, kind: PendingKind::Git(crate::git::Pending { name: git::Name::Push, minted }) });
+        // Hold HTTP progression so the framed status can be inspected directly.
+        let mut above = Queue::with_capacity(0);
+        let mut below = Queue::with_capacity(MAX_DOWN);
+        down(
+            &mut server,
+            &mut h.service,
+            &Env { now: h.env.now, wall: h.now, limits: h.limits },
+            domain::Request::Reply {
+                to: ReplyTo::new(owner),
+                result: Ok(domain::api::Answer::Pushed(domain::api::Pushed::Pushed)),
+            },
+            &h.domain,
+            &mut above,
+            &mut below,
+        );
+        let Some(http::Request::Respond(response)) = server.requests.pop() else { panic!("framed reply") };
+        assert_eq!(response.status, 500);
+        assert_eq!(h.service.git_calls().len(), 1);
+        assert_eq!(h.service.git_calls().iter().next(), Some(&GitCall { minted, writes: true, status: 500 }));
+    }
+
+    #[test]
+    fn a_private_git_credential_refusal_precedes_the_body_demand() {
+        let mut h = fixtures::Harness::new();
+        let mut server = Server::new(Token::new(77), &h.limits).expect("fixture HTTP server");
+        let mut above = Queue::with_capacity(MAX_UP);
+        let mut below = Queue::with_capacity(MAX_DOWN);
+        event_up(
+            &mut server,
+            &mut h.service,
+            &Env { now: h.env.now, wall: h.now, limits: h.limits },
+            http::Event::Call(http::Call {
+                method: HttpMethod::Post,
+                version: skein_http::Version::Http11,
+                body: http::Body::Length(u64::from(h.limits.body)),
+                target: bytes::copy_of(b"/.fake/git/clone"),
+                headers: Box::new([]),
+            }),
+            None,
+            &mut above,
+            &mut below,
+        );
+        let Some(http::Request::Discard) = server.requests.pop() else { panic!("discard refused body") };
+        let Some(http::Request::Respond(response)) = server.requests.pop() else { panic!("credential refusal") };
+        assert_eq!(response.status, 401);
+        assert_eq!(h.service.git_calls().len(), 1);
+        let Some(http::Request::Reply(Down::Finish)) = server.requests.pop() else { panic!("empty response finishes") };
+        assert!(server.requests.is_empty(), "no body demand");
     }
 }

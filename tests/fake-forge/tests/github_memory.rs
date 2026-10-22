@@ -36,11 +36,14 @@ fn github_service_full_stores_stay_within_worst_case() {
         meter.check(meter.end(), bound, &"full installation reach");
     }
     assert_eq!(service.installations().iter().count(), 2);
+    let mut git_token = None;
     for n in 0..limits.installations.tokens {
         meter.start();
         let token = service.installations_mut().mint(1 + u64::from(n % 2), Scope::Full, f::NOW).unwrap();
         let measured = meter.end();
-        drop(token);
+        if n == 0 {
+            git_token = Some(token.0);
+        }
         meter.check(measured, bound, &"mint");
     }
     assert!(service.installations_mut().mint(1, Scope::Full, f::NOW).is_err(), "token store is full");
@@ -76,6 +79,25 @@ fn github_service_full_stores_stay_within_worst_case() {
         meter.check(measured, bound, &"full blob records");
     }
     assert_eq!(service.blob_records().len(), limits.blob_records);
+    let git_auth = basic(git_token.as_ref().unwrap().expose());
+    // A body at its bound fills the compact decoder before its schema refusal.
+    let mut body = b"[".to_vec();
+    body.extend(std::iter::repeat_n(b'0', usize::try_from(limits.body).unwrap().saturating_sub(2)));
+    body.push(b']');
+    // Separate numeric tokens fill the record array as well as the text buffer.
+    for byte in body.iter_mut().skip(2).step_by(2) {
+        *byte = b',';
+    }
+    for _ in 0..=limits.git_records {
+        meter.start();
+        let response = f::ask(&mut service, Method::Post, b"/.fake/git/clone", Some(git_auth.expose()), &body);
+        let measured = meter.end();
+        assert_eq!(response.status, 400);
+        drop(response);
+        meter.check(measured, bound, &"full git decoder and records");
+    }
+    assert_eq!(service.git_calls().len(), limits.git_records);
+
     let jwt = f::jwt(7, fake::keys::KEYS[0], f::NOW);
     for target in [b"/app".as_slice(), b"/app/installations?per_page=100&page=1"] {
         meter.start();
@@ -87,4 +109,19 @@ fn github_service_full_stores_stay_within_worst_case() {
     }
     assert!(service.manifest(b"one").is_some());
     assert!(service.manifest(b"two").is_some());
+}
+
+fn basic(token: &[u8]) -> skein_lib::Secret {
+    use skein_lib::{
+        Writer,
+        base64::{self, Alphabet},
+    };
+    let mut login = b"x-access-token:".to_vec();
+    login.extend_from_slice(token);
+    let count = base64::encoded_len(Alphabet::Standard, u32::try_from(login.len()).expect("bounded basic header"))
+        .expect("bounded basic header");
+    let mut header = Writer::new(usize::try_from(count).expect("bounded basic header").saturating_add(6));
+    header.put(b"Basic ").expect("bounded basic header");
+    base64::encode(Alphabet::Standard, &login, &mut header).expect("bounded basic header");
+    skein_lib::Secret::new(header.finish())
 }

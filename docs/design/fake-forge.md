@@ -790,7 +790,8 @@ below are tracked in STATUS.md.
   it says otherwise, so that a story on real time sees a renewal. The
   layer keeps a bounded record of its git calls, each with its
   installation and the mint number of its token, which a scenario
-  reads to tell which token a push carried.
+  reads to tell which token a push carried. The private git route, scenario's
+  token life and bounded git call record are built.
 - **Ruleset mutations.** A person's `POST /repos/<o>/<n>/rulesets`
   replaces the domain's repository protection, requiring admin permission;
   `DELETE /repos/<o>/<n>/rulesets/<id>` removes it. The subset is strict:

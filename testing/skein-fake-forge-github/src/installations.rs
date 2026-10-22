@@ -4,7 +4,7 @@ use skein_lib::{Duration, List, Queue, Rng, Secret, Wall, Writer, bytes};
 
 /// GitHub's longest login, in bytes.
 pub const LOGIN_BYTES: usize = 39;
-/// The tokens' life: an hour on the forge's clock.
+/// The default token life: an hour on the forge's clock.
 pub const TOKEN_LIFE: Duration = Duration::from_secs(3600);
 const TOKEN_BYTES: usize = 40;
 const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -70,6 +70,7 @@ struct Issued {
     secret: Secret,
     grant: Grant,
     expires: Wall,
+    mint: u64,
 }
 
 /// Bounded stores. Rows stay packed and in id order; removal shifts owned
@@ -83,6 +84,8 @@ pub struct Installations {
     rng: Rng,
     next: u64,
     listed: u32,
+    life: Duration,
+    minted: u64,
 }
 impl Installations {
     #[must_use]
@@ -95,7 +98,28 @@ impl Installations {
             rng: Rng::new(seed),
             next: 1,
             listed: limits.listed,
+            life: TOKEN_LIFE,
+            minted: 0,
         }
+    }
+
+    pub(crate) fn with_life(limits: &Limits, seed: u64, life: Duration) -> Self {
+        Self { life, ..Self::new(limits, seed) }
+    }
+
+    /// Number of successful mints, also the latest token's mint number.
+    #[must_use]
+    pub const fn minted(&self) -> u64 {
+        self.minted
+    }
+
+    pub(crate) fn identity(&self, bearer: &[u8]) -> Option<crate::Minted> {
+        for token in self.tokens.iter().flatten() {
+            if token.secret.expose() == bearer {
+                return Some(crate::Minted { installation: token.grant.installation, mint: token.mint });
+            }
+        }
+        None
     }
 
     /// Ids are sequential from 1 and are never reused (fake-forge.md, 10.4).
@@ -263,7 +287,7 @@ impl Installations {
         self.rows.iter().flatten()
     }
 
-    /// Mints `ghs_` and 36 seeded alphanumeric bytes, expiring an hour later.
+    /// Mints `ghs_` and 36 seeded alphanumeric bytes, expiring after the configured life.
     /// A full store drops its expired tokens first. A clock too near the end
     /// of `Wall` to hold the full life is refused as `Full`.
     pub fn mint(&mut self, id: u64, scope: Scope, now: Wall) -> Result<(Secret, Wall), Mint> {
@@ -271,7 +295,7 @@ impl Installations {
         if row.suspended {
             return Err(Mint::Suspended);
         }
-        let expires = Wall::from_nanos(now.as_nanos().checked_add(TOKEN_LIFE.as_nanos()).ok_or(Mint::Full)?);
+        let expires = Wall::from_nanos(now.as_nanos().checked_add(self.life.as_nanos()).ok_or(Mint::Full)?);
         if self.tokens.room() == 0 {
             for index in (0..self.tokens.len()).rev() {
                 let token = self.tokens.get(index).expect("stored row").as_ref().expect("packed token");
@@ -283,6 +307,7 @@ impl Installations {
         if self.tokens.room() == 0 {
             return Err(Mint::Full);
         }
+        let mint = self.minted.checked_add(1).ok_or(Mint::Full)?;
         let mut text = Writer::new(TOKEN_BYTES);
         text.put(b"ghs_").expect("token prefix");
         for _byte in 0_u32..36 {
@@ -291,8 +316,9 @@ impl Installations {
         }
         let secret = Secret::new(text.finish());
         self.tokens
-            .push(Some(Issued { secret: secret.clone(), grant: Grant { installation: id, scope }, expires }))
+            .push(Some(Issued { secret: secret.clone(), grant: Grant { installation: id, scope }, expires, mint }))
             .expect("token room checked");
+        self.minted = mint;
         Ok((secret, expires))
     }
 

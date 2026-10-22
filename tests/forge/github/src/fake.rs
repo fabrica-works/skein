@@ -49,6 +49,7 @@ fn limits() -> fake::Limits {
         body: 524_288,
         response: 1_048_576,
         blob_records: 32,
+        git_records: 16,
     }
 }
 fn config() -> domain::Config {
@@ -192,6 +193,7 @@ impl World {
         let cfg = fake::Config {
             rate_quota: 5000,
             rate_window: Duration::from_secs(3600),
+            token_life: skein_fake_forge_github::installations::TOKEN_LIFE,
             deliveries: fake::delivery::Config::standard(),
             base: boxed(b"http://127.0.0.1:1"),
             blob: boxed(b"http://logs.example.test"),

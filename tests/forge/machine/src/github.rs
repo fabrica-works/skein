@@ -79,6 +79,7 @@ impl Fake {
             deliveries: skein_fake_forge_github::delivery::Config::standard(),
             rate_quota: 5000,
             rate_window: Duration::from_secs(3600),
+            token_life: skein_fake_forge_github::installations::TOKEN_LIFE,
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(BLOB_ORIGIN),
             third_origin: third_origin.map(Box::from),
@@ -123,6 +124,7 @@ impl Fake {
             body: 4096,
             response: 8192,
             blob_records: 16,
+            git_records: 16,
         };
         let mut service = Service::new(config, &limits, seed).expect("valid fixture config");
         let mut listed = List::with_capacity(2);

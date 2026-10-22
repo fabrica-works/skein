@@ -44,7 +44,7 @@ const PASSES: u32 = 10_000;
 const BODY_BYTES: u32 = 4096;
 const RESPONSE_BYTES: u32 = 8192;
 
-fn limits() -> fake::Limits {
+pub(super) fn limits() -> fake::Limits {
     fake::Limits {
         deliveries: fake::delivery::Limits { entries: 64, payload_bytes: 32768 },
         http: skein_http::server::Limits {
@@ -69,9 +69,10 @@ fn limits() -> fake::Limits {
         body: BODY_BYTES,
         response: RESPONSE_BYTES,
         blob_records: 16,
+        git_records: 16,
     }
 }
-fn config() -> fake::Config {
+pub(super) fn config() -> fake::Config {
     let mut repositories = List::with_capacity(1);
     repositories
         .push(Row {
@@ -91,6 +92,7 @@ fn config() -> fake::Config {
     fake::Config {
         rate_quota: 5000,
         rate_window: skein_lib::Duration::from_secs(3600),
+        token_life: skein_fake_forge_github::installations::TOKEN_LIFE,
         deliveries: fake::delivery::Config::standard(),
         base: f::boxed(b"http://127.0.0.1:1"),
         blob: f::boxed(b"http://logs.example.test"),

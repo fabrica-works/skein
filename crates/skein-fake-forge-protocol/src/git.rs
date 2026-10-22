@@ -209,3 +209,14 @@ pub fn fits(protocol: &Limits, domain: &domain::Limits) -> bool {
         && documents.json.depth >= 5
         && documents.writer.depth >= 5
 }
+
+/// Answers a direct object-store call on the domain lent for this pass.
+/// `cap` bounds both requested objects and the returned object/parent walk.
+pub fn store_answer(
+    hosted: &mut crate::Hosted<'_>,
+    call: Call,
+    limits: &Limits,
+    cap: u32,
+) -> Result<Box<[u8]>, api::Error> {
+    store::answer(hosted, call, limits, cap)
+}

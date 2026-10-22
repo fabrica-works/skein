@@ -48,6 +48,7 @@ pub fn config() -> Config {
     Config {
         rate_quota: 5000,
         rate_window: Duration::from_secs(3600),
+        token_life: installations::TOKEN_LIFE,
         deliveries: crate::delivery::Config::standard(),
         base: boxed(b"http://127.0.0.1:3000"),
         blob: boxed(b"http://logs.example.test"),
@@ -93,6 +94,7 @@ pub fn limits() -> Limits {
         body: 4096,
         response: 8192,
         blob_records: 16,
+        git_records: 16,
     }
 }
 pub fn authorization(key: &[u8], issued: u64, expires: u64) -> Secret {

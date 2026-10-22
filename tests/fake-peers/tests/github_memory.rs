@@ -38,7 +38,8 @@ fn limits() -> Limits {
         queue: 64,
         plaintext: 32768,
         ciphertext: 32768,
-        observations: 128,
+        // Each added clone retains a head and one domain call observation.
+        observations: 128 + 2 * (f::limits().git_records + 1),
         observation_bytes: 131_072,
     }
 }
@@ -242,6 +243,21 @@ fn github_peer_full_stores_stay_within_worst_case() {
         assert!(world.receive(fd).starts_with(b"HTTP/1.1 404 "));
     }
     assert_eq!(world.peer.blob_records().expect("GitHub records").len(), f::limits().blob_records);
+    let bearer = tokens.first().unwrap().expose().strip_prefix(b"Bearer ").unwrap();
+    let mut login = b"x-access-token:".to_vec();
+    login.extend_from_slice(bearer);
+    let count =
+        skein_lib::base64::encoded_len(skein_lib::base64::Alphabet::Standard, u32::try_from(login.len()).unwrap())
+            .unwrap();
+    let mut header = skein_lib::Writer::new(usize::try_from(count).unwrap().saturating_add(6));
+    header.put(b"Basic ").unwrap();
+    skein_lib::base64::encode(skein_lib::base64::Alphabet::Standard, &login, &mut header).unwrap();
+    let auth = Secret::new(header.finish());
+    for _ in 0..=f::limits().git_records {
+        world.fetch("POST", b"/.fake/git/clone", br#"{"repository":"acme/widgets"}"#, Some(&auth), 200);
+    }
+    assert_eq!(world.peer.git_calls().unwrap().len(), f::limits().git_records);
+
     // Both connection slots retain parsed heads and partially received bodies.
     let clients = [world.open(), world.open()];
     for fd in clients {
