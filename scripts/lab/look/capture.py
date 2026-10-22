@@ -82,12 +82,15 @@ class Program:
             raise ProgramFailure("unexpected program output after its final answer")
 
     def dispose(self):
-        if self.child.poll() is None:
+        self.child.stdin.close()
+        try:
+            self.child.wait(timeout=self.seconds)
+        except subprocess.TimeoutExpired:
             try:
                 os.killpg(self.child.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        self.child.wait(timeout=self.seconds)
+            self.child.wait(timeout=self.seconds)
         self.selector.close()
         for stream in (self.child.stdin, self.child.stdout):
             stream.close()
@@ -254,6 +257,23 @@ def arguments(argv):
     return args, scenes, bwrap
 
 
+def remove_scratch(path):
+    for attempt in range(2):
+        try:
+            shutil.rmtree(path)
+        except OSError as error:
+            if not os.path.lexists(path):
+                return
+            if attempt == 1:
+                raise ProgramFailure(f"cannot remove scratch {path}: {error}") from error
+        else:
+            if not os.path.lexists(path):
+                return
+            if attempt == 1:
+                raise ProgramFailure(f"scratch reappeared: {path}")
+        time.sleep(0.1)
+
+
 def main(argv=None):
     os.umask(0o077)
     try:
@@ -268,7 +288,7 @@ def main(argv=None):
         if any(parent == Path(p) or Path(p) in parent.parents for p in ("/tmp", "/run")):
             parent = Path("/var/tmp")
         scratch = tempfile.mkdtemp(prefix=args.out.name + ".scratch-", dir=parent)
-        command = [bwrap, "--unshare-net", "--die-with-parent", "--ro-bind", "/", "/", "--dev", "/dev",
+        command = [bwrap, "--unshare-net", "--unshare-pid", "--die-with-parent", "--ro-bind", "/", "/", "--dev", "/dev",
                    "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", "/run", "--bind", scratch, scratch,
                    "--bind", str(args.out), str(args.out), "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--",
                    str(args.browser), "--chromium", str(args.chromium), "--fonts", str(args.fonts),
@@ -305,7 +325,11 @@ def main(argv=None):
         if program is not None:
             program.dispose()
         if scratch is not None:
-            shutil.rmtree(scratch)
+            try:
+                remove_scratch(scratch)
+            except ProgramFailure as error:
+                print("capture failed: " + str(error), file=sys.stderr)
+                return 1
 
 
 if __name__ == "__main__":

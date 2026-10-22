@@ -157,6 +157,7 @@ class Capture(unittest.TestCase):
                 self.assertIn(b"serve: origin:", origin_run.stderr)
                 self.assertTrue((origin_out / "browser.log").is_file())
                 self.assertFalse((origin_out / "capture.json").exists())
+                self.assertEqual(list(root.glob("*.scratch-*")), [])
                 failed = subprocess.run([*badargs[:2], "/bin/false", *badargs[3:], str(FIXTURE / "scene.json")],
                                         capture_output=True, timeout=5)
                 self.assertEqual(failed.returncode, 1, failed.stderr.decode())
