@@ -243,6 +243,9 @@ fn tree_restarts_when_a_go_overtakes_its_reply() {
         r#"{"nodes":[{"nodeId":"new","role":{"value":"RootWebArea"},"name":{"value":"New document"}}]}"#.into();
     world.ask(Request::Go { page: PAGE, op: GO, to: Go::Reload });
     world.release_delayed();
+    // The restarted read asks again at the loop's next turn, once the go has committed.
+    let now = world.env.now;
+    world.tick(now);
     let mut terminals = Vec::new();
     while let Some(event) = world.above.pop() {
         match event {
@@ -262,9 +265,11 @@ fn select_restarts_when_a_go_overtakes_its_reply() {
     let mut world = opened(Limits::default());
     world.fault(b"DOM.querySelector", Fault::Delay);
     world.ask(Request::Look { page: PAGE, op: OP, look: Look::Select { selector: b"#part".as_slice().into() } });
-    world.selected = 99;
     world.ask(Request::Go { page: PAGE, op: GO, to: Go::Reload });
     world.release_delayed();
+    // The restarted read asks again at the loop's next turn, once the go has committed.
+    let now = world.env.now;
+    world.tick(now);
     let mut terminals = Vec::new();
     while let Some(event) = world.above.pop() {
         match event {
@@ -273,7 +278,14 @@ fn select_restarts_when_a_go_overtakes_its_reply() {
             other => panic!("unexpected event: {other:?}"),
         }
     }
-    assert_eq!(terminals, vec![Some(99)], "select reads only the committed document");
+    // The fake describes every node as backend 7, so the restart shows in the commands: the
+    // selector is asked again of the committed document, after the reload.
+    assert_eq!(terminals, vec![Some(7)]);
+    let reload = world.sent.iter().position(|sent| contains(sent, b"Page.reload")).expect("the go reloads");
+    assert!(
+        world.sent[reload..].iter().any(|sent| contains(sent, b"DOM.querySelector")),
+        "select reads only the committed document"
+    );
     world.assert_commands_settled();
 }
 
@@ -289,6 +301,9 @@ fn style_restarts_when_a_go_removes_its_node() {
     world.gone = true;
     world.ask(Request::Go { page: PAGE, op: GO, to: Go::Reload });
     world.release_delayed();
+    // The restarted read asks again at the loop's next turn, once the go has committed.
+    let now = world.env.now;
+    world.tick(now);
     let mut terminals = Vec::new();
     while let Some(event) = world.above.pop() {
         match event {
@@ -319,4 +334,8 @@ fn exact_property_and_selector_input_limits_are_admitted() {
         let event = answer(&mut world, look);
         assert!(matches!(event, Event::Looked { .. }), "at the input limit: {event:?}");
     }
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|window| window == needle)
 }

@@ -343,7 +343,7 @@ fn style_of_hidden_element_has_values_but_no_box() {
 }
 
 #[test]
-fn style_faces_describe_own_text_without_descendant_faces() {
+fn style_faces_describe_the_text_within_the_node() {
     let (scratch, mut child, mut reader) = start();
     let address = serve(&scratch, &mut child, &mut reader, "fixture", FIXTURE);
     open(&mut child, &mut reader, PAGE);
@@ -353,7 +353,9 @@ fn style_faces_describe_own_text_without_descendant_faces() {
         call(&mut child, &mut reader, &format!(r#"{{"call":"style","node":{node},"page":{PAGE:?},"properties":[]}}"#));
     let Value::Array(faces) = field(field(&answer, "style"), "faces") else { panic!("{answer:?}") };
     let families: Vec<_> = faces.iter().map(|face| text(field(face, "family"))).collect();
-    assert_eq!(families, vec!["DejaVu Sans"], "own text only: {answer:?}");
+    // Chromium reports the faces of the text within the node, its descendants' among them
+    // (browser.md, 5.1).
+    assert!(families.contains(&"DejaVu Sans") && families.contains(&"DejaVu Serif"), "{answer:?}");
     for face in faces {
         assert!(matches!(field(face, "custom"), Value::Bool(false)), "{answer:?}");
         assert!(integer(field(face, "glyphs")) > 0, "{answer:?}");

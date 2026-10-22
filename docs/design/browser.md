@@ -315,8 +315,8 @@ pub struct Face  { family: Box<[u8]>, custom: bool, glyphs: u32 }   // custom: a
 - **A style** reads a node's computed values for the properties named,
   in the order named, each whole, as the browser computes them (`16px`,
   `rgb(17, 17, 17)`), refused `Limit` past `Limits::text`, and empty for
-  a property the browser does not compute; the faces that drew the node's
-  own text, by family, whether a web font, and their glyphs; and its
+  a property the browser does not compute; the faces that drew the text
+  within the node, its descendants' among them, by family, whether a web font, and their glyphs; and its
   border box in the document's CSS pixels, none for a node without a box
   (one not displayed). Its faces past `Limits::entries` are refused
   `Limit`. A find's boxes are content

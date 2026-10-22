@@ -183,6 +183,16 @@ impl World {
                         } else {
                             None
                         };
+                        // As Chromium does, a navigation starts loading before its command is answered.
+                        if method.as_ref() == b"Page.navigate"
+                            || method.as_ref() == b"Page.reload"
+                            || method.as_ref() == b"Page.navigateToHistoryEntry"
+                        {
+                            replies.push_back(
+                                b"{\"method\":\"Page.frameStartedLoading\",\"sessionId\":\"s1\",\"params\":{\"frameId\":\"f1\"}}\0"
+                                    .to_vec(),
+                            );
+                        }
                         match fault {
                             Some(Fault::Drop) => {}
                             Some(Fault::Delay) => self.delayed.push_back(reply),

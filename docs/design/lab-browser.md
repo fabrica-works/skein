@@ -180,8 +180,8 @@ a node by the kit (browser.md, section 5).
 - **`SEEN`** is `{"node","role","name","box"}`, and **`RECT`**
   `{"x","y","width","height"}`, in whole CSS pixels of the document.
 - **`style`'s values** are Chromium's computed values, as strings, for
-  the properties named; `faces`, the faces that drew the node's own
-  text, by family, whether a web font (`custom`), with their glyphs'
+  the properties named; `faces`, the faces that drew the text within
+  the node, its descendants' among them, by family, whether a web font (`custom`), with their glyphs'
   count; `box`, the node's border box.
 - **`trouble`'s kinds** are the kit's (`exception`, `console`, `log`,
   `crash`, `dialog`) and the proxy's `network`.
