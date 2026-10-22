@@ -93,8 +93,9 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
 ### 2.3 Origins
 
 - **`serve` reads a directory whole:** its regular files, under the
-  limits of a file's and the origin's bytes and their count, refused
-  past any, and links and special files refused. It answers every
+  limits of a file's and the origin's bytes and their count (8 MiB,
+  64 MiB and 4096 files), refused `limit` past any, and links and
+  special files refused `origin`; at most 8 origins. It answers every
   `GET` of a file's path with the file and a type by its extension, and
   anything else not found.
 - **One origin each:** each `serve` binds a listener of its own on
@@ -121,7 +122,14 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   the last, whichever page asked: the capture keeps one page open at a
   time.
 - **No resolver:** Chromium's host resolver maps every name to none
-  (`--host-resolver-rules`), so nothing is looked up.
+  but `127.0.0.1`, the origins' own address, which the rule would map
+  too (`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`), so
+  nothing is looked up.
+- **Loopback goes direct,** whatever its port: a page could reach
+  another listener on the machine's loopback, which no lab page names.
+- **Its bounds:** a request's first line is read up to 8 KiB, and a
+  `trouble` reports at most 64 refusals, the rest as one `network`
+  entry counting them.
 
 ### 2.5 Fonts
 
