@@ -146,7 +146,8 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
 - **Chromium's own requests are off:** the program starts Chromium
   with the switches that stop its background services (component
   updates, sync, safe browsing, autofill's server, field trials, the
-  default apps, metrics and pings), beside the kit's command, so that
+  default apps, metrics and pings), and with a preference for the one
+  no switch stops (spellcheck), beside the kit's command, so that
   a `trouble`'s `network` entries are the pages' own. Its scrollbars
   are hidden too, so that no shot depends on them: a viewport's shot is
   its width by its height, whether the page scrolls or not. Each switch
@@ -166,6 +167,14 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
     preconnections (`www.google.com`) are off by their features.
   - **Accounts and messaging:** Gaia's and GCM's addresses are a
     blocked loopback port, which Chromium refuses before connecting.
+  - **Spellcheck:** its dictionary's download
+    (`redirector.gvt1.com`), asked once a typed field is checked, has no
+    switch that stops it, so the program writes the fresh profile's
+    preferences (`Default/Preferences` in the profile, in its scratch
+    directory) before it starts Chromium: spellcheck off
+    (`browser.enable_spellchecking`) and no dictionary
+    (`spellcheck.dictionaries` empty). A typed field shows no spelling
+    marks.
 
   These hold for the lab's Chromium, the one its settings name. That
   a blank page asks for nothing is the capture's process tier's to

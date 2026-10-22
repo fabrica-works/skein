@@ -61,6 +61,11 @@ const CAPTURE_SWITCHES: &[&str] = &[
          NetworkTimeServiceQuerying,AimEnabled",
     "--hide-scrollbars",
 ];
+// lab-browser.md, 2.4: spellcheck downloads its dictionary once a typed
+// field is checked, and no switch stops it; the fresh profile's
+// preferences turn spellcheck off and name no dictionary.
+const PREFERENCES: &str =
+    r#"{"browser":{"enable_spellchecking":false},"spellcheck":{"dictionaries":[],"dictionary":""}}"#;
 fn capture_args(kit_args: &List<Box<[u8]>>, proxy: std::net::SocketAddr) -> List<Box<[u8]>> {
     let switch_count = u32::try_from(CAPTURE_SWITCHES.len()).expect("capture switches fit u32");
     let mut args = List::with_capacity(kit_args.len() + 2 + switch_count);
@@ -237,10 +242,11 @@ impl Runtime {
         Ok(())
     }
     fn spawn(&mut self, config: &Config, fonts: &Path) -> Result<(), String> {
-        let mut command = browser::command::command(
-            config.chromium.as_os_str().as_bytes(),
-            config.scratch.join("profile").as_os_str().as_bytes(),
-        );
+        let profile = config.scratch.join("profile");
+        std::fs::create_dir_all(profile.join("Default")).map_err(|e| e.to_string())?;
+        std::fs::write(profile.join("Default/Preferences"), PREFERENCES).map_err(|e| e.to_string())?;
+        let mut command =
+            browser::command::command(config.chromium.as_os_str().as_bytes(), profile.as_os_str().as_bytes());
         command.args = capture_args(&command.args, self.proxy.address.expect("bound proxy"));
         if let Some(hand) = &config.hand {
             let mut args = command.args.into_boxed().into_vec();

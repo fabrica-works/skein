@@ -330,6 +330,15 @@ fn browser_hand() {
             .any(|entry| field(entry, "kind") == &string("network") && field(entry, "text") == &string(&host)),
         "{trouble:?}"
     );
+    // lab-browser.md, 2.4: the fields typed into above leave no request of
+    // Chromium's own (spellcheck's dictionary); the other origin is the
+    // page's only network entry.
+    assert!(
+        entries
+            .iter()
+            .all(|entry| field(entry, "kind") != &string("network") || field(entry, "text") == &string(&host)),
+        "{trouble:?}"
+    );
     assert!(
         entries
             .iter()
