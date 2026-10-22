@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 
 os.umask(0o077)
@@ -421,6 +422,30 @@ def safe_environment():
     return {key: value for key, value in os.environ.items() if not banned.search(key)}
 
 
+def selects_kache():
+    # Cargo may select a wrapper through config even when no wrapper variable
+    # is exported. Inspect only wrapper selections, never credential files.
+    names = ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER',
+             'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER')
+    selected = [os.environ.get(name, '') for name in names]
+    cargo_home = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo')))
+    directories = [cargo_home, *(parent / '.cargo' for parent in (Path.cwd(), *Path.cwd().parents))]
+    for directory in directories:
+        path = directory / 'config'
+        if not path.is_file():
+            path = directory / 'config.toml'
+        if not path.is_file():
+            continue
+        with path.open('rb') as source:
+            config = tomllib.load(source)
+        build = config.get('build', {})
+        selected.extend(build.get(name, '') for name in ('rustc-wrapper', 'rustc-workspace-wrapper'))
+        for name in names:
+            value = config.get('env', {}).get(name, '')
+            selected.append(value.get('value', '') if isinstance(value, dict) else value)
+    return any(isinstance(value, str) and 'kache' in value for value in selected)
+
+
 def environment_file(path, env):
     # systemd EnvironmentFile syntax: double quotes, escaped slash/quote/dollar/
     # backtick; literal newlines are supported inside the quoted value.
@@ -597,7 +622,7 @@ def wrapper(token):
             if ready:
                 # Lazy-starting kache here would place the shared daemon inside
                 # this task. Its separate user service must already own it.
-                if 'kache' in os.environ.get('RUSTC_WRAPPER', '') and run(
+                if selects_kache() and run(
                         ['systemctl', '--user', 'is-active', '--quiet', 'kache.service']).returncode:
                     task['state'], task['code'] = 'finishing', 2
                     ledger.event(task, 'refusal', reason='shared kache service is not active')

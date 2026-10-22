@@ -296,6 +296,30 @@ def unsupported(lab):
     lab.done(lab.start('progress'))
 
 
+def configured_kache(lab):
+    cargo = lab.path / 'cargo-home'
+    cargo.mkdir()
+    (cargo / 'config.toml').write_text('[build]\nrustc-wrapper = "kache"\n')
+    lab.env['CARGO_HOME'] = str(cargo)
+    shim = lab.path / 'offline-cache-bin'
+    shim.mkdir()
+    real = lab.call(['which', 'systemctl']).stdout.strip()
+    stub = shim / 'systemctl'
+    stub.write_text('#!/usr/bin/env python3\nimport os,sys\n'
+        'if "is-active" in sys.argv and "kache.service" in sys.argv: sys.exit(1)\n'
+        'os.execv(' + repr(real) + ', [' + repr(real) + '] + sys.argv[1:])\n')
+    stub.chmod(0o700)
+    previous = lab.env['PATH']
+    lab.env['PATH'] = str(shim) + ':' + previous
+    marker = lab.path / 'must-not-start'
+    child = lab.start('configured-cache', gate=True, args=['touch', str(marker)])
+    lab.done(child, 2)
+    assert not marker.exists() and not lab.event('configured-cache', 'scope_enter')
+    assert lab.event('configured-cache', 'refusal')
+    lab.env['PATH'] = previous
+    lab.done(lab.start('progress'))
+
+
 def kill_at(lab, point):
     lab.arm(point)
     gate = lab.start('gate', gate=True)
@@ -485,7 +509,8 @@ def main():
     opts = parser.parse_args()
     root = opts.evidence.resolve()
     root.mkdir(parents=True, exist_ok=False)
-    cases = [('normal', normal), ('unsupported', unsupported), ('intent', lambda lab: kill_at(lab, 'intent')),
+    cases = [('normal', normal), ('unsupported', unsupported), ('configured-kache', configured_kache),
+             ('intent', lambda lab: kill_at(lab, 'intent')),
              ('intent-fsync', lambda lab: kill_at(lab, 'intent_fsynced')),
              ('submit-event-fsync', lambda lab: kill_at(lab, 'events_fsynced')),
              ('enqueue-intent', lambda lab: kill_at(lab, 'enqueue_intent')),

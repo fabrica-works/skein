@@ -37,7 +37,8 @@ only tasks submitted through this admission path. Deployment requires a
 quiet migration from an older queue: arbitrary queued commands have no
 owned cgroup ledger, so their completion cannot be proved through this
 interface. Calling pueue directly to submit or restart tasks bypasses
-this contract. Unsupported containment refuses admission visibly.
+this contract. Unsupported containment refuses admission visibly. The helper requires
+Python 3.11 or newer and uses only its standard library.
 
 `DEV_ROOT` selects the workspace and `DEV_TMP/heavy` holds host state.
 All callers sharing a queue must share this state directory. An alternate
@@ -96,7 +97,8 @@ a systemd unit creation delayed past orphan release cannot run a payload.
 Unit names are unique for the token and are never reused. Finishing a
 payload kills private daemons in the same cgroup before freeing capacity.
 The shared kache daemon runs in its own active user service; heavy refuses
-a selected kache wrapper if that service is inactive, and never lazily
+a kache wrapper selected through environment or Cargo configuration if
+that service is inactive, and never lazily
 starts kache inside a task. Collection connects to the existing service.
 
 Before resuming a group, recovery checks the durable maintenance holds.
