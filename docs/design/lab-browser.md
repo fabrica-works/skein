@@ -43,6 +43,12 @@ program grown, and is not designed here (section 8).
   shots side by side, each region cropped from both at twice the scale,
   and a difference image with its PSNR where a region's content matches
   (5.3).
+- **Two checks hold a capture to its scene:** `look-structure` (the
+  outlines' entries, the regions' order on the screen, readiness and
+  trouble) and `look-style` (the regions' values), each against the
+  mockup as captured, overridden by the scene's expectations and
+  excused by its departures, which name what they accept and why
+  (5.4). They read only the scene file and the capture's record.
 - **Tested where each part lives:** the kit's reads in the kit's own
   tests, the program by one story on real Chromium in skein's browser
   suite, the capture's decisions in the runner's unit tier and its
@@ -130,6 +136,11 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   The program does not close it; its caller does, starting it in a
   network namespace of its own, whose loopback holds only the program's
   listeners. The capture does (5.1).
+- **Chromium's own requests are off:** the program starts Chromium
+  with the switches that stop its background services (component
+  updates, sync, safe browsing, autofill's server, field trials, the
+  default apps, metrics and pings), beside the kit's command, so that
+  a `trouble`'s `network` entries are the pages' own.
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
@@ -242,15 +253,37 @@ bytes.
 - **`names`:** the words the structure shows (5.3): the frame's and the
   controls', never content. Each nonempty, none repeated.
 - **`expectations` and `departures`:** lists, the look's checks'
-  (qa-web.md, 5.3), which the capture does not read.
+  (5.4), which the capture checks and does not use. Each entry has an
+  `id`, a name unique among the scene's expectations and departures; a
+  `width`, one of the scene's widths' names; and `cites`, nonempty
+  text naming the decision or the section that holds it.
+  - **An expectation** is `{"id", "width", "region", "property",
+    "value", "cites"}`, the page's region having that value of the
+    property, or `{"id", "width", "entry", "count", "cites"}`, the
+    page's outline holding that entry `count` times (0 for none). A
+    `property` is one of 5.3's, `faces`, `x`, `y`, `width`, `height` or
+    `shown`, and its `value` is text as `style.md` shows it: a
+    computed value, the faces as their families (` (web)` after a web
+    font's) sorted and joined by `, `, a box member in decimal, `yes`
+    or `no`.
+  - **An entry** is an outline line's text without its indentation,
+    after its enclosing landmarks' texts, each followed by ` > `:
+    `banner > navigation "Main navigation" > link "Chats"`.
+  - **A departure** is `{"id", "width", "signature", "cites"}`, a
+    difference accepted by its signature's part after
+    `<scene>/<width>/` (`style/banner/faces`), or `{"id", "width",
+    "entry", "cites"}`, any difference in that entry's count.
 - **Refused,** every problem named with its member, before the browser
   starts: bytes not canonical, another format, a missing, unknown or
   mistyped member, a name not matching or repeated (a scene's among the
-  command's scenes, a width's or a region's in its scene), a finder with
+  command's scenes, a width's or a region's in its scene, an
+  expectation's or a departure's id), a finder with
   both a role and a selector or neither, a selector on the page's side
   or in a readiness, another `match`, a path or a size out of its rule,
   a region's mockup finder in a scene without a mockup, or none in one
-  with, a region named `page`.
+  with, a region named `page`, an expectation or a departure naming a
+  width or a region the scene lacks, a property not listed above, a
+  negative count, an empty `cites` or signature.
 
 ## 5. The capture
 
@@ -422,6 +455,76 @@ REFUSED {"refused", "detail"}
 - **Images** are PNG, read as 8-bit RGB or RGBA without interlace,
   as Chromium writes them, and written as 8-bit RGB.
 
+### 5.4 Its checks
+
+```
+scripts/lab/look/check structure|style --capture DIR SCENE...
+```
+
+Two check commands by lab.md's contract (7.2): `structure`, which an
+experiment names `look-structure`, and `style`, named `look-style`.
+Each reads `DIR/capture.json` and the scene files, and the record's
+files it needs, and nothing else; it starts no browser.
+
+- **What it reads must hold:** the record a `look-capture/1`, each
+  scene named in it and its file's digest the record's `scene`, each
+  file it reads its record's size and digest. Anything else (a file
+  missing or unreadable, a scene absent or changed) is could not judge,
+  status 2, an `undecided` line naming it; so is a part it needs whose
+  call was refused, or a region's mockup part not found (the scene's
+  finder, not the page, is wrong), reported for that region alone while
+  the rest is judged.
+- **Its signatures** are `<scene>/<width>/` and a tail naming a kind and
+  what it names, never a value; the values go in the summary.
+- **The expected page,** for each scene at each width:
+  - **the base:** the mockup's side as captured, when the scene has
+    one: its outline's entries with their counts, and each region's
+    values where its mockup part was found. A scene without a mockup
+    has none: what it holds the page to is its expectations alone;
+  - **expectations** override the base, entry by entry and property by
+    property;
+  - **departures** accept: a difference whose signature, or whose
+    entry, a departure of its width names is not reported. A departure
+    that accepts nothing in the capture fails `departure-gone/<id>`, in
+    the check whose kinds its signature names (`style` for `style/...`,
+    `structure` for every other, and an entry's), so the list stays
+    true once the page or the mockup comes to agree.
+- **`look-structure`:**
+  - `ready/<side>`: a side whose readiness was missed or refused;
+  - `trouble/<side>/<kind>`, and `trouble/<side>/network/<host:port>`
+    for each host the proxy refused, once each however many entries:
+    what a side's `trouble` reported. A mockup's own trouble (a font
+    stylesheet on another host) is a departure; the page's, a finding;
+  - `missing/<role>[/<name>]` and `extra/<role>[/<name>]`: an entry the
+    page's outline holds fewer times than expected, or more. `<role>`
+    is the line's text before its name, spaces as `-` and parentheses
+    dropped (`heading-2`, `list-3`); `<name>` is the name the line
+    shows, if any, its bytes outside `[A-Za-z0-9._~-]` percent-encoded
+    (`Adopt%20a%20repository`). Entries in different landmarks with
+    one signature give one line, the summary naming each;
+  - `missing/<role>[/<name>]` too for a region whose page part is not
+    found while its mockup's is, or while an expectation names it, by
+    its page finder's role and name;
+  - `order/<region>`, with a mockup: the regions drawn on both sides,
+    ordered by their boxes, region A before B when A's bottom is at
+    most B's top, within a pixel, or, the two overlapping vertically,
+    A's right at most B's left. A pair ordered one way on the mockup
+    and the other on the page is inverted. While a pair is inverted,
+    the region in the most inverted pairs, the later in the scene's
+    `regions` on a tie, is out of order and leaves the count: so the
+    region that moved is named, not those it passed. Order is by the
+    screen, since a stylesheet moves a part without moving it in the
+    tree; a part moved in the tree alone shows in the outline's text
+    and its diff.
+- **`look-style`:** for each region whose page part was found, each
+  property with an expected value, `style/<region>/<property>` when the
+  page's disagrees by 5.3's rule: 5.3's properties, `faces`, the box's
+  `x`, `y`, `width` and `height`, and `shown`, the part drawn on one
+  side and not on the other, whose box is then not compared.
+- **Pure decisions:** the expected page, the comparisons, the order,
+  the signatures and the departures are functions of the records and
+  texts read, beside the command that reads them.
+
 ## 6. Tests
 
 - **The kit's reads** are the kit's (browser.md, 9 and 5.1): its step
@@ -436,7 +539,9 @@ REFUSED {"refused", "detail"}
   a selector's node, a style, a clipped shot at scale 2, a page whose
   external stylesheet the proxy refuses (its `network` trouble, and the
   page drawn without it), a call refused, and the end of its input
-  closing everything.
+  closing everything. Its blank page, opened first at each of the two
+  sizes, reports no trouble once the story's other calls are done:
+  Chromium's services asked for nothing.
 - **The capture's decisions** in the runner's unit tier (lab.md, 10.3),
   pure: the scene file and each refusal of section 4; the outline from
   a tree, with landmarks nested, levels, a list's items and names shown
@@ -445,7 +550,15 @@ REFUSED {"refused", "detail"}
   faces); the content's three answers; PNG's reading (RGB, RGBA, each
   filter) and writing; the side by side; the difference image and the
   PSNR on small images, equal, one pixel off, and of unequal sizes; the
-  record's canonical form.
+  record's canonical form; the scene's expectations and departures and
+  their refusals.
+- **The checks' decisions** in the same tier, on records and texts
+  written as fixtures, with no browser: each signature of 5.4 from a
+  record that shows it and none from one that doesn't; the base, an
+  expectation overriding it and a scene without a mockup; a departure
+  accepting by signature and by entry, and gone; the order from both
+  sides of its pixel, a region moved past two, a tie, a part not
+  drawn; each could-not-judge; the statuses and lines of lab.md, 7.2.
 - **The capture's run** in the runner's process tier: the built program
   (`SKEIN_LAB_BROWSER`), Chromium (`SKEIN_TEST_CHROMIUM`) and the fonts
   (`SKEIN_TEST_FONTS`, else Debian's directory, as the program's story)
@@ -486,10 +599,12 @@ REFUSED {"refused", "detail"}
   stack) are the machine's, so they are not in the key. Shots under one
   key may still differ between machines; a capture's record says which
   machine made it only through the run's `about`.
-- **By hand, for now:** until the look experiment (qa-web.md, section
-  5) runs it as its collection, the capture runs on demand, with the
-  same paths. It runs in no gate, and its shots are evidence, never
-  goldens.
+- **In a product's look experiment:** the capture as its collection,
+  `{runner}/look/capture` with the settings' browser by its templates,
+  and the checks as its checks, `{runner}/look/check`, so that the key
+  holds both through the runner's tree (temper's `lab/look/`). The
+  capture also runs by hand, with the same paths. Neither runs in a
+  gate, and the shots are evidence, never goldens.
 
 ## 8. Open questions
 
@@ -500,9 +615,7 @@ REFUSED {"refused", "detail"}
 - **Pages that animate** past reduced motion: readiness by a part
   shown holds for a static page; a page that moves after it would need
   an expectation of its own.
-- **Chromium's own requests:** its background services (`www.google.com`,
-  `content-autofill.googleapis.com`, `clients2.google.com`) reach the
-  proxy and are refused, so `trouble` lists them as `network` beside the
-  page's own (temper's chats mockup, at M2's hand capture). The look's
-  checks (M3) must tell the page's from Chromium's, or the program turn
-  those services off.
+- **A part moved in the tree alone,** its box where the mockup has it:
+  the outline's text and diff show it to the judge, and no check
+  signs it, since the record does not say which region an entry is
+  in.

@@ -1111,8 +1111,9 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   (10.4), held to vectors the port is held to as well (10.3).
 - **In `scripts/lab/`,** outside skein's workspace and its builds:
   `lab`, the command; `runner/`, its package (10.4); `look/`, the
-  look's capture, its command `look/capture`, its fonts' maker
-  `look/fonts` and their package (lab-browser.md, 5 and 7);
+  look's capture, its command `look/capture`, its checks `look/check`,
+  its fonts' maker `look/fonts` and their package (lab-browser.md, 5
+  and 7);
   `preamble/`, the driver's and the triager's preambles; `schemas/`,
   the report's and the triage's; `tests/`, its tests and their support
   (10.3). The capture runs as `lab` does, isolated.
