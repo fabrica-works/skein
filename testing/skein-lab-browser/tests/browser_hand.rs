@@ -179,12 +179,14 @@ fn look_reads(client: &mut Client, out: &Path) {
     let before = client.call(&caret_style);
     let shot = client.call(&look_shot("phone.png", Value::Null, 1));
     check_png(&shot, out, "look/phone.png", PHONE);
-    // browser.md, 5.1: a focused textarea draws one picture through its blink interval.
+    // browser.md, 5.1: a focused textarea draws one picture through its
+    // blink. Chromium toggles a blinking caret every 500 ms, so three shots
+    // 300 ms apart span a toggle wherever the phase starts.
     let digest = field(field(&shot, "shot"), "sha256");
     let clock = skein_shell::Clock::new();
     let mut next = clock.now().now;
-    for index in 1..10 {
-        next = next.saturating_add(Duration::from_millis(150));
+    for index in 1..3 {
+        next = next.saturating_add(Duration::from_millis(300));
         let delay = next.as_nanos().saturating_sub(clock.now().now.as_nanos());
         std::thread::sleep(std::time::Duration::from_nanos(delay));
         let answer = client.call(&look_shot(&format!("caret-{index}.png"), Value::Null, 1));

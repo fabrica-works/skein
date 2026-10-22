@@ -30,7 +30,8 @@ const BROWSER: Token = Token::new(u64::MAX - 2);
 const ROOT: Token = Token::new(u64::MAX);
 const POLL: Duration = Duration::from_millis(10);
 // lab-browser.md, 2.4: trouble contains the page's requests alone;
-// viewport shots have no scrollbar gutter and redraw the whole raster.
+// viewport shots have no scrollbar gutter, redraw the whole raster, and
+// keep a viewport in one raster tile, so no tile seams.
 const CAPTURE_SWITCHES: &[&str] = &[
     "--disable-background-networking",
     "--disable-component-update",
@@ -61,6 +62,10 @@ const CAPTURE_SWITCHES: &[&str] = &[
          NetworkTimeServiceQuerying,AimEnabled",
     "--hide-scrollbars",
     "--disable-partial-raster",
+    "--default-tile-width=2048",
+    "--default-tile-height=2048",
+    "--max-untiled-layer-width=2048",
+    "--max-untiled-layer-height=2048",
 ];
 // lab-browser.md, 2.4: spellcheck downloads its dictionary once a typed
 // field is checked, and no switch stops it; the fresh profile's
@@ -902,7 +907,17 @@ mod tests {
         for (arg, expected) in capture.iter().zip(CAPTURE_SWITCHES) {
             assert_eq!(arg.as_ref(), expected.as_bytes());
         }
-        assert_eq!(capture.last().unwrap().as_ref(), b"--disable-partial-raster");
+        // lab-browser.md, 2.4: the stable shot's whole set, in order.
+        let stable: &[&[u8]] = &[
+            b"--hide-scrollbars",
+            b"--disable-partial-raster",
+            b"--default-tile-width=2048",
+            b"--default-tile-height=2048",
+            b"--max-untiled-layer-width=2048",
+            b"--max-untiled-layer-height=2048",
+        ];
+        let tail: Vec<&[u8]> = capture[capture.len() - stable.len()..].iter().map(AsRef::as_ref).collect();
+        assert_eq!(tail, stable);
         assert_eq!(kit.last().unwrap().as_ref(), b"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1");
         assert!(kit.iter().any(|arg| arg.as_ref() == b"--proxy-server=http://127.0.0.1:12345"));
     }

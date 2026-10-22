@@ -196,11 +196,20 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   `qa-web.md`, 3.4). A page's first drawing is the same either way,
   byte for byte. Switching off the GPU, its compositing or its raster
   as well changed no shot, so they stay as the kit sets them.
-- **Tile seams remain:** with partial raster off and the kit's steady
-  caret (browser.md, 5.1), a region's crop is one picture across fresh
-  browsers, but a viewport's shot may still differ at the raster's tile
-  seams: one row or column, a few pixels, a shade or three apart
-  (section 9).
+- **One tile a viewport:** the program also starts Chromium with its
+  raster tiles and its untiled layers 2048 pixels square
+  (`--default-tile-width=2048`, `--default-tile-height=2048`,
+  `--max-untiled-layer-width=2048`, `--max-untiled-layer-height=2048`),
+  so a viewport the lab shoots is drawn in one tile, with no seams:
+  with partial raster off alone, a viewport's shot still differed
+  between fresh browsers at the tile seams, a few pixels on one row or
+  column, a shade or three apart. The tile size alone does not hold,
+  since Chromium tiles a layer past its untiled limits whatever the tile
+  size (`cc/layers/tile_size_calculator.cc`). With the four, six
+  captures of temper's look held one digest for every viewport and
+  crop, in 63.9 s a capture against 65.9 s; they draw edges and corners
+  a shade apart from the default tiling, so a first drawing differs
+  from the one before them, once.
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
@@ -1085,9 +1094,6 @@ answers to the lab alone.
 
 ## 9. Open questions
 
-- **A viewport's tile seams:** larger raster tiles change a page's
-  first drawing and still vary; a picture keyed by its crops alone, as
-  a live scene's is (temper's `lab/README.md`), is the fallback.
 - **A dark scheme** for a product whose look follows the system's.
 - **Pages that animate** past reduced motion: readiness by a part
   shown holds for a static page; a page that moves after it would need
