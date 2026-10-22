@@ -717,8 +717,11 @@ below are tracked in STATUS.md.
   - an installation's token, which the layer mints;
   - the App's JSON Web Token, which the layer checks by signing the
     token's signing input again with the App's key: RS256 with PKCS#1
-    v1.5 is deterministic, so it needs no verifying function. A token
-    past its `exp`, or more than 600 seconds after its `iat`, or not
+    v1.5 is deterministic, so it needs no verifying function. The layer
+    keeps the last token it verified, its exact bytes and its claims, so
+    the same token again under the same key skips the signing; a new key
+    or a revoked one forgets it, and the claims are checked on every
+    request. A token past its `exp`, or more than 600 seconds after its `iat`, or not
     yet valid by more than 60 seconds on the forge's clock, is `401`.
 
   The App's routes on another kind are `401`. `GET /user` on an
