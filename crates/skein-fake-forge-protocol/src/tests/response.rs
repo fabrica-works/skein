@@ -82,9 +82,6 @@ fn a_merge_answers_200_with_no_body() {
             b"".as_slice(),
         ),
         (Request::Update { at: at(), number: 1, style: None }, 200, b""),
-        (Request::RequestReviewers { at: at(), number: 1, reviewers: Box::new([boxed(b"person")]) }, 200, b""),
-        (Request::RemoveReviewers { at: at(), number: 1, reviewers: Box::new([boxed(b"person")]) }, 200, b""),
-        (Request::DeleteBranch { at: at(), branch: boxed(b"work") }, 200, b""),
     ] {
         assert_eq!(response::follow(&request, &a::Answer::Done), Ok(None), "{request:?}");
         assert_eq!(
@@ -100,6 +97,33 @@ fn a_merge_answers_200_with_no_body() {
             "{request:?}"
         );
     }
+}
+#[test]
+fn reviewer_removal_and_branch_deletion_answer_204_with_no_body() {
+    for request in [
+        Request::RemoveReviewers { at: at(), number: 1, reviewers: Box::new([boxed(b"person")]) },
+        Request::DeleteBranch { at: at(), branch: boxed(b"work") },
+    ] {
+        assert_eq!(response::follow(&request, &a::Answer::Done), Ok(None), "{request:?}");
+        assert_eq!(done_reply(&request), response::Reply { status: 204, headers: Box::from([]), body: Box::from([]) });
+    }
+}
+#[test]
+fn a_reviewer_request_answers_201_with_no_body() {
+    let request = Request::RequestReviewers { at: at(), number: 1, reviewers: Box::new([boxed(b"person")]) };
+    // Forgejo sends the pull's reviews, which the client does not read.
+    assert_eq!(done_reply(&request), response::Reply { status: 201, headers: Box::from([]), body: Box::from([]) });
+}
+fn done_reply(request: &Request) -> response::Reply {
+    response::answer(
+        &config(),
+        &crate::setup::Store::new(&limits()),
+        &limits(),
+        request,
+        &Select::Document,
+        &a::Answer::Done,
+    )
+    .expect("bodyless write")
 }
 #[test]
 fn write_responses_keep_the_readbacks_author_text_and_time() {
@@ -130,7 +154,7 @@ fn write_responses_keep_the_readbacks_author_text_and_time() {
         &readback,
     )
     .expect("document");
-    assert_eq!(reply.status, 200);
+    assert_eq!(reply.status, 201);
     for expected in [
         b"\"id\":2".as_slice(),
         b"\"title\":\"existing title\"",

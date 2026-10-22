@@ -220,11 +220,14 @@ pub fn select(config: &Config, request: &Request, range: Option<Range>) -> Resul
 }
 fn status(request: &Request) -> u16 {
     match crate::route(request) {
-        crate::Route::CreateIssue
+        crate::Route::EditIssue
+        | crate::Route::RequestReviewers
+        | crate::Route::CreateIssue
         | crate::Route::OpenPull
         | crate::Route::PostComment
         | crate::Route::PostStatus
         | crate::Route::CreateBranch => 201,
+        crate::Route::RemoveReviewers | crate::Route::DeleteBranch => 204,
         crate::Route::UserOf
         | crate::Route::Tokens
         | crate::Route::CreateToken
@@ -278,12 +281,8 @@ fn status(request: &Request) -> u16 {
         | crate::Route::Jobs
         | crate::Route::JobLog
         | crate::Route::PostReview
-        | crate::Route::EditIssue
-        | crate::Route::RequestReviewers
-        | crate::Route::RemoveReviewers
         | crate::Route::Merge
-        | crate::Route::Update
-        | crate::Route::DeleteBranch => 200,
+        | crate::Route::Update => 200,
     }
 }
 #[must_use]

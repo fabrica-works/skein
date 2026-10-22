@@ -408,3 +408,80 @@ fn forgejo_pull_is_false_while_mergeability_is_checking() {
     assert!(!pull.mergeable);
     assert!(bytes::find(&h.body(), b"\"mergeable\":false").is_some());
 }
+
+#[test]
+fn an_issue_title_edit_answers_201_and_reads_back() {
+    let mut h = Harness::new(fixtures::config());
+    let number = h.issue(b"before");
+    let request =
+        Request::EditIssue { at: fixtures::at(), number, title: Some(boxed(b"after")), body: None, state: None };
+    h.send(&request);
+    assert_eq!(h.status(), 201);
+    let Document::Issue(issue) = h.decoded(&request).document else { panic!("issue response") };
+    assert_eq!(&*issue.title, b"after");
+    let Ok(a::Answer::Item { item, .. }) = h.call(fixtures::PERSON, Op::Read(Read::Item { number, after: 0 })) else {
+        panic!("edited issue")
+    };
+    assert_eq!(&*item.title, b"after");
+}
+#[test]
+fn an_issues_close_and_reopen_answer_201() {
+    let mut h = Harness::new(fixtures::config());
+    let number = h.issue(b"issue");
+    for state in [skein_forge::forgejo::document::IssueState::Closed, skein_forge::forgejo::document::IssueState::Open]
+    {
+        let request = Request::EditIssue { at: fixtures::at(), number, title: None, body: None, state: Some(state) };
+        h.send(&request);
+        assert_eq!(h.status(), 201, "{state:?}");
+        let Document::Issue(issue) = h.decoded(&request).document else { panic!("issue response") };
+        assert_eq!(issue.state, state);
+    }
+}
+#[test]
+fn a_reviewer_request_answers_201_over_http() {
+    let (mut h, number) = reviewer_pull();
+    h.send(&Request::RequestReviewers { at: fixtures::at(), number, reviewers: Box::new([boxed(b"person")]) });
+    assert_eq!(h.status(), 201);
+    assert!(h.body().is_empty());
+}
+#[test]
+fn a_reviewer_removal_answers_204_with_no_body() {
+    let (mut h, number) = reviewer_pull();
+    h.call(fixtures::ADMIN, Op::Write(Write::RequestReviewers { number, reviewers: Box::new([fixtures::PERSON]) }))
+        .expect("seed reviewer");
+    h.send(&Request::RemoveReviewers { at: fixtures::at(), number, reviewers: Box::new([boxed(b"person")]) });
+    assert_eq!(h.status(), 204);
+    assert!(h.body().is_empty());
+}
+fn reviewer_pull() -> (Harness, u64) {
+    let mut h = Harness::new(fixtures::config());
+    h.push(b"work");
+    let a::Answer::Created(number) = h
+        .call(
+            fixtures::ADMIN,
+            Op::Write(Write::OpenPull {
+                title: boxed(b"pull"),
+                body: boxed(b"body"),
+                head: boxed(b"work"),
+                base: boxed(b"main"),
+                opens_empty: false,
+            }),
+        )
+        .expect("seed pull")
+    else {
+        panic!("created pull")
+    };
+    (h, number)
+}
+#[test]
+fn a_branch_deletion_answers_204_and_removes_the_branch() {
+    let mut h = Harness::new(fixtures::config());
+    h.push(b"work");
+    h.send(&Request::DeleteBranch { at: fixtures::at(), branch: boxed(b"work") });
+    assert_eq!(h.status(), 204);
+    assert!(h.body().is_empty());
+    assert_eq!(
+        h.call(fixtures::PERSON, Op::Read(Read::Branch { branch: boxed(b"work") })),
+        Err(a::Error::Missing(a::What::Branch))
+    );
+}

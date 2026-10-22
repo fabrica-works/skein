@@ -315,10 +315,14 @@ domain, and holds no clock of its own.
   issue's comments, a review's comments and a comparison come unpaged;
   collaborators come without their permissions; a merge answers with no body;
   `pulls/{base}/{head}` names the oldest of several; a pull request whose
-  head adds nothing is opened (`201`); deleting a branch that is not there
-  answers `500`; a failed job's completion step reports `failure`; a push to
-  a pull request's head or base starts a mergeability check. Forge.md,
-  section 9 names the fact that records each, or lists those not yet.
+  head adds nothing is opened (`201`); an issue's edit, close or reopen
+  answers `201`, as a reviewer's request does, and a reviewer's removal and
+  a branch's deletion answer `204` with no body; deleting a branch that is
+  not there answers `500`; a failed job's completion step reports
+  `failure`; a push to a pull request's head or base starts a mergeability
+  check. Forge.md, section 9 names the fact that records each, or lists
+  those not yet. A reviewer's request answers with no body, where Forgejo
+  sends the pull's reviews, which no client reads.
 - **Faults move down to bytes.** A call refused for its rate is `429` with
   `Retry-After` in whole seconds, rounded up; one failed unavailable is `503`;
   one made and then timed out is `500`. The layer adds per mille byte

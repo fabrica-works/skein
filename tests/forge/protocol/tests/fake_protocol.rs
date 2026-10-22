@@ -111,3 +111,35 @@ fn a_failed_jobs_log_end_comes_through_a_suffix_range() {
     let step = Some(skein_forge::api::Step { number: 1, name: Box::from(BUILD_STEP_NAME) });
     assert_eq!(answered.result, Ok(Answer::Job { attempt, step, log: Box::from(&b"build 3\n"[..]), truncated: true }));
 }
+
+#[test]
+fn each_forgejo_write_completes_with_its_own_status() {
+    const REVIEWER: u64 = 1; // The fixture's engine user can review the person's pull.
+    const SEED: u64 = 3;
+    const ISSUE_WRITES: u64 = 3; // Title edit, close and reopen share EditIssue.
+    const REVIEWER_WRITES: u64 = 1; // One request and one removal.
+    const BRANCH_DELETIONS: u64 = 1; // The seeded work branch is deleted once.
+    const SETTLE: Duration = Duration::from_secs(1); // Fault-free calls settle before their ten-second lifetime.
+    let mut joint = Joint::new(SEED);
+    let issue = joint.issue(b"before", b"body");
+    joint.push(b"work", b"change");
+    let pull = joint.pull(b"work", b"main");
+    joint.run_for(SETTLE);
+    for (call, write) in [
+        (1, Write::Edit { number: issue, title: Some(Box::from(b"after".as_slice())), body: None }),
+        (2, Write::Close { number: issue }),
+        (3, Write::Reopen { number: issue }),
+        (4, Write::SetReviewers { number: pull, reviewers: Box::new([REVIEWER]) }),
+        (5, Write::SetReviewers { number: pull, reviewers: Box::from([]) }),
+        (6, Write::DeleteBranch { branch: Box::from(b"work".as_slice()) }),
+    ] {
+        joint.call(call, REPO, Op::Write(write));
+        joint.run_for(SETTLE);
+        let answered = joint.answered(call).expect("write completes before its lifetime");
+        let Ok(Answer::Done) = &answered.result else { panic!("write {call}: {:?}", answered.result) };
+    }
+    assert_eq!(joint.tally().routes.get(&Route::EditIssue), Some(&ISSUE_WRITES));
+    assert_eq!(joint.tally().routes.get(&Route::RequestReviewers), Some(&REVIEWER_WRITES));
+    assert_eq!(joint.tally().routes.get(&Route::RemoveReviewers), Some(&REVIEWER_WRITES));
+    assert_eq!(joint.tally().routes.get(&Route::DeleteBranch), Some(&BRANCH_DELETIONS));
+}
