@@ -19,16 +19,16 @@ when that policy module is installed.
   delegated subtree. Changing sessions does not escape it. PID exit and
   queue completion trigger recovery; neither proves descendants ended.
 - **Recovery is independent.** A user systemd timer reconciles the same
-  host ledger as admission and normal completion. Its proposed polling
-  default is five seconds, subject to director review. It is not a task
+  host ledger as admission and normal completion. Its approved polling
+  default is five seconds (director 586). It is not a task
   timeout or a gate budget.
 - **Release is replayable.** Under the host lock, mark the task closing,
   kill its owned cgroup, prove it empty, resume only owned holds without
   maintenance holds, and commit one logical release outcome per token.
 - **Evidence is durable and narrow.** JSONL events carry task identity,
   phases, capacity and safe policy identity. They carry no task
-  environment, output or full queue records. Existing heavy output and
-  the eleven-column TSV remain available to land.
+  environment, output or full queue records. The eleven-column TSV remains
+  available for diagnostics; land accepts token-owned receipts.
 
 ## 2. Ownership and admission
 
@@ -61,6 +61,17 @@ has a PID, process start tick and boot identity; payload start is a
 separate event inside its cgroup. A client may disappear without losing
 task ownership or completion evidence.
 
+A token-owned user service observes `pueue wait --quiet ID` while a token
+is queued and unclaimed. Only a successful wait return is used: a terminal
+or absent queue entry triggers cancellation under the host lock if the
+token is still unclaimed. Transport failure retries through the timer.
+The observer stops once a wrapper claims the token. Client death does not
+cancel queued work, and no task age limit is imposed. A reused numeric ID
+can never establish success. Completion does not wait on or remove an ID
+after token release: without a safe identity API, a queue row cannot be
+removed without risking an unrelated replacement. Completed queue rows
+therefore require operator retention handling on the dedicated queue.
+
 A gate saves pause intent, pauses every non-gate group without stopping
 running tasks, then drains the ledger's live build lifetimes. Persisted
 gate holds also block build admission if the queue restarts and forgets
@@ -83,6 +94,12 @@ TSV for compatibility; events exclude commands and output. Task states
 are submitted, enqueuing, queued, waiting, launching, active, finishing, closing
 and released. A gate additionally records the groups found running and
 the groups found paused before its pause intent.
+
+The tree is Git `HEAD^{tree}`, separate from commit identity. A gate
+refuses a changed or dirty tree before payload entry. Runtime preparation
+compares a supplied policy with the computed policy at submission and
+inside containment; payload entry also compares with the persisted
+submitted identity. It never replaces that expected identity.
 
 A wrapper identity ending, or a changed boot ID, marks the task closing.
 Normal payload completion takes this same path. Closing is saved before
@@ -138,6 +155,14 @@ installing it; its group repairs use `heavy --repair-group` under the host
 lock, preserving gate and maintenance holds. Tests use distinct config, data, socket,
 state and unit names; no live owners' daemon or groups are touched.
 
+Unknown legacy pauses have no durable owner. An empty process list or
+absence of Cargo does not authorize resuming them. Migration must be quiet:
+an operator accounts for legacy work and pause intent, drains the dedicated
+queue and explicitly restores groups or records maintenance holds before
+enabling admission. The root cause of incident 587 is unknown; the stale
+pause fixture demonstrates recovery of a durable owned hold without
+inferring that incident's cause.
+
 ## 5. Events and compatibility
 
 `DEV_TMP/heavy/events.jsonl` records submit, wrapper start, admission,
@@ -149,7 +174,9 @@ and the entrypoint recording the event. A contained gate sources
 `gate-policy.sh` and calls `gate_policy_prepare` when that module is
 installed, both at submission and inside the contained task. Policy
 errors prevent payload entry. The recovery fixture can
-run before the policy module is integrated and identifies it as unavailable.
+use a fake Chromium 147 repeatedly, while its combined land/cache and
+policy overhead cases use the installed Chromium 147. Missing policy
+helpers or runtimes refuse gate submission visibly.
 
 The snapshot outbox precedes journal appends. Appends are flushed and
 fsynced; replay deduplicates by event ID. An interrupted final JSONL line
@@ -167,6 +194,17 @@ records or task logs. The phase events distinguish wrapper startup,
 drain/settle time and payload execution; TSV wait time ends at payload
 start and run time includes completion cleanup.
 
+After cgroup-empty proof and durable terminal release, events and TSV are
+flushed before receipt publication. Recovery seals the service's private
+capture into a separate immutable `TOKEN.log`, fsyncs it, hashes its complete
+bytes and atomically publishes the private 0600
+`DEV_TMP/heavy/receipts/TOKEN.json`. Publication is replayed after crashes.
+A delayed service can write only its capture, never the sealed log. The
+receipt follows the exact 17-field heavy-receipt-v1 contract in
+gate-policy.md, section 3.1. Cancelled, recovered and unstarted payloads
+always have nonzero codes. After tail and summary the client prints the
+receipt path and token as its final output line, outside the hashed log.
+
 ## 6. Fault verification
 
 `scripts/dev/test-heavy-recovery --evidence NEW_DIRECTORY` exercises the
@@ -181,6 +219,17 @@ daemon survival. The fixture uses short reconciler intervals without
 changing production task timeouts or test-suite budgets. Raw artifacts
 include each case's ledger, event journal, logs, probe, descendant cgroup
 evidence and cleanup receipt.
+
+The combined cases also exercise queued cancellation with real numeric ID
+reuse and a replacement task, client death before wrapper start, terminal
+queue completion with live private descendants, receipt-publication crash,
+and real land/cache entrypoints in disposable Git repositories. The stale
+pause case uses the approved five-second interval; other recovery fixtures
+use 0.2 seconds and are labelled accelerated. Runtime, semantic policy and
+missing-runtime changes before payload refuse without cache or ref advance.
+Receipt faults cover before publication, a fsynced temporary receipt before
+rename, and after atomic publication. The five-second case anchors a live
+reconciliation, then observes recovery on the subsequent periodic tick.
 
 Overhead measurements run the same lightweight payload directly and
 through heavy in interleaved pairs, at least three times. Event counts

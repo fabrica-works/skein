@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import statistics
 import subprocess
 import sys
@@ -34,6 +35,16 @@ def wait_for(predicate, what, seconds=20):
 def live(pid):
     try:
         return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0] != 'Z'
+    except FileNotFoundError:
+        return False
+
+
+def owned_wrapper(owner):
+    if not owner or not live(owner['pid']):
+        return False
+    try:
+        fields = Path(f"/proc/{owner['pid']}/stat").read_text().rsplit(')', 1)[1].split()
+        return fields[19] == owner['ticks']
     except FileNotFoundError:
         return False
 
@@ -76,6 +87,15 @@ class Lab:
         cache.chmod(0o700)
         self.env['PATH'] = str(cache_bin) + ':' + self.env['PATH']
         self.env['HEAVY_FIXTURE_GC_LOG'] = str(self.path / 'cache-gc-stub.txt')
+        runtime = cache_bin / 'chromium-147-fixture'
+        runtime.write_text('#!/bin/sh\necho "Chromium 147.0.7727.101"\n')
+        runtime.chmod(0o700)
+        fonts = self.path / 'fonts'
+        fonts.mkdir()
+        (fonts / 'DejaVuSans.ttf').write_bytes(b'fixture-font')
+        self.env.update(SKEIN_TEST_CHROMIUM=str(runtime), SKEIN_TEST_FONTS=str(fonts))
+        self.env.pop('SKEIN_GATE_POLICY_ID', None)
+        self.env.pop('SKEIN_GATE_POLICY_HELPER', None)
         self.base = self.path / 'tmp/heavy'
         self.prefix = 'skein-heavy-' + hashlib.sha256(str(self.base).encode()).hexdigest()[:12]
         self.clients = []
@@ -106,6 +126,8 @@ class Lab:
 
     def setup(self):
         self.call(['git', 'init', '-q', '-b', 'main'])
+        self.call(['git', 'config', 'user.name', 'fixture'])
+        self.call(['git', 'config', 'user.email', 'fixture@localhost'])
         self.call(['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost',
                    'commit', '-q', '--allow-empty', '-m', 'Recovery fixture'])
         self.start_daemon()
@@ -189,6 +211,18 @@ class Lab:
             assert task['state'] == 'released', task
             assert sum(e['id'] == task['token'] + ':release_end' for e in events) == 1
             assert sum(e['id'] == task['token'] + ':task_completion' for e in events) == 1
+            receipt_path = self.base / 'receipts' / (task['token'] + '.json')
+            receipt = wait_for(lambda: json.loads(receipt_path.read_text()) if receipt_path.exists() else None,
+                               'durable receipt')
+            assert len(receipt) == 17 and receipt['schema'] == 'heavy-receipt-v1'
+            assert receipt['token'] == task['token'] and receipt['tree'] == task['tree']
+            assert receipt['policy'] == task['policy'] and receipt['code'] == task['code']
+            assert receipt['release_complete'] and receipt['cgroup_empty']
+            assert receipt['log_sha256'] == hashlib.sha256(Path(task['log']).read_bytes()).hexdigest()
+            assert receipt_path.stat().st_mode & 0o777 == 0o600
+            assert Path(task['log']).stat().st_mode & 0o777 == 0o600
+            if receipt['code'] == 0:
+                assert receipt['outcome'] == 'completed' and receipt['payload_started'] and receipt['payload_ended']
             if task.get('cgroup'):
                 path = Path('/sys/fs/cgroup') / task['cgroup'].lstrip('/') / 'cgroup.events'
                 evidence = path.read_text() if path.exists() else 'cgroup absent'
@@ -215,7 +249,7 @@ class Lab:
             self.disarm(point.name.removeprefix('arm-'))
         if (self.base / 'state.json').exists():
             for task in self.state()['tasks'].values():
-                if task['state'] != 'released' and task.get('wrapper') and live(task['wrapper']['pid']):
+                if task['state'] != 'released' and owned_wrapper(task.get('wrapper')):
                     os.kill(task['wrapper']['pid'], signal.SIGKILL)
                 if task['state'] != 'released' and not task.get('wrapper'):
                     # Unstarted disposable queue entries have no cgroup/holds.
@@ -245,6 +279,19 @@ class Lab:
                 for suffix in ('.service', '.timer'):
                     (units / (self.prefix + '-reconcile' + suffix)).unlink(missing_ok=True)
                 self.call(['systemctl', '--user', 'daemon-reload'], check=False)
+        scope_proofs = []
+        if (self.base / 'state.json').exists():
+            for task in self.state()['tasks'].values():
+                if owned_wrapper(task.get('wrapper')):
+                    os.kill(task['wrapper']['pid'], signal.SIGKILL)
+                for unit in (task['unit'], self.prefix + '-' + task['token'] + '-observe.service'):
+                    self.call(['systemctl', '--user', 'kill', '--kill-whom=all', '--signal=KILL', unit], check=False)
+                    self.call(['systemctl', '--user', 'stop', unit], check=False)
+                group = task.get('cgroup')
+                path = Path('/sys/fs/cgroup') / group.lstrip('/') / 'cgroup.events' if group else None
+                empty = not path or not path.exists() or 'populated 0' in path.read_text()
+                assert empty, ('cleanup left populated cgroup', task['unit'])
+                scope_proofs.append({'unit': task['unit'], 'empty': empty})
         for unit in self.extra_units:
             self.call(['systemctl', '--user', 'stop', unit], check=False)
         if self.daemon and self.daemon.poll() is None:
@@ -252,14 +299,25 @@ class Lab:
             self.daemon.wait(timeout=10)
         if not self.daemon or self.daemon.poll() is not None:
             self.socket.unlink(missing_ok=True)
+            shutil.rmtree(self.queue_dir)
+        for private_env in self.base.glob('*.env'):
+            private_env.unlink()
         owned = self.call(['systemctl', '--user', 'list-units', '--all', '--plain', '--no-legend',
                           self.prefix + '*'], check=False).stdout
         # Inactive/failed unit records carry no processes; reset only our names.
         self.call(['systemctl', '--user', 'reset-failed', self.prefix + '*'], check=False)
+        units = Path(self.env.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))) / 'systemd/user'
+        remaining_files = [str(path) for path in units.rglob(self.prefix + '*')]
+        live_wrappers = [task['wrapper']['pid'] for task in self.state()['tasks'].values()
+                         if owned_wrapper(task.get('wrapper'))] if (self.base / 'state.json').exists() else []
         (self.path / 'cleanup.json').write_text(json.dumps({'queue_pid': self.daemon.pid if self.daemon else None,
             'queue_ended': not self.daemon or self.daemon.poll() is not None,
             'socket_removed': not self.socket.exists(),
-            'owned_unit_listing': owned, 'prefix': self.prefix, 'retained': str(self.path)}, indent=2) + '\n')
+            'owned_unit_listing': owned, 'prefix': self.prefix, 'retained': str(self.path),
+            'scope_proofs': scope_proofs, 'live_wrappers': live_wrappers,
+            'unit_files_remaining': remaining_files, 'queue_data_removed': not self.queue_dir.exists(),
+            'private_environment_files_removed': not list(self.base.glob('*.env'))}, indent=2) + '\n')
+        assert not remaining_files and not live_wrappers
 
 
 def normal(lab):
@@ -386,6 +444,9 @@ def descendants(lab, action='kill'):
         gate.kill()
         gate.wait(timeout=5)
         lab.kill_wrapper('gate')
+    elif action == 'queue-kill':
+        # This fixture owns the still-running entry and has not reused its ID.
+        lab.q('kill', lab.task('gate')['id'])
     lab.released('gate')
     lab.done(gate, -9 if action == 'kill' else (0 if action == 'normal' else 137))
     if action == 'kill':
@@ -463,7 +524,8 @@ def late_launch(lab):
     real = lab.call(['which', 'systemd-run']).stdout.strip()
     marker, proceed = lab.path / 'launch-waiting', lab.path / 'launch-continue'
     script = shim / 'systemd-run'
-    script.write_text('#!/usr/bin/env python3\nimport os,time\nfrom pathlib import Path\n'
+    script.write_text('#!/usr/bin/env python3\nimport os,time,sys\nfrom pathlib import Path\n'
+        'if "--payload" not in sys.argv: os.execv(' + repr(real) + ', [' + repr(real) + '] + sys.argv[1:])\n'
         'Path(' + repr(str(marker)) + ').write_text(str(os.getpid()))\n'
         'while not Path(' + repr(str(proceed)) + ').exists(): time.sleep(.02)\n'
         'os.execv(' + repr(real) + ', [' + repr(real) + '] + __import__("sys").argv[1:])\n')
@@ -482,23 +544,297 @@ def late_launch(lab):
     lab.done(lab.start('progress'))
 
 
-def overhead(lab):
+def cancelled_reused_id(lab):
+    lab.done(lab.start('old-build'))
+    old = lab.task('old-build')
+    lab.q('reset', '--force')
+    for group in ('build', 'gate'):
+        if group not in json.loads(lab.q('group', '--json')):
+            lab.q('group', 'add', group)
+        lab.q('parallel', '2' if group == 'build' else '1', '--group', group)
+    lab.q('pause', '--wait', '--group', 'gate')
+    lab.call(['git', 'switch', '-qc', 'candidate'])
+    (lab.repo / 'code').write_text('candidate\n')
+    lab.call(['git', 'add', 'code'])
+    lab.call(['git', 'commit', '-qm', 'candidate'])
+    head = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+    main = lab.call(['git', 'rev-parse', 'main']).stdout.strip()
+    marker = lab.path / 'cancelled-payload-must-not-run'
+    output = lab.path / 'land.client.txt'
+    with output.open('w') as out:
+        land = subprocess.Popen([str(KIT / 'land'), '--local', '--gate', 'touch ' + str(marker)],
+                                env=dict(lab.env, LAND_PREBUILD=''), cwd=lab.repo,
+                                stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+    lab.clients.append(land)
+    task = wait_for(lambda: lab.task('land repo'), 'land gate submission')
+    wait_for(lambda: lab.task('land repo')['state'] == 'queued', 'land queued token')
+    task = lab.task('land repo')
+    assert task['id'] == old['id'], 'fixture must reuse the old successful build ID'
+    assert task['state'] == 'queued' and not task.get('wrapper')
+    lab.arm('queue_observed')
+    # This known, never-started entry is still owned by the fixture. No other
+    # submitter uses this daemon. Remove is the explicit cancellation fault.
+    lab.q('remove', task['id'])
+    observer = lab.barrier('queue_observed', 'land repo')
+    lab.q('reset', '--force')
+    for group in ('build', 'gate'):
+        if group not in json.loads(lab.q('group', '--json')):
+            lab.q('group', 'add', group)
+        lab.q('parallel', '2' if group == 'build' else '1', '--group', group)
+    proceed = lab.path / 'finish-unrelated'
+    unrelated = lab.start('unrelated', code='from pathlib import Path; import time; p=Path(' +
+                          repr(str(proceed)) + ');\nwhile not p.exists(): time.sleep(.02)')
+    wait_for(lambda: lab.event('unrelated', 'payload_begin'), 'unrelated new task')
+    assert lab.task('unrelated')['id'] == task['id']
+    lab.disarm('queue_observed')
+    lab.done(land, 4)
+    cancelled = lab.released('land repo')
+    receipt = json.loads((lab.base / 'receipts' / (task['token'] + '.json')).read_text())
+    assert receipt['outcome'] == 'cancelled' and receipt['code'] != 0
+    assert not receipt['payload_started'] and not receipt['payload_ended']
+    assert receipt['token'] != old['token'] and not marker.exists()
+    assert lab.task('unrelated')['state'] == 'active' and unrelated.poll() is None
+    late = lab.call([HEAVY, '--task', task['token']], check=False)
+    assert late.returncode == 2 and not marker.exists()
+    assert lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip() == head
+    assert lab.call(['git', 'rev-parse', 'main']).stdout.strip() == main
+    assert not (lab.path / 'tmp/gates').exists()
+    assert not lab.call(['git', 'log', '-1', '--format=%(trailers:key=Gate-Tree,valueonly)']).stdout.strip()
+    (lab.path / 'cancellation-proof.json').write_text(json.dumps({
+        'reused_id': task['id'], 'old_build_token': old['token'], 'cancelled_token': task['token'],
+        'unrelated_token': lab.task('unrelated')['token'], 'observer_pid': observer,
+        'land_exit': land.returncode, 'head_unchanged': True, 'main_unchanged': True,
+        'no_cache_or_trailer': True, 'late_wrapper_exit': late.returncode,
+        'unrelated_unharmed': True}, indent=2) + '\n')
+    proceed.touch()
+    lab.done(unrelated)
+    lab.q('start', '--group', 'gate')
+
+
+def stale_pause(lab):
+    lab.call([HEAVY, '--install-reconciler', '5s'])
+    lab.q('pause', '--wait', '--group', 'default')
+    lab.q('group', 'add', 'operator-held')
+    lab.call([HEAVY, '--maintenance-pause', 'operator-held'])
+    marker = lab.path / 'finish-gate'
+    lab.arm('payload_finished')
+    gate = lab.start('gate', gate=True, code='from pathlib import Path; import time; p=Path(' +
+                     repr(str(marker)) + ');\nwhile not p.exists(): time.sleep(.02)')
+    wait_for(lambda: lab.event('gate', 'payload_begin'), 'stale-pause gate')
+    lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.timer'])
+    lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.service'])
+    # Submission requires the active timer; queue this build before stopping
+    # it again to construct the recorded stale-pause state deterministically.
+    lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.timer'])
+    build = lab.start('waiting-build')
+    wait_for(lambda: lab.task('waiting-build') and lab.task('waiting-build')['state'] == 'queued', 'queued build')
+    lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.timer'])
+    lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.service'])
+    # Anchor a completed reconciliation while the wrapper/payload are live.
+    # The next recovery must come from the five-second periodic activation,
+    # rather than the immediate OnBootSec activation when a timer starts.
+    lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.timer'])
+    lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.service'])
+    inactive = lab.call(['systemctl', '--user', 'show', lab.prefix + '-reconcile.service',
+                         '--property=InactiveEnterTimestampMonotonic', '--value']).stdout.strip()
+    scheduled = lab.call(['systemctl', '--user', 'show', lab.prefix + '-reconcile.timer',
+                          '--property=NextElapseUSecMonotonic', '--value']).stdout.strip()
+    marker.touch()
+    pid = lab.barrier('payload_finished', 'gate')
+    os.kill(pid, signal.SIGKILL)
+    lab.kill_wrapper('gate')
+    lab.disarm('payload_finished')
+    groups = json.loads(lab.q('group', '--json'))
+    assert groups['build']['status'] != 'Running' and groups['gate']['status'] == 'Running'
+    assert lab.state()['gate'] == lab.task('gate')['token'] and not lab.event('waiting-build', 'payload_begin')
+    start = time.monotonic()
+    lab.released('gate')
+    elapsed = time.monotonic() - start
+    lab.done(gate, 137)
+    lab.done(build)
+    assert lab.event('gate', 'release_end')['source'] == '--reconcile'
+    assert lab.state()['installation']['interval'] == '5s'
+    groups_after = json.loads(lab.q('group', '--json'))
+    assert groups_after['build']['status'] == 'Running'
+    assert groups_after['default']['status'] != 'Running'
+    assert groups_after['operator-held']['status'] != 'Running'
+    (lab.path / 'stale-pause-proof.json').write_text(json.dumps({
+        'interval': '5s', 'recovery_seconds_single_sample': elapsed,
+        'last_reconcile_inactive_monotonic_usec': inactive,
+        'next_timer_elapse_monotonic_usec': scheduled, 'periodic_activation': True,
+        'before': groups, 'after': groups_after, 'release_source': '--reconcile',
+        'incident_root_cause': 'UNKNOWN', 'owned_hold_recovered': True,
+        'unowned_and_maintenance_pauses_preserved': True}, indent=2) + '\n')
+
+
+def publication_crash(lab, point='receipt_ready'):
+    lab.arm(point)
+    gate = lab.start('gate', gate=True)
+    pid = lab.barrier(point, 'gate')
+    task = lab.task('gate')
+    assert task['state'] == 'released' and task['row_durable']
+    assert (lab.base / 'receipts' / (task['token'] + '.json')).exists() == (point == 'receipt_published')
+    if point == 'receipt_fsynced':
+        assert (lab.base / 'receipts' / (task['token'] + '.json.new')).stat().st_mode & 0o777 == 0o600
+    digest = hashlib.sha256(Path(task['log']).read_bytes()).hexdigest()
+    os.kill(pid, signal.SIGKILL)
+    lab.disarm(point)
+    lab.done(gate)
+    receipt = json.loads((lab.base / 'receipts' / (task['token'] + '.json')).read_text())
+    assert receipt['log_sha256'] == digest
+    # Even a delayed writer on the service's capture cannot mutate the log.
+    with Path(task['capture']).open('a') as out:
+        out.write('late capture write\n')
+    lab.call([HEAVY, '--reconcile'])
+    assert hashlib.sha256(Path(task['log']).read_bytes()).hexdigest() == digest
+
+
+def queued_client_death(lab):
+    lab.q('pause', '--wait', '--group', 'gate')
+    marker = lab.path / 'legitimate-payload'
+    gate = lab.start('gate', gate=True, args=['touch', str(marker)])
+    wait_for(lambda: lab.task('gate') if lab.task('gate') and lab.task('gate')['state'] == 'queued' else None,
+             'legitimate queued gate')
+    gate.kill()
+    gate.wait(timeout=5)
+    lab.q('start', '--group', 'gate')
+    task = lab.released('gate')
+    assert task['code'] == 0 and task['outcome'] == 'completed' and marker.exists()
+
+
+def candidate(lab):
+    base = lab.call(['git', 'rev-parse', 'main']).stdout.strip()
+    lab.call(['git', 'switch', '-qc', 'candidate'])
+    (lab.repo / 'code').write_text('candidate\n')
+    lab.call(['git', 'add', 'code'])
+    lab.call(['git', 'commit', '-qm', 'candidate'])
+    return base, lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+
+
+def land_process(lab, command):
+    out = (lab.path / 'land.client.txt').open('w')
+    process = subprocess.Popen([str(KIT / 'land'), '--local', '--gate', command],
+                              env=dict(lab.env, LAND_PREBUILD=''), cwd=lab.repo,
+                              stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+    out.close()
+    lab.clients.append(process)
+    return process
+
+
+def real_land(lab):
+    lab.env.update(SKEIN_TEST_CHROMIUM=str(Path.home() / '.local/opt/chromium-147.0.7727.101/bin/chromium'),
+                   SKEIN_TEST_FONTS='/usr/share/fonts/truetype/dejavu')
+    base, head = candidate(lab)
+    command = 'test -n "$SKEIN_GATE_POLICY_HELPER" && test -n "$SKEIN_TEST_FONTS" && "$SKEIN_TEST_CHROMIUM" --version'
+    first = land_process(lab, command)
+    lab.done(first)
+    task = lab.task('land repo')
+    assert task['tree'] == lab.call(['git', 'rev-parse', 'HEAD^{tree}']).stdout.strip()
+    assert task['tree'] != head and task['policy'].startswith('sha256:')
+    assert all(e['policy'] == task['policy'] for e in lab.events() if e.get('token') == task['token'])
+    assert 'Chromium 147.0.7727.101' in Path(task['log']).read_text()
+    (lab.path / 'land.first.txt').write_text((lab.path / 'land.client.txt').read_text())
+    advanced = lab.call(['git', 'rev-parse', 'main']).stdout.strip()
+    assert advanced != base
+    lab.call(['git', 'update-ref', 'refs/heads/main', base])
+    second = land_process(lab, command)
+    lab.done(second)
+    assert len(lab.state()['tasks']) == 1, 'cache hit resubmitted a gate'
+    assert 'gate    ' in (lab.path / 'land.client.txt').read_text()
+    assert '? s' not in (lab.path / 'land.client.txt').read_text()
+    (lab.path / 'real-policy-proof.json').write_text(json.dumps({
+        'runtime': lab.env['SKEIN_TEST_CHROMIUM'], 'policy': task['policy'], 'tree': task['tree'],
+        'receipt': str(lab.base / 'receipts' / (task['token'] + '.json')),
+        'first_exit': first.returncode, 'cache_hit_exit': second.returncode,
+        'tasks_after_cache_hit': 1, 'main_advanced': True}, indent=2) + '\n')
+
+
+def policy_refusal(lab, mode):
+    base, head = candidate(lab)
+    if mode == 'config':
+        lab.env['CARGO_HOME'] = str(lab.path / 'cargo-home')
+        Path(lab.env['CARGO_HOME']).mkdir()
+    lab.q('pause', '--wait', '--group', 'gate')
+    marker = lab.path / 'must-not-run'
+    land = land_process(lab, 'touch ' + str(marker))
+    task = wait_for(lambda: lab.task('land repo') if lab.task('land repo') and
+                    lab.task('land repo')['state'] == 'queued' else None, 'policy gate queued')
+    if mode == 'runtime':
+        runtime = Path(lab.env['SKEIN_TEST_CHROMIUM'])
+        runtime.write_text(runtime.read_text() + '# changed runtime content\n')
+    elif mode == 'missing':
+        Path(lab.env['SKEIN_TEST_CHROMIUM']).unlink()
+    elif mode == 'config':
+        # This external Cargo home is part of policy, outside the Git tree.
+        cargo = lab.path / 'cargo-home'
+        # Existing environment retained through the queue points here.
+        (cargo / 'config.toml').write_text('[build]\nrustflags=["--cfg=changed"]\n')
+    elif mode == 'tree':
+        (lab.repo / 'code').write_text('changed while queued\n')
+        lab.call(['git', 'commit', '-qam', 'queued tree change'])
+        head = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+    lab.q('start', '--group', 'gate')
+    lab.done(land, 4)
+    task = lab.released('land repo')
+    assert task['code'] != 0 and not task.get('payload_started') and not marker.exists()
+    assert task['policy'] == next(e['policy'] for e in lab.events() if e.get('token') == task['token'])
+    assert lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip() == head
+    assert lab.call(['git', 'rev-parse', 'main']).stdout.strip() == base
+    assert not (lab.path / 'tmp/gates').exists()
+    assert not lab.call(['git', 'log', '-1', '--format=%(trailers:key=Gate-Tree,valueonly)']).stdout.strip()
+    (lab.path / 'policy-refusal-proof.json').write_text(json.dumps({
+        'mode': mode, 'land_exit': land.returncode, 'payload_started': False,
+        'head_unchanged': True, 'main_unchanged': True, 'no_cache_or_trailer': True,
+        'submitted_policy_preserved': task['policy'], 'token': task['token']}, indent=2) + '\n')
+
+
+def supplied_policy(lab):
+    env = dict(lab.env, SKEIN_GATE_POLICY_ID='sha256:' + '0' * 64)
+    marker = lab.path / 'must-not-run'
+    result = lab.call([HEAVY, '--gate', 'touch', marker], check=False, environment=env)
+    assert result.returncode == 2 and 'supplied gate policy differs' in result.stderr
+    assert not marker.exists() and not lab.state()['tasks']
+    (lab.path / 'refusal.txt').write_text(result.stdout + result.stderr)
+    lab.done(lab.start('progress'))
+
+
+def overhead(lab, real_policy=False):
     samples = []
     payload = [sys.executable, '-c', 'import time; time.sleep(.15)']
+    if real_policy:
+        lab.env.update(SKEIN_TEST_CHROMIUM=str(Path.home() / '.local/opt/chromium-147.0.7727.101/bin/chromium'),
+                       SKEIN_TEST_FONTS='/usr/share/fonts/truetype/dejavu')
+    def measure(args, name, environment):
+        with (lab.path / (name + '.output')).open('w') as out:
+            start = time.monotonic_ns()
+            child = subprocess.Popen([str(arg) for arg in args], cwd=lab.repo, env=environment,
+                                     stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+            _, status, usage = os.wait4(child.pid, 0)
+            child.returncode = os.waitstatus_to_exitcode(status)
+            elapsed = (time.monotonic_ns() - start) / 1e6
+        assert child.returncode == 0, (name, child.returncode)
+        return elapsed, {'user_s': usage.ru_utime, 'system_s': usage.ru_stime,
+                         'maxrss_kib': usage.ru_maxrss}
     for i in range(3):
         # Same command, alternating raw then queued execution.
-        start = time.monotonic_ns()
-        lab.call(payload)
-        direct = (time.monotonic_ns() - start) / 1e6
+        before_tasks = len(lab.state()['tasks'])
         before = len(lab.events())
         size = (lab.base / 'events.jsonl').stat().st_size
-        start = time.monotonic_ns()
-        lab.done(lab.start('sample-' + str(i), args=payload))
-        queued = (time.monotonic_ns() - start) / 1e6
-        samples.append({'event_count': len(lab.events()) - before,
+        direct, direct_metrics = measure(payload, 'direct-' + str(i), lab.env)
+        # The timer/queue execute outside this client's process ancestry.
+        queued, metrics = measure([HEAVY, *(['--gate'] if real_policy else []), '--', *payload],
+                                  'heavy-' + str(i), dict(lab.env, HEAVY_LABEL='sample-' + str(i)))
+        samples.append({'tasks': len(lab.state()['tasks']) - before_tasks,
+                        'event_count': len(lab.events()) - before,
                         'event_bytes': (lab.base / 'events.jsonl').stat().st_size - size,
+                        'direct_resources': direct_metrics, 'client_resources': metrics,
+                        'scope_resources': lab.task('sample-' + str(i)).get('resources'),
                         'direct_ms': direct, 'heavy_ms': queued, 'overhead_ms': queued - direct})
-    data = {'samples': samples, 'median_overhead_ms': statistics.median(s['overhead_ms'] for s in samples)}
+    retained = sum(path.stat().st_size for path in (lab.path / 'tmp').rglob('*') if path.is_file())
+    data = {'samples': samples, 'median_overhead_ms': statistics.median(s['overhead_ms'] for s in samples),
+            'real_policy': real_policy, 'host': os.uname().nodename, 'loadavg': os.getloadavg(),
+            'retained_tmp_bytes': retained, 'cpu_scope': 'client ancestry plus separately sampled owned cgroup',
+            'payload': payload, 'background': 'normal host services; only owned disposable queues used'}
     (lab.path / 'overhead.json').write_text(json.dumps(data, indent=2) + '\n')
 
 
@@ -516,13 +852,25 @@ def main():
              ('enqueue-intent', lambda lab: kill_at(lab, 'enqueue_intent')),
              ('paused', lambda lab: kill_at(lab, 'paused')),
              ('descendants', descendants), ('normal-descendants', lambda lab: descendants(lab, 'normal')),
+             ('queue-terminal-scope', lambda lab: descendants(lab, 'queue-kill')),
              ('release', lambda lab: kill_at(lab, 'release_empty')),
              ('release-fsync', lambda lab: kill_at(lab, 'release_fsynced')),
              ('release-resumed', lambda lab: kill_at(lab, 'resumed')),
              ('daemon-restart', lambda lab: descendants(lab, 'restart')),
              ('boot-change', lambda lab: descendants(lab, 'boot')),
              ('prepaused', prepaused), ('maintenance', maintenance), ('concurrent', concurrent),
-             ('journal-replay', replay), ('late-launch', late_launch), ('overhead', overhead)]
+             ('journal-replay', replay), ('late-launch', late_launch),
+             ('cancelled-reused-id', cancelled_reused_id), ('stale-pause-5s', stale_pause),
+             ('receipt-publication', publication_crash), ('real147-land-cache', real_land),
+             ('receipt-fsync', lambda lab: publication_crash(lab, 'receipt_fsynced')),
+             ('receipt-published', lambda lab: publication_crash(lab, 'receipt_published')),
+             ('queued-client-death', queued_client_death),
+             ('runtime-drift', lambda lab: policy_refusal(lab, 'runtime')),
+             ('runtime-missing', lambda lab: policy_refusal(lab, 'missing')),
+             ('policy-config-drift', lambda lab: policy_refusal(lab, 'config')),
+             ('tree-drift', lambda lab: policy_refusal(lab, 'tree')),
+             ('supplied-policy', supplied_policy), ('overhead', overhead),
+             ('real147-overhead', lambda lab: overhead(lab, True))]
     for name, test in cases:
         if opts.case and name not in opts.case:
             continue

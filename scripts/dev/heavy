@@ -16,7 +16,7 @@ source "$kit/kit.sh"
 read -r build_jobs _ < <(machine_setting HEAVY_BUILD_JOBS 4)
 export DEV_ROOT=$root DEV_TMP=$tmp HEAVY_BUILD_JOBS_EFFECTIVE=$build_jobs
 prepare_gate_policy() {
-    local token=${1:-}
+    local token=${1:-} expected=${SKEIN_GATE_POLICY_ID:-}
     if [[ -f $kit/gate-policy.sh ]]; then
         # shellcheck source=/dev/null
         source "$kit/gate-policy.sh"
@@ -24,8 +24,15 @@ prepare_gate_policy() {
             HEAVY_LANE=gate python3 "$kit/heavy-recovery.py" --record-refusal policy "$token" || true
             return 2
         }
+        if [[ -n $expected && $expected != "$SKEIN_GATE_POLICY_ID" ]]; then
+            echo 'heavy: supplied gate policy differs from the validated policy' >&2
+            HEAVY_LANE=gate python3 "$kit/heavy-recovery.py" --record-refusal policy "$token" || true
+            return 2
+        fi
     else
-        unset SKEIN_GATE_POLICY_ID SKEIN_GATE_POLICY_HELPER
+        echo 'heavy: gate policy helper is unavailable' >&2
+        HEAVY_LANE=gate python3 "$kit/heavy-recovery.py" --record-refusal policy "$token" || true
+        return 2
     fi
 }
 case ${1:-} in
@@ -33,7 +40,7 @@ case ${1:-} in
         # Policy is prepared inside the contained task, before payload start.
         if [[ ${HEAVY_LANE:-} == gate ]]; then prepare_gate_policy "${2:-}"; fi
         ;;
-    --task|--reconcile|--install-reconciler|--remove-reconciler|--maintenance-pause|--maintenance-resume|--check-recovery|--repair-group|--group-held|--record-refusal) ;;
+    --task|--observe|--reconcile|--install-reconciler|--remove-reconciler|--maintenance-pause|--maintenance-resume|--check-recovery|--repair-group|--group-held|--record-refusal) ;;
     *)
         disk_floor heavy || {
             python3 "$kit/heavy-recovery.py" --record-refusal disk-floor || true

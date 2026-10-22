@@ -106,6 +106,8 @@ def atomic(path, value):
         out.write('\n')
         out.flush()
         os.fsync(out.fileno())
+    if value.get('schema') == 'heavy-receipt-v1':
+        fault('receipt_fsynced', value['token'])
     if path.name == 'state.json':
         gate = value.get('gate')
         if gate and any(event['event'] == 'pause_begin' for event in value.get('pending', [])):
@@ -222,7 +224,8 @@ def available_memory():
 
 
 def properties(unit):
-    result = run(['systemctl', '--user', 'show', unit, '--property=LoadState,ActiveState,ControlGroup'])
+    result = run(['systemctl', '--user', 'show', unit,
+                  '--property=LoadState,ActiveState,ControlGroup,CPUUsageNSec,MemoryPeak'])
     values = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
     if not values:
         raise Refusal('cannot inspect owned systemd unit')
@@ -235,6 +238,10 @@ def own_cgroup(task):
     if group:
         if Path(group).name != task['unit'] or not group.startswith('/user.slice/'):
             raise Refusal('unexpected task cgroup')
+        for field in ('CPUUsageNSec', 'MemoryPeak'):
+            if props.get(field, '').isdigit() and int(props[field]) < 18446744073709551615:
+                task.setdefault('resources', {})[field] = max(
+                    int(props[field]), task.get('resources', {}).get(field, 0))
         return CGROOT / group.lstrip('/')
     if props.get('ActiveState') == 'active':
         raise Refusal('active owned unit has no cgroup evidence')
@@ -309,6 +316,11 @@ def finish(ledger, task):
     task.setdefault('code', 137)
     if task.get('outcome') == 'recovered':
         task['code'] = 137
+    if not task.get('payload_started') or not task.get('payload_ended'):
+        task['code'] = task['code'] or 137
+        if task.get('outcome') in (None, 'completed'):
+            task['outcome'] = 'refused'
+    task['release_complete'], task['cgroup_empty'] = True, True
     task['ended'] = now
     waited = int(task.get('payload_started', now) - task['submitted'])
     ran = int(now - task.get('payload_started', now))
@@ -324,6 +336,104 @@ def finish(ledger, task):
     ledger.save()
     env_file = BASE / (task['token'] + '.env')
     env_file.unlink(missing_ok=True)
+
+
+def publish_receipt(ledger, task):
+    """Seal a separate log after release, then publish replayable evidence."""
+    if not task.get('row_durable') or not task.get('release_complete'):
+        return
+    receipts = BASE / 'receipts'
+    path = receipts / (task['token'] + '.json')
+    if path.exists():
+        return
+    receipts.mkdir(exist_ok=True, mode=0o700)
+    sync_dir(BASE)
+    log = Path(task['log'])
+    if not task.get('log_complete'):
+        # A delayed service can only open the capture file. It can never
+        # append to this completed log, including after receipt publication.
+        temporary = log.with_suffix('.new')
+        with temporary.open('wb') as out:
+            os.fchmod(out.fileno(), 0o600)
+            capture = Path(task['capture'])
+            if capture.exists():
+                with capture.open('rb') as source:
+                    shutil.copyfileobj(source, out)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temporary, log)
+        sync_dir(log.parent)
+        task['log_complete'] = True
+        ledger.save()
+    with log.open('rb') as source:
+        digest = hashlib.file_digest(source, 'sha256').hexdigest()
+    receipt = {'schema': 'heavy-receipt-v1', 'token': task['token'], 'id': task.get('id', ''),
+               'queue': task['queue'], 'lane': task['lane'], 'tree': task['tree'],
+               'policy': task['policy'], 'args': task['args'], 'outcome': task.get('outcome', 'refused'),
+               'code': task['code'], 'payload_started': bool(task.get('payload_started')),
+               'payload_ended': bool(task.get('payload_ended')), 'release_complete': True,
+               'cgroup_empty': True, 'elapsed_s': max(0.0, task['ended'] - task['submitted']),
+               'log': task['log'], 'log_sha256': digest}
+    fault('receipt_ready', task['token'])
+    atomic(path, receipt)
+    fault('receipt_published', task['token'])
+
+
+def observer_unit(task):
+    return PREFIX + '-' + task['token'] + '-observe.service'
+
+
+def ensure_observer(task):
+    # The timer owns this observer independently of the submitting client.
+    # It never uses a queue ID for a destructive operation.
+    unit = observer_unit(task)
+    if properties(unit).get('ActiveState') in ('active', 'activating'):
+        return
+    env = BASE / 'reconcile.env'
+    result = run(['systemd-run', '--user', '--quiet', '--collect', '--unit=' + unit,
+                  '--property=EnvironmentFile=' + str(env), '--property=UMask=0077',
+                  '--property=StandardInput=null', '--property=StandardOutput=null',
+                  '--property=StandardError=null', sys.executable, Path(__file__).resolve(),
+                  '--observe', task['token']])
+    if result.returncode:
+        raise Refusal('cannot start queued completion observer')
+
+
+def observe(token):
+    with locked() as ledger:
+        task = ledger.tasks[token]
+        if task['state'] != 'queued':
+            return 0
+        task_id = task['id']
+    # Only the wait exit is observed. No queue records, logs or environments
+    # are requested or retained. Completion/missing ID is never success proof.
+    waiter = subprocess.Popen(pueue_command('wait', '--quiet', task_id),
+                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL)
+    try:
+        while waiter.poll() is None:
+            current = json.loads((BASE / 'state.json').read_text())['tasks'][token]
+            if current['state'] != 'queued':
+                return 0
+            time.sleep(0.1)
+        if waiter.returncode:
+            return 2  # Transport failure: retry through the independent timer.
+        fault('queue_observed', token)
+        with locked() as ledger:
+            task = ledger.tasks[token]
+            if task['state'] == 'queued':
+                task.update(state='closing', outcome='cancelled', code=137)
+                ledger.event(task, 'release_begin', outcome='cancelled')
+                ledger.event(task, 'queue_completion', reason='unclaimed token; terminal or absent queue ID')
+                ledger.save()
+            # A terminal queue row cannot prove a launched payload ended.
+            # The common path always kills/proves the owned cgroup empty.
+            reconcile(ledger)
+        return 0
+    finally:
+        if waiter.poll() is None:
+            waiter.terminate()
+        waiter.wait()
 
 
 def reconcile(ledger):
@@ -351,6 +461,10 @@ def reconcile(ledger):
             ledger.save()
         if task['state'] == 'submitted' and not alive(task.get('submitter')):
             task['state'] = 'waiting'
+        if task['state'] == 'queued' and queue_available:
+            ensure_observer(task)
+        if task['state'] == 'released':
+            publish_receipt(ledger, task)
         if task['state'] in ('submitted', 'queued', 'released'):
             continue
         orphan = task['boot'] != boot() or not alive(task.get('wrapper'))
@@ -381,6 +495,7 @@ def reconcile(ledger):
             fault('resumed', task['token'])
             ledger.data['gate'] = None
         finish(ledger, task)
+        publish_receipt(ledger, task)
     return queue_available
 
 
@@ -516,7 +631,7 @@ def submit(args, lane, tail_lines):
     if lane == 'gate' and run(['git', 'rev-parse', '--is-inside-work-tree']).returncode == 0:
         if run(['git', 'status', '--porcelain']).stdout.strip():
             raise Refusal('the gate lane takes only a committed tree; commit changes first')
-    tree = run(['git', 'rev-parse', 'HEAD']).stdout.strip() or 'unversioned'
+    tree = run(['git', 'rev-parse', 'HEAD^{tree}']).stdout.strip() or 'unversioned'
     token = uuid.uuid4().hex
     with locked() as ledger:
         ensure_reconciler(ledger)
@@ -526,9 +641,10 @@ def submit(args, lane, tail_lines):
                 'repo': str(Path.cwd()), 'tree': tree, 'policy': os.environ.get('SKEIN_GATE_POLICY_ID', 'gate-policy-unavailable') if lane == 'gate' else 'build-4',
                 'boot': boot(), 'queue': QUEUE, 'unit': PREFIX + '-' + token + '.service',
                 'submitter': identity(),
-                'submitted': time.time(), 'state': 'submitted', 'log': str(LOGS / (token + '.log'))}
+                'submitted': time.time(), 'state': 'submitted', 'log': str(LOGS / (token + '.log')),
+                'capture': str(LOGS / (token + '.capture'))}
         ledger.tasks[token] = task
-        Path(task['log']).touch(mode=0o600)
+        Path(task['capture']).touch(mode=0o600)
         ledger.event(task, 'submit')
         ledger.save()
         env = safe_environment()
@@ -550,16 +666,15 @@ def submit(args, lane, tail_lines):
         queue('enqueue', task['id'])
         task['state'] = 'queued'
         ledger.save()
-    print(f"heavy: queued task {task['id']} in the {lane} lane", file=sys.stderr, flush=True)
+        ensure_observer(task)
+    print(f"heavy: queued task {task['id']} in the {lane} lane token {token}", file=sys.stderr, flush=True)
     while True:
         # Atomic snapshots let clients observe completion without contending
         # with admission. The row marker follows the durable event/TSV flush.
         task = json.loads((BASE / 'state.json').read_text())['tasks'][token]
-        if task['state'] == 'released' and task.get('row_durable'):
+        if task['state'] == 'released' and (BASE / 'receipts' / (token + '.json')).is_file():
             break
         time.sleep(0.1)
-    run(pueue_command('wait', '--quiet', task['id']))
-    run(pueue_command('remove', task['id']))
     lines = Path(task['log']).read_text(errors='replace').splitlines()
     if len(lines) > tail_lines:
         print(f"heavy: … {len(lines) - tail_lines} earlier lines in {task['log']}")
@@ -567,6 +682,7 @@ def submit(args, lane, tail_lines):
         print('\n'.join(lines[-tail_lines:]))
     print(f"heavy: task {task['id']} ({lane}) exit {task['code']}, waited {task['waited']}s, "
           f"ran {task['ran']}s, log {task['log']}")
+    print(f"heavy: receipt {BASE / 'receipts' / (token + '.json')} token {token}")
     return task['code']
 
 
@@ -638,8 +754,9 @@ def wrapper(token):
                 launcher = subprocess.Popen(['systemd-run', '--user', '--quiet', '--wait', '--collect',
                     '--unit=' + task['unit'], '--service-type=exec', '--property=ExitType=cgroup',
                     '--property=KillMode=control-group', '--property=Delegate=no',
+                    '--property=CPUAccounting=yes', '--property=MemoryAccounting=yes',
                     '--property=EnvironmentFile=' + str(BASE / (token + '.env')),
-                    '--property=StandardOutput=append:' + task['log'], '--property=StandardError=inherit',
+                    '--property=StandardOutput=append:' + task['capture'], '--property=StandardError=inherit',
                     '--working-directory=' + task['repo'], str(KIT / 'heavy'), '--payload', token],
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 break
@@ -668,6 +785,8 @@ def wrapper(token):
 def phase(token, name, **values):
     with locked() as ledger:
         task = ledger.tasks[token]
+        if name == 'payload_end':
+            task['payload_ended'] = time.time()
         ledger.event(task, name, **values)
         ledger.save()
 
@@ -692,7 +811,18 @@ def payload(token):
             raise Refusal('payload cgroup population cannot be proved')
         task['cgroup'] = group
         task['state'] = 'active'
-        task['policy'] = os.environ.get('SKEIN_GATE_POLICY_ID', 'gate-policy-unavailable') if task['lane'] == 'gate' else 'build-4'
+        if task['lane'] == 'gate' and os.environ.get('SKEIN_GATE_POLICY_ID') != task['policy']:
+            task.update(state='finishing', code=2, outcome='refused')
+            ledger.event(task, 'refusal', reason='submitted policy differs at payload entry')
+            ledger.save()
+            return 2
+        if task['lane'] == 'gate' and task['tree'] != 'unversioned' and (
+                run(['git', 'rev-parse', 'HEAD^{tree}']).stdout.strip() != task['tree'] or
+                run(['git', 'status', '--porcelain']).stdout.strip()):
+            task.update(state='finishing', code=2, outcome='refused')
+            ledger.event(task, 'refusal', reason='submitted gate tree differs at payload entry')
+            ledger.save()
+            return 2
         ledger.event(task, 'scope_enter', cgroup=group)
         ledger.save()
         args, lane = task['args'], task['lane']
@@ -728,8 +858,10 @@ def payload(token):
     gc(token, serial)
     with locked() as ledger:
         task = ledger.tasks[token]
+        own_cgroup(task)  # Sample accounting while the completed payload's unit still exists.
         task['code'], task['state'] = code, 'finishing'
         ledger.save()
+    fault('payload_finished', token)
     # ExitType=cgroup holds any setsid children until the outside reconciler
     # kills this service and proves it empty. No child can outlive release.
     return code
@@ -770,6 +902,8 @@ def main(args):
             if any(task['state'] != 'released' for task in ledger.tasks.values()):
                 raise Refusal('cannot remove reconciler with unfinished tasks')
             installed = ledger.data['installation']
+            for task in ledger.tasks.values():
+                run(['systemctl', '--user', 'stop', observer_unit(task)])
             run(['systemctl', '--user', 'disable', '--now', PREFIX + '-reconcile.timer'], check=True)
             run(['systemctl', '--user', 'stop', PREFIX + '-reconcile.service'])
             for suffix in ('.service', '.timer'):
@@ -786,8 +920,8 @@ def main(args):
     if len(args) == 2 and args[0] in ('--maintenance-pause', '--maintenance-resume'):
         maintenance(args[1], args[0] == '--maintenance-pause')
         return 0
-    if len(args) == 2 and args[0] in ('--task', '--payload'):
-        return (wrapper if args[0] == '--task' else payload)(args[1])
+    if len(args) == 2 and args[0] in ('--task', '--payload', '--observe'):
+        return {'--task': wrapper, '--payload': payload, '--observe': observe}[args[0]](args[1])
     lane, tail_lines = 'build', int(os.environ.get('HEAVY_TAIL', '200'))
     while args:
         if args[0] == '--gate':
