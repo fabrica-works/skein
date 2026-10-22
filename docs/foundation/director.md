@@ -376,10 +376,14 @@ is mechanical, and Codex reads what needs reading.
   - Codex runs with umask 077 and 0600 logs, and a background `codex
     exec` takes `</dev/null`;
   - the user's box: no agent reads its secrets, and none asks for it;
-  - credentials are never copied between machines: two machines on one
-    login break each other at the next refresh. None passes through the
-    director: it reads no credential record or `auth.json`, and never
-    sends a browser's final address;
+  - a login that refreshes (Claude's, Codex's, ChatGPT's) is never
+    copied between machines: two machines on one login break each other
+    at the next refresh, so each machine's sign-in is the user's. Keys
+    and tokens that don't refresh (the GitHub SSH key, the GitHub probe
+    fixtures) the director copies where a mission needs them, 0600 in a
+    0700 directory, never into a worktree or a log. It reads no
+    credential, record or `auth.json`, and never sends a browser's final
+    address;
   - the code graph indexes the primary checkouts only, never a
     worktree, and `index_repository` and `delete_project` are the
     director's alone.
