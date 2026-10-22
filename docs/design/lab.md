@@ -345,8 +345,9 @@ and an agent:
 - **`cost`** is a cost class of the lab's settings (6.5).
 - **`dirs`:** the run's directories, `{dir.D}`, created empty, `0700`.
 - **Members** are required, but `after` and `files` in a process, and
-  `stdin` in a command, which are empty when absent, and `cluster` in a
-  collection or a check, which is `"up"` when absent (4.5).
+  `stdin` in a command, which are empty when absent, `cluster` in a
+  collection or a check, which is `"up"` when absent (4.5), and `await`
+  in a seed action, none when absent (4.5).
   `driver` may be null: an experiment with no agent. An unknown member
   is refused.
 
@@ -368,6 +369,7 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 | `{dir.D}` | run directory D | everything |
 | `{proc.P.dir}` | process P's scratch directory | everything |
 | `{proc.P.ready.C}` | capture C of P's ready lines | processes after P, transitively; seed actions, tools, collection, checks |
+| `{action.A.C}` | capture C of seed action A's awaited line (4.5) | the seed actions after A, collection, checks |
 | `{collect.dir}` | this collection's directory | a collection |
 | `{collected.N}` | collection N's directory | checks; a stopped collection's in stopped checks only (4.5) |
 
@@ -379,7 +381,23 @@ named by `files`, is a template: `{name}` is replaced by its value, and
   runner's.
 - **`files`:** each `{"path", "from"}` is the experiment's file `from`,
   rendered into the process's directory at `path`, `0600`, before it
-  starts.
+  starts. Each `{"path", "tree"}` is the subject's artifact `tree`, an
+  archive of a directory's tree, unpacked into the process's directory
+  at `path` before it starts, read-only: its files `0400`, `0500` with
+  the owner's execute bit, its directories `0500`. For a program that
+  reads a directory the subject's build makes, such as a server's
+  static files.
+  - *The archive* is uncompressed POSIX USTAR, its members regular files
+    and directories alone, its names relative, slash-separated, without
+    `.` or `..` segments, none repeated, each file's directory listed
+    before it. Owners, times and modes are not read but the owner's
+    execute bit. A product packs it deterministically, so that its
+    bytes, and the subject's digest, follow from the directory's
+    contents alone.
+  - *Not a template:* its bytes are unpacked as they are, never rendered.
+  - *Checked at validation,* from the subject's artifact, which cannot
+    change: an archive of another form, or a member of another kind or
+    name, is refused (4.7).
 - **`after`:** the processes that must be ready before it starts. The
   graph is acyclic.
 - **`ready`:** one or more lines, each `{"stream": "stdout" | "stderr",
@@ -416,6 +434,22 @@ kept.
 - **Seed actions,** `actions`, in their order, once every process is
   ready: the state a story starts from (an account, a key, something
   adopted). Each must exit 0 (7.1).
+- **An action's awaited line,** `await`, `{"process", "stream",
+  "prefix", "capture"}`: a line a process prints because of the action,
+  such as a fresh sign-in link a server prints when a spent one is
+  presented. The first line of that process's stream that starts with
+  the prefix and ends after the action started is captured as a ready
+  line is (4.3), the rest of the line, less its end, being `{action.A.C}`
+  for the actions after it, the collection and the checks (4.2). The
+  action is done once its own process has ended and the line has been
+  seen, in either order, both within its `command_seconds`; past them, it
+  fails `bound/command_seconds/<action>` (7.1), and a template naming
+  the capture leaves the commands that use it unavailable, as an
+  unready process's does (5.1). An action that exits non-zero fails as
+  any does, and its line is not awaited. The process's earlier lines,
+  its ready lines among them, are never matched, and the line stays in
+  its output's file whole. Only seed actions await: what a collection
+  or a check needs to see printed it reads from the process's files.
 - **Live or stopped,** by a collection's or a check's `cluster`. `"up"`,
   its default, runs it live, in phase 5, the cluster still up: for what
   needs a process alive to ask (a fake's observations, from its
@@ -506,10 +540,14 @@ run:
 - an `after`, a fault or a template naming no process, directory,
   artifact or collection; a cycle; a template name not yet known where
   it is used (4.2), a stopped collection's in a live check among them;
-  a capture no ready line declares;
-- a `from` missing from the experiment; a `path` absolute or climbing
-  out; a program that is not an absolute path to an executable regular
-  file;
+  a capture no ready line or awaited line declares; an `await` naming
+  no process, its stream neither `stdout` nor `stderr`, its prefix
+  holding a line's end, or its capture's name not `[a-z][a-z0-9-]*`;
+- a `from` missing from the experiment; a `tree` naming no artifact of
+  the subject, or one that is not an archive of 4.3's form; a `path`
+  absolute or climbing out, or one beneath or above another `path` of
+  the same process; a program that is not an absolute path to an
+  executable regular file;
 - a subject missing, pruned or lacking an artifact the experiment names,
   or without a source when `{source}` is used;
 - a cost class missing from the settings, or a value of it missing or
@@ -534,8 +572,8 @@ run:
 2. **Start:** the processes in dependency order, one at a time (5.4),
    each ready within `ready_seconds` of its start. Its files are rendered
    immediately before it starts, once its dependencies' readiness
-   captures are known (4.2, 4.3).
-3. **Seed:** the seed actions.
+   captures are known (4.2, 4.3), and its trees unpacked.
+3. **Seed:** the seed actions, each with its awaited line (4.5).
 4. **Drive:** the driver, until its host ends, a bound passes (6.5) or a
    process stops. Without a driver, nothing.
 5. **Collect,** then **check** (4.5), the cluster up: the live
@@ -672,7 +710,7 @@ its outcome is error, `interrupted`.
 ### 5.6 The run's record
 
 `runs/<run>/` holds `run.json`, `events.jsonl` (the timeline: phases,
-starts, ready lines, exits, faults, cuts), `proc/<P>/stdout` and
+starts, ready lines, awaited lines, exits, faults, cuts), `proc/<P>/stdout` and
 `stderr`, `commands/<name>.{stdin,stdout,stderr}`, `collected/<N>/`,
 `driver/` (6.3), `triage/<n>/` (9.2), and the scratch, `scratch/<P>/`
 and `dirs/<D>/`.
@@ -689,7 +727,8 @@ and `dirs/<D>/`.
   `signal`, `stopped`, `killed`); its memory (`peak_bytes`, `source`,
   `bound_bytes`, `tree_peak_bytes`); its output's files;
 - `commands`: each seed action, collection and check, as a process,
-  with its status and lines (7.2);
+  with its status and lines (7.2); a seed action that awaits a line,
+  its `awaited`, `{"ms", "capture"}` once seen, or null;
 - `driver`: its host's invocation, the inventory it was checked against
   and what was found (6.1), its actions and observed turns, its end, the
   report's and the transcript's files (6.3, 6.4);
@@ -1175,6 +1214,13 @@ root:
     (2.3);
   - each refusal of `validate`, naming its member, all of them at once
     (4.7); the templates, and where each name is known (4.2);
+  - an archive's tree read and refused for each rule of 4.3, and its
+    unpacking's paths and modes;
+  - an action's awaited line over scripted events: seen while the action
+    runs and after it ended, an earlier line of the process not matched,
+    the bound passed with the action ended and with it running, a
+    non-zero exit not awaited, and the capture rendered for the next
+    action and unavailable when missed (4.5);
   - the draws, the start order and a fault's N, replayed by a seed
     (5.4);
   - the run's life over scripted events: a stop in each phase cutting
@@ -1206,8 +1252,10 @@ root:
   after-landing lane. The stand-ins: one reports its port, one panics,
   one detaches a child, one ignores `SIGTERM`, one grows past its bound,
   one fails by its seed's parity. It shows:
-  - ready lines feeding a dependent; an exit in each phase recorded and
-    cutting it; a panic in a process and in a tool call; memory past its
+  - ready lines feeding a dependent; an action's awaited line, printed
+    by a stand-in because of the action, feeding the next action; a
+    tree unpacked, read-only, before its process starts; an exit in
+    each phase recorded and cutting it; a panic in a process and in a tool call; memory past its
     bound; a survivor; a stop past its grace;
   - no process and no cgroup left after a pass, a failure, a `SIGINT`
     and a `SIGKILL` of the runner, and the next command's sweep;

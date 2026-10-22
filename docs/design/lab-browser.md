@@ -845,10 +845,13 @@ main
   its standard error. A page's script that replaces its address leaves
   nothing to redact; one that keeps it shows `<link>` to `address`.
 - **What still holds it** is the run's own record of the seed (the
-  stdin file of the action that sent it, lab.md 5.4), as the ctl
-  level's seed holds its link (temper's `qa.md`, 4.3), and the
-  product's printed lines; neither is in an agent's view, and the link
-  is spent before the driver starts.
+  stdin file of the action that sent it, lab.md 4.5), as the ctl
+  level's seed holds its link (temper's `qa.md`, 4.3), the product's
+  printed lines, and the captures of them in `run.json` (a ready line's,
+  an awaited line's: lab.md 4.5 and 5.6); none is in an agent's view,
+  and the link is spent before the driver starts. What shows a run to a
+  reader (a report, a finding's evidence) shows each link's query as
+  `<link>`.
 - **A refused link is the page's:** the program opens what it is given
   and answers `opened`. Whether the page signed the person in is the
   caller's to wait for, by what the page shows.
@@ -902,7 +905,9 @@ scripts/lab/hand/sign-in ADDRESS
   `["{browser.program}", "hand", ...]`, after the product's server, its
   ready line `listening ` captured as `address`; the seed's action
   `["{runner}/hand/sign-in", "{proc.browser.ready.address}"]`, the link
-  on its standard input; and the tool `browse`, `["{runner}/hand/browse",
+  on its standard input, a fresh one a product printed when an action
+  before presented a spent one, by that action's awaited line (lab.md,
+  4.5); and the tool `browse`, `["{runner}/hand/browse",
   "{proc.browser.ready.address}"]` (lab.md, 6.3).
 
 ### 8.9 Its tests
