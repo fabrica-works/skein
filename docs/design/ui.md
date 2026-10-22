@@ -348,8 +348,10 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
   nest two deep, never more, and a slot at the third depth stays
   loading. A slot's id survives the insertions before it within a pass,
   and the limits count every pass. Splicing's scratch, a tree's room,
-  is reserved with a builder only when its limits allow slots: a tree
-  without them never splices.
+  is reserved only when the limits allow slots, since a tree without
+  them never splices, and once: the view keeps it between builds and
+  lends it with the spare (section 7), and a builder made alone
+  reserves its own.
 - **A slot left empty** shows as loading, and one its owner cannot show
   says so in its owner's words; neither breaks the tree.
 
@@ -463,7 +465,8 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
   node at most, which is how the limit on patches follows from the limit
   on nodes (section 15).
 - **The view,** `skein_ui::View`, keeps the last tree, whose ids the
-  shell sees, and a spare, both reserved at start:
+  shell sees, a spare, and splicing's room when its limits allow slots,
+  all reserved at start:
 
   | State | Event | Next | Emits |
   |---|---|---|---|
@@ -475,9 +478,9 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
     moved whenever its state changes anything a view shows;
     `stale(shown)` says whether it moved since the last build, so the
     application builds only then.
-  - *One build at a time:* `builder()` lends the spare; `finish` takes it
-    back with its build's count, diffs, keeps the new tree, and keeps
-    the old one as the spare.
+  - *One build at a time:* `builder()` lends the spare and the room;
+    `finish` takes both back with its build's count, diffs, keeps the
+    new tree, and keeps the old one as the spare.
   - *Acts are resolved in the last tree* (`View::act`), by section 6's
     refusals.
 
@@ -747,7 +750,8 @@ builder asserts each before it allocates.
 
 - **`worst_case(&Limits)`** gives the most heap skein-ui's own containers
   hold under them, bookkeeping included and allocator overhead excluded:
-  the view's two trees and a builder's, splicing's scratch, the diff's
+  the view's two trees and a builder's, splicing's scratch when the
+  limits allow slots, the diff's
   tables and patches (the queue's slots, and the boxed attributes of at
   most one attribute patch a node), the Markdown reader's scratch, a
   scene; nothing when a product overflows.
