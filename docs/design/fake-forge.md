@@ -771,6 +771,25 @@ below are tracked in STATUS.md.
   `422` "Cannot remove the last repository from this installation.", checked
   live on both fixture installations. Neither changes reach. `PUT` on
   an all-repositories installation is `204` without changing reach.
+- **Git, on the private route.** The layer serves section 3's private
+  git route at the same path as the Forgejo face, over the same domain
+  and its store, so the fake git program reaches a GitHub forge as it
+  reaches a Forgejo one. A git call is authenticated by HTTP basic
+  authentication with the login `x-access-token` and an installation's
+  token that the layer minted, full or contents-only: the token
+  unexpired on the forge's clock and not revoked, its installation
+  present and not suspended, and the repository its account's and
+  within its selection. Clone, fetch and a branch's read need the token
+  alone; a push and a creation need contents write, which both kinds
+  have, and the domain's protection still applies. No credential is
+  `401`; a token that fails one of these, another login, or a person's
+  token is `403`, and a repository outside the installation `404`, as
+  its REST routes answer. The domain sees the bot's user number. The
+  mint's life is the scenario's (`Config`'s token life), an hour unless
+  it says otherwise, so that a story on real time sees a renewal. The
+  layer keeps a bounded record of its git calls, each with its
+  installation and the mint number of its token, which a scenario
+  reads to tell which token a push carried.
 - **Ruleset mutations.** A person's `POST /repos/<o>/<n>/rulesets`
   replaces the domain's repository protection, requiring admin permission;
   `DELETE /repos/<o>/<n>/rulesets/<id>` removes it. The subset is strict:
@@ -1060,7 +1079,8 @@ the fake.
   `Peer::github(address, blob, limits, ..)`. It works as the Forgejo
   face does, over a forge it is handed, with the same rules of sharing.
 - **Step tests** cover each route, each refusal and its message, the
-  mint and the expiry, the JWT's window, the browser's routes, the queue
+  mint and the expiry, the JWT's window, the browser's routes, the git
+  route's acceptance and each of its refusals, the queue
   through to landing and to ejection, the log's paging and its `304`,
   and a delivery decoded by `skein_forge::github` alike pushed and
   logged.
