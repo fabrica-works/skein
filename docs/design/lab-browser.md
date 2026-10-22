@@ -140,7 +140,9 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   with the switches that stop its background services (component
   updates, sync, safe browsing, autofill's server, field trials, the
   default apps, metrics and pings), beside the kit's command, so that
-  a `trouble`'s `network` entries are the pages' own.
+  a `trouble`'s `network` entries are the pages' own. Its scrollbars
+  are hidden too, so that no shot depends on them: a viewport's shot is
+  its width by its height, whether the page scrolls or not.
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
@@ -274,7 +276,8 @@ bytes.
     `<scene>/<width>/` (`style/banner/faces`), or `{"id", "width",
     "entry", "cites"}`, any difference in that entry's count.
 - **Refused,** every problem named with its member, before the browser
-  starts: bytes not canonical, another format, a missing, unknown or
+  starts. A file of another format is refused for that alone, before
+  any other member is named. Otherwise: bytes not canonical, a missing, unknown or
   mistyped member, a name not matching or repeated (a scene's among the
   command's scenes, a width's or a region's in its scene, an
   expectation's or a departure's id), a finder with
