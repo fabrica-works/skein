@@ -183,7 +183,10 @@ named by its digest.
   "tree"}` (lab-browser.md, section 7). Validation refuses a Chromium
   file or a fonts tree whose digest differs from the settings', and a
   run checks them again before it starts, as it checks `programs`.
-  Settings without `browser` serve every experiment that names none.
+  An experiment that names no `{browser.*}` template never reads the
+  settings' `browser`: neither its validation nor its run digests
+  Chromium or walks the fonts, and a `browser` missing, stale or
+  naming files that are gone refuses nothing of it.
 
   A runner whose checks change, a helper or a host updated, another
   model, a changed configuration or a changed value is a new key.
@@ -511,8 +514,9 @@ run:
   or without a source when `{source}` is used;
 - a cost class missing from the settings, or a value of it missing or
   not a positive integer; the driver's or the triager's settings missing
-  when needed; the browser's missing when a template names it, or its
-  Chromium or fonts differing from them (2.3);
+  when needed; for an experiment that names the browser by a template,
+  and for it alone, the browser's settings missing, or its Chromium or
+  fonts differing from them (2.3);
 - a seed that is not a canonical decimal string (2.2); a seed new to a
   key that already has three (section 8);
 - the lab: not private, its lock held, the disk below its floor, no

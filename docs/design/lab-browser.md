@@ -472,6 +472,12 @@ REFUSED {"refused", "detail"}
   to the three), each file `0400`, the directory `0500`. It prints its
   `fonts` member for the settings. Chromium is the one the lab names,
   by path; the machine's packaged browser is never used.
+- **What the key leaves out:** Chromium's files beside its program
+  (its `.pak` resources and ICU data) are stood for by its version, and
+  the system libraries it loads (fontconfig, FreeType, the graphics
+  stack) are the machine's, so they are not in the key. Shots under one
+  key may still differ between machines; a capture's record says which
+  machine made it only through the run's `about`.
 - **By hand, for now:** until the look experiment (qa-web.md, section
   5) runs it as its collection, the capture runs on demand, with the
   same paths. It runs in no gate, and its shots are evidence, never
