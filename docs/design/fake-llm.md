@@ -150,10 +150,17 @@ answer ownership is checked before effects or payload copies.
   credentials it answers, by index (section 3), which the byte peer puts
   in each query; it fails only their calls, and a call with another
   credential, or with none, passes over it to the rest of its turn.
-  Naming none, it fails every call. A failure adds no assistant message,
-  so the same turn answers the call made again: a story fails one
-  account's calls, lets another's through, and so drives each account's
-  state deterministically.
+  Naming none, it fails every call. An `Exhausted` line with a reset
+  fails the calls it names until its reset has passed since the first
+  of them it failed; at the reset and after, they pass over it to the
+  rest of its turn, as a provider serves the account again after its
+  reset. The domain keeps that first failure's injected monotonic time
+  per line and named credential; a line naming none shares one time
+  across all calls. This state fits under `script_bytes` with the script.
+  A line without a reset, and every other class, fails each call made
+  again. A failure adds no assistant message, so the same turn answers
+  the call made again: a story fails one account's calls, lets another's
+  through, and so drives each account's state deterministically.
 - **The evidence is the script's.** The code, the request id and the
   field are sent as given, past the client's bounds too, so that a story
   sees the client keep each or leave it empty (llm.md, section 2.5). An

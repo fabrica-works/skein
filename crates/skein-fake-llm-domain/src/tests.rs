@@ -295,7 +295,12 @@ fn a_failing_line_after_pieces_ends_the_walk_with_its_failure() {
 
 /// System-only playback for response fixtures.
 pub(crate) fn played(scripts: &[Script]) -> crate::domain::Played {
-    crate::domain::Played { scripts: scripts.into(), cued: scripts.len(), asked: 0 }
+    crate::domain::Played {
+        scripts: scripts.into(),
+        cued: scripts.len(),
+        asked: 0,
+        resets: skein_lib::List::with_capacity(crate::respond::reset_count(scripts).expect("fixture reset count")),
+    }
 }
 
 pub(crate) fn empty_menu() -> crate::api::Menu {
@@ -411,10 +416,17 @@ fn asked_and_fallback_holds_release_at_their_flat_places() {
     // Two cued scripts, then the asked script, then the fallback.
     for (text, script_index) in [(b"ask".as_slice(), 2), (b"new".as_slice(), 3)] {
         let query = query(Box::new([user(Box::new([Part::Text { text: copy_of(text) }]))]));
-        let held = Played::new(&STREAM_CONFIG, scripts.clone(), &empty_menu()).expect("held scripts");
-        let response =
-            crate::respond::respond(&mut skein_lib::Rng::new(1), &mut 0, &STREAM_CONFIG, &held, &empty_menu(), &query)
-                .expect("scripted pieces");
+        let mut held = Played::new(&STREAM_CONFIG, scripts.clone(), &empty_menu()).expect("held scripts");
+        let response = crate::respond::respond(
+            &mut skein_lib::Rng::new(1),
+            &mut 0,
+            &STREAM_CONFIG,
+            &mut held,
+            &empty_menu(),
+            &query,
+            Time::ZERO,
+        )
+        .expect("scripted pieces");
         assert_eq!(response.1, Some(Place { script: script_index, turn: 0 }));
         let domain = Domain::played(&STREAM_CONFIG, 1, scripts.clone(), empty_menu()).expect("played domain");
         assert_eq!(domain.scripts(), held.scripts.as_ref());

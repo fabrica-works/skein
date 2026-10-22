@@ -352,6 +352,62 @@ fn send_request(peer: &mut llm::Peer, endpoint: &Endpoint, fields: &[u8], body: 
 }
 
 #[test]
+fn an_exhausted_account_gets_reset_evidence_then_its_turns_reply() {
+    const DELAY: Duration = Duration::from_secs(2);
+    let endpoint = Endpoint::openai();
+    let script = api::Script {
+        cue: b"limited".as_slice().into(),
+        turns: Box::new([api::Turn {
+            lines: Box::new([
+                api::Line::Fail {
+                    error: api::Error::Exhausted { retry_after: Some(DELAY) },
+                    report: api::Report::none(),
+                    credentials: Box::new([0]),
+                },
+                api::Line::Text { text: b"through".as_slice().into() },
+            ]),
+            finish: api::Finish::Stop,
+            tokens: 1,
+        }]),
+    };
+    let mut peer = make_scripted(
+        endpoint.clone(),
+        key(),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        Transport::Plaintext,
+        Box::new([script]),
+    )
+    .expect("scripted peer");
+    let mut sim = skein_sim::Sim::new(23, skein_sim::Config::calm());
+    let (server, client) = (sim.spawn_process(), sim.spawn_process());
+    let body = br#"{"model":"gpt","store":false,"instructions":"limited","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":true}"#;
+    let fields = b"authorization: Bearer k0\r\n";
+    let failed = request::request(&mut sim, server, client, &mut peer, &endpoint.target, fields, body);
+    let failed = core::str::from_utf8(&failed).expect("HTTP response");
+    assert!(failed.starts_with("HTTP/1.1 429"), "{failed}");
+    assert!(failed.contains(r#""resets_in_seconds":2"#), "{failed}");
+    assert!(!failed.to_ascii_lowercase().contains("retry-after"), "{failed}");
+    sim.advance_to(sim.now().saturating_add(DELAY));
+    let answered = request::request(&mut sim, server, client, &mut peer, &endpoint.target, fields, body);
+    let answered = core::str::from_utf8(&answered).expect("HTTP response");
+    assert!(answered.starts_with("HTTP/1.1 200"), "{answered}");
+    assert!(answered.contains(r#""text":"through""#), "{answered}");
+    assert!(answered.contains("response.completed"), "{answered}");
+    assert!(!answered.contains("resets_in_seconds"), "{answered}");
+    peer.shutdown();
+    for _ in 0..1000 {
+        request::pass(&mut sim, server, &mut peer);
+        if peer.is_empty() {
+            break;
+        }
+    }
+    assert!(peer.is_empty());
+    sim.assert_quiescent(server);
+    sim.assert_no_open_fds(server);
+    sim.assert_no_open_fds(client);
+}
+
+#[test]
 fn accept_is_refused_once_a_request_has_reached_the_peer() {
     let endpoint = Endpoint::anthropic();
     let mut peer = local_peer(endpoint.clone(), key());

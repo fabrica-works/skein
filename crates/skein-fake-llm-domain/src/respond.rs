@@ -28,7 +28,7 @@
 use alloc::boxed::Box;
 
 use skein_lib::bytes::copy_of;
-use skein_lib::{List, Rng};
+use skein_lib::{Duration, List, Rng, Time};
 
 use crate::api::{Answer, Error, Failure, Finish, Line, Message, Part, Query, Role, Script, Turn, Usage};
 use crate::domain::{Config, Played};
@@ -36,13 +36,54 @@ use crate::{limits, pieces};
 
 pub(crate) type Response = Result<(Answer, Option<pieces::Place>), (Failure, Option<pieces::Place>)>;
 
+/// The first failure for one reset-bearing line and credential, or all calls.
+#[derive(Debug)]
+pub(crate) struct Reset {
+    place: pieces::Place,
+    line: usize,
+    credential: Option<u32>,
+    first: Time,
+}
+
+pub(crate) fn reset_count(scripts: &[Script]) -> Option<u32> {
+    let mut count = 0_u32;
+    for script in scripts {
+        for turn in &script.turns {
+            for line in &turn.lines {
+                if let Line::Fail { error: Error::Exhausted { retry_after: Some(_) }, credentials, .. } = line {
+                    count = count.checked_add(u32::try_from(credentials.len().max(1)).ok()?)?;
+                }
+            }
+        }
+    }
+    Some(count)
+}
+
+fn before_reset(
+    resets: &mut List<Reset>,
+    place: pieces::Place,
+    line: usize,
+    credential: Option<u32>,
+    now: Time,
+    delay: Duration,
+) -> bool {
+    for reset in resets.as_slice() {
+        if reset.place == place && reset.line == line && reset.credential == credential {
+            return now.saturating_since(reset.first) < delay;
+        }
+    }
+    resets.push(Reset { place, line, credential, first: now }).expect("room for every admitted reset");
+    true
+}
+
 pub(crate) fn respond(
     rng: &mut Rng,
     minted: &mut u64,
     config: &Config,
-    played: &Played,
+    played: &mut Played,
     menu: &crate::api::Menu,
     query: &Query,
+    now: Time,
 ) -> Response {
     let roll = rng.below(1000);
     let failures = [
@@ -93,7 +134,8 @@ pub(crate) fn respond(
                 )
                 | None => None,
             };
-            return match scripted(minted, query, turn) {
+            let position = pieces::Place { script, turn: turn_index };
+            return match scripted(minted, query, turn, &mut played.resets, position, now) {
                 Ok(answer) => Ok((answer, place)),
                 Err(failure) => Err((failure, place)),
             };
@@ -304,10 +346,17 @@ fn cued(scripts: &[Script], system: &[u8]) -> Option<usize> {
 /// starts with one.
 ///
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-fn scripted(minted: &mut u64, query: &Query, turn: &Turn) -> Result<Answer, Failure> {
+fn scripted(
+    minted: &mut u64,
+    query: &Query,
+    turn: &Turn,
+    resets: &mut List<Reset>,
+    place: pieces::Place,
+    now: Time,
+) -> Result<Answer, Failure> {
     let count = u32::try_from(turn.lines.len()).expect("a script's answer fits a u32");
     let mut parts = List::with_capacity(count);
-    for line in &turn.lines {
+    for (index, line) in turn.lines.iter().enumerate() {
         let part = match line {
             Line::Fail { error, report, credentials } => {
                 let named = match query.credential {
@@ -315,6 +364,12 @@ fn scripted(minted: &mut u64, query: &Query, turn: &Turn) -> Result<Answer, Fail
                     None => false,
                 };
                 if credentials.is_empty() || named {
+                    if let Error::Exhausted { retry_after: Some(delay) } = error {
+                        let credential = if credentials.is_empty() { None } else { query.credential };
+                        if !before_reset(resets, place, index, credential, now, *delay) {
+                            continue;
+                        }
+                    }
                     return Err(Failure { error: *error, report: report.clone(), parts: parts.into_boxed() });
                 }
                 continue;
@@ -618,9 +673,10 @@ mod tests {
             &mut rng,
             &mut minted,
             &CONFIG,
-            &played(&[]),
+            &mut played(&[]),
             &menu(),
             &query(Box::new([user(Box::new([text()]))])),
+            skein_lib::Time::ZERO,
         );
         let answer = first.expect("a valid query").0;
         assert_eq!(answer.finish, Finish::ToolCalls);
@@ -631,7 +687,9 @@ mod tests {
         let messages =
             Box::new([user(Box::new([text()])), called.clone(), user(Box::new([output(b"call_0000000000000001")]))]);
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&[]), &menu(), &query(messages)).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&[]), &menu(), &query(messages), skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!(answer.finish, Finish::Stop);
 
         // The client writes again: another round of tools, then the answer.
@@ -643,7 +701,9 @@ mod tests {
             user(Box::new([text()])),
         ]);
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&[]), &menu(), &query(messages)).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&[]), &menu(), &query(messages), skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!(answer.finish, Finish::ToolCalls);
     }
 
@@ -656,9 +716,10 @@ mod tests {
             &mut rng,
             &mut minted,
             &config,
-            &played(&[]),
+            &mut played(&[]),
             &menu(),
             &query(Box::new([user(Box::new([text()]))])),
+            skein_lib::Time::ZERO,
         );
         assert_eq!(result, Err((Error::RateLimited { retry_after: Duration::from_secs(2) }.into(), None)));
         let cases = [
@@ -670,9 +731,10 @@ mod tests {
                 &mut rng,
                 &mut minted,
                 &config,
-                &played(&[]),
+                &mut played(&[]),
                 &menu(),
                 &query(Box::new([user(Box::new([text()]))])),
+                skein_lib::Time::ZERO,
             );
             assert_eq!(result, Err((error.into(), None)));
         }
@@ -681,9 +743,10 @@ mod tests {
             &mut rng,
             &mut minted,
             &config,
-            &played(&[]),
+            &mut played(&[]),
             &menu(),
             &query(Box::new([user(Box::new([text()]))])),
+            skein_lib::Time::ZERO,
         );
         assert_eq!(result, Err((Error::Unauthorized.into(), None)));
     }
@@ -694,10 +757,16 @@ mod tests {
         let mut minted = 0;
         let first = || query(Box::new([user(Box::new([text()]))]));
         let config = Config { refused: 1000, ..CONFIG };
-        let answer = respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &first()).expect("a valid query").0;
+        let answer =
+            respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &first(), skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!(answer.finish, Finish::ContentFilter);
         let config = Config { no_calls: 1000, ..CONFIG };
-        let answer = respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &first()).expect("a valid query").0;
+        let answer =
+            respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &first(), skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!(answer.finish, Finish::ToolCalls);
         assert!(!super::calls_any(&answer.parts), "it names no tool");
     }
@@ -708,13 +777,17 @@ mod tests {
         let mut minted = 0;
         let mut first = query(Box::new([user(Box::new([text()]))]));
         first.max_tokens = 3;
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &played(&[]), &menu(), &first).expect("a valid query").0;
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &mut played(&[]), &menu(), &first, skein_lib::Time::ZERO)
+            .expect("a valid query")
+            .0;
         assert_eq!((answer.finish, answer.usage.output), (Finish::Length, Some(3)));
         // It was to call a tool, and stops partway into the call.
         assert_eq!(answer.parts.len(), 1);
         assert_eq!(called(answer.parts.first()), (&b"call_0000000000000001"[..], &b"ls"[..], &br#"{"a"#[..]));
         let config = Config { tool_rounds: 0, answer_tokens: 2, ..CONFIG };
-        let answer = respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &first).expect("a valid query").0;
+        let answer = respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &first, skein_lib::Time::ZERO)
+            .expect("a valid query")
+            .0;
         assert_eq!(answer.finish, Finish::Stop);
         assert!(answer.usage.output.expect("fake reports output") <= 2, "within the configured answer");
     }
@@ -728,7 +801,9 @@ mod tests {
         let mut most: usize = 0;
         for _ in 0..20_u32 {
             let answer =
-                respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &first()).expect("a valid query").0;
+                respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &first(), skein_lib::Time::ZERO)
+                    .expect("a valid query")
+                    .0;
             assert!((1..=3).contains(&answer.parts.len()), "between one and three calls");
             most = most.max(answer.parts.len());
         }
@@ -736,7 +811,9 @@ mod tests {
         let config = Config { malformed: 1000, ..CONFIG };
         for _ in 0..20_u32 {
             let answer =
-                respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &first()).expect("a valid query").0;
+                respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &first(), skein_lib::Time::ZERO)
+                    .expect("a valid query")
+                    .0;
             let (_, name, arguments) = called(answer.parts.first());
             let unknown = name == b"unknown";
             let broken = arguments == b"{";
@@ -761,7 +838,9 @@ mod tests {
         let mut first = query(Box::new([user(Box::new([text()]))]));
         first.system = copy_of(b"Do it. @main");
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&scripts), &menu(), &first).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&scripts), &menu(), &first, skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!((answer.finish, answer.usage.output), (Finish::ToolCalls, Some(5)));
         let [Part::Text { .. }, Part::ToolCall { id, name, .. }, Part::ToolCall { arguments, .. }] = &*answer.parts
         else {
@@ -775,7 +854,9 @@ mod tests {
         let mut second = query(Box::new([user(Box::new([text()])), called.clone(), outputs()]));
         second.system = copy_of(b"Do it. @main");
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&scripts), &menu(), &second).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&scripts), &menu(), &second, skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"fixed") }]);
 
         // Past its end, it is done; and the cue that comes first wins.
@@ -783,11 +864,15 @@ mod tests {
         let mut third = query(Box::new(history));
         third.system = copy_of(b"Do it. @main");
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&scripts), &menu(), &third).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&scripts), &menu(), &third, skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!((&*answer.parts, answer.finish), (&[Part::Text { text: copy_of(b"done") }][..], Finish::Stop));
         first.system = copy_of(b"@child, then @main");
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&scripts), &menu(), &first).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&scripts), &menu(), &first, skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"hi") }]);
     }
 
@@ -804,7 +889,9 @@ mod tests {
         let mut first = query(Box::new([user(Box::new([text()]))]));
         first.system = copy_of(b"@main");
         let answer =
-            respond(&mut rng, &mut minted, &CONFIG, &played(&scripts), &menu(), &first).expect("a valid query").0;
+            respond(&mut rng, &mut minted, &CONFIG, &mut played(&scripts), &menu(), &first, skein_lib::Time::ZERO)
+                .expect("a valid query")
+                .0;
         assert_eq!((answer.finish, answer.usage.output), (Finish::Length, Some(100)));
         assert_eq!(called(answer.parts.first()), (&b"call_0000000000000001"[..], &b"ls"[..], &b"{}"[..]));
     }
@@ -824,20 +911,28 @@ mod tests {
             let mut rng = Rng::new(seed);
             let mut minted = 0;
             let answer =
-                respond(&mut rng, &mut minted, &CONFIG, &played(&[]), &menu(), &query).expect("valid choice").0;
+                respond(&mut rng, &mut minted, &CONFIG, &mut played(&[]), &menu(), &query, skein_lib::Time::ZERO)
+                    .expect("valid choice")
+                    .0;
             assert_eq!(answer.finish, Finish::Stop);
             assert!(!super::calls_any(&answer.parts), "None calls no tool");
             query.choice = crate::api::ToolChoice::Only(Box::new([copy_of(b"other")]));
             let answer =
-                respond(&mut rng, &mut minted, &CONFIG, &played(&[]), &menu(), &query).expect("valid choice").0;
+                respond(&mut rng, &mut minted, &CONFIG, &mut played(&[]), &menu(), &query, skein_lib::Time::ZERO)
+                    .expect("valid choice")
+                    .0;
             assert_eq!(called(answer.parts.first()).1, b"other");
             let config = Config { outside_choice: 1000, ..CONFIG };
             let answer =
-                respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &query).expect("configured breach").0;
+                respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &query, skein_lib::Time::ZERO)
+                    .expect("configured breach")
+                    .0;
             assert_eq!(called(answer.parts.first()).1, b"ls");
             query.choice = crate::api::ToolChoice::None;
             let answer =
-                respond(&mut rng, &mut minted, &config, &played(&[]), &menu(), &query).expect("configured breach").0;
+                respond(&mut rng, &mut minted, &config, &mut played(&[]), &menu(), &query, skein_lib::Time::ZERO)
+                    .expect("configured breach")
+                    .0;
             assert_eq!(answer.finish, Finish::ToolCalls);
             assert!(super::calls_any(&answer.parts), "None breach still calls an offered tool");
         }

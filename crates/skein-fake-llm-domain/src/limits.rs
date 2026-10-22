@@ -91,8 +91,15 @@ pub(crate) fn scripts(scripts: &[Script]) -> Option<u64> {
                         }
                         owned
                     }
-                    Line::Fail { report, credentials, .. } => {
-                        report_bytes(report)?.checked_add(array(credentials.len(), size_of::<u32>())?)?
+                    Line::Fail { error, report, credentials } => {
+                        let resets = if let crate::api::Error::Exhausted { retry_after: Some(_) } = error {
+                            array(credentials.len().max(1), size_of::<crate::respond::Reset>())?
+                        } else {
+                            0
+                        };
+                        report_bytes(report)?
+                            .checked_add(array(credentials.len(), size_of::<u32>())?)?
+                            .checked_add(resets)?
                     }
                     Line::Text { text } => bytes(text)?,
                     Line::Opaque { bytes: value } => bytes(value)?,
@@ -185,7 +192,7 @@ pub(crate) fn random_answer(query: &Query, menu: &crate::api::Menu, count: u32) 
 ///
 /// Query payloads are capped before generation. A random call copies an offered
 /// or configured invalid name and one whole body from the retained caller menu,
-/// plus its generated id. The menu and scripts jointly fit `script_bytes`;
+/// plus its generated id. The menu, scripts and reset state jointly fit `script_bytes`;
 /// each scripted call adds a generated id and a `Part`. Converting the temporary
 /// `List` into a boxed slice can hold both
 /// arrays at once, and the truncated answer can coexist with the full one.

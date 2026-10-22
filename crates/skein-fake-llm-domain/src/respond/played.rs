@@ -173,11 +173,14 @@ fn system_request_and_fallback_choose_in_order() {
         },
     ];
     for Choice { label, system, messages, scripts, chosen, answer } in rows {
-        let played = Played::new(&CONFIG, scripts, &empty_menu()).expect("admitted scripts");
+        let mut played = Played::new(&CONFIG, scripts, &empty_menu()).expect("admitted scripts");
         let mut query = query(messages);
         query.system = copy_of(system);
         assert_eq!(played.choose(&query), chosen, "{label}");
-        let reply = respond(&mut Rng::new(1), &mut 0, &CONFIG, &played, &empty_menu(), &query).expect(label).0;
+        let reply =
+            respond(&mut Rng::new(1), &mut 0, &CONFIG, &mut played, &empty_menu(), &query, skein_lib::Time::ZERO)
+                .expect(label)
+                .0;
         assert_eq!(&*reply.parts, &[text(answer)], "{label}");
     }
 }
@@ -236,13 +239,23 @@ fn request_turns_restart_while_system_turns_keep_counting() {
         ),
     ];
     for (label, scripts, system, expected_turns, expected_answers) in rows {
-        let played = Played::new(&CONFIG, scripts, &empty_menu()).expect("admitted scripts");
+        let mut played = Played::new(&CONFIG, scripts, &empty_menu()).expect("admitted scripts");
         let mut minted = 0;
         for ((prefix, turn), answer) in PREFIXES.into_iter().zip(expected_turns).zip(expected_answers) {
             let mut query = query(history.get(..prefix).expect("conversation prefix").into());
             query.system = copy_of(system);
             assert_eq!(played.choose(&query), Some((0, turn)), "{label} prefix {prefix}");
-            let reply = respond(&mut Rng::new(1), &mut minted, &CONFIG, &played, &empty_menu(), &query).expect(label).0;
+            let reply = respond(
+                &mut Rng::new(1),
+                &mut minted,
+                &CONFIG,
+                &mut played,
+                &empty_menu(),
+                &query,
+                skein_lib::Time::ZERO,
+            )
+            .expect(label)
+            .0;
             assert_eq!(reply.parts.as_ref(), &[answer], "{label} prefix {prefix}");
         }
     }

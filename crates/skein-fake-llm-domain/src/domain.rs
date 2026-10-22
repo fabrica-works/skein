@@ -28,7 +28,7 @@ pub struct Config {
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     pub query_bytes: u32,
-    /// Joint owned script and caller-menu bytes, including their arrays, held at startup.
+    /// Joint owned script, reset-state and caller-menu bytes, including their arrays, held at startup.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     pub script_bytes: u32,
@@ -193,6 +193,7 @@ pub(crate) struct Played {
     pub scripts: Box<[Script]>,
     pub cued: usize,
     pub asked: usize,
+    pub resets: List<respond::Reset>,
 }
 
 impl Played {
@@ -239,7 +240,8 @@ impl Played {
             }
             flat.into_boxed()
         };
-        Ok(Played { scripts, cued: cued_count, asked: asked_count })
+        let resets = List::with_capacity(respond::reset_count(&scripts).expect("admitted reset state bytes"));
+        Ok(Played { scripts, cued: cued_count, asked: asked_count, resets })
     }
 }
 
@@ -417,7 +419,15 @@ fn call(
     let mut result = if !cache::valid(query) {
         Err(Error::InvalidRequest.into())
     } else if limits::fits(limits::query(query), config.query_bytes) {
-        match respond::respond(&mut domain.rng, &mut domain.minted, config, &domain.played, &domain.menu, query) {
+        match respond::respond(
+            &mut domain.rng,
+            &mut domain.minted,
+            config,
+            &mut domain.played,
+            &domain.menu,
+            query,
+            env.now,
+        ) {
             Ok((answer, position)) if limits::fits(limits::answer(&answer), config.answer_bytes) => {
                 place = position;
                 Ok(answer)
