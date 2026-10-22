@@ -80,8 +80,8 @@ behind the rules, when a rule's reason matters. The repository's
 
 - **Started by its parent** in `~/src/rust` of the machine its work runs
   on, named `o/<name>`:
-  `claude --bg -n o/<name> --model claude-opus-5-5 --effort <effort>
-  --autocompact 150000 --dangerously-skip-permissions --settings
+  `claude --bg -n o/<name> --model 'claude-opus-5-5[1m]' --effort <effort>
+  --autocompact 282000 --dangerously-skip-permissions --settings
   '{"autoMemoryEnabled": false}' "Read <brief> and do what it says."`
   Its notes are its memory: Claude Code's auto-memory stays off, since
   in `~/src/rust` it would share the director's.
