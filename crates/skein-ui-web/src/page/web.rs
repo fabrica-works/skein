@@ -395,7 +395,7 @@ impl Mounted {
             return;
         }
         let parent = if parent == NodeId(0) { self.mount.clone() } else { self.destination(parent) };
-        let anchor = before.map(|node| self.group(node).roots[0].clone());
+        let anchor = before.map(|node| self.group(node).roots[0].clone()).or_else(|| trailing_own(&parent));
         for root in self.make(model, false) {
             let description =
                 root.dyn_ref::<Element>().is_some_and(|root| root.id().starts_with("skein-ui-description-"));
@@ -513,7 +513,7 @@ impl Mounted {
             .filter(|element| group.roots.iter().any(|root| root.contains(Some(element))));
         let selection = active.as_ref().and_then(selection);
         let parent = self.destination(parent);
-        let anchor = before.map(|node| self.group(node).roots[0].clone());
+        let anchor = before.map(|node| self.group(node).roots[0].clone()).or_else(|| trailing_own(&parent));
         for root in group.roots {
             let description =
                 root.dyn_ref::<Element>().is_some_and(|root| root.id().starts_with("skein-ui-description-"));
@@ -549,7 +549,9 @@ impl Mounted {
                 replacement.clone()
             };
             for child in children {
-                destination.append_child(&child).expect("replacement accepts semantic children");
+                destination
+                    .insert_before(&child, trailing_own(&destination).as_ref())
+                    .expect("replacement accepts semantic children");
             }
             group
                 .element
@@ -621,11 +623,12 @@ impl Mounted {
                 std::slice::from_ref(child),
                 element.namespace_uri().as_deref() == Some("http://www.w3.org/2000/svg"),
             ) {
-                let description =
-                    node.dyn_ref::<Element>().is_some_and(|e| e.id().starts_with("skein-ui-description-"));
-                let before = if description { None } else { anchor.as_ref() };
+                let trailing = node.dyn_ref::<Element>().is_some_and(|e| {
+                    e.id().starts_with("skein-ui-description-") || e.id().starts_with("skein-ui-state-")
+                });
+                let before = if trailing { None } else { anchor.as_ref() };
                 element.insert_before(&node, before).expect("own content surrounds semantic children");
-                if !description {
+                if !trailing {
                     anchor = node.next_sibling();
                 }
             }
@@ -707,6 +710,18 @@ impl Mounted {
         }
         self.nodes.borrow_mut().get_mut(&node).expect("mounted node").roots = roots;
     }
+}
+
+// Own state words and descriptions follow all semantic children (ui-web.md, 6).
+fn trailing_own(element: &Element) -> Option<Node> {
+    let id = element.get_attribute("data-node")?;
+    let state = format!("skein-ui-state-{id}");
+    let description = format!("skein-ui-description-{id}");
+    let children = element.children();
+    (0..children.length())
+        .filter_map(|index| children.item(index))
+        .find(|child| child.id() == state || child.id() == description)
+        .map(Into::into)
 }
 
 fn attributes(element: &Element, model: &Model, mount: bool) {

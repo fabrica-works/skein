@@ -3,7 +3,7 @@ use super::{Op, Page, semantic_mut};
 use crate::{
     Look,
     dom::Element,
-    mapping::{self, Primary},
+    mapping::{self, Primary, Words},
 };
 use skein_ui::{Made, NodeId};
 
@@ -12,8 +12,8 @@ pub(super) fn index(made: &Made, look: &Look<'_>) -> Option<usize> {
         style.owner == *owner && made.attribute.role == *role && made.attribute.styles.as_slice().contains(style)
     })
 }
-pub(super) fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -> Element {
-    let mut element = mapping::element(made, look, prefix, primary);
+pub(super) fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary, words: &Words<'_>) -> Element {
+    let mut element = mapping::element(made, look, prefix, primary, words);
     if let Some(component) = index(made, look) {
         semantic_mut(&mut element).set("data-component", &component.to_string());
     }

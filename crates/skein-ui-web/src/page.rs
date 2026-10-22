@@ -15,7 +15,7 @@ pub mod web;
 use crate::{
     Look,
     dom::{self, Child, Element},
-    mapping::Primary,
+    mapping::{Primary, Words},
     svg,
 };
 
@@ -59,6 +59,7 @@ pub struct Page<'a> {
     look: Look<'a>,
     prefix: &'a [u8],
     primary: Primary,
+    words: Words<'a>,
     nodes: BTreeMap<NodeId, Held>,
     roots: Vec<NodeId>,
     links: Vec<NodeId>,
@@ -77,6 +78,7 @@ impl<'a> Page<'a> {
             look,
             prefix,
             primary,
+            words: Words::ENGLISH,
             nodes: BTreeMap::new(),
             roots: Vec::new(),
             links: Vec::new(),
@@ -87,6 +89,12 @@ impl<'a> Page<'a> {
             menu: None,
             composition_end: None,
         }
+    }
+
+    /// Set the page part's words before its first patch.
+    pub fn words(&mut self, words: Words<'a>) {
+        assert!(self.nodes.is_empty(), "the page's words come before its first patch");
+        self.words = words;
     }
 
     pub fn apply(&mut self, patches: &[Patch], ops: &mut Vec<Op>) {
@@ -292,7 +300,7 @@ impl<'a> Page<'a> {
                 open.pop();
             }
             let node_parent = open.last().map_or(parent, |(node, _)| *node);
-            let element = components::element(made, &self.look, self.prefix, self.primary);
+            let element = components::element(made, &self.look, self.prefix, self.primary, &self.words);
             let held = Held {
                 made: made.clone(),
                 parent: node_parent,
@@ -365,7 +373,7 @@ impl<'a> Page<'a> {
 
     fn remap(&mut self, node: NodeId) {
         let held = self.nodes.get_mut(&node).expect("held node");
-        held.element = components::element(&held.made, &self.look, self.prefix, self.primary);
+        held.element = components::element(&held.made, &self.look, self.prefix, self.primary, &self.words);
         if held.made.attribute.role == Role::Menu {
             menu_element(&mut held.element, self.menu == Some(node));
         }
@@ -423,6 +431,11 @@ impl<'a> Page<'a> {
         } else {
             None
         };
+        let state = if self.held(node).made.attribute.states.as_slice().contains(&State::Completed) {
+            destination.children.pop()
+        } else {
+            None
+        };
         let mut tree_group = None;
         let mut option_descriptions = Vec::new();
         for child in &self.held(node).children {
@@ -454,6 +467,9 @@ impl<'a> Page<'a> {
         }
         if let Some(group) = tree_group {
             destination.append(group);
+        }
+        if let Some(state) = state {
+            destination.children.push(state);
         }
         if let Some(description) = description {
             destination.children.push(description);

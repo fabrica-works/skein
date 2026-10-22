@@ -3,7 +3,8 @@
   position: relative;
 }
 
-[data-drawn] > :not(svg) {
+[data-drawn] > :not(svg),
+[id^="skein-ui-state-"] {
   position: absolute;
   width: 1px;
   height: 1px;

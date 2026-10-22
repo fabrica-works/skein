@@ -220,6 +220,7 @@ pub struct Rig {
     pub version: Box<[u8]>,
     stderr: Vec<u8>,
     pub snapshot: Box<[u8]>,
+    pub tree: Option<skein_lib::List<skein_browser::boundary::Entry>>,
     dialog: dialogs::State,
     scope: Option<u64>,
     form_node: u64,
@@ -271,7 +272,13 @@ impl Rig {
             version: Box::default(),
             stderr: Vec::new(),
             snapshot: Box::default(),
+            tree: None,
         }
+    }
+
+    /// Read the accessibility tree as well as the flat snapshot, to check subtree order.
+    pub fn capture_tree(&mut self) {
+        self.tree = Some(skein_lib::List::with_capacity(0));
     }
 
     pub fn run(&mut self) {
@@ -811,6 +818,14 @@ impl Rig {
                     assert!(text.windows(b"Hello Ada".len()).any(|part| part == b"Hello Ada"));
                 }
                 self.snapshot = text;
+                if self.tree.is_some() {
+                    self.ask(Request::Look { page: PAGE, op: SNAPSHOT, look: skein_browser::boundary::Look::Tree });
+                } else {
+                    self.close_browser();
+                }
+            }
+            Event::Looked { op: SNAPSHOT, looked: skein_browser::boundary::Looked::Tree(entries) } => {
+                self.tree = Some(entries);
                 self.close_browser();
             }
             Event::Closed { owner: BROWSER } => {

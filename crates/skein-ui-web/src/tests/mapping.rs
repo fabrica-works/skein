@@ -1,7 +1,7 @@
 use super::fixtures::{self, OWNER};
 use crate::{
     dom::{self, Element},
-    mapping::{self, Primary},
+    mapping::{self, Primary, Words},
 };
 use skein_ui::{Made, Modifier, Picture, Region, Role, Run, Shortcut, State, Style, TextRun, Value};
 
@@ -84,7 +84,7 @@ fn each_role_maps_to_its_element() {
         let mut made = fixture.clone();
         made.attribute.role = *role;
         assert_eq!(
-            dom::print(&mapping::element(&made, &look, b"/bundle/digest/", Primary::Control)),
+            dom::print(&mapping::element(&made, &look, b"/bundle/digest/", Primary::Control, &Words::ENGLISH)),
             *expected,
             "{role:?}"
         );
@@ -101,6 +101,8 @@ fn each_role_has_its_accessible_roles() {
 #[derive(Clone, Copy, Debug)]
 enum Property {
     State(State),
+    CompletedDescription,
+    Placeholder,
     Sort(skein_ui::Sort),
     Count,
     Position,
@@ -258,12 +260,40 @@ const PROPERTIES: &[(Role, Property, &str)] = &[
         Property::Primary(Primary::Meta),
         r#"<button data-node="1" type="button" aria-keyshortcuts="Meta+K"></button>"#,
     ),
+    (
+        Role::Item,
+        Property::State(State::Completed),
+        r#"<li data-node="1"><span id="skein-ui-state-1"> completed</span></li>"#,
+    ),
+    (
+        Role::Item,
+        Property::CompletedDescription,
+        r#"<li data-node="1" aria-describedby="skein-ui-description-1"><span id="skein-ui-state-1"> completed</span><span id="skein-ui-description-1">Help &amp; &lt;b&gt;</span></li>"#,
+    ),
+    (
+        Role::TextField,
+        Property::Placeholder,
+        r#"<label for="skein-ui-label-1">Words &amp; &lt;b&gt;</label><input data-node="1" type="text" placeholder="Hint &amp; &lt;b&gt;" id="skein-ui-label-1">"#,
+    ),
+    (
+        Role::TextArea,
+        Property::Placeholder,
+        r#"<textarea data-node="1" aria-label="Words &amp; &lt;b&gt;" placeholder="Hint &amp; &lt;b&gt;"></textarea>"#,
+    ),
 ];
 
 fn property(made: &mut Made, property: Property) {
     match property {
         Property::State(state) => {
             made.attribute.states.push(state).expect("fixture state capacity");
+        }
+        Property::CompletedDescription => {
+            made.attribute.states.push(State::Completed).expect("fixture state capacity");
+            made.attribute.description = Some(b"Help & <b>".as_slice().into());
+        }
+        Property::Placeholder => {
+            made.attribute.name = Some(b"Words & <b>".as_slice().into());
+            made.attribute.placeholder = Some(b"Hint & <b>".as_slice().into());
         }
         Property::Sort(sort) => made.attribute.sort = Some(sort),
         Property::Count => made.attribute.count = Some(20),
@@ -307,7 +337,7 @@ fn each_state_and_property_maps_to_its_attribute() {
             _ => Primary::Control,
         };
         assert_eq!(
-            dom::print(&mapping::element(&made, &look, b"/bundle/digest/", primary)),
+            dom::print(&mapping::element(&made, &look, b"/bundle/digest/", primary, &Words::ENGLISH)),
             *expected,
             "{role:?}: {case:?}"
         );
@@ -331,7 +361,7 @@ fn every_node_maps_as_the_golden_page() {
     for node in tree.nodes().iter().skip(1) {
         let mut made = Made::of(node);
         made.id = skein_ui::NodeId(1);
-        page.append(mapping::element(&made, &look, b"/bundle/digest/", Primary::Control));
+        page.append(mapping::element(&made, &look, b"/bundle/digest/", Primary::Control, &Words::ENGLISH));
     }
     let mut fixture = fixtures::made(Role::Text);
     for (role, case, _) in PROPERTIES {
@@ -341,7 +371,7 @@ fn every_node_maps_as_the_golden_page() {
         fixture.attribute.role = *role;
         let mut made = fixture.clone();
         property(&mut made, *case);
-        page.append(mapping::element(&made, &look, b"/bundle/digest/", Primary::Control));
+        page.append(mapping::element(&made, &look, b"/bundle/digest/", Primary::Control, &Words::ENGLISH));
     }
     assert_eq!(dom::print(&page), include_str!("golden/mapping.html").trim_end());
 }
@@ -355,7 +385,7 @@ fn an_override_keeps_the_nodes_role_and_name() {
         elements: &[(OWNER, Role::Region, Style { owner: OWNER, token: 0 }, "article")],
         ..fixtures::look()
     };
-    let element = mapping::element(&made, &look, b"/", Primary::Control);
+    let element = mapping::element(&made, &look, b"/", Primary::Control, &Words::ENGLISH);
     assert_eq!(
         dom::print(&element),
         r#"<article data-node="1" role="region" aria-label="Groceries" class="test-mark"></article>"#
@@ -373,7 +403,10 @@ fn named_fields_use_a_visible_label_and_text_areas_keep_their_aria_label() {
     ] {
         let mut made = fixtures::made(role);
         property(&mut made, Property::Name);
-        assert_eq!(dom::print(&mapping::element(&made, &fixtures::look(), b"/", Primary::Control)), expected);
+        assert_eq!(
+            dom::print(&mapping::element(&made, &fixtures::look(), b"/", Primary::Control, &Words::ENGLISH)),
+            expected
+        );
     }
 }
 

@@ -3,11 +3,11 @@
 pub mod real;
 
 use real::{Profile, Rig, Scenario, chromium};
-use skein_ui::{Builder, EntryKind, Limits, Made, NodeId, Role, Run};
+use skein_ui::{Builder, EntryKind, Limits, Made, NodeId, Role, Run, State};
 use skein_ui_web::{
     Look,
     dom::{self, Element},
-    mapping::{self, Primary},
+    mapping::{self, Primary, Words},
 };
 
 struct Row {
@@ -115,7 +115,7 @@ fn mapped(row: &Row, id: NodeId) -> Element {
     let mut made = Made::of(tree.get(0).expect("row root"));
     made.id = id;
     let look = Look { components: &[], names: &[], pictures: &[], draw: no_drawing, elements: &[] };
-    let mut element = mapping::element(&made, &look, b"/", Primary::Control);
+    let mut element = mapping::element(&made, &look, b"/", Primary::Control, &Words::ENGLISH);
     if row.role == Role::Menu {
         for child in &mut element.children {
             if let dom::Child::Element(child) = child {
@@ -142,6 +142,10 @@ fn fixed_page() -> Vec<u8> {
         };
         body.push_str(&html);
     }
+    body.push_str("<style>");
+    body.push_str(include_str!("../../../crates/skein-ui-bundle/skein-ui.css"));
+    body.push_str("</style>");
+    body.push_str(&dom::print(&completed_and_placeholder()));
     body.push_str("</body></html>");
     body.into_bytes()
 }
@@ -199,4 +203,66 @@ fn chromium_takes_a_date_and_a_time_by_the_kits_keys() {
             "native field {expected:?}, snapshot:\n{snapshot}"
         );
     }
+}
+
+fn completed_and_placeholder() -> Element {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::List);
+    b.open(Role::Item);
+    b.state(State::Completed);
+    b.text(Run::Plain, b"Branch pushed");
+    b.close();
+    b.close();
+    let tree = b.finish();
+    let look = Look { components: &[], names: &[], pictures: &[], draw: no_drawing, elements: &[] };
+    let mapped = |node: &skein_ui::Node, offset: u32| {
+        let mut made = Made::of(node);
+        // The fixed role rows reserve ids below ROWS.len().
+        made.id = NodeId(u32::try_from(ROWS.len()).expect("fixed role rows fit u32") + offset);
+        mapping::element(&made, &look, b"/", Primary::Control, &Words::ENGLISH)
+    };
+    let mut list = mapped(tree.get(0).expect("list"), 0);
+    let mut item = mapped(tree.get(1).expect("item"), 1);
+    item.children.insert(0, dom::Child::Element(mapped(tree.get(2).expect("text"), 2)));
+    list.append(item);
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::TextArea);
+    b.name(b"Message");
+    b.placeholder("Message T6…".as_bytes());
+    b.close();
+    let tree = b.finish();
+    let mut page = Element::new("");
+    page.append(list);
+    page.append(mapped(tree.get(0).expect("text area"), 3));
+    page
+}
+
+#[test]
+fn chromium_reads_completion_and_keeps_a_placeholders_field_name() {
+    let chromium = chromium();
+    let profile = Profile::fresh();
+    let mut rig = Rig::new(&chromium, &profile.0, Scenario::Facts);
+    rig.fixed_page(fixed_page());
+    rig.capture_tree();
+    rig.run();
+    let tree = rig.tree.expect("accessibility tree requested");
+    let field = tree
+        .iter()
+        .find(|entry| entry.role.as_ref() == b"textbox" && entry.name.as_ref() == b"Message")
+        .expect("the placeholder leaves the field named exactly Message");
+    assert!(field.multiline);
+    let entries = tree.as_slice();
+    let item = entries
+        .iter()
+        .position(|entry| entry.role.as_ref() == b"listitem" && entry.name.is_empty())
+        .expect("the completed list item");
+    let depth = entries[item].depth;
+    let words: Vec<_> = entries
+        .iter()
+        .skip(item + 1)
+        .take_while(|entry| entry.depth > depth)
+        .filter(|entry| entry.role.as_ref() == b"StaticText")
+        .map(|entry| entry.name.as_ref())
+        .collect();
+    assert_eq!(words, [b"Branch pushed".as_slice(), b"completed"], "only non-ignored words are read in item order");
 }

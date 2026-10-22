@@ -11,9 +11,26 @@ pub enum Primary {
     Meta,
 }
 
+/// The words the page part says for the states no attribute stands for (ui-web.md, 6).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Words<'a> {
+    /// Said after a completed item's words.
+    pub completed: &'a [u8],
+}
+impl Words<'static> {
+    pub const ENGLISH: Words<'static> = Words { completed: b"completed" };
+}
+
 #[must_use]
-pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -> Element {
+pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary, words: &Words<'_>) -> Element {
     let mut e = core_element(made, look, prefix, primary);
+    if made.attribute.states.as_slice().contains(&State::Completed) {
+        let mut state = Element::new("span");
+        state.set("id", &format!("skein-ui-state-{}", made.id.0));
+        state.text(b" ");
+        state.text(words.completed);
+        crate::page::semantic_mut(&mut e).append(state);
+    }
     if let Some(description) = &made.attribute.description {
         let id = format!("skein-ui-description-{}", made.id.0);
         let core = crate::page::semantic_mut(&mut e);
@@ -42,6 +59,9 @@ fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -
     name(&mut e, made);
     properties(&mut e, made);
     collection(&mut e, made);
+    if let Some(placeholder) = &a.placeholder {
+        e.set("placeholder", &words(placeholder));
+    }
     if a.role == Role::Disclosure && a.name.is_none() {
         e.append(Element::new("summary"));
     }

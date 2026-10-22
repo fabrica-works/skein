@@ -704,3 +704,96 @@ fn slots_paragraphs_statuses_and_lists_split_tree_item_runs() {
     );
     assert_eq!(page.html(), include_str!("golden/tree-mixed.html").trim_end());
 }
+
+fn completed_item(builder: &mut Builder, completed: bool) {
+    builder.open(Role::Item);
+    if completed {
+        builder.state(State::Completed);
+    }
+    builder.description(b"Item help");
+    builder.text(Run::Plain, b"Branch pushed");
+    builder.close();
+}
+
+#[test]
+fn the_pages_words_reach_a_completed_items_span() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.words(crate::mapping::Words { completed: b"done & <met>" });
+    page.apply(&fixtures::patches(&mut view, 0, |b| completed_item(b, true)), &mut Vec::new());
+    assert_eq!(
+        page.html(),
+        r#"<li data-node="1" aria-describedby="skein-ui-description-1"><span data-node="2">Branch pushed</span><span id="skein-ui-state-1"> done &amp; &lt;met&gt;</span><span id="skein-ui-description-1">Item help</span></li>"#
+    );
+}
+
+#[test]
+#[should_panic(expected = "the page's words come before its first patch")]
+fn setting_words_after_a_node_is_held_asserts() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| completed_item(b, true)), &mut Vec::new());
+    page.words(crate::mapping::Words::ENGLISH);
+}
+
+#[test]
+fn completion_attributes_keep_the_items_children_before_its_description() {
+    const ITEM: NodeId = NodeId(1); // The item is the root.
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| completed_item(b, false)), &mut Vec::new());
+    for (revision, completed, expected_own, expected_page) in [
+        (
+            1,
+            true,
+            r#"<li data-node="1" aria-describedby="skein-ui-description-1"><span id="skein-ui-state-1"> completed</span><span id="skein-ui-description-1">Item help</span></li>"#,
+            r#"<li data-node="1" aria-describedby="skein-ui-description-1"><span data-node="2">Branch pushed</span><span id="skein-ui-state-1"> completed</span><span id="skein-ui-description-1">Item help</span></li>"#,
+        ),
+        (
+            2,
+            false,
+            r#"<li data-node="1" aria-describedby="skein-ui-description-1"><span id="skein-ui-description-1">Item help</span></li>"#,
+            r#"<li data-node="1" aria-describedby="skein-ui-description-1"><span data-node="2">Branch pushed</span><span id="skein-ui-description-1">Item help</span></li>"#,
+        ),
+    ] {
+        let mut ops = Vec::new();
+        page.apply(&fixtures::patches(&mut view, revision, |b| completed_item(b, completed)), &mut ops);
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Op::Attributes { node, element } => {
+                assert_eq!(*node, ITEM);
+                assert_eq!(crate::dom::print(element), expected_own);
+            }
+            _ => unreachable!("only completion changed"),
+        }
+        assert_eq!(page.html(), expected_page);
+    }
+}
+
+fn placeholder_field(builder: &mut Builder, placeholder: Option<&[u8]>) {
+    builder.open(Role::TextArea);
+    builder.name(b"Message");
+    if let Some(placeholder) = placeholder {
+        builder.placeholder(placeholder);
+    }
+    builder.close();
+}
+
+#[test]
+fn setting_then_clearing_a_placeholder_updates_its_attributes() {
+    const FIELD: NodeId = NodeId(1); // The text area is the root.
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| placeholder_field(b, None)), &mut Vec::new());
+    for (revision, placeholder, expected) in [
+        (1, Some(b"Hint".as_slice()), r#"<textarea data-node="1" aria-label="Message" placeholder="Hint"></textarea>"#),
+        (2, None, r#"<textarea data-node="1" aria-label="Message"></textarea>"#),
+    ] {
+        let mut ops = Vec::new();
+        page.apply(&fixtures::patches(&mut view, revision, |b| placeholder_field(b, placeholder)), &mut ops);
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Op::Attributes { node, element } => {
+                assert_eq!(*node, FIELD);
+                assert_eq!(crate::dom::print(element), expected);
+            }
+            _ => unreachable!("only the placeholder changed"),
+        }
+    }
+}
