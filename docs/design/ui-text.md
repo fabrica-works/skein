@@ -227,8 +227,10 @@ this shell's text (ui.md, 17.1).
 - **Indented** means two spaces more than the line it belongs to.
 - **States** follow a node's line as words in parentheses, in this
   order: `(disabled)`, `(expanded)`, `(busy)`, `(current)`,
-  `(invalid)`, `(pressed)`, `(selected)`, `(required)`; a text field or
-  a text area that submits on enter adds `(enter sends)`. A check's
+  `(invalid)`, `(pressed)`, `(selected)`, `(required)`, `(completed)`;
+  a text field or a text area that submits on enter adds `(enter
+  sends)`. An item's or a tree item's states follow its first line,
+  before its position, whatever nodes its text is made of. A check's
   pressed or selected state, and a choice's or an option's selected
   state, is its mark instead.
 - **Properties** (ui.md, 3.2):
@@ -251,8 +253,10 @@ this shell's text (ui.md, 17.1).
   - *a column header's sort:* `(ascending)` or `(descending)` after its
     text, within its row;
   - *not printed:* a cell's spans, a focus request (the text shell has
-    no focus), an image's source, and shortcuts, Escape among them: the
-    text shell takes no keys (section 6).
+    no focus), an image's source, a placeholder (its field's name says
+    what it takes, and a hint beside `(empty)` could read as its value),
+    and shortcuts, Escape among them: the text shell takes no keys
+    (section 6).
 - **Text** is a node's runs, in order: a code run between backticks,
   every other run as it is. Style tokens and region names are not
   printed: nothing a person must know is said by them alone (ui.md,

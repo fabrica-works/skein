@@ -117,7 +117,9 @@ makes them, with no trait:
 
 Beside it, the shell gives the parts **its name,** for the title
 (section 7), and **the parts' own words** in the person's language
-(section 5), from its phrasebooks (ui.md, section 9). Its stylesheets,
+(section 5), from its phrasebooks (ui.md, section 9): the restart
+part's, and the page part's word for a completed item (section 6),
+English until the shell gives its own. Its stylesheets,
 pictures, page and files go to the bundler (4.2).
 
 ### 3.3 What it may change
@@ -311,7 +313,7 @@ page over scenes as SVG, each usable without it.
 | Part | Takes | Gives |
 |---|---|---|
 | the inbox, `Inbox<R>` | the application's turn function, at start; reports, each wrapped into `R` | the reports, in order; it calls the turn when one waits and no turn runs, within the callback that raised it |
-| the page | a mount element, the look, the mapping (skein's table, the application's elements and components), the primary modifier; patches and the tree | elements kept in place; acts on node ids; a drawing's box resized; the link nodes it holds |
+| the page | a mount element, the look, the mapping (skein's table, the application's elements and components), the primary modifier, its words for the states it says; patches and the tree | elements kept in place; acts on node ids; a drawing's box resized; the link nodes it holds |
 | scenes as SVG | a scene, the look's names | SVG elements: the page's default for a drawing |
 | fetch | exchanges (a path on the origin, the method, headers and body the application gives, a bound on the answer's body), abandons; the stream opened (a path, its headers, a bound on a piece) and closed; the exchanges it may hold in flight | an exchange answered (its status and its body) or failed; the stream opened, refused (a status other than 200), a piece, its end; one read outstanding, the next asked by the loop |
 | the small store | records by key, the application's prefix, its own bound | the records read at start; a write done or failed, synchronously |
@@ -468,6 +470,18 @@ the host tests (section 14).
     where the element takes it, else `aria-required`; submits on enter
     `enterkeyhint="send"`. There is no provisional state (ui.md, 3.2),
     and no attribute stands for one;
+  - *completed,* which no attribute stands for either (ui.md, 3.2), is
+    the page part's word for it (3.2), a space before it, in a
+    `<span id="skein-ui-state-<node id>">` of its own, last of the
+    item's content and before its description's element. `skein-ui.css`
+    hides it from sight only (section 12): a screen reader reads the
+    item's words and then the word ("Branch pushed completed"), and what
+    the eye sees is the owner's look, its style token;
+  - *a placeholder* is `placeholder` on the `<input>` or the
+    `<textarea>`. The name stays the label's or `aria-label`'s: a
+    browser exposes the placeholder only while the field holds no
+    value, and a screen reader reads it after the name, as a hint
+    ("Message, edit text, Message T6…");
   - *a focus request* is no attribute: the page part moves the focus
     (section 7);
   - *a collection's count and an item's position:* a list's or a tree's
@@ -501,9 +515,10 @@ the host tests (section 14).
   while its scene is drawn; `data-act` on a mark that carries an act
   (section 8); and ids starting `skein-ui-` on its own elements, which
   a description's `aria-describedby` and a menu button's `aria-controls`
-  name. It reserves no class name. The parts' own elements (the mount
-  element, a scene's SVG, a menu's button, a description's element, the
-  restart part's words) carry no `data-node`.
+  name, and by which `skein-ui.css` hides a completed item's word. It
+  reserves no class name. The parts' own elements (the mount element, a
+  scene's SVG, a menu's button, a description's element, a completed
+  item's word, the restart part's words) carry no `data-node`.
 - **One listener per kind of event,** on the mount element, finds the
   node of the element acted on, by its nearest `data-node`. A click
   finds instead the nearest element whose node a person presses, a
@@ -616,11 +631,19 @@ the host tests (section 14).
   disclosure is `<details>` and `<summary>`. A menu is a button of the
   page part's, named by the menu's name, that opens its items with the
   platform's keys (arrows, Escape): ARIA's menu-button pattern. A press
-  on an item closes the menu. **A dialog** is shown modal while it is in
-  the tree. **A log** keeps its end in view while the person has not
-  scrolled away from it.
+  on an item closes the menu. **An address changed folds the
+  disclosures:** when the path or the query the page shows moved since
+  the page part's last apply (a new entry, one replaced, back or
+  forward), it folds every open `<details>` in that apply, so a
+  disclosure whose link led elsewhere (a ☰ in the banner) is closed on
+  the page it led to. Its platform half reads the address after the
+  patches; the first apply only remembers it, and an apply at the same
+  address folds nothing. The shell does nothing for it. **A dialog**
+  is shown modal while it is in the tree. **A log** keeps its end in
+  view while the person has not scrolled away from it.
 - **Going to another page** (a new entry a step shows): after the turn's
-  patches, the reference starts the page at its top, the focus on its
+  patches, its disclosures folded (above), the reference starts the
+  page at its top, the focus on its
   main's first level-1 heading, else the main, unless a focus request
   moved in the same apply; back and forward restore their scroll,
   history's (section 9).
@@ -701,7 +724,8 @@ component instead (6.1).
   current one, as the step says. The history part keeps the scroll in
   each entry's state as the page leaves it. Back and forward are a place
   gone to, as a path: one step, then, after its patches, the scroll the
-  entry kept. A path opened directly (a bookmark, an address typed, a
+  entry kept. A disclosure left open folds when the address moves
+  (section 7). A path opened directly (a bookmark, an address typed, a
   link opened in a new tab) starts the application at it.
 
 ## 10. Fetch, the small store and the transport
@@ -771,6 +795,8 @@ share sheet, a clipboard write, a file picked).
   - hides a drawn drawing's fallback (`data-drawn`) from sight only,
     taking no space, and places a scene's SVG at its figure's top left
     (section 8);
+  - hides a completed item's word (`skein-ui-state-`) from sight only,
+    in the same way (section 6);
   - gives every mark of a scene a default, strokes in the text's colour
     and no fill, and acting marks (`data-act`) `pointer-events: all`;
   - keeps focus outlines visible;
@@ -810,6 +836,9 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   - the mapping and its overrides, a golden row per role, state and
     property (section 6), a primary shortcut's under each primary
     modifier;
+  - the fold (section 7): an address moved folding the open
+    disclosures; the first apply, and an apply at the same address,
+    folding none;
   - keys made shortcuts under each primary modifier (section 7): the
     primary one pressing; the other one, Shift besides, or Control with
     Alt pressing nothing; Alt's composed character read by its `code`;
@@ -852,7 +881,9 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   pages that a small server on skein's HTTP serves in the test's loop,
   as the kit checks its own (browser.md, section 9): the accessible role
   Chromium computes for each element and input type of section 6's
-  table, which a find of that role asks for (14.2); a `<select>`'s
+  table, which a find of that role asks for (14.2); a text area's name
+  its label, its placeholder left out of it, and a completed item's
+  word read with the item; a `<select>`'s
   option chosen by the kit's keys; and a date field and a time field
   given their values by the keys 14.2 names, in their parts' order
   under the kit's locale (browser.md, sections 3 and 6). A new Chromium
@@ -1110,6 +1141,12 @@ the application that needs it.
 - **Media from the origin:** the closed list (4.4) has no audio or video
   type; one waits for an application serving its own media, with media's
   role (ui.md, 4.2).
+- **A disclosure folded by an address replaced:** the page part folds
+  the open disclosures whenever the address moves, so a step that
+  replaces it (a filter's query, a path made canonical) while a person
+  reads one folds it under them. Folding only at a new entry and at
+  back or forward waits for an application that replaces its address
+  while a disclosure is open.
 - **Right-to-left languages:** what they ask of the elements,
   `skein-ui.css` and scenes, beyond `<html lang>` and the phrasebook
   (ui.md, section 19).

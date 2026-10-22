@@ -176,15 +176,26 @@ waits is in section 18, and what is open in section 19.
 | selected | a choice, an option, a tab or an item chosen |
 | required | a field its form needs filled |
 | submits on enter | a text field or a text area that takes a `Submit` on Enter |
+| completed | an item done: a step of a sequence finished, an entry of a checklist met |
 
 There is no provisional state: no accessibility API has one. A node
 whose content is provisional says so in words (a status), and its look
 is its owner's style token.
 
+Completed is the one state no accessibility API has either, and it is
+in by the criterion's exception (4.1): a done step must reach a person
+who cannot see its tick, on every platform, which a style token cannot
+do. Each shell says it in words: the page part in a word of its own
+(ui-web.md, section 6), the text shell as `(completed)` (ui-text.md,
+section 5), a phone's shell as it says a sort (16.2, 16.3). The builder
+asserts it on an item alone: a tree item's content is not read when it
+is named, so completed there waits for a design of its own.
+
 | Property | On | Means |
 |---|---|---|
 | a level | heading | 1 and deeper |
 | a description | any node | words describing it beyond its name (a field's help, why it is invalid), counted in its text bytes |
+| a placeholder | text field, text area | words shown in it while it holds no value, a hint of what to write ("Message T6…"); never its name, which stays its label; counted in its text bytes |
 | an entry kind | text field | text (the default), number, email, telephone, url, date, time or secret (3.4) |
 | a value | text field, text area | its text, and its owner's count of writes (3.4) |
 | a focus request | any node | a count its owner moves when it asks the focus for this node; at most one per tree (section 7) |
@@ -195,8 +206,8 @@ is its owner's style token.
 | a source | image | a picture or an address (3.5) |
 | a drawing | drawing | its kind and its data (3.5) |
 
-Each is found in the semantic or accessibility APIs of two platforms
-(4.1); section 16 maps each onto the web, iOS and Android.
+Each but completed is found in the semantic or accessibility APIs of
+two platforms (4.1); section 16 maps each onto the web, iOS and Android.
 
 ### 3.3 Owners
 
@@ -269,6 +280,11 @@ Each is found in the semantic or accessibility APIs of two platforms
 - **Anything else is not:** a look is a style token (section 8), a
   native rendering a component (section 12), a request to the platform
   outside the tree an effect (section 13).
+- **One exception, said in words:** completed (3.2), in no platform's
+  API, is a state because what it says must reach every person on every
+  platform and only words do; each shell says it in its own words, as a
+  phone's shell says a sort. Another such exception is a change to this
+  design (4.3), never the light path.
 - **The set converges,** because it mirrors accessibility semantics, not
   HTML's list of elements. Layout is never in the tree.
 
@@ -307,7 +323,7 @@ Each is found in the semantic or accessibility APIs of two platforms
 ## 5. Building
 
 - **The builder** owns the tree it builds: open, close, text and runs, a
-  name, a description, a state, a style token, a region name, a value
+  name, a description, a placeholder, a state, a style token, a region name, a value
   and its entry kind, a focus request, a count, a position, spans, a
   sort, an address, a key, a binding, a shortcut, a source, a drawing, a
   slot; one node a call, no macros. Each call changes the innermost open
@@ -423,7 +439,7 @@ Each is found in the semantic or accessibility APIs of two platforms
   *remove* a node and its subtree; *move* a matched node whose order
   among its siblings changed; *text*, replacing a node's runs;
   *attribute*, replacing what a shell maps of a node (its role, name,
-  states, properties, tokens, region name, shortcut, whether it is bound
+  states, properties, a placeholder among them, tokens, region name, shortcut, whether it is bound
   and whether it links, a drawing's data); *value*, writing a field's
   value when its write count moved, or removing it. A patch carries no
   token, key or slot reference: they stay the view's, and a change to
@@ -712,7 +728,7 @@ builder asserts each before it allocates.
 |---|---|
 | `nodes` | a tree's nodes, fallbacks and spliced fragments included |
 | `depth` | its nesting, fragments included |
-| `text_per_node` | a node's name, description, runs, value and external target together |
+| `text_per_node` | a node's name, description, placeholder, runs, value and external target together |
 | `text_bytes` | the same, across the tree |
 | `drawing_bytes` | a drawing's data, and an act on a drawing |
 | `styles_per_node` | a node's style tokens, and a mark's |
@@ -804,7 +820,9 @@ The page part keeps the full mapping (ui-web.md, section 6); in brief:
 | disabled, expanded, busy, current, invalid | `disabled` or `aria-disabled`; `aria-expanded`; `aria-busy`; `aria-current`; `aria-invalid` |
 | pressed, selected | `aria-pressed`, a check's `checked`; `aria-selected`, a choice's `checked`, an option's `selected` |
 | required, submits on enter | `required` or `aria-required`; `enterkeyhint="send"` |
+| completed | the page part's word, last in the item, hidden from sight and read (ui-web.md, section 6) |
 | a name, a description, a level | `aria-label`; `aria-describedby`; `<h1>` to `<h6>`, deeper `aria-level` |
+| a placeholder | `placeholder` |
 | an entry kind | `type`: `text`, `number`, `email`, `tel`, `url`, `date`, `time`, `password` |
 | a value, a focus request | `value`; `focus()` |
 | a count, a position | `aria-setsize`, `aria-posinset`; on a table and its rows, `aria-rowcount`, `aria-rowindex` |
@@ -846,13 +864,14 @@ vocabulary maps, not how such a shell is built. Traits are
 |---|---|
 | disabled | `.notEnabled`; `isEnabled`; `.disabled(true)` |
 | current, selected; pressed | `.selected`; a switch's `isOn`, a button's `.selected` |
-| expanded, busy, required, a sort | the shell says it in `accessibilityValue`, in its phrasebook's words |
+| expanded, busy, required, completed, a sort | the shell says it in `accessibilityValue`, in its phrasebook's words |
 | invalid | the description in `accessibilityHint`, and words in `accessibilityValue` |
 | submits on enter | `returnKeyType = .send`; `.submitLabel(.send)` |
 | a name, a description | `accessibilityLabel`; `accessibilityHint` |
 | a level | `.accessibilityHeading(.h1)` to `.h6`; UIKit has `.header` alone |
 | an entry kind | `keyboardType` (`.numberPad`, `.emailAddress`, `.phonePad`, `.URL`), `textContentType`, `isSecureTextEntry`; `UIDatePicker` |
 | a value | `text`, `accessibilityValue` |
+| a placeholder | a text field's `placeholder`, a `TextField`'s prompt; a text view has none, and the shell lays a label over it, read as the hint |
 | a focus request | `becomeFirstResponder()`; `UIAccessibility.post(notification: .layoutChanged, argument:)` naming the node's view; `@FocusState`, `@AccessibilityFocusState` |
 | a count, a position, spans | a data table's `accessibilityRowCount()`, `accessibilityRowRange()`, `accessibilityColumnRange()`; a list has none, and the shell may say it in `accessibilityValue` |
 | a shortcut | `UIKeyCommand` with `.command` or `.alternate`; `.keyboardShortcut(_:modifiers:)` |
@@ -902,7 +921,7 @@ semantics.
 |---|---|---|
 | disabled | `setEnabled(false)` | `disabled()` |
 | expanded | `ACTION_COLLAPSE` offered, else `ACTION_EXPAND` | `collapse`, else `expand` |
-| busy, required, a sort | `setStateDescription`, in its phrasebook's words | `stateDescription` |
+| busy, required, completed, a sort | `setStateDescription`, in its phrasebook's words | `stateDescription` |
 | current, selected; pressed | `setSelected(true)`; `setCheckable(true)`, `setChecked(true)` | `selected = true`; `toggleableState = ToggleableState.On` |
 | invalid | `setContentInvalid(true)`, `setError(description)` | `error(description)` |
 | submits on enter | `setImeOptions(EditorInfo.IME_ACTION_SEND)` | `KeyboardOptions(imeAction = ImeAction.Send)` |
@@ -910,6 +929,7 @@ semantics.
 | a level | `setHeading(true)` alone | `heading()` alone |
 | an entry kind | `setInputType`: `TYPE_CLASS_TEXT`, `TYPE_CLASS_NUMBER`, `TYPE_TEXT_VARIATION_EMAIL_ADDRESS`, `TYPE_CLASS_PHONE`, `TYPE_TEXT_VARIATION_URI`, `TYPE_DATETIME_VARIATION_DATE`, `TYPE_DATETIME_VARIATION_TIME`, `TYPE_TEXT_VARIATION_PASSWORD`; a secret `setPassword(true)`; read back by `getInputType`, `isPassword` | `KeyboardType.Text`, `Number`, `Email`, `Phone`, `Uri`, `Password`; `password()`; a date or a time through a picker |
 | a value | `setText` | `editableText` |
+| a placeholder | `setHint`, which TalkBack reads while the field is empty | `TextField`'s `placeholder` |
 | a focus request | `requestFocus()`; `ACTION_ACCESSIBILITY_FOCUS` | `FocusRequester.requestFocus()` |
 | a count, a position, spans | `CollectionInfo`'s rows; `CollectionItemInfo`'s row index (from 0: the position less one) and spans | `collectionInfo`, `collectionItemInfo` |
 | a shortcut | `onKeyShortcut` | `Modifier.onKeyEvent` |
