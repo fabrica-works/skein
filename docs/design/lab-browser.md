@@ -504,7 +504,9 @@ files it needs, and nothing else; it starts no browser.
   - **the base:** the mockup's side as captured, when the scene has
     one: its outline's entries with their counts, and each region's
     values where its mockup part was found. A scene without a mockup
-    has none: what it holds the page to is its expectations alone;
+    has none: what it holds the page to is its expectations alone, an
+    outline entry they don't name expected no times and a region's
+    property compared only where one names it;
   - **expectations** override the base, entry by entry and property by
     property;
   - **departures** accept: a difference whose signature, or whose

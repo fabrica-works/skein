@@ -123,12 +123,17 @@ class LookChecks(LookCase):
                                     'extra/list-2', 'missing/button/Send'])
 
     def test_no_mockup_is_held_to_expectations_alone(self):
+        # No base: an entry no expectation names is expected none times.
         self.value['mockup'] = None
         self.width['mockup'] = None
         self.outline('page', 'main\n  button "Send"\n  textbox\n')
+        self.failures('structure', ['extra/main', 'extra/button/Send', 'extra/textbox'])
+        self.expectation(entry='main', count=1)
+        self.expectation(entry='main > button "Send"', count=1)
+        self.expectation(entry='main > textbox', count=1)
         self.failures('structure', [])
-        self.expectation(entry='main > button "Send"', count=0)
-        self.failures('structure', ['extra/button/Send'])
+        self.value['expectations'][1]['count'] = 2
+        self.failures('structure', ['missing/button/Send'])
 
     def test_property_expectation_overrides_mockup_only_for_named_property(self):
         region = self.region()
