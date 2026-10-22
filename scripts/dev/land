@@ -44,6 +44,7 @@
 #   8  another command failed
 #   9  heavy refused to run the build or gate, so nothing ran
 set -euo pipefail
+umask 077
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 # The workspace: DEV_ROOT, or the directory holding the skein checkout these
@@ -59,6 +60,8 @@ if [[ -f $kit/kit.sh ]]; then
     # shellcheck source=kit.sh
     source "$kit/kit.sh"
 fi
+# shellcheck source=gate-policy.sh
+source "$kit/gate-policy.sh"
 start_dir=$PWD
 
 docs=0 local=0 gate=scripts/check.sh tries=5
@@ -131,19 +134,36 @@ follow() {
     fi
 }
 
-# The cache's key: a result holds for one tree, one gate and one compiler.
+# A result holds for one tree, gate command and effective runtime policy.
 gate_key() {
-    printf '%s\n%s\n%s\n' "$1" "$gate" "$(rustc -V 2>/dev/null || true)" | sha1sum | cut -c1-40
+    printf '%s\0%s\0%s\0' "$1" "$gate" "$policy" | sha256sum | cut -c1-64
+}
+
+cache_read() {
+    local lines=()
+    [[ -f $1 ]] || return 1
+    mapfile -t lines <"$1"
+    [[ ${#lines[@]} == 3 && ${lines[0]} == gate-evidence-v2 &&
+        ${lines[1]} == "$policy" && -n ${lines[2]} ]] || return 1
+    printf '%s\n' "${lines[2]}"
+}
+
+policy_recheck() {
+    gate_policy_prepare || die 4 "the gate policy no longer validates"
+    [[ $SKEIN_GATE_POLICY_ID == "$policy" ]] || die 4 "the gate policy changed; evidence was not accepted"
 }
 
 # The tree a gate passed on before this rebase, when this tree differs from
 # it only in Markdown files under docs/: the tip's Gate-Tree, from an
 # earlier try, with its result still in the cache.
 gated_before() {
-    local tree=$1 before others
+    local tree=$1 before changes others
+    [[ $(git log -1 --format='%(trailers:key=Gate-Policy,valueonly,separator=)') == "$policy" ]] || return 1
     before=$(git log -1 --format='%(trailers:key=Gate-Tree,valueonly,separator=)')
-    [[ -n $before && $before != "$tree" && -f $cache_dir/$(gate_key "$before") ]] || return 1
-    others=$(git diff --no-renames --name-only "$before" "$tree" | grep -vE '^docs/.*\.md$' || true)
+    [[ -n $before && $before != "$tree" ]] || return 1
+    cache_read "$cache_dir/$(gate_key "$before")" >/dev/null || return 1
+    changes=$(git diff --no-renames --name-only "$before" "$tree" 2>/dev/null) || return 1
+    others=$(grep -vE '^docs/.*\.md$' <<<"$changes" || true)
     [[ -z $others ]] || return 1
     echo "$before"
 }
@@ -186,17 +206,21 @@ Resolve them, run git rebase --continue, then land again."
             grep -vE '\.md$' || true)
         [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
         summary="none (Markdown only)"
+        policy="none (Markdown only)"
         gated=$tree
     else
         [[ $gate != scripts/check.sh || -x $gate ]] ||
             die 2 "no scripts/check.sh: give the gate with --gate (see the repository's workflow)"
+        export SKEIN_GATE_COMMAND=$gate
+        gate_policy_prepare || die 2 "cannot prepare the gate runtime policy"
+        policy=$SKEIN_GATE_POLICY_ID
         cache_dir=$tmp/gates/$repo
         cache=$cache_dir/$(gate_key "$tree")
         gated=$tree
-        if [[ -f $cache ]]; then
-            summary=$(cat "$cache")
+        if summary=$(cache_read "$cache"); then
+            :
         elif gated=$(gated_before "$tree"); then
-            summary=$(cat "$cache_dir/$(gate_key "$gated")")
+            summary=$(cache_read "$cache_dir/$(gate_key "$gated")")
             echo "land: the gate passed on $gated, which differs from this tree only in docs/ Markdown" >&2
         else
             gated=$tree
@@ -213,6 +237,7 @@ Resolve them, run git rebase --continue, then land again."
                 fi
                 grep '^heavy: task ' "$out" | tail -n1 >&2 || true
             fi
+            policy_recheck
             if ! HEAVY_LABEL="land $repo" "$kit/heavy" --gate --tail 60 bash -c "$gate" >"$out" 2>&1; then
                 cat "$out"
                 if ! grep -qE '^heavy: (queued )?task [0-9]+ ' "$out"; then
@@ -228,16 +253,21 @@ Resolve them, run git rebase --continue, then land again."
             secs=$(sed -nE 's/^heavy: ran alone for ([0-9]+)s$/\1/p' "${log:-$out}" | tail -n1)
             summary=$(evidence "${log:-$out}" "${secs:-?}")
             rm -f "$out"
+            policy_recheck
             mkdir -p "$(dirname "$cache")"
-            printf '%s\n' "$summary" >"$cache"
+            cache_tmp=$(mktemp "$cache_dir/.evidence.XXXXXX")
+            printf 'gate-evidence-v2\n%s\n%s\n' "$policy" "$summary" >"$cache_tmp"
+            mv -f "$cache_tmp" "$cache"
         fi
+        policy_recheck
     fi
 
     # The evidence goes in the tip's trailers. Amending the message keeps
     # the tree, so the evidence still holds for what lands.
     message=$(git log -1 --format=%B |
         git interpret-trailers --if-exists replace \
-            --trailer "Gate-Tree: $gated" --trailer "Gate-Result: $summary")
+            --trailer "Gate-Tree: $gated" --trailer "Gate-Result: $summary" \
+            --trailer "Gate-Policy: $policy")
     git commit --quiet --amend --no-verify --message "$message"
     commit=$(git rev-parse HEAD)
 
