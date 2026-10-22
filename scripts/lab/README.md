@@ -266,3 +266,18 @@ duplicate occurrences. A cut between rechecked and closed can be finished
 after verifying the current evidence again. Missing run/evidence publication
 or live markers still require owner recovery; there is no general crash
 recovery, sweeper or pruner.
+
+## The hand's commands
+
+`hand/browse ADDRESS VERB [OPERAND...]` sends one person's call to the
+hand's loopback listener and prints its answer. It supports outline, press,
+type (text from stdin), key, choose, go, reload, back, forward, address, wait,
+shot and trouble; `--in ROLE NAME` scopes a find and `--exact` matches its
+name whole. `hand/sign-in ADDRESS` reads one sign-in link line from stdin
+and prints the program's redacted answer. Both need the hand's browser
+program running (lab-browser.md, 8.8).
+
+Statuses are 0 answered, 1 refused, 2 usage error (usage on stderr), and
+3 unreachable browser or unreadable answer. A missed wait is answered (0).
+The endpoint must be `127.0.0.1:PORT` or `[::1]:PORT`; `go` accepts only a
+path starting with `/`, not `//`, with printable ASCII and no spaces.
