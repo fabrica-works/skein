@@ -1,6 +1,6 @@
 # The lab
 
-Provisional, 2026-10-20. The lab's records and its runner: how an
+Provisional, 2026-10-20, revised 2026-10-22. The lab's records and its runner: how an
 experiment a product keeps in its own repository is run as processes,
 driven by an agent, checked from outside, and judged over seeds into
 verdicts and findings. The records are files of a fixed form, so that a
@@ -1027,7 +1027,8 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   `fake`, a fake differs from its system; `below`, a bug below the
   domain (protocol, io, the binary); `tools`, the driver's tools or
   their guide; `experiment`, the experiment itself; `lab`, the runner,
-  or the driver's or the triager's setup.
+  or the driver's or the triager's setup; `look`, a page's appearance,
+  which no world below a browser draws (lab-browser.md).
 - **Fixed** needs a confirmed class and the fix's evidence. For `world`,
   `fake`, `below` and `tools`: the repository, the commit and the names
   of the tests that fail before it and pass after, in the lowest world
@@ -1035,7 +1036,10 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   seed, a fake's correction, a protocol test, a transcript made a
   story), and the product's commit that carries it. For `experiment`:
   the corrected experiment's digest. For `lab`: the runner's commit and
-  its own tests.
+  its own tests. For `look`: the repository and commit of the
+  stylesheet's fix, and the look experiment's expectation that fails
+  before it and passes after, since no world below a browser renders a
+  page; the product's commit that carries it.
 - **Closed** only after a recheck: the experiment (the corrected one,
   for `experiment`) at a subject that carries the fix, so under a new
   key, judged pass, with no judged run showing the signature. `lab

@@ -62,6 +62,7 @@ this design.
 | the browser parts | `skein-ui-web`, `skein-ui-bundle` | parts an application's browser shell wires into its own loop, compiled to WebAssembly; the bundler | [ui-web.md](ui-web.md) |
 | the fake person | `skein-fake-person`, `skein-fake-person-browser` | for tests: a person who finds nodes by role, name and text and acts on them, on the tree or in Chromium | [ui.md](ui.md), [ui-web.md](ui-web.md) |
 | the lab | none: `scripts/lab/`, Python's standard library for now | for products' tests: experiments run as processes, driven by an agent, checked from outside, judged over seeds into verdicts and findings | [lab.md](lab.md) |
+| the lab's browser | `skein-lab-browser`; `scripts/lab/look/` | for the lab: a headless Chromium on the browser kit answering calls on a closed network, and the look's capture of a page beside its mockup in three views | [lab-browser.md](lab-browser.md) |
 
 ## 3. The crate graph
 
