@@ -336,6 +336,13 @@ pub struct Face  { family: Box<[u8]>, custom: bool, glyphs: u32 }   // custom: a
   `Limit` past `Limits::screenshot`. Scale 2 draws the clip again at
   twice its pixels, as a crop to compare closely needs: no image is
   scaled up after it is drawn.
+- **A shot draws the caret steady:** before its first shot of a
+  document, the look adds the document a stylesheet of the inspector's
+  (`CSS.createStyleSheet`, no page script) holding
+  `* { caret-animation: manual !important }`, so a focused field's
+  caret is drawn whole in every shot rather than in its blink's phase.
+  The caret's colour and the field's computed values stay the page's;
+  a later document gets its own, at its first shot.
 
 ## 6. The operations
 

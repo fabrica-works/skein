@@ -54,6 +54,13 @@ program in a second form (section 8).
   listener, finds and acts as the fake person's through the face, the
   sign-in link redacted, the page's trouble logged; and `browse`, the
   tool that sends them (section 8).
+- **Live scenes read the hand's page:** a scene whose page is live is
+  captured from the hand's own page as the seed left it, through the
+  look's reads the hand answers to the lab alone (8.10), its viewport
+  changed for each width and given back; the mockup's side as ever, in
+  the capture's own program, with the same Chromium and switches
+  (5.1). The look's checks hold it as any scene, and where its focus
+  is too (5.4).
 - **Tested where each part lives:** the kit's reads in the kit's own
   tests, the program by one story on real Chromium in skein's browser
   suite, the capture's decisions in the runner's unit tier and its
@@ -180,6 +187,17 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   a blank page asks for nothing is the capture's process tier's to
   show, on that Chromium; the browser program's own story runs on
   whatever Chromium the machine has, and does not assert it.
+- **Whole raster:** the program starts Chromium with partial raster
+  off (`--disable-partial-raster`), so a page drawn again after a
+  press, a typed field or a shot at another scale is drawn whole, as a
+  fresh one is: on the lab's Chromium, a shot after a click otherwise
+  differs between fresh browsers in a few dozen pixels by a shade or
+  two, and W1's look met the same drift between its seeds (temper's
+  `qa-web.md`, 3.4). A page's first drawing is the same either way,
+  byte for byte. With the kit's steady caret (browser.md, 5.1), a
+  page's shot is one picture across fresh browsers. Switching off the
+  GPU, its compositing or its raster as well changed no shot, so they
+  stay as the kit sets them.
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
@@ -275,6 +293,12 @@ bytes.
 - **`mockup` and `page`:** each side's `path` on its origin, and its
   `ready`, a part awaited, by role and name. `mockup` is null for a page
   no mockup draws, which is captured alone; `page` is never null.
+- **A live page:** `page` is `{"live", "ready", "focus"}` instead, for
+  a page captured from the hand's (5.1, 8.10): `live`, the path the
+  hand's page must be at, a path as below, with no query; `ready`, as
+  above; `focus`, a finder the part holding the focus must match, or
+  null where the scene holds no focus. A scene is live or served
+  whole, and a capture takes scenes of one kind (5.1).
 - **A path** starts with `/` but not `//`, and holds printable ASCII
   without spaces: a path on the side's origin, and its query. The
   origin serves the file the path names, its query left to the page's
@@ -321,7 +345,8 @@ bytes.
   both a role and a selector or neither, a selector on the page's side
   or in a readiness, another `match`, a path or a size out of its rule,
   a region's mockup finder in a scene without a mockup, or none in one
-  with, a region named `page`, an expectation or a departure naming a
+  with, a region named `page`, a live page with a `path` or a served
+  one with `live` or `focus`, a `focus` finder with a selector, an expectation or a departure naming a
   width or a region the scene lacks, a property not listed above, a
   negative count, an empty `cites` or signature.
 
@@ -331,12 +356,16 @@ bytes.
 
 ```
 scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
-    [--mockups DIR] --page DIR --ready-seconds N --out DIR SCENE...
+    [--mockups DIR] (--page DIR | --live ADDRESS --live-out DIR)
+    --ready-seconds N --out DIR SCENE...
 ```
 
 - **Its arguments:** absolute paths, the program and Chromium
   executable files, the fonts, mockups and page directories; `--mockups`
-  given when a scene has a mockup; `--ready-seconds` a positive integer;
+  given when a scene has a mockup; `--page` for served scenes, or
+  `--live`, the hand's listener (a loopback address and port, 8.1),
+  with `--live-out`, the hand's `--out`, for live ones (section 4),
+  every scene of the kind its arguments name; `--ready-seconds` a positive integer;
   `--out` a directory the capture makes, `0700`, refusing one that
   exists. Every scene is read and checked before anything starts.
 - **The program in a namespace of its own,** under bubblewrap (`bwrap`,
@@ -360,7 +389,8 @@ scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
   `browser.log` in `--out`. Its ready line gives the browser's version,
   which the record keeps.
 - **The two directories served,** `mockups` (when given) and `page`,
-  each its own origin.
+  each its own origin. With `--live`, `mockups` alone: the page's side
+  is the hand's page, on the product's origin.
 - **For each scene, each width, each side, one page at a time,** since
   the proxy cannot tell pages apart (2.4), the mockup's side first:
   `open` at the width; `go` to the side's path on its origin; `await`
@@ -369,6 +399,25 @@ scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
   with the properties of 5.3, and its `shot` at scale 2 clipped to its
   box; the viewport's `shot` at scale 1; `trouble`; `close`. Then the
   width's views (5.3), from the files written.
+- **A live page's side** is read from the hand's page as the seed left
+  it, never opened, moved or reloaded, by the hand's look reads (8.10),
+  one call a connection to `--live`: `look-viewport` at the width; the
+  `address`; `look-await` of its readiness; `look-tree`; for each
+  region, `look-find` and `look-style`, and `look-shot` at scale 2
+  clipped to its box; `look-focus`; the viewport's `look-shot` at scale
+  1; `trouble`. Each `look-shot` names a file under the hand's `look/`
+  (8.10), which the capture copies to its own path in `--out` and
+  checks against the answer's size and digest. The side is ready when
+  its address's path is the scene's `live` and its readiness is met,
+  `missed` otherwise. Its trouble is the hand's since the last
+  `trouble` call, each entry's kind and text, so a seed that reads the
+  trouble once before its first live capture leaves each capture the
+  trouble of its own scene's steps and of itself. After the scene's
+  last width, and on a failure, `look-viewport` with no size gives the
+  hand back its own (8.10). A region's refused read is recorded as on a
+  served side; a refused `look-viewport`, `address` or `trouble`, a
+  hand that cannot be reached, or an answer past the deadline fails
+  the capture as a refused `open` does (below).
 - **It goes on:** a side that misses its readiness is recorded
   `missed`, and read all the same; a region not found, without a box,
   or whose call is refused (a shot past the program's limit, say) is
@@ -423,7 +472,11 @@ REFUSED {"refused", "detail"}
 
 - **A scene's `scene`** is its file's digest, `sha256:` and the hex of
   its bytes.
-- **A side's** `address` is the URL it went to; `ready` is `met`,
+- **A live side** adds `focus`: the entry holding the focus, its
+  `{"role", "name"}` as the tree gives them, or null when none does
+  (the document's body) (8.10). A served side has no `focus`.
+- **A side's** `address` is the URL it went to, a live side's the
+  hand's page's; `ready` is `met`,
   `missed`, or the refusal of its `go` or `await`; `trouble` is the
   `trouble` call's list, the proxy's refusals among it; `tree`,
   `outline` and `shot` are files, or the refusal of their call.
@@ -498,13 +551,16 @@ REFUSED {"refused", "detail"}
 ### 5.4 Its checks
 
 ```
-scripts/lab/look/check structure|style --capture DIR SCENE...
+scripts/lab/look/check structure|style --capture DIR [--capture DIR]... SCENE...
 ```
 
 Two check commands by lab.md's contract (7.2): `structure`, which an
 experiment names `look-structure`, and `style`, named `look-style`.
-Each reads `DIR/capture.json` and the scene files, and the record's
-files it needs, and nothing else; it starts no browser.
+Each reads each `DIR/capture.json` and the scene files, and the
+record's files it needs, and nothing else; it starts no browser. Each
+scene is judged from the one record that holds it, so that live
+scenes, each captured when the seed has made its state, are checked
+together; a scene in no record, or in two, is could not judge.
 
 - **What it reads must hold:** the record a `look-capture/1`, each
   scene named in it and its file's digest the record's `scene`, each
@@ -560,6 +616,10 @@ files it needs, and nothing else; it starts no browser.
     screen, since a stylesheet moves a part without moving it in the
     tree; a part moved in the tree alone shows in the outline's text
     and its diff.
+  - `focus/page`, for a live scene whose `focus` is a finder: the
+    side's `focus` null, or not matching the finder (its role equal,
+    its name by the finder's `match`). The mockup is static, so focus
+    is the page's alone, held by the scene, never by a base.
 - **`look-style`:** for each region whose page part was found, each
   property with an expected value, `style/<region>/<property>` when the
   page's disagrees by 5.3's rule: 5.3's properties, `faces`, the box's
@@ -616,6 +676,22 @@ The capture's; the hand's are 8.9's.
   listener the story holds on the machine's loopback, which sees no
   connection. A missing program, Chromium or bubblewrap fails the
   story, naming what is missing.
+- **The live side's decisions** in the unit tier, against a listener
+  the test holds that answers as the hand does: a live scene and each
+  of its refusals; the calls in their order, one a connection; a shot
+  copied from `--live-out` and one whose digest differs failing; the
+  address's path held to `live`; the viewport given back at the end
+  and after a failure; the focus recorded; the trouble's entries
+  mapped; a refusal of a region's read recorded and one of
+  `look-viewport` failing. The checks', beside 5.4's: `focus/page`
+  from both sides of the finder, and scenes judged from several
+  records, one in none and one in two.
+- **The live capture's run** in the process tier: the built program in
+  its hand form on a fixture origin the story serves, its page moved
+  by the hand's person calls (a field typed into and focused), then a
+  live capture of it at two widths beside a fixture mockup: its record
+  shows the focus, both widths' viewports and their pairs, and the
+  hand's own viewport given back (a hand `shot` after it at its size).
 
 ## 7. In the lab
 
@@ -654,6 +730,14 @@ The capture's; the hand's are 8.9's.
 - **The hand in a product's cluster:** the program as a process of the
   experiment's, and `{runner}/hand/` in the runner's tree, digested
   with it (8.8).
+- **Live scenes in a product's cluster:** each live capture a seed
+  action of the experiment's, after the actions that make its scene's
+  state, `{runner}/look/capture` with the settings' browser, `--live
+  {proc.browser.ready.address} --live-out {dir.D}` (the hand's
+  `--out`), and `--out` under a run directory of its own; a
+  collection that copies that directory, and the checks with one
+  `--capture` for each. A seed action, not a collection: a collection
+  runs once the seed is done, when only the last state is left.
 
 ## 8. The hand
 
@@ -709,9 +793,11 @@ skein-lab-browser hand --chromium PATH --fonts DIR --scratch DIR --out DIR
   (lab.md, 4.4). It is the tool's endpoint (lab.md, 6.2): an agent's
   own commands open no socket, and reach it only through `browse`,
   whose fixed argument names it.
-- **Only a person's calls:** the hand answers 8.3's, and refuses the
-  capture's look reads (`serve`, `open`, `tree`, `select`, `style`)
-  `call`. The capture's form answers section 3's alone.
+- **A person's calls, and the lab's look reads:** the hand answers
+  8.3's, and 8.10's look reads, which the lab's capture sends and no
+  tool does; it refuses section 3's calls (`serve`, `open`, `tree`,
+  `select`, `style`) `call`. The capture's form answers section 3's
+  alone.
 
 ### 8.3 A person's calls
 
@@ -939,6 +1025,14 @@ scripts/lab/hand/sign-in ADDRESS
   the link off the origin shown refused, the other listener seeing no
   connection, its `network` trouble; each refusal of the hand's;
   `wait` met, gone and missed; and `SIGTERM` ending it with status 0.
+  Its look reads (8.10): with the text area typed into and focused,
+  `look-focus` names it; `look-viewport` to the phone's size and a
+  `look-shot` of the viewport at that size, the focus kept; a region's
+  `look-find`, `look-style` and clipped `look-shot` at scale 2, its
+  file under `look/`; `look-tree`; `look-viewport` with no size giving
+  back the hand's, a person's `shot` then at that size; a `look-shot`
+  file that climbs or exists refused; and `browse` sending none of
+  them.
 - **`browse` and `sign-in`:** the runner's unit tier (lab.md, 10.3),
   against a listener the test holds: each verb's call, each answer's
   text, the statuses, and an operand naming another endpoint refused;
@@ -947,12 +1041,47 @@ scripts/lab/hand/sign-in ADDRESS
   press, a wait, an address and the trouble, which shows the two
   speaking, each verb's meaning being the program's story's.
 
+### 8.10 The look's reads
+
+A live scene's page is the hand's page as the seed left it (qa-web.md,
+3.3): focus after a send, a page after a reload, a dialog in the top
+layer, none of which a page opened afresh shows. So the capture reads
+it in place, by the kit's look reads (browser.md, 5.1), which the hand
+answers to the lab alone.
+
+- **The lab's alone,** as `sign-in` is the seed's: they are calls on
+  the hand's listener, which an agent reaches only through `browse`
+  (8.2; lab.md, 6.2), and `browse` has no verb that sends them, nor
+  does any tool. They read, and change nothing the person meets but the
+  viewport, which the capture gives back before the seed goes on.
+- **Section 3's reads, on the one page:** the same members, but
+  `page`, and the same answers. Roles and names are the browser's, as
+  section 3's, not the person's (8.3): a scene's finders are the look's.
+
+| Call | Its members | Its answer |
+|---|---|---|
+| `look-viewport` | `width`, `height`, `mobile`; or none | `{"viewport":{"width","height","mobile"}}`: the page's viewport now, the size given, or with none the hand's own (`--size`, `--mobile`) |
+| `look-await` | `role`, `name`, `match`; `seconds` | section 3's `await` |
+| `look-find` | `role`, `name`, `match` | section 3's `find` |
+| `look-tree` | | section 3's `tree` |
+| `look-style` | `node`; `properties` | section 3's `style` |
+| `look-shot` | `clip`, `scale`; `file` | section 3's `shot`, written to `--out`'s `look/` (8.1) |
+| `look-focus` | | `{"focus":{"role","name"}}`, the tree's entry whose states hold `focused`, or `{"focus":null}` |
+
+- **A viewport change keeps the page:** the kit's viewport holds until
+  the next (browser.md, 5.1), and changing it neither reloads nor
+  moves the page, so focus, caret, scroll and an open dialog stay. The
+  scheme and motion stay light and reduced.
+- **A shot's `file`** is a relative path, `/`-separated segments of
+  `[a-z0-9-]`, the last ending `.png`, written under `look/` in
+  `--out`, apart from the person's `shots/` (8.3); one that exists is
+  refused `call`.
+- **Redacted and logged as any call:** their answers pass the sign-in
+  link's redaction (8.6), and the trouble's log names them as the call
+  in flight (8.7).
+
 ## 9. Open questions
 
-- **The look on the hand's page:** live scenes (qa-web.md, 3.3) read a
-  live page's style and shots, which the hand refuses; whether the
-  capture drives a cluster's page through the hand, or the hand answers
-  the look's reads to the lab alone.
 - **A dark scheme** for a product whose look follows the system's.
 - **Pages that animate** past reduced motion: readiness by a part
   shown holds for a static page; a page that moves after it would need
