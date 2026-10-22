@@ -250,6 +250,8 @@ class Lab:
 
     def cleanup(self):
         # Kill only this fixture's recorded wrapper identities and unit names.
+        for injection in self.faults.glob('enospc-*'):
+            injection.unlink()
         for point in self.faults.glob('arm-*'):
             self.disarm(point.name.removeprefix('arm-'))
         if (self.base / 'state.json').exists():
@@ -404,6 +406,57 @@ def configured_kache(lab):
     (nearer / 'config').unlink()
     lab.env['PATH'] = previous
     lab.done(lab.start('progress'))
+
+
+def storage_failure(lab, point):
+    proceed = lab.path / 'complete-payload'
+    gate = lab.start('storage-gate', gate=True, code='from pathlib import Path; import time; p=Path(' +
+                     repr(str(proceed)) + ');\nwhile not p.exists(): time.sleep(.02)')
+    wait_for(lambda: lab.event('storage-gate', 'payload_begin'), 'storage gate entered')
+    token = lab.task('storage-gate')['token']
+    injection = lab.faults / ('enospc-' + point)
+    injection.touch()
+    proceed.touch()
+    wait_for((lab.faults / ('hit-enospc-' + point)).exists, 'production ENOSPC write')
+    output = lab.path / 'storage-gate.client.txt'
+    wait_for(lambda: 'recovery/storage failure' in output.read_text(), 'existing waiter diagnostic')
+    task = lab.task('storage-gate')
+    assert gate.poll() is None, 'diagnostic cancelled the waiting client'
+    assert task['token'] == token and task.get('outcome') != 'cancelled'
+    receipt = lab.base / 'receipts' / (token + '.json')
+    assert not receipt.exists(), 'storage failure published success'
+    if point != 'seal':
+        assert lab.state()['gate'] == token, 'unpersisted completion lost its hold'
+        assert json.loads(lab.q('group', '--json'))['build']['status'] != 'Running'
+    assert all(text in output.read_text() for text in ('Free space', 'SAME recovery service',
+               'heavy --reconcile', 'SAME queue', 'RETAIN', '137'))
+    # Restore the same service, queue and ledger; no replacement/reset occurs.
+    injection.unlink()
+    lab.call(['systemctl', '--user', 'reset-failed', lab.prefix + '-reconcile.service'])
+    lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.service'])
+    lab.call([HEAVY, '--reconcile'])
+    task = lab.released('storage-gate')
+    assert task['code'] in (0, 137) and task.get('outcome') != 'cancelled'
+    lab.done(gate, task['code'])
+    lab.done(lab.start('progress'))
+    (lab.path / 'storage-proof.json').write_text(json.dumps({'point': point,
+        'injected_errno': 28, 'production_write_hit': True, 'existing_waiter_diagnostic': True,
+        'owned_task_not_cancelled': True, 'same_ledger_restored': True,
+        'completion_code': task['code'], 'no_false_green_during_failure': True}, indent=2) + '\n')
+
+
+def missing_reconciler(lab):
+    proceed = lab.path / 'complete-payload'
+    gate = lab.start('gate', gate=True, code='from pathlib import Path; import time; p=Path(' +
+                     repr(str(proceed)) + ');\nwhile not p.exists(): time.sleep(.02)')
+    wait_for(lambda: lab.event('gate', 'payload_begin'), 'live payload')
+    lab.call(['systemctl', '--user', 'stop', lab.prefix + '-reconcile.timer'])
+    wait_for(lambda: 'recovery/storage failure' in (lab.path / 'gate.client.txt').read_text(), 'missing timer diagnostic')
+    assert gate.poll() is None and lab.task('gate')['state'] == 'active'
+    assert owned_wrapper(lab.task('gate')['wrapper'])
+    lab.call(['systemctl', '--user', 'start', lab.prefix + '-reconcile.timer'])
+    proceed.touch()
+    lab.done(gate)
 
 
 def kill_at(lab, point):
@@ -874,6 +927,10 @@ def main():
     root = opts.evidence.resolve()
     root.mkdir(parents=True, exist_ok=False)
     cases = [('normal', normal), ('unsupported', unsupported), ('configured-kache', configured_kache),
+             ('enospc-snapshot', lambda lab: storage_failure(lab, 'snapshot')),
+             ('enospc-journal', lambda lab: storage_failure(lab, 'journal')),
+             ('enospc-seal', lambda lab: storage_failure(lab, 'seal')),
+             ('missing-reconciler', missing_reconciler),
              ('intent', lambda lab: kill_at(lab, 'intent')),
              ('intent-fsync', lambda lab: kill_at(lab, 'intent_fsynced')),
              ('submit-event-fsync', lambda lab: kill_at(lab, 'events_fsynced')),

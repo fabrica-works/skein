@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Durable admission and cgroup recovery for heavy; build-infrastructure.md."""
 import contextlib
+import errno
 import fcntl
 import hashlib
 import json
@@ -99,6 +100,7 @@ def sync_dir(path):
 
 
 def atomic(path, value):
+    storage_fault('snapshot' if path.name == 'state.json' else 'receipt')
     temporary = path.with_name(path.name + '.new')
     with temporary.open('w', encoding='utf-8') as out:
         os.fchmod(out.fileno(), 0o600)
@@ -137,6 +139,7 @@ def complete_lines(path):
 def durable_append(path, lines):
     if not lines:
         return
+    storage_fault('journal')
     with path.open('a', encoding='utf-8') as out:
         os.fchmod(out.fileno(), 0o600)
         for line in lines:
@@ -288,6 +291,40 @@ def fault(point, token):
                 time.sleep(0.02)
 
 
+def storage_fault(point):
+    directory = os.environ.get('HEAVY_FAULT_DIR')
+    if not directory:
+        return
+    path = Path(directory).resolve()
+    if os.environ.get('HEAVY_RECOVERY_FIXTURE') != '1' or not path.is_relative_to(TMP):
+        raise Refusal('storage faults require an isolated recovery fixture')
+    if (path / ('enospc-' + point)).exists():
+        (path / ('hit-enospc-' + point)).touch()
+        raise OSError(errno.ENOSPC, 'injected isolated storage write failure')
+
+
+RECOVERY_DIAGNOSTIC = (
+    'heavy: recovery/storage failure; task ownership is retained. Free space, restore/restart '
+    'the SAME recovery service if needed, then run heavy --reconcile with the SAME queue and '
+    'DEV_TMP state. RETAIN the ledger; do not delete/reset it. Rerun land if completion is '
+    'recovered with exit 137.')
+
+
+def waiter_failure():
+    # Inspect reported failures, never infer one from task age or tick delays.
+    for suffix in ('-reconcile.timer', '-reconcile.service'):
+        result = run(['systemctl', '--user', 'show', PREFIX + suffix,
+                      '--property=LoadState,ActiveState,Result,ExecMainStatus'])
+        values = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        if result.returncode or values.get('LoadState') != 'loaded':
+            return True
+        if suffix.endswith('.timer') and values.get('ActiveState') != 'active':
+            return True
+        if values.get('ActiveState') == 'failed' or values.get('Result', 'success') not in ('', 'success'):
+            return True
+    return False
+
+
 def apply_holds(ledger):
     held = set(ledger.data['maintenance'])
     gate = ledger.data['gate']
@@ -353,6 +390,7 @@ def publish_receipt(ledger, task):
         # A delayed service can only open the capture file. It can never
         # append to this completed log, including after receipt publication.
         temporary = log.with_suffix('.new')
+        storage_fault('seal')
         with temporary.open('wb') as out:
             os.fchmod(out.fileno(), 0o600)
             capture = Path(task['capture'])
@@ -697,10 +735,21 @@ def submit(args, lane, tail_lines):
         ledger.save()
         ensure_observer(task)
     print(f"heavy: queued task {task['id']} in the {lane} lane token {token}", file=sys.stderr, flush=True)
+    warned, next_health = False, 0.0
     while True:
+        if time.monotonic() >= next_health:
+            failed = waiter_failure()
+            if failed and not warned:
+                print(RECOVERY_DIAGNOSTIC, file=sys.stderr, flush=True)
+            warned = failed
+            next_health = time.monotonic() + 1
         # Atomic snapshots let clients observe completion without contending
         # with admission. The row marker follows the durable event/TSV flush.
-        task = json.loads((BASE / 'state.json').read_text())['tasks'][token]
+        try:
+            task = json.loads((BASE / 'state.json').read_text())['tasks'][token]
+        except (OSError, ValueError):
+            print(RECOVERY_DIAGNOSTIC, file=sys.stderr, flush=True)
+            return 2
         if task['state'] == 'released' and (BASE / 'receipts' / (token + '.json')).is_file():
             break
         time.sleep(0.1)
