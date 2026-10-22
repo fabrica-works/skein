@@ -142,7 +142,28 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   default apps, metrics and pings), beside the kit's command, so that
   a `trouble`'s `network` entries are the pages' own. Its scrollbars
   are hidden too, so that no shot depends on them: a viewport's shot is
-  its width by its height, whether the page scrolls or not.
+  its width by its height, whether the page scrolls or not. Each switch
+  stands for a service that asks the network on its own:
+  - **The order:** the initial address comes last, after every switch.
+    A distribution's launcher (Debian's) moves the switches written
+    before the first address to the end, so a feature list given
+    there would yield to the kit's own `--disable-features`.
+  - **The network time:** the tracker's query for the time
+    (`clients2.google.com`) stays off, by the background networking
+    switch with the order above.
+  - **The component updater:** its source is a blocked loopback port
+    with no pings (`--component-updater=url-source=...,disable-pings`),
+    since Optimization Guide asks for its on-device model's manifest
+    whether its own features are on or not.
+  - **The search preconnector:** the default search engine's
+    preconnections (`www.google.com`) are off by their features.
+  - **Accounts and messaging:** Gaia's and GCM's addresses are a
+    blocked loopback port, which Chromium refuses before connecting.
+
+  These hold for the lab's Chromium, the one its settings name. That
+  a blank page asks for nothing is the capture's process tier's to
+  show, on that Chromium; the browser program's own story runs on
+  whatever Chromium the machine has, and does not assert it.
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
