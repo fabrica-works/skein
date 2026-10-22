@@ -323,9 +323,11 @@ would reach across a boundary), Opus 5.5 at xhigh advises (`claude -p`
 or a sub-agent), from the report and the evidence rather than the whole
 history. gpt-6-astra costs more than Opus: it advises in Opus's place
 only when Claude's budget runs low while Codex's has room, and
-sparingly. Claude (Sonnet 5.5 or Opus 5.5, through `claude -p` or
-a sub-agent) implements only when Codex is out, or when the task is
-mostly taste: an API's shape, a test suite's organization and names.
+sparingly. Claude (Opus 5.5, through `claude -p` or a sub-agent)
+implements only when Codex is out, or when the task is mostly taste:
+an API's shape, a test suite's organization and names. Sonnet is
+parked while Codex has room (the user, 10-22): GPT Sol does what
+Sonnet would, reports and surveys among them.
 
 An implementer starts through the director's launcher, on every
 machine, which records each run for the spend experiments and may
