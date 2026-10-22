@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import shlex
+import stat
 import sys
 import subprocess
 import tempfile
@@ -29,7 +30,22 @@ class PolicyFixtures(unittest.TestCase):
             # the fixture's own config. Retain the complete execution directory.
             def retain():
                 (self.root / "execution-root.txt").write_text(str(self.root) + "\n")
-                shutil.move(str(self.root), destination)
+                def retain_file(source, target):
+                    mode = stat.S_IMODE(os.stat(source, follow_symlinks=False).st_mode)
+                    if stat.S_ISFIFO(os.stat(source, follow_symlinks=False).st_mode):
+                        os.mkfifo(target, mode)
+                        return target
+                    # Cross-filesystem retention must preserve deliberately
+                    # unreadable receipts/logs and their modes after assertions.
+                    try:
+                        os.chmod(source, mode | stat.S_IRUSR)
+                        shutil.copy2(source, target)
+                    finally:
+                        os.chmod(source, mode)
+                        if Path(target).exists():
+                            os.chmod(target, mode)
+                    return target
+                shutil.move(str(self.root), destination, copy_function=retain_file)
             self.addCleanup(retain)
         self.retain = bool(evidence)
         self.command_serial = 0
