@@ -302,7 +302,9 @@ def words(scene: dict, width: dict) -> Result:
             for side, spans in zip(("mockup", "page"), matches):
                 for match in spans:
                     span = match.group()
-                    if any(char.isspace() for char in span):
+                    if not span:
+                        reasons.append(f"{prefix}: {side} data {pattern} matched empty text at {match.start()}")
+                    elif any(char.isspace() for char in span):
                         reasons.append(f"{prefix}: {side} data {pattern} matched white space in {span!r}")
             if reasons:
                 undecided.extend(reasons)

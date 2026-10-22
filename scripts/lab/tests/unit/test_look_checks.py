@@ -340,6 +340,16 @@ class Words(unittest.TestCase):
                     self.assertEqual(result.fails, [])
                     self.assertEqual(result.undecided, [f"chat/phone/main-words: {side_name} data {pattern} matched white space in {text!r}"])
 
+    def test_data_match_of_empty_text_is_undecided(self):
+        # scene.py refuses a pattern matching the empty text whole; these match empty inside a text.
+        for pattern in (r"\b", r"(?=x)"):
+            with self.subTest(pattern=pattern):
+                scene, width = words_fixture(["max"], ["max"], [pattern])
+                result = checks.words(scene, width)
+                self.assertEqual(result.fails, [])
+                self.assertEqual(result.undecided[0], f"chat/phone/main-words: mockup data {pattern} matched empty text at "
+                                 + ("0" if pattern == r"\b" else "2"))
+
     def test_stale_pattern_is_only_a_note(self):
         scene, width = words_fixture(["Inbox"], ["Inbox"], [r"\d+"])
         self.assertEqual(checks.words(scene, width), checks.Result([], [], (r"chat/phone/main-words: data \d+ matched nothing",)))

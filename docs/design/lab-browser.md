@@ -676,9 +676,10 @@ together; a scene in no record, or in two, is could not judge.
     pages that split one text into runs differently (an inline element,
     an icon's span) agree, and a time or a count across a run's end is
     still one span.
-  - **Data never hides a word:** a span a pattern matches that holds
-    white space is no datum: the entry is undecided, naming the
-    pattern and the span, since a word beside a datum must still sign.
+  - **Data never hides a word:** a span a pattern matches that is
+    empty or holds white space is no datum: the entry is undecided,
+    naming the pattern and the span, since a word beside a datum must
+    still sign.
     A pattern that matches nothing on either side is named on the
     check's stderr (`<scene>/<width>/<id>: data <pattern> matched
     nothing`) and signs nothing, so a stale declaration shows.
