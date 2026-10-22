@@ -360,3 +360,55 @@ stream before restoring the same service/ledger, with no receipt/green
 while broken. The capture write uses guarded `/dev/full` to obtain kernel
 ENOSPC without consuming disk space; both prebuild and gate paths refuse
 landing after that capture failure.
+
+## 8. Advisory landing turn (local acceptance)
+
+The recovery kit has an opt-in advisory turn before land's host repository
+lock and build-lane prebuild. Only remote code landings whose repository
+name is `temper` enter it, with `LAND_TURN=1`. With that variable unset or
+any other value, the hook starts no process and touches no turn state.
+`--docs`, `--local` and other repository names bypass it even when opted
+in. The original arguments are retained across the guarded child entry.
+The gate, receipt validation, retry and fast-forward push remain land's
+protection; the advisory turn does not authorize a push.
+
+Production coordinator selection and transport are unapproved. Production
+opt-in records `request` and `fail-open` with reason
+`transport-unapproved`, then runs ordinary land. No SSH path, listener,
+credential, origin lease ref or fleet opt-in is installed. Transport must
+be separately approved before production use, after the director's fleet
+installation. This local stage makes no claim about real landing savings.
+
+The local acceptance transport requires `HEAVY_RECOVERY_FIXTURE=1` and
+`LAND_TURN_FIXTURE_DIR`, a directory strictly beneath the isolated
+`DEV_TMP`. It launches only the kit's local `land-turn.py holder`; it
+accepts no command string or remote shell configuration. The holder
+validates the random request token, repository and holder name before
+using them. A retained repository-specific flock file provides exclusion;
+there is no durable queue, fairness promise, task timeout or lease.
+A bounded current-holder record is published while holding that lock.
+It is diagnostic only: a killed holder can leave stale metadata, which
+never authorizes ownership and is replaced by the next lock holder.
+
+The holder watches its connection pipe while waiting and after grant.
+EOF releases it promptly, including when a queued client disappears.
+Grant spans ordinary land and its retries. Land and its descendants,
+including after-landing, inherit no transport descriptors. Connection
+loss or malformed protocol records one fail-open reason and proceeds with
+ordinary land, or lets an already running land continue. It never kills
+admitted heavy work on connection loss. Normal exit and handled signals
+close the transport and reap the local holder; SIGKILL of the client
+closes its pipe through the kernel, allowing the holder to exit.
+
+Request, grant, release and fail-open records appear immediately on stderr
+and in private `DEV_TMP/landing-turn/events.jsonl` (0600, umask 077).
+Records contain only timestamp, event, fixed reason, token, repository,
+holder, elapsed wait and optional runtime. The holder records release on
+disconnect, including client death; a killed holder cannot record its
+release, and the client records its connection failure. Journal failure
+is visible and does not prevent ordinary land. No environment, command,
+output or credential is logged by the turn. No task or gate age limit is
+introduced. `test-land-turn --evidence NEW_DIRECTORY` exercises local
+protocol faults and disposable Git landings through the recovery fixture;
+its results distinguish those layers. Production transport and the full
+repository gate are outside that fixture.

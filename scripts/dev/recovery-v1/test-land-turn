@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""Exercise local advisory turns; no production transport or repository gate."""
+import argparse
+import fcntl
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import runpy
+import select
+import signal
+import subprocess
+import sys
+import time
+from unittest.mock import patch
+
+os.umask(0o077)
+sys.dont_write_bytecode = True
+KIT = Path(__file__).resolve().parent
+support = runpy.run_path(str(KIT / 'test-heavy-recovery'))
+Lab, wait_for, live = (support[name] for name in ('Lab', 'wait_for', 'live'))
+
+
+def git(path, *args):
+    return subprocess.check_output(['git', '-C', str(path), *args], stderr=subprocess.STDOUT,
+                                   stdin=subprocess.DEVNULL, text=True).strip()
+
+
+def events(tmp):
+    path = tmp / 'landing-turn/events.jsonl'
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def holder(tmp, token='1' * 32, repo='temper'):
+    out = (tmp / ('holder-' + token + '.stderr')).open('w')
+    process = subprocess.Popen([sys.executable, '-I', '-B', str(KIT / 'land-turn.py'), 'holder',
+            str(tmp / 'coordinator'), token, repo, 'fixture', str(tmp)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=out, close_fds=True)
+    out.close()
+    return process
+
+
+def grant(process):
+    assert select.select([process.stdout], [], [], 10)[0], 'holder never granted'
+    return json.loads(process.stdout.readline())
+
+
+def disconnect(process):
+    process.stdin.close()
+    assert process.wait(timeout=10) == 0
+    process.stdout.close()
+
+
+def protocol(root):
+    root.mkdir()
+    first = holder(root)
+    try:
+        assert grant(first)['token'] == '1' * 32
+        second = holder(root, '2' * 32)
+        assert not select.select([second.stdout], [], [], .1)[0]
+        disconnect(second)  # EOF while queued, without releasing the first.
+        assert first.poll() is None
+        other = holder(root, '3' * 32, 'other')
+        assert grant(other)['repository'] == 'other'
+        disconnect(other)
+        first.kill()  # Killed holder releases its kernel lock.
+        first.wait()
+        first.stdin.close()
+        first.stdout.close()
+        next_holder = holder(root, '4' * 32)
+        assert grant(next_holder)['token'] == '4' * 32
+        disconnect(next_holder)
+        for token, repo, name in [('bad', 'temper', 'fixture'),
+                                 ('1' * 32, '../escape', 'fixture'),
+                                 ('1' * 32, 'temper', 'bad\nname')]:
+            bad = subprocess.run([sys.executable, '-I', '-B', str(KIT / 'land-turn.py'), 'holder',
+                str(root / 'coordinator'), token, repo, name, str(root)],
+                stdin=subprocess.DEVNULL, capture_output=True)
+            assert bad.returncode == 2 and not (root / 'escape.lock').exists()
+    finally:
+        if first.poll() is None:
+            disconnect(first)
+    spec = importlib.util.spec_from_file_location('turn', KIT / 'land-turn.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    original = subprocess.Popen
+    for name, reply in [('start', None), ('eof', b''), ('malformed', b'{}\n'), ('oversize', b'x' * 514)]:
+        tmp = root / name
+        tmp.mkdir()
+        def transport(command, **kwargs):
+            if 'holder' in command:
+                if reply is None:
+                    raise OSError('fixture transport unavailable')
+                return original([sys.executable, '-c', 'import os; os.write(1, ' + repr(reply) + ')'], **kwargs)
+            return original(command, **kwargs)
+        with patch.dict(os.environ, HEAVY_RECOVERY_FIXTURE='1', LAND_TURN_FIXTURE_DIR=str(tmp / 'coordinator')):
+            with patch.object(module.subprocess, 'Popen', transport):
+                assert module.client(tmp, 'temper', ['sh', '-c', 'exit 17']) == 17
+        assert len([e for e in events(tmp) if e['event'] == 'fail-open']) == 1
+    return {'layer': 'protocol', 'queued_eof': True, 'granted_eof': True,
+            'killed_holder': True, 'repository_specific': True, 'invalid_identity': True,
+            'start_eof_malformed_oversize_fail_open': True, 'child_status': 17}
+
+
+class TurnLab(Lab):
+    def setup(self):
+        super().setup()
+        self.origin = self.path / 'origin.git'
+        self.call(['git', 'init', '--bare', '-q', '-b', 'main', self.origin])
+        (self.repo / 'Cargo.toml').write_text('# prebuild fixture; no Rust compilation\n')
+        (self.repo / 'base.txt').write_text('base\n')
+        self.call(['git', 'add', '.'])
+        self.call(['git', 'commit', '-qm', 'base'])
+        self.call(['git', 'remote', 'add', 'origin', self.origin])
+        self.call(['git', 'push', '-q', 'origin', 'main'])
+        self.control = self.path / 'control'
+        self.control.mkdir()
+        gate = self.path / 'payload.py'
+        gate.write_text('import json,subprocess,time,sys\nfrom pathlib import Path\n'
+            f'control=Path({str(self.control)!r})\n'
+            'kind=sys.argv[1]; tag=Path.cwd().parent.name\n'
+            'number=len(list(control.glob(kind+"-"+tag+"-*.json")))+1\n'
+            'key=kind+"-"+tag+"-"+str(number)\n'
+            '(control/(key+".json")).write_text(json.dumps({"tree":subprocess.check_output(["git","rev-parse","HEAD^{tree}"],text=True).strip()}))\n'
+            'while not (control/("allow-"+key)).exists(): time.sleep(.02)\n'
+            'sys.exit(1 if (control/("fail-"+key)).exists() else 0)\n')
+        self.command = 'python3 ' + str(gate) + ' gate'
+        self.env.update(LAND_TURN='1', LAND_TURN_FIXTURE_DIR=str(self.path / 'tmp/coordinator'),
+                        LAND_PREBUILD='python3 ' + str(gate) + ' prebuild', PLAN_MIN_DISK_GB='0')
+        self.env.pop('LAND_TURN_ACTIVE', None)
+        self.clones = {}
+        for tag in ('a', 'b'):
+            parent = self.path / tag
+            parent.mkdir()
+            clone = parent / 'temper'
+            self.call(['git', 'clone', '-q', self.origin, clone])
+            git(clone, 'config', 'user.name', 'fixture')
+            git(clone, 'config', 'user.email', 'fixture@localhost')
+            git(clone, 'switch', '-qc', 'topic-' + tag)
+            (clone / (tag + '.txt')).write_text(tag + '\n')
+            git(clone, 'add', '.')
+            git(clone, 'commit', '-qm', tag)
+            self.clones[tag] = clone
+        self.transports = []
+
+    def start_land(self, tag='a', extra=(), environment=None):
+        out = (self.path / (tag + '.land.txt')).open('w')
+        process = subprocess.Popen([str(KIT / 'land'), '--gate', self.command, *extra],
+            cwd=self.clones[tag], env=environment or self.env, stdin=subprocess.DEVNULL,
+            stdout=out, stderr=subprocess.STDOUT, close_fds=True)
+        out.close()
+        self.clients.append(process)
+        return process
+
+    def reached(self, key):
+        return wait_for((self.control / (key + '.json')).exists, key, seconds=60)
+
+    def allow(self, key):
+        (self.control / ('allow-' + key)).touch()
+
+    def turn_events(self):
+        return events(self.path / 'tmp')
+
+    def transport(self, client):
+        def find():
+            rows = subprocess.run(['ps', '-o', 'pid=,comm=', '--ppid', str(client.pid)],
+                                  capture_output=True, text=True, check=False).stdout.splitlines()
+            return next((int(row.split()[0]) for row in rows if row.split()[1] == 'python3'), None)
+        pid = wait_for(find, 'own transport child')
+        self.transports.append(pid)
+        return pid
+
+    def finish(self, client, tag='a', code=0):
+        self.allow('prebuild-' + tag + '-1')
+        self.reached('gate-' + tag + '-1')
+        self.allow('gate-' + tag + '-1')
+        self.done(client, code)
+
+    def cleanup(self):
+        for marker in self.control.glob('*.json') if hasattr(self, 'control') else []:
+            self.allow(marker.stem)
+        super().cleanup()
+        for pid in getattr(self, 'transports', []):
+            wait_for(lambda: not live(pid), 'owned holder exit')
+
+
+def serialization(lab):
+    first = lab.start_land()
+    lab.reached('prebuild-a-1')
+    second = lab.start_land('b')
+    wait_for(lambda: len([e for e in lab.turn_events() if e['event'] == 'request']) == 2, 'second request')
+    assert not (lab.clones['b'] / '.git/land-turn.lock').exists(), 'queued client took hostlock'
+    assert not list(lab.control.glob('*-b-*.json')), 'queued client reached heavy'
+    lab.finish(first)
+    lab.finish(second, 'b')
+    assert [e['event'] for e in lab.turn_events()].count('grant') == 2
+    assert [e['event'] for e in lab.turn_events()].count('release') == 2
+    receipts = list((lab.base / 'receipts').glob('*.json'))
+    assert len(receipts) == 4, 'both prebuilds and both gates must run'
+    return {'layer': 'actual-land', 'serialized_before_hostlock_and_heavy': True, 'receipts': len(receipts)}
+
+
+def lost(lab, queued=False, kill_client=False):
+    blocker = holder(lab.path / 'tmp', '9' * 32) if queued else None
+    if blocker:
+        grant(blocker)
+    try:
+        client = lab.start_land()
+        wait_for(lambda: lab.turn_events(), 'request')
+        pid = lab.transport(client)
+        if not queued:
+            lab.allow('prebuild-a-1')
+            lab.reached('gate-a-1')
+        if kill_client:
+            client.kill()
+            assert client.wait(timeout=10) == -signal.SIGKILL
+            wait_for(lambda: not live(pid), 'EOF releases holder after client kill')
+            if queued:
+                assert not (lab.clones['a'] / '.git/land-turn.lock').exists()
+            else:
+                assert not (lab.control / 'allow-gate-a-1').exists()
+                probe = holder(lab.path / 'tmp', '8' * 32)
+                grant(probe)
+                disconnect(probe)
+                lab.allow('gate-a-1')
+                wait_for(lambda: git(lab.origin, 'rev-parse', 'main') == git(lab.clones['a'], 'rev-parse', 'HEAD'), 'orphan land completed', seconds=60)
+                lab.released('land temper')
+        else:
+            os.kill(pid, signal.SIGKILL)
+            wait_for(lambda: any(e['event'] == 'fail-open' for e in lab.turn_events()), 'visible connection failure')
+            lab.finish(client)
+            assert len([e for e in lab.turn_events() if e['event'] == 'fail-open']) == 1
+        return {'layer': 'actual-land', 'queued': queued, 'killed_client': kill_client,
+                'holder_pid': pid, 'holder_ended': not live(pid), 'land_continues_after_loss': not queued or not kill_client}
+    finally:
+        if blocker:
+            disconnect(blocker)
+
+
+def unavailable(lab, local=False):
+    env = dict(lab.env)
+    if local:
+        (lab.path / 'tmp/coordinator').write_text('unavailable fixture directory\n')
+    else:
+        del env['LAND_TURN_FIXTURE_DIR']
+    client = lab.start_land(environment=env)
+    lab.finish(client)
+    assert not (lab.path / 'tmp/coordinator').is_dir()
+    assert [e['event'] for e in lab.turn_events()] == ['request', 'fail-open']
+    reason = 'transport-eof' if local else 'transport-unapproved'
+    assert lab.turn_events()[-1]['reason'] == reason
+    return {'layer': 'actual-land', 'coordinator_unavailable': local,
+            'reason': reason, 'exit': client.returncode}
+
+
+def inert(lab, mode):
+    env = dict(lab.env, LAND_TURN_FIXTURE_DIR='/invalid/must-not-read')
+    extra = []
+    if mode == 'off':
+        env.pop('LAND_TURN')
+    elif mode == 'docs':
+        clone = lab.clones['a']
+        git(clone, 'reset', '--hard', 'main')
+        (clone / 'note.md').write_text('note\n')
+        git(clone, 'add', '.')
+        git(clone, 'commit', '-qm', 'docs')
+        extra = ['--docs']
+    elif mode == 'local':
+        extra = ['--local']
+    else:
+        clone = lab.clones['a']
+        renamed = clone.with_name('other')
+        clone.rename(renamed)
+        lab.clones['a'] = renamed
+    client = lab.start_land(extra=extra, environment=env)
+    if mode == 'docs':
+        lab.done(client)
+        assert not list(lab.control.glob('*.json')) and not lab.state()['tasks']
+    else:
+        lab.finish(client)
+        assert len(list((lab.base / 'receipts').glob('*.json'))) == 2
+        assert 'gate passed:' in (lab.path / 'a.land.txt').read_text()
+    if mode == 'local':
+        assert git(lab.clones['a'], 'rev-parse', 'main') == git(lab.clones['a'], 'rev-parse', 'HEAD')
+        assert git(lab.origin, 'rev-parse', 'main') != git(lab.clones['a'], 'rev-parse', 'HEAD')
+    assert not (lab.path / 'tmp/landing-turn').exists()
+    assert not (lab.path / 'tmp/coordinator').exists()
+    assert 'land-turn:' not in (lab.path / 'a.land.txt').read_text()
+    return {'layer': 'actual-land', 'mode': mode, 'no_turn_state_or_process': True}
+
+
+def stale(lab):
+    faults = lab.path / 'tmp/stale-a'
+    faults.mkdir()
+    (faults / 'arm-before_push').touch()
+    first = lab.start_land(environment=dict(lab.env, HEAVY_FAULT_DIR=str(faults)))
+    lab.allow('prebuild-a-1')
+    lab.reached('gate-a-1')
+    lab.allow('gate-a-1')
+    wait_for((faults / 'land-before_push').exists, 'verified a before push', seconds=60)
+    # The gate has released heavy's exclusive lane; a still holds its turn.
+    second = lab.start_land('b', environment=dict(lab.env, LAND_TURN='0'))
+    lab.finish(second, 'b')
+    (faults / 'continue-before_push').touch()
+    lab.reached('prebuild-a-2')
+    lab.allow('prebuild-a-2')
+    lab.reached('gate-a-2')
+    lab.allow('gate-a-2')
+    lab.done(first)
+    assert 'main moved on origin; again' in (lab.path / 'a.land.txt').read_text()
+    trees = [json.loads((lab.control / ('gate-a-' + str(n) + '.json')).read_text())['tree'] for n in (1, 2)]
+    assert trees[0] != trees[1]
+    assert git(lab.origin, 'rev-parse', 'main^{tree}') == trees[1]
+    assert len([e for e in lab.turn_events() if e['event'] == 'grant']) == 1
+    return {'layer': 'actual-land', 'rejected_stale_push': True, 'gate_runs_a': 2,
+            'prebuild_runs_a': 2, 'trees': trees, 'grant_spans_retries': True}
+
+
+def failure(lab):
+    (lab.control / 'fail-gate-a-1').touch()
+    client = lab.start_land()
+    before = git(lab.origin, 'rev-parse', 'main')
+    lab.finish(client, code=4)
+    assert git(lab.origin, 'rev-parse', 'main') == before
+    assert any(e['event'] == 'release' for e in lab.turn_events())
+    return {'layer': 'actual-land', 'failed_gate_exit': 4, 'origin_unchanged': True}
+
+
+def after_landing(lab):
+    scripts = lab.clones['a'] / 'scripts'
+    scripts.mkdir()
+    script = scripts / 'after-landing.sh'
+    script.write_text('#!/bin/sh\nexec python3 ' + str(lab.path / 'payload.py') + ' after\n')
+    script.chmod(0o700)
+    git(lab.clones['a'], 'add', '.')
+    git(lab.clones['a'], 'commit', '-qm', 'after tier')
+    client = lab.start_land()
+    lab.finish(client)
+    lab.reached('after-after-landing-1')
+    assert any(e['event'] == 'release' for e in lab.turn_events())
+    probe = holder(lab.path / 'tmp', '7' * 32)
+    grant(probe)  # The background tier is still active; it retained no connection.
+    disconnect(probe)
+    lab.allow('after-after-landing-1')
+    lab.released('after-landing temper')
+    with (lab.path / 'tmp/after-landing/temper.lock').open('r') as lock:
+        def cleanup_ended():
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+            except BlockingIOError:
+                return False
+        wait_for(cleanup_ended, 'after-landing helper cleanup')
+    return {'layer': 'actual-land', 'after_tier_active_after_release': True,
+            'transport_not_inherited_by_after_tier': True, 'after_tier_completed': True}
+
+
+def terminated(lab):
+    blocker = holder(lab.path / 'tmp', '6' * 32)
+    grant(blocker)
+    try:
+        client = lab.start_land()
+        pid = lab.transport(client)
+        client.terminate()
+        lab.done(client, 143)
+        assert not live(pid)
+        assert not (lab.clones['a'] / '.git/land-turn.lock').exists()
+        return {'layer': 'actual-land', 'queued_sigterm_exit': 143, 'holder_reaped': True}
+    finally:
+        disconnect(blocker)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--evidence', type=Path, required=True)
+    parser.add_argument('--case', action='append')
+    opts = parser.parse_args()
+    root = opts.evidence.resolve()
+    root.mkdir(parents=True, exist_ok=False)
+    results = []
+    cases = [('serialization', serialization), ('stale', stale), ('unavailable', unavailable),
+             ('local-unavailable', lambda lab: unavailable(lab, True)),
+             ('failed-gate', failure), ('after-landing', after_landing), ('terminated-client', terminated)]
+    cases += [('inert-' + mode, lambda lab, mode=mode: inert(lab, mode)) for mode in ('off', 'docs', 'local', 'other')]
+    cases += [(('killed-client' if killed else 'lost-holder') + ('-queued' if queued else '-granted'),
+               lambda lab, queued=queued, killed=killed: lost(lab, queued, killed))
+              for killed in (False, True) for queued in (True, False)]
+    if not opts.case or 'protocol' in opts.case:
+        results.append(dict(case='protocol', status='pass', **protocol(root / 'protocol')))
+    for name, test in cases:
+        if opts.case and name not in opts.case:
+            continue
+        lab = TurnLab(root, name)
+        try:
+            lab.setup()
+            result = dict(case=name, status='pass', **test(lab))
+            journal = lab.path / 'tmp/landing-turn/events.jsonl'
+            if journal.exists():
+                assert journal.stat().st_mode & 0o777 == 0o600
+                allowed = {'token', 'repository', 'holder', 'timestamp', 'event', 'wait_s', 'runtime_s', 'reason'}
+                assert all(set(event) <= allowed for event in lab.turn_events())
+        finally:
+            lab.cleanup()
+        results.append(result)
+        (root / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+        print(json.dumps(result), flush=True)
+    (root / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+    print('PASS selected local cases; evidence ' + str(root), flush=True)
+
+
+if __name__ == '__main__':
+    main()

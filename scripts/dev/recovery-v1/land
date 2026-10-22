@@ -61,6 +61,7 @@ fi
 # shellcheck source=gate-policy.sh
 source "$kit/gate-policy.sh"
 start_dir=$PWD
+original_args=("$@")
 
 docs=0 local=0 gate=scripts/check.sh tries=5
 while (($#)); do
@@ -88,6 +89,12 @@ common=$(git rev-parse --path-format=absolute --git-common-dir)
 repo=$(basename "$(dirname "$common")")
 lock=${LAND_LOCK:-$common/land.lock}
 [[ $lock == /* ]] || lock=$start_dir/$lock
+
+# The advisory connection spans retries, before the host turn and prebuild.
+if ((!docs && !local)) && [[ $repo == temper && ${LAND_TURN:-0} == 1 &&
+    ${LAND_TURN_ACTIVE:-0} != 1 ]]; then
+    exec python3 -I -B "$kit/land-turn.py" client "$tmp" "$repo" "$kit/land" "${original_args[@]}"
+fi
 
 # One code landing at a time in each repository on this machine
 # (owners.md, 4.4), from its rebase to its push: gates run one

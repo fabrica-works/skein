@@ -22,7 +22,7 @@ def verify():
     files = release['files']
     required = {'heavy', 'land', 'setup', 'heavy-recovery.py', 'gate-policy.sh',
                 'kit.sh', 'after-landing', 'kache-setup', 'stable-release.py',
-                'land-capture.py', 'recovery_message.py'}
+                'land-capture.py', 'recovery_message.py', 'land-turn.py'}
     if not required.issubset(files):
         raise ValueError('release is missing runtime assets')
     for name, digest in files.items():
