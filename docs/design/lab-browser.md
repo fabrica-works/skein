@@ -194,10 +194,13 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   differs between fresh browsers in a few dozen pixels by a shade or
   two, and W1's look met the same drift between its seeds (temper's
   `qa-web.md`, 3.4). A page's first drawing is the same either way,
-  byte for byte. With the kit's steady caret (browser.md, 5.1), a
-  page's shot is one picture across fresh browsers. Switching off the
-  GPU, its compositing or its raster as well changed no shot, so they
-  stay as the kit sets them.
+  byte for byte. Switching off the GPU, its compositing or its raster
+  as well changed no shot, so they stay as the kit sets them.
+- **Tile seams remain:** with partial raster off and the kit's steady
+  caret (browser.md, 5.1), a region's crop is one picture across fresh
+  browsers, but a viewport's shot may still differ at the raster's tile
+  seams: one row or column, a few pixels, a shade or three apart
+  (section 9).
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
@@ -1082,6 +1085,9 @@ answers to the lab alone.
 
 ## 9. Open questions
 
+- **A viewport's tile seams:** larger raster tiles change a page's
+  first drawing and still vary; a picture keyed by its crops alone, as
+  a live scene's is (temper's `lab/README.md`), is the fallback.
 - **A dark scheme** for a product whose look follows the system's.
 - **Pages that animate** past reduced motion: readiness by a part
   shown holds for a static page; a page that moves after it would need
