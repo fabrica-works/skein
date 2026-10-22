@@ -668,6 +668,26 @@ def late_launch(lab, release_crash=False):
     lab.done(lab.start('progress'))
 
 
+def policy_helper_descendants(lab):
+    marker = lab.path / 'policy-helper.json'
+    runtime = Path(lab.env['SKEIN_TEST_CHROMIUM'])
+    helper = ('import os,time,json; from pathlib import Path; Path(' + repr(str(marker)) +
+              ').write_text(json.dumps({"pid":os.getpid(),"cgroup":Path("/proc/self/cgroup").read_text()})); time.sleep(120)')
+    runtime.write_text('#!/usr/bin/env python3\nimport os,subprocess,time\nfrom pathlib import Path\n'
+        'if os.environ.get("HEAVY_TASK"):\n'
+        '    subprocess.Popen([' + repr(sys.executable) + ', "-c", ' + repr(helper) + '], '
+        'stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)\n'
+        '    while not Path(' + repr(str(marker)) + ').exists(): time.sleep(.01)\n'
+        'print("Chromium 147.0.7727.101")\n')
+    lab.done(lab.start('gate', gate=True))
+    child = json.loads(marker.read_text())
+    task = lab.task('gate')
+    assert child['cgroup'].strip().split('::', 1)[1] == task['cgroup']
+    assert not live(child['pid']), 'policy helper escaped contained release'
+    (lab.path / 'policy-helper-proof.json').write_text(json.dumps({
+        'helper': child, 'owned_cgroup': task['cgroup'], 'helper_ended': True}, indent=2) + '\n')
+
+
 def cancelled_reused_id(lab):
     lab.done(lab.start('old-build'))
     old = lab.task('old-build')
@@ -845,6 +865,106 @@ def land_process(lab, command):
     return process
 
 
+def mutate_candidate(lab, mode):
+    if mode == 'rebase':
+        original = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+        base = lab.call(['git', 'rev-parse', 'main']).stdout.strip()
+        branch = lab.call(['git', 'symbolic-ref', '--short', 'HEAD']).stdout.strip()
+        lab.call(['git', 'switch', '-qc', 'concurrent-base', base])
+        (lab.repo / 'upstream-code').write_text('ungated upstream change\n')
+        lab.call(['git', 'add', 'upstream-code'])
+        lab.call(['git', 'commit', '-qm', 'concurrent upstream change'])
+        new_base = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+        lab.call(['git', 'switch', '-q', branch])
+        lab.call(['git', 'rebase', '--onto', new_base, base])
+        assert lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip() != original
+    elif mode == 'same-tree':
+        lab.call(['git', 'commit', '--allow-empty', '-qm', 'concurrent same tree commit'])
+    elif mode == 'rebase-state':
+        location = lab.call(['git', 'rev-parse', '--git-path', 'rebase-merge']).stdout.strip()
+        (lab.repo / location).mkdir()
+    else:
+        (lab.repo / 'code').write_text('concurrent candidate B\n')
+        if mode in ('commit', 'index'):
+            lab.call(['git', 'add', 'code'])
+        if mode == 'commit':
+            lab.call(['git', 'commit', '-qm', 'concurrent candidate B'])
+
+
+def payload_tree_drift(lab, when, mode):
+    candidate(lab)
+    marker, proceed = lab.path / 'requested-payload', lab.path / 'finish-payload'
+    if when == 'settled':
+        lab.arm('settled')
+        gate = lab.start('gate', gate=True, args=['touch', str(marker)])
+        lab.barrier('settled', 'gate')
+    else:
+        code = ('from pathlib import Path; import time; Path(' + repr(str(marker)) + ').touch(); '
+                'p=Path(' + repr(str(proceed)) + ');\nwhile not p.exists(): time.sleep(.02)')
+        gate = lab.start('gate', gate=True, code=code)
+        wait_for(marker.exists, 'payload running on candidate A')
+    mutate_candidate(lab, mode)
+    if when == 'settled':
+        lab.disarm('settled')
+    else:
+        proceed.touch()
+    lab.done(gate, 2)
+    task = lab.released('gate')
+    receipt = json.loads((lab.base / 'receipts' / (task['token'] + '.json')).read_text())
+    assert task['code'] != 0 and receipt['code'] != 0
+    assert 'rerun land' in (lab.path / 'gate.client.txt').read_text()
+    if when == 'settled':
+        assert not marker.exists() and not receipt['payload_started']
+    assert not receipt['payload_ended'], 'drift accepted payload completion'
+    (lab.path / 'tree-drift-proof.json').write_text(json.dumps({
+        'when': when, 'mode': mode, 'admitted_commit': task['commit'], 'admitted_tree': task['tree'],
+        'receipt_code': receipt['code'], 'accepted_completion': False}, indent=2) + '\n')
+
+
+def dirty_admission(lab):
+    candidate(lab)
+    for mode in ('worktree', 'index'):
+        mutate_candidate(lab, mode)
+        result = lab.call([HEAVY, '--gate', 'true'], check=False)
+        assert result.returncode == 2 and 'rerun land' in result.stderr
+        assert not lab.state()['tasks']
+        (lab.path / (mode + '-refusal.txt')).write_text(result.stdout + result.stderr)
+        lab.call(['git', 'reset', '--hard', 'HEAD'])
+    lab.done(lab.start('positive', gate=True))
+
+
+def concurrent_land_drift(lab, mode, point='after_receipt'):
+    base, head = candidate(lab)
+    lab.arm(point)
+    land = land_process(lab, 'true')
+    wait_for((lab.faults / ('land-' + point)).exists, 'land ' + point)
+    task = lab.task('land repo')
+    receipt = json.loads((lab.base / 'receipts' / (task['token'] + '.json')).read_text())
+    assert receipt['code'] == 0 and receipt['tree'] == lab.call(['git', 'rev-parse', head + '^{tree}']).stdout.strip()
+    mutate_candidate(lab, mode)
+    changed = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
+    lab.disarm(point)
+    lab.done(land, 4)
+    output = (lab.path / 'land.client.txt').read_text()
+    assert 'candidate' in output and 'rerun land' in output
+    assert lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip() == changed
+    assert lab.call(['git', 'rev-parse', 'main']).stdout.strip() == base
+    assert not lab.call(['git', 'log', '-1', '--format=%(trailers:key=Gate-Tree,valueonly)']).stdout.strip()
+    if point == 'after_receipt':
+        assert not (lab.path / 'tmp/gates').exists(), 'drift wrote fresh accepted cache'
+    else:
+        for cache in (lab.path / 'tmp/gates').rglob('*'):
+            if cache.is_file():
+                assert receipt['policy'] in cache.read_text()
+    policy = lab.call(['bash', '-c', 'source "$1"; gate_policy_identity', 'fixture', KIT / 'gate-policy.sh'],
+                      environment=dict(lab.env, SKEIN_GATE_COMMAND='true')).stdout.strip()
+    assert policy == task['policy'], 'fixture must keep the effective policy fixed'
+    (lab.path / 'candidate-proof.json').write_text(json.dumps({'mode': mode, 'point': point,
+        'candidate_A': head, 'candidate_B': changed, 'gated_tree': receipt['tree'],
+        'policy_unchanged': True, 'main_unchanged': True, 'candidate_B_has_no_green': True,
+        'land_exit': land.returncode, 'no_fresh_cache': point == 'after_receipt'}, indent=2) + '\n')
+
+
 def real_land(lab):
     lab.env.update(SKEIN_TEST_CHROMIUM=str(Path.home() / '.local/opt/chromium-147.0.7727.101/bin/chromium'),
                    SKEIN_TEST_FONTS='/usr/share/fonts/truetype/dejavu')
@@ -989,8 +1109,23 @@ def main():
              ('prepaused', prepaused), ('maintenance', maintenance), ('concurrent', concurrent),
              ('journal-replay', replay), ('late-launch', late_launch),
              ('late-launch-release-crash', lambda lab: late_launch(lab, True)),
+             ('policy-helper-descendants', policy_helper_descendants),
              ('cancelled-reused-id', cancelled_reused_id), ('stale-pause-5s', stale_pause),
              ('receipt-publication', publication_crash), ('real147-land-cache', real_land),
+             ('gate-settle-commit-drift', lambda lab: payload_tree_drift(lab, 'settled', 'commit')),
+             ('gate-settle-index-drift', lambda lab: payload_tree_drift(lab, 'settled', 'index')),
+             ('gate-payload-commit-drift', lambda lab: payload_tree_drift(lab, 'payload', 'commit')),
+             ('gate-payload-worktree-drift', lambda lab: payload_tree_drift(lab, 'payload', 'worktree')),
+             ('gate-payload-index-drift', lambda lab: payload_tree_drift(lab, 'payload', 'index')),
+             ('gate-payload-rebase-state', lambda lab: payload_tree_drift(lab, 'payload', 'rebase-state')),
+             ('gate-admission-dirty', dirty_admission),
+             ('land-receipt-commit-drift', lambda lab: concurrent_land_drift(lab, 'commit')),
+             ('land-receipt-rebase-drift', lambda lab: concurrent_land_drift(lab, 'rebase')),
+             ('land-receipt-same-tree-drift', lambda lab: concurrent_land_drift(lab, 'same-tree')),
+             ('land-receipt-index-drift', lambda lab: concurrent_land_drift(lab, 'index')),
+             ('land-receipt-worktree-drift', lambda lab: concurrent_land_drift(lab, 'worktree')),
+             ('land-candidate-cas-drift', lambda lab: concurrent_land_drift(lab, 'commit', 'before_candidate_cas')),
+             ('land-before-push-drift', lambda lab: concurrent_land_drift(lab, 'commit', 'before_push')),
              ('receipt-fsync', lambda lab: publication_crash(lab, 'receipt_fsynced')),
              ('receipt-published', lambda lab: publication_crash(lab, 'receipt_published')),
              ('queued-client-death', queued_client_death),

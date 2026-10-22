@@ -82,9 +82,9 @@ top=$(git rev-parse --show-toplevel)
 cd "$top"
 branch=$(git symbolic-ref --quiet --short HEAD) || die 2 "not on a branch"
 [[ $branch != main ]] || die 2 "on main; land a branch"
-[[ -z $(git status --porcelain) ]] || die 2 "the worktree is not clean"
+[[ -z $(git status --porcelain --untracked-files=normal --ignore-submodules=none) ]] || die 2 "the index/worktree is not clean; rerun land after committing changes"
 for state in rebase-merge rebase-apply MERGE_HEAD; do
-    [[ ! -e $(git rev-parse --git-path "$state") ]] || die 2 "a rebase or merge is in progress"
+    [[ ! -e $(git rev-parse --git-path "$state") ]] || die 2 "a rebase or merge is in progress; finish it and rerun land"
 done
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 repo=$(basename "$(dirname "$common")")
@@ -150,9 +150,44 @@ cache_read() {
     printf '%s\n' "${lines[2]}"
 }
 
+candidate_check() {
+    local expected=${1:-$candidate} current dirty state
+    current=$(git rev-parse HEAD) || die 4 "candidate HEAD is unavailable; rerun land"
+    [[ $(git symbolic-ref --quiet HEAD) == "$candidate_ref" && $current == "$expected" &&
+        $(git rev-parse 'HEAD^{tree}') == "$tree" ]] ||
+        die 4 "candidate HEAD or tree changed; rerun land"
+    dirty=$(git status --porcelain --untracked-files=normal --ignore-submodules=none) || die 4 "candidate index/worktree cannot be checked; rerun land"
+    [[ -z $dirty ]] || die 4 "candidate index/worktree changed; rerun land"
+    for state in rebase-merge rebase-apply MERGE_HEAD; do
+        [[ ! -e $(git rev-parse --git-path "$state") ]] ||
+            die 4 "candidate merge/rebase state changed; rerun land"
+    done
+}
+
+# Fixture barriers use the recovery fixture's isolated flag/path contract.
+land_fault() {
+    [[ -n ${HEAVY_FAULT_DIR:-} ]] || return 0
+    python3 -I -B - "$1" "$tmp" "$HEAVY_FAULT_DIR" "${HEAVY_RECOVERY_FIXTURE:-}" <<'PYFAULT'
+import os
+from pathlib import Path
+import sys
+import time
+point, temporary, directory, enabled = sys.argv[1:]
+path = Path(directory).resolve()
+if enabled != '1' or not path.is_relative_to(Path(temporary).resolve()):
+    sys.exit('land: fault barriers require an isolated recovery fixture')
+if (path / ('arm-' + point)).exists():
+    (path / ('land-' + point)).write_text(str(os.getpid()))
+    while not (path / ('continue-' + point)).exists():
+        time.sleep(.02)
+PYFAULT
+}
+
 policy_recheck() {
-    gate_policy_prepare || die 4 "the gate policy no longer validates"
+    candidate_check
+    gate_policy_prepare || die 4 "the gate policy no longer validates; rerun land"
     [[ $SKEIN_GATE_POLICY_ID == "$policy" ]] || die 4 "the gate policy changed; evidence was not accepted"
+    candidate_check
 }
 
 # The tree a gate passed on before this rebase, when this tree differs from
@@ -160,8 +195,8 @@ policy_recheck() {
 # earlier try, with its result still in the cache.
 gated_before() {
     local tree=$1 before changes others
-    [[ $(git log -1 --format='%(trailers:key=Gate-Policy,valueonly,separator=)') == "$policy" ]] || return 1
-    before=$(git log -1 --format='%(trailers:key=Gate-Tree,valueonly,separator=)')
+    [[ $(git log -1 --format='%(trailers:key=Gate-Policy,valueonly,separator=)' "$candidate") == "$policy" ]] || return 1
+    before=$(git log -1 --format='%(trailers:key=Gate-Tree,valueonly,separator=)' "$candidate")
     [[ -n $before && $before != "$tree" ]] || return 1
     cache_read "$cache_dir/$(gate_key "$before")" >/dev/null || return 1
     changes=$(git diff --no-renames --name-only "$before" "$tree" 2>/dev/null) || return 1
@@ -296,6 +331,7 @@ while :; do
     try=$((try + 1))
     ((try <= tries)) || die 6 "main moved $tries times; giving up"
 
+    if [[ -n ${commit:-} ]]; then candidate_check "$commit"; fi
     if ((local)); then
         base=$(git rev-parse main)
     else
@@ -308,9 +344,12 @@ Resolve them, run git rebase --continue, then land again."
     fi
     [[ $(git rev-parse HEAD) != "$base" ]] ||
         die 2 "nothing to land: the branch has no commits beyond main"
-    tree=$(git rev-parse 'HEAD^{tree}')
+    candidate=$(git rev-parse HEAD)
+    candidate_ref=refs/heads/$branch
+    tree=$(git rev-parse "$candidate^{tree}")
+    candidate_check
     if ((docs)); then
-        others=$(git diff --no-renames --name-only "$base" HEAD |
+        others=$(git diff --no-renames --name-only "$base" "$candidate" |
             grep -vE '\.md$' || true)
         [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
         summary="none (Markdown only)"
@@ -322,6 +361,7 @@ Resolve them, run git rebase --continue, then land again."
         export SKEIN_GATE_COMMAND=$gate
         gate_policy_prepare || die 2 "cannot prepare the gate runtime policy"
         policy=$SKEIN_GATE_POLICY_ID
+        candidate_check
         cache_dir=$tmp/gates/$repo
         cache=$cache_dir/$(gate_key "$tree")
         gated=$tree
@@ -356,12 +396,15 @@ Resolve them, run git rebase --continue, then land again."
                 die 4 "the gate failed on $(git rev-parse --short HEAD)"
             fi
             cat "$out"
+            land_fault after_receipt
+            candidate_check
             if ! summary=$(evidence "$out"); then
                 rm -f "$out"
                 die 4 "the gate completion evidence was not accepted; nothing landed"
             fi
             rm -f "$out"
             policy_recheck
+            candidate_check
             mkdir -p "$(dirname "$cache")"
             cache_tmp=$(mktemp "$cache_dir/.evidence.XXXXXX")
             printf 'gate-evidence-v3\n%s\n%s\n' "$policy" "$summary" >"$cache_tmp"
@@ -370,14 +413,28 @@ Resolve them, run git rebase --continue, then land again."
         policy_recheck
     fi
 
-    # The evidence goes in the tip's trailers. Amending the message keeps
-    # the tree, so the evidence still holds for what lands.
-    message=$(git log -1 --format=%B |
+    # Construct the amendment from the verified object, then compare-and-swap
+    # its branch. A concurrent HEAD can never supply the tree being pushed.
+    candidate_check
+    message=$(git log -1 --format=%B "$candidate" |
         git interpret-trailers --if-exists replace \
             --trailer "Gate-Tree: $gated" --trailer "Gate-Result: $summary" \
             --trailer "Gate-Policy: $policy")
-    git commit --quiet --amend --no-verify --message "$message"
-    commit=$(git rev-parse HEAD)
+    read -r -a parents <<<"$(git show -s --format=%P "$candidate")"
+    parent_args=()
+    for parent in "${parents[@]}"; do parent_args+=(-p "$parent"); done
+    commit=$(GIT_AUTHOR_NAME="$(git show -s --format=%an "$candidate")" \
+        GIT_AUTHOR_EMAIL="$(git show -s --format=%ae "$candidate")" \
+        GIT_AUTHOR_DATE="$(git show -s --format=%aI "$candidate")" \
+        git commit-tree "$tree" "${parent_args[@]}" <<<"$message")
+    [[ $(git rev-parse "$commit^{tree}") == "$tree" ]] || die 4 "amended tree differs; rerun land"
+    candidate_check
+    land_fault before_candidate_cas
+    git update-ref "$candidate_ref" "$commit" "$candidate" ||
+        die 4 "candidate ref changed during amendment; rerun land"
+    candidate_check "$commit"
+    land_fault before_push
+    candidate_check "$commit"
 
     if ((local)); then
         exec 9>"$lock"
@@ -387,6 +444,7 @@ Resolve them, run git rebase --continue, then land again."
             echo "land: main moved; again" >&2
             continue
         fi
+        candidate_check "$commit"
         status=0
         follow "$commit" || status=$?
         flock -u 9

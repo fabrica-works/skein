@@ -698,20 +698,50 @@ def maintenance(group, pause):
         reconcile(ledger)
 
 
+def gate_candidate():
+    head = run(['git', 'rev-parse', 'HEAD'])
+    tree = run(['git', 'rev-parse', 'HEAD^{tree}'])
+    status = run(['git', 'status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=none'])
+    states = [run(['git', 'rev-parse', '--git-path', name])
+              for name in ('rebase-merge', 'rebase-apply', 'MERGE_HEAD')]
+    if head.returncode or tree.returncode or status.returncode or status.stdout.strip() or any(
+            state.returncode or Path(state.stdout.strip()).exists() for state in states):
+        raise Refusal('gate candidate HEAD/index/worktree or rebase state is not clean; rerun land')
+    if run(['git', 'rev-parse', 'HEAD']).stdout.strip() != head.stdout.strip():
+        raise Refusal('gate candidate commit changed during validation; rerun land')
+    return head.stdout.strip(), tree.stdout.strip()
+
+
+def check_gate_candidate(ledger, task):
+    if task['lane'] != 'gate' or task['tree'] == 'unversioned':
+        return True
+    try:
+        commit, tree = gate_candidate()
+        valid = commit == task['commit'] and tree == task['tree']
+    except Refusal:
+        valid = False
+    if not valid:
+        task.update(state='finishing', code=2, outcome='refused',
+                    refusal='gate candidate HEAD/index/worktree or rebase changed; rerun land')
+        ledger.event(task, 'refusal', reason=task['refusal'])
+        ledger.save()
+    return valid
+
+
 def submit(args, lane, tail_lines):
     if os.environ.get('HEAVY_TASK'):
         raise Refusal('already inside a heavy task; run the command directly')
-    if lane == 'gate' and run(['git', 'rev-parse', '--is-inside-work-tree']).returncode == 0:
-        if run(['git', 'status', '--porcelain']).stdout.strip():
-            raise Refusal('the gate lane takes only a committed tree; commit changes first')
+    commit = run(['git', 'rev-parse', 'HEAD']).stdout.strip() or 'unversioned'
     tree = run(['git', 'rev-parse', 'HEAD^{tree}']).stdout.strip() or 'unversioned'
+    if lane == 'gate' and run(['git', 'rev-parse', '--is-inside-work-tree']).returncode == 0:
+        commit, tree = gate_candidate()
     token = uuid.uuid4().hex
     with locked() as ledger:
         ensure_reconciler(ledger)
         if not reconcile(ledger):
             raise Refusal('queue is unavailable; admission is held')
         task = {'token': token, 'lane': lane, 'args': args, 'label': os.environ.get('HEAVY_LABEL', Path.cwd().name),
-                'repo': str(Path.cwd()), 'tree': tree, 'policy': os.environ.get('SKEIN_GATE_POLICY_ID', 'gate-policy-unavailable') if lane == 'gate' else 'build-4',
+                'repo': str(Path.cwd()), 'tree': tree, 'commit': commit, 'policy': os.environ.get('SKEIN_GATE_POLICY_ID', 'gate-policy-unavailable') if lane == 'gate' else 'build-4',
                 'boot': boot(), 'queue': QUEUE, 'unit': PREFIX + '-' + token + '.service',
                 'submitter': identity(),
                 'submitted': time.time(), 'state': 'submitted', 'log': str(LOGS / (token + '.log')),
@@ -923,12 +953,7 @@ def payload(token):
             raise Refusal('payload cgroup population cannot be proved')
         task['cgroup'] = group
         task['state'] = 'active'
-        if task['lane'] == 'gate' and task['tree'] != 'unversioned' and (
-                run(['git', 'rev-parse', 'HEAD^{tree}']).stdout.strip() != task['tree'] or
-                run(['git', 'status', '--porcelain']).stdout.strip()):
-            task.update(state='finishing', code=2, outcome='refused')
-            ledger.event(task, 'refusal', reason='submitted gate tree differs at payload entry')
-            ledger.save()
+        if not check_gate_candidate(ledger, task):
             return 2
         ledger.event(task, 'scope_enter', cgroup=group)
         ledger.save()
@@ -942,10 +967,13 @@ def payload(token):
         while time.monotonic() - start < settle and os.getloadavg()[0] >= len(os.sched_getaffinity(0)):
             time.sleep(min(5, max(0, settle - (time.monotonic() - start))))
         phase(token, 'settle_end')
+        fault('settled', token)
     with locked() as ledger:
         task = ledger.tasks[token]
         if task['state'] != 'active':
             return 137
+        if not check_gate_candidate(ledger, task):
+            return 2
         task['payload_started'] = time.time()
         ledger.event(task, 'payload_begin')
         ledger.save()
@@ -963,6 +991,9 @@ def payload(token):
         with locked() as ledger:
             elapsed = int(time.time() - ledger.tasks[token]['payload_started'])
         print(f'heavy: ran alone for {elapsed}s', flush=True)
+    with locked() as ledger:
+        if not check_gate_candidate(ledger, ledger.tasks[token]):
+            return 2
     phase(token, 'payload_end', code=code)
     gc(token, serial)
     with locked() as ledger:

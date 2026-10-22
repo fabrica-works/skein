@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Gate policy and land evidence in disposable local Git repositories."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -8,6 +9,7 @@ import shlex
 import sys
 import subprocess
 import tempfile
+import time
 import unittest
 
 KIT = Path(__file__).resolve().parent
@@ -15,9 +17,22 @@ KIT = Path(__file__).resolve().parent
 
 class PolicyFixtures(unittest.TestCase):
     def setUp(self):
+        evidence = os.environ.get("GATE_POLICY_FIXTURE_EVIDENCE")
         self.temp = tempfile.TemporaryDirectory(prefix="skein-gate-policy-")
-        self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.addCleanup(self.temp.cleanup)
+        if evidence:
+            destination = Path(evidence).resolve() / self._testMethodName
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            self.assertFalse(destination.exists())
+            # Execute below /tmp so host ancestor Cargo configs cannot mask
+            # the fixture's own config. Retain the complete execution directory.
+            def retain():
+                (self.root / "execution-root.txt").write_text(str(self.root) + "\n")
+                shutil.move(str(self.root), destination)
+            self.addCleanup(retain)
+        self.retain = bool(evidence)
+        self.command_serial = 0
         self.home = self.root / "home"
         self.kit = self.root / "kit"
         self.repo = self.root / "repo"
@@ -32,6 +47,7 @@ class PolicyFixtures(unittest.TestCase):
             shutil.copy(KIT / name, self.kit / name)
         self.script(self.kit / "heavy", r'''#!/usr/bin/env python3
 import hashlib
+import json
 import json
 import os
 from pathlib import Path
@@ -205,7 +221,12 @@ sys.exit(result.returncode)
 
     def run_command(self, args, check=True, extra=None):
         result = subprocess.run(args, cwd=self.repo, env=self.env | (extra or {}),
-                                text=True, capture_output=True, timeout=20)
+                                text=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=20)
+        if self.retain:
+            self.command_serial += 1
+            (self.root / f"command-{self.command_serial:04}.json").write_text(json.dumps({
+                "args": [str(arg) for arg in args], "code": result.returncode,
+                "stdout": result.stdout, "stderr": result.stderr}, indent=2) + "\n")
         if check:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
@@ -593,6 +614,114 @@ exit 97
         self.advance_main_docs()
         self.land()
         self.assertEqual(len(self.calls()), 2)
+
+    def candidate_mutation(self, mode):
+        if mode == "same-tree":
+            self.git("commit", "--allow-empty", "-qm", "same tree B")
+        elif mode == "rebase":
+            self.git("switch", "-qc", "concurrent-base", self.base)
+            (self.repo / "upstream-code").write_text("ungated upstream change\n")
+            self.git("add", "upstream-code")
+            self.git("commit", "-qm", "concurrent upstream change")
+            new_base = self.git("rev-parse", "HEAD").strip()
+            self.git("switch", "-q", "work")
+            self.git("rebase", "--onto", new_base, self.base)
+        elif mode == "rebase-state":
+            (self.repo / self.git("rev-parse", "--git-path", "rebase-merge").strip()).mkdir()
+        else:
+            (self.repo / "code").write_text("ungated B\n")
+            if mode in ("commit", "index"):
+                self.git("add", "code")
+            if mode == "commit":
+                self.git("commit", "-qm", "ungated B")
+
+    def concurrent_candidate(self, point, mode):
+        faults = self.root / "tmp/faults"
+        faults.mkdir(parents=True, exist_ok=True)
+        (faults / ("continue-" + point)).unlink(missing_ok=True)
+        (faults / ("land-" + point)).unlink(missing_ok=True)
+        (faults / ("arm-" + point)).touch()
+        extra = {"HEAVY_RECOVERY_FIXTURE": "1", "HEAVY_FAULT_DIR": str(faults)}
+        output = self.root / (point + "-" + mode + ".txt")
+        with output.open("w") as out:
+            child = subprocess.Popen([str(self.kit / "land"), "--local", "--gate", "true"],
+                cwd=self.repo, env=self.env | extra, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 20
+            while not (faults / ("land-" + point)).exists():
+                self.assertIsNone(child.poll(), output.read_text())
+                self.assertLess(time.monotonic(), deadline, "candidate fixture barrier")
+                time.sleep(.02)
+            self.candidate_mutation(mode)
+            changed = self.git("rev-parse", "HEAD").strip()
+            (faults / ("continue-" + point)).touch()
+            self.assertEqual(child.wait(timeout=20), 4, output.read_text())
+            self.assertIn("rerun land", output.read_text())
+            self.assertEqual(self.git("rev-parse", "HEAD").strip(), changed)
+            self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+            self.assertFalse(self.git("log", "-1", "--format=%(trailers:key=Gate-Tree,valueonly)").strip())
+            if point == "after_receipt":
+                self.assertFalse((self.root / "tmp/gates").exists())
+            print(f"consumer {point}/{mode}: PASS", file=sys.stderr)
+        finally:
+            (faults / ("continue-" + point)).touch()
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=20)
+
+    def test_concurrent_commit_rebase_and_dirty_candidate_after_receipt(self):
+        candidate = self.git("rev-parse", "HEAD").strip()
+        for mode in ("commit", "rebase", "same-tree", "index", "worktree", "rebase-state"):
+            with self.subTest(mode=mode):
+                self.concurrent_candidate("after_receipt", mode)
+                if mode == "rebase-state":
+                    (self.repo / self.git("rev-parse", "--git-path", "rebase-merge").strip()).rmdir()
+                self.git("reset", "--hard", candidate)
+
+    def test_expected_old_candidate_ref_cas_refuses_concurrent_commit(self):
+        self.concurrent_candidate("before_candidate_cas", "commit")
+
+    def test_candidate_drift_before_push_refuses(self):
+        self.concurrent_candidate("before_push", "commit")
+
+    def test_amendment_preserves_candidate_author_parents_and_message(self):
+        self.git("commit", "--amend", "--no-edit", "--author=Other Author <other@localhost>")
+        candidate = self.git("rev-parse", "HEAD").strip()
+        before = self.git("show", "-s", "--format=%an%n%ae%n%aI%n%P", candidate)
+        message = self.git("log", "-1", "--format=%B", candidate).strip()
+        self.land()
+        self.assertEqual(self.git("show", "-s", "--format=%an%n%ae%n%aI%n%P", "HEAD"), before)
+        self.assertTrue(self.git("log", "-1", "--format=%B").startswith(message + "\n"))
+
+    def test_mutation_after_last_check_cannot_change_explicit_push_object(self):
+        original_tree = self.git("rev-parse", "HEAD^{tree}").strip()
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        real_git = shutil.which("git", path=os.defpath)
+        proof = self.root / "explicit-push.json"
+        self.script(self.bin / "git", "#!/usr/bin/env python3\n" +
+            "import json,subprocess,sys,os\nfrom pathlib import Path\n" +
+            "real=" + repr(real_git) + "\n" +
+            "if sys.argv[1] == 'fetch': sys.exit(0)\n" +
+            "if sys.argv[1] == 'push':\n" +
+            "    selected=sys.argv[-1].split(':')[0]\n" +
+            "    Path('code').write_text('uncooperative late B\\n')\n" +
+            "    subprocess.run([real,'add','code'],check=True)\n" +
+            "    subprocess.run([real,'commit','-qm','late B'],check=True)\n" +
+            "    query=lambda *args: subprocess.check_output([real,*args],text=True).strip()\n" +
+            "    Path(" + repr(str(proof)) + ").write_text(json.dumps({'args':sys.argv[1:], 'commit':selected, " +
+            "'tree':query('rev-parse',selected+'^{tree}'),'candidate_B':query('rev-parse','HEAD')}))\n" +
+            "    sys.exit(0)\n" +
+            "os.execv(real,[real]+sys.argv[1:])\n")
+        self.run_command([str(self.kit / "land"), "--gate", "true"])
+        pushed = json.loads(proof.read_text())
+        self.assertEqual(pushed["tree"], original_tree)
+        self.assertNotEqual(pushed["commit"], pushed["candidate_B"])
+        self.assertEqual(pushed["args"], ["push", "--quiet", "origin", pushed["commit"] + ":refs/heads/main"])
+        self.assertEqual(self.git("rev-parse", "main").strip(), pushed["commit"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), pushed["candidate_B"])
+        self.assertNotEqual(self.git("rev-parse", "HEAD^{tree}").strip(), original_tree)
+        self.assertFalse(self.git("log", "-1", "--format=%(trailers:key=Gate-Tree,valueonly)").strip())
+        self.assertEqual(self.git("log", "-1", "--format=%(trailers:key=Gate-Tree,valueonly)", pushed["commit"]).strip(), original_tree)
 
     def test_normal_gate_keeps_all_tiers(self):
         source = (KIT.parent / "check.sh").read_text()
