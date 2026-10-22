@@ -508,8 +508,10 @@ files it needs, and nothing else; it starts no browser.
   - `order/<region>`, with a mockup: the regions drawn on both sides,
     ordered by their boxes, region A before B when A's bottom is at
     most B's top, within a pixel, or, the two overlapping vertically,
-    A's right at most B's left. A pair ordered one way on the mockup
-    and the other on the page is inverted. While a pair is inverted,
+    A's right at most B's left. A pair overlapping both ways (one
+    nested in the other, or crossing) has no order on that side, and is
+    never inverted. A pair ordered one way on the mockup and the other
+    on the page is inverted. While a pair is inverted,
     the region in the most inverted pairs, the later in the scene's
     `regions` on a tie, is out of order and leaves the count: so the
     region that moved is named, not those it passed. Order is by the
@@ -557,8 +559,8 @@ files it needs, and nothing else; it starts no browser.
   record that shows it and none from one that doesn't; the base, an
   expectation overriding it and a scene without a mockup; a departure
   accepting by signature and by entry, and gone; the order from both
-  sides of its pixel, a region moved past two, a tie, a part not
-  drawn; each could-not-judge; the statuses and lines of lab.md, 7.2.
+  sides of its pixel, a region moved past two, a tie, a pair nested
+  or crossing (no order), a part not drawn; each could-not-judge; the statuses and lines of lab.md, 7.2.
 - **The capture's run** in the runner's process tier: the built program
   (`SKEIN_LAB_BROWSER`), Chromium (`SKEIN_TEST_CHROMIUM`) and the fonts
   (`SKEIN_TEST_FONTS`, else Debian's directory, as the program's story)
