@@ -87,6 +87,14 @@ fn browser_program() {
     assert_eq!(met.len(), 1);
     assert_eq!(field(&met[0], "name"), &string("Fixture heading"));
     assert_ne!(field(&met[0], "box"), &Value::Null);
+    assert_eq!(
+        call(object([
+            ("call", string("go")),
+            ("page", string("p")),
+            ("url", string(format!("{address}/index.html?x=1")))
+        ])),
+        object([("done", string("p"))])
+    );
     let written = call(object([
         ("call", string("find")),
         ("page", string("p")),

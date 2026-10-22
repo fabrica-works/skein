@@ -101,3 +101,63 @@ fn verbatim_origins_serve_placeholders_as_written() {
     );
     assert!(wire.ends_with(body));
 }
+
+fn query_response(verbatim: bool, target: &str) -> Vec<u8> {
+    let pages = vec![serve::Page {
+        path: b"/a.html".as_slice().into(),
+        kind: b"text/html".as_slice().into(),
+        body: b"page at {address}".as_slice().into(),
+        headers: vec![(b"X-Page".as_slice().into(), b"fixture".as_slice().into())],
+    }];
+    let pages = if verbatim {
+        serve::Pages::verbatim(pages, Time::ZERO, Wall::EPOCH, 0)
+    } else {
+        serve::Pages::new(pages, Time::ZERO, Wall::EPOCH)
+    };
+    served(pages, target, &[])
+}
+
+fn assert_query_page(verbatim: bool, target: &str, body: &[u8]) {
+    let wire = query_response(verbatim, target);
+    assert!(wire.starts_with(b"HTTP/1.1 200 OK\r\n"), "{target}, verbatim={verbatim}");
+    let wire_text = String::from_utf8_lossy(&wire);
+    assert!(wire_text.contains("\r\nContent-Type: text/html\r\n"));
+    assert!(wire_text.contains("\r\nX-Page: fixture\r\n"));
+    assert!(wire.ends_with(body), "{target}, verbatim={verbatim}");
+}
+
+#[test]
+fn origin_queries_leave_the_page_response_intact() {
+    for (verbatim, body) in [(false, b"page at 127.0.0.1:9090".as_slice()), (true, b"page at {address}".as_slice())] {
+        for target in ["/a.html?x=1", "/a.html?", "/a.html?x=1?y=2"] {
+            assert_query_page(verbatim, target, body);
+        }
+    }
+}
+
+#[test]
+fn origin_paths_with_queries_do_not_climb() {
+    for verbatim in [false, true] {
+        for target in ["/../a.html?x=1", "/x/..%2fa.html?y", "/a.html/..?x", "/unknown?x=1"] {
+            let wire = query_response(verbatim, target);
+            assert!(wire.starts_with(b"HTTP/1.1 404 Not Found\r\n"), "{target}, verbatim={verbatim}");
+            assert!(wire.ends_with(b"not found"));
+        }
+    }
+}
+
+#[test]
+fn origin_queries_can_hold_slashes_and_parent_segments() {
+    for (verbatim, body) in [(false, b"page at 127.0.0.1:9090".as_slice()), (true, b"page at {address}".as_slice())] {
+        assert_query_page(verbatim, "/a.html?p=../../etc/passwd", body);
+    }
+}
+
+#[test]
+fn origin_favicon_queries_are_no_content() {
+    for verbatim in [false, true] {
+        let wire = query_response(verbatim, "/favicon.ico?v=1");
+        assert!(wire.starts_with(b"HTTP/1.1 204 No Content\r\n"));
+        assert!(wire.ends_with(b"\r\n\r\n"));
+    }
+}

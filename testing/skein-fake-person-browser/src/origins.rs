@@ -199,8 +199,9 @@ impl Pages {
         while let Some(event) = self.above.pop() {
             match event {
                 server::Event::Call(call) => {
-                    let page = self.pages.iter().find(|page| page.path == call.target);
-                    let favicon = call.target.as_ref() == b"/favicon.ico";
+                    let path = call.target.split(|byte| *byte == b'?').next().expect("target has a path");
+                    let page = self.pages.iter().find(|page| page.path.as_ref() == path);
+                    let favicon = path == b"/favicon.ico";
                     let status = page
                         .map_or(if favicon { 204 } else { 404 }, |page| if page.kind.is_empty() { 204 } else { 200 });
                     let body = page.map_or_else(
