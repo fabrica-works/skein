@@ -109,6 +109,8 @@ runs.
     entry leaves when its work ends, with a line in `log.md`.
   - `decisions-live.md`: a digest of the archived decisions that still
     bind.
+  - `findings.md`: the backlog of findings that triage keeps waiting
+    (owners.md 4.6), each with its source and reproduction.
   - `handover.md`, while it exists (section 2).
 - **`decisions.md`:** each call, numbered and appended: the call, its
   reason, what it changes. The calls made for the user go here, and
@@ -253,6 +255,10 @@ runs.
 - **A question** gets an answer from the direction, recorded as a
   decision. What is small and reversible the director decides even when
   it touches another owner's files, and tells that owner.
+- **A finding** is triaged (owners.md 4.6). One on v0.1.0's happy path
+  goes to the owner of what it names. Any other goes to
+  `notes/findings.md`, where a later mission takes it, chosen from the
+  direction.
 - **Footprints.** It orders the owners whose footprints overlap
   (owners.md, 4.5): who lands first. The second to land rebases, and
   keeps the other's values. A diff to a file that another owner holds goes

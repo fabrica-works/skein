@@ -457,12 +457,23 @@ natural point for one, beside the next milestone (3.1).
   --workspace --profile qa`. The gate builds them but does not run them,
   and no test-time ceiling counts them. The first owner to add one to a
   repository adds the profiles.
-- **Each failure is the owner's to judge.** A bug is fixed, and its
-  regression test goes in the default suite, in the lowest world that
-  owns the behaviour. A test that misreads the design is corrected or
+- **Each failure is the owner's to judge.** A bug that triage lets in
+  (below) is fixed, and its regression test goes in the default suite,
+  in the lowest world that owns the behaviour. A test that misreads the design is corrected or
   dropped, and a design that let it is made clearer. A gap the owner
   accepts stays, as `#[ignore = "<why>"]`, listed in its notes. When
   the owner ends a pass, the `qa` profile passes.
+- **Findings are triaged until v0.1.0** (the user, 10-22). A bug that
+  any QA finds is fixed now only when it lies on v0.1.0's happy path.
+  That covers an owner's pass, the external loops and an after-landing
+  run alike. The happy path is the roadmaps' stories and pages, used
+  as intended, in ordinary conditions. A security hole, lost data and
+  a flake that fails gates count as on it. Anything else waits: a
+  corner case, a race under load, a rare condition. Its owner sends it
+  to the director as one entry: what fails, where, its reproduction,
+  and why it is off the happy path. The director keeps it in a
+  backlog, and its test stays `#[ignore = "backlog: <why>"]` where one
+  exists. When unsure, the owner asks the director.
 - **Its tests land** like any other (section 4.4).
 
 Continuous QA, agents using a running build (temper's draft
