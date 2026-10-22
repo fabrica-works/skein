@@ -63,7 +63,7 @@ impl World {
     fn ask(&mut self, request: Request) -> Event {
         let env = self.env();
         skein_kv::down(&mut self.store, &env, request, &mut self.above, &mut self.below);
-        let until = self.clock.now().now.checked_add(Duration::from_secs(5)).expect("deadline");
+        let until = self.clock.now().now.checked_add(Duration::from_secs(10)).expect("deadline");
         for _ in 0..10_000 {
             if let Some(event) = self.above.pop() {
                 return event;

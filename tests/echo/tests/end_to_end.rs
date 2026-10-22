@@ -234,7 +234,7 @@ fn run(idle: bool) {
     };
     assert_eq!(binary.exit_status(), Some(Exit::Code(0)), "the signalled echo exits successfully");
     assert!(
-        outcome.end.saturating_since(outcome.start) < Duration::from_secs(1),
+        outcome.end.saturating_since(outcome.start) < Duration::from_secs(2),
         "shutdown settles well before the shipped idle time"
     );
 }

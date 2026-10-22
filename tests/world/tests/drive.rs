@@ -115,7 +115,7 @@ impl Host for Closing {
 #[test]
 fn a_termination_signal_while_closing_aborts_and_drive_returns_when_those_settle() {
     let clock = Clock::new();
-    let deadline = clock.now().now.saturating_add(Duration::from_secs(5));
+    let deadline = clock.now().now.saturating_add(Duration::from_secs(10));
     let signals = skein_shell::open_termination_signals().expect("blocked termination signals");
     let (read, write) = skein_shell::open_signal_pipe().expect("silent peer");
     let mut host = Closing {

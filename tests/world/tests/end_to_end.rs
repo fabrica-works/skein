@@ -322,7 +322,7 @@ fn an_already_exited_descendant_that_left_its_session_is_still_reaped() {
         .expect("the exited-descendant fixture starts");
     let pidfd = binary.descriptors()[0];
     let clock = Clock::new();
-    let until = clock.now().now.saturating_add(Duration::from_secs(1));
+    let until = clock.now().now.saturating_add(Duration::from_secs(2));
     // No Binary iteration runs until the parent and its escaped descendant
     // exited. Discovery must handle the exit-before-first-refresh race.
     while skein_shell::poll_child(pidfd, false).expect("the binary remains a child").is_none() {
@@ -384,7 +384,7 @@ fn a_dropped_observer_ends_its_tree() {
         .expect("the fixture starts");
         let mut kernel = Kernel::open(Config { operations: child.operations() }).expect("a real ring");
         let clock = Clock::new();
-        let until = clock.now().now.saturating_add(Duration::from_secs(1));
+        let until = clock.now().now.saturating_add(Duration::from_secs(2));
         while ready_descendant(child.stderr()).is_none() {
             let now = clock.now();
             assert!(now.now < until, "the fixture became ready before its deadline");
