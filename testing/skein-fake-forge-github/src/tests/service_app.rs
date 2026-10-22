@@ -13,6 +13,22 @@ use skein_forge::github::{
 };
 use skein_lib::{Wall, bytes};
 
+#[test]
+fn github_fake_cached_jwt_is_refused_after_expiry_and_key_revocation() {
+    for revoke in [false, true] {
+        let mut h = Harness::new();
+        assert_eq!(h.app(Method::Get, b"/app", b"").status, 200);
+        assert_eq!(h.app(Method::Get, b"/app", b"").status, 200);
+        if revoke {
+            h.service.revoke_key();
+        } else {
+            h.now = wall(1600);
+        }
+        let response = h.app(Method::Get, b"/app", b"");
+        refusal(&h, &response, 401, b"Bad credentials");
+    }
+}
+
 // Each route runs separately so the RSA checks stay within the step budget.
 #[test]
 fn github_fake_app_routes_need_the_jwt() {

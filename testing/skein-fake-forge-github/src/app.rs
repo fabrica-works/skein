@@ -46,10 +46,62 @@ pub enum Refused {
     Early,
 }
 
+/// One verified JWT, retained as its exact bytes and parsed claims.
+/// The token is bounded by [`jwt::JWT_BYTES`]; claims are checked on every use.
+pub struct Verified {
+    key: &'static [u8],
+    entry: Option<Entry>,
+}
+
+struct Entry {
+    token: Secret,
+    claims: Claims,
+}
+
+impl core::fmt::Debug for Verified {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Verified").field("key_bytes", &self.key.len()).field("cached", &self.entry.is_some()).finish()
+    }
+}
+
+impl Verified {
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self { key: &[], entry: None }
+    }
+
+    /// Drops the entry when its owner replaces or revokes the App's key.
+    pub fn forget(&mut self) {
+        self.entry = None;
+        self.key = &[];
+    }
+
+    /// Checks the signature once per distinct JWT and key, and claims every time.
+    pub fn check(&mut self, token: &[u8], app: &App, now: Wall) -> Result<(), Refused> {
+        if self.key != app.key {
+            self.forget();
+        }
+        if let Some(entry) = &self.entry
+            && entry.token.expose() == token
+        {
+            return entry.claims.check(app, now);
+        }
+        let claims = verified_claims(token, app)?;
+        self.forget();
+        self.key = app.key;
+        self.entry = Some(Entry { token: Secret::new(bytes::copy_of(token)), claims });
+        claims.check(app, now)
+    }
+}
+
 /// Checks the header, deterministic RS256 signature, then the claims on the
 /// forge's clock. Issuance may be at most 60 seconds ahead, and the life
 /// must be positive and at most [`jwt::LIFE`]. Expiry is exclusive.
 pub fn check(token: &[u8], app: &App, now: Wall) -> Result<(), Refused> {
+    verified_claims(token, app)?.check(app, now)
+}
+
+fn verified_claims(token: &[u8], app: &App) -> Result<Claims, Refused> {
     if token.len() > jwt::JWT_BYTES {
         return Err(Refused::Malformed);
     }
@@ -76,21 +128,33 @@ pub fn check(token: &[u8], app: &App, now: Wall) -> Result<(), Refused> {
         u32::try_from(jwt::JWT_BYTES).expect("JWT bound fits u32"),
     )
     .or(Err(Refused::Malformed))?;
-    let (issued, expires, app_id) = claims_read(&claims)?;
-    if app_id != app.id {
-        return Err(Refused::Issuer);
+    claims_read(&claims)
+}
+
+#[derive(Clone, Copy)]
+struct Claims {
+    issued: u64,
+    expires: u64,
+    issuer: u64,
+}
+
+impl Claims {
+    fn check(self, app: &App, now: Wall) -> Result<(), Refused> {
+        if self.issuer != app.id {
+            return Err(Refused::Issuer);
+        }
+        let life = self.expires.checked_sub(self.issued).ok_or(Refused::TooLong)?;
+        if life == 0 || life > jwt::LIFE.as_nanos().div_euclid(1_000_000_000) {
+            return Err(Refused::TooLong);
+        }
+        if now.as_secs() >= self.expires {
+            return Err(Refused::Expired);
+        }
+        if self.issued > now.as_secs().checked_add(60).ok_or(Refused::Early)? {
+            return Err(Refused::Early);
+        }
+        Ok(())
     }
-    let life = expires.checked_sub(issued).ok_or(Refused::TooLong)?;
-    if life == 0 || life > jwt::LIFE.as_nanos().div_euclid(1_000_000_000) {
-        return Err(Refused::TooLong);
-    }
-    if now.as_secs() >= expires {
-        return Err(Refused::Expired);
-    }
-    if issued > now.as_secs().checked_add(60).ok_or(Refused::Early)? {
-        return Err(Refused::Early);
-    }
-    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -101,7 +165,7 @@ enum Field {
     Ignore,
 }
 
-fn claims_read(input: &[u8]) -> Result<(u64, u64, u64), Refused> {
+fn claims_read(input: &[u8]) -> Result<Claims, Refused> {
     let tokens = read(input)?;
     if tokens.get(0) != Some(&Token::ObjectStart) {
         return Err(Refused::Malformed);
@@ -165,7 +229,11 @@ fn claims_read(input: &[u8]) -> Result<(u64, u64, u64), Refused> {
             }
         }
     }
-    Ok((issued.ok_or(Refused::Malformed)?, expires.ok_or(Refused::Malformed)?, app_id.ok_or(Refused::Malformed)?))
+    Ok(Claims {
+        issued: issued.ok_or(Refused::Malformed)?,
+        expires: expires.ok_or(Refused::Malformed)?,
+        issuer: app_id.ok_or(Refused::Malformed)?,
+    })
 }
 
 fn unsigned(text: &[u8]) -> Option<u64> {

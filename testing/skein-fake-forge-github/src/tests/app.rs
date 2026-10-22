@@ -119,3 +119,55 @@ fn github_fake_jwt_claim_values() {
         assert_eq!(check(token.expose(), &app, wall(1000)), Err(expected), "{label}");
     }
 }
+
+#[test]
+fn github_fake_cached_signature_checks_claims_and_changed_bytes() {
+    let mut app = app();
+    let token = signed(b"{\"iat\":1000,\"exp\":1600,\"iss\":7}", app.key);
+    let mut verified = crate::app::Verified::empty();
+    assert_eq!(verified.check(token.expose(), &app, wall(1000)), Ok(()));
+    for (now, expected) in [
+        (wall(1000), Ok(())),
+        (wall(1599), Ok(())),
+        (wall(1600), Err(Refused::Expired)),
+        (wall(939), Err(Refused::Early)),
+    ] {
+        assert_eq!(verified.check(token.expose(), &app, now), expected);
+    }
+    app.id = 8;
+    assert_eq!(verified.check(token.expose(), &app, wall(1000)), Err(Refused::Issuer));
+    app.id = 7;
+    let mut changed = skein_lib::bytes::copy_of(token.expose());
+    *changed.get_mut(HEADER.len().checked_add(1).expect("claims offset")).expect("claims byte") = b'f';
+    assert_eq!(verified.check(&changed, &app, wall(1000)), Err(Refused::Signature));
+    let mut changed_signature = skein_lib::bytes::copy_of(token.expose());
+    let at = changed_signature.len().checked_sub(2).expect("signature byte");
+    let byte = changed_signature.get_mut(at).expect("signature byte");
+    *byte = if *byte == b'A' { b'B' } else { b'A' };
+    assert_eq!(verified.check(&changed_signature, &app, wall(1000)), Err(Refused::Signature));
+    let debug = alloc::fmt::format(format_args!("{verified:?}"));
+    assert!(skein_lib::bytes::find(debug.as_bytes(), token.expose()).is_none());
+    app.key = KEYS.get(1).expect("second key");
+    assert_eq!(verified.check(token.expose(), &app, wall(1000)), Err(Refused::Signature));
+    let next = signed(b"{\"iat\":1000,\"exp\":1600,\"iss\":7}", app.key);
+    assert_eq!(verified.check(next.expose(), &app, wall(1000)), Ok(()));
+    assert_eq!(verified.check(token.expose(), &app, wall(1000)), Err(Refused::Signature));
+}
+
+#[test]
+fn github_fake_cached_claims_keep_refusing_invalid_values() {
+    let app = app();
+    for (label, claims, now, expected) in [
+        ("another issuer", b"{\"iat\":1000,\"exp\":1600,\"iss\":8}".as_slice(), wall(1000), Refused::Issuer),
+        ("601 seconds", b"{\"iat\":1000,\"exp\":1601,\"iss\":7}", wall(1000), Refused::TooLong),
+        ("zero life", b"{\"iat\":1000,\"exp\":1000,\"iss\":7}", wall(1000), Refused::TooLong),
+        ("negative life", b"{\"iat\":1000,\"exp\":999,\"iss\":7}", wall(1000), Refused::TooLong),
+        ("at expiry", b"{\"iat\":1000,\"exp\":1600,\"iss\":7}", wall(1600), Refused::Expired),
+        ("61 seconds early", b"{\"iat\":1000,\"exp\":1600,\"iss\":7}", wall(939), Refused::Early),
+    ] {
+        let token = signed(claims, app.key);
+        let mut verified = crate::app::Verified::empty();
+        assert_eq!(verified.check(token.expose(), &app, now), Err(expected), "{label}: miss");
+        assert_eq!(verified.check(token.expose(), &app, now), Err(expected), "{label}: hit");
+    }
+}

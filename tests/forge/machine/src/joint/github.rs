@@ -33,6 +33,7 @@ impl Peer {
 pub(super) struct Github {
     service: Service,
     app: skein_fake_forge_github::app::App,
+    verified: skein_fake_forge_github::app::Verified,
     peers: BTreeMap<Token, Peer>,
     pub tally: Tally,
 }
@@ -41,6 +42,7 @@ impl Github {
         Self {
             service: crate::github::Fake::new(seed).into_service(),
             app: crate::github::fixture_app(),
+            verified: skein_fake_forge_github::app::Verified::empty(),
             peers: BTreeMap::new(),
             tally: Tally::new(1),
         }
@@ -85,7 +87,7 @@ impl Github {
                         .and_then(|header| header.strip_prefix(b"Bearer "))
                         .and_then(|bearer| {
                             (self.service.installations().token(bearer, env.wall).is_ok()
-                                || skein_fake_forge_github::app::check(bearer, &self.app, env.wall).is_ok())
+                                || self.verified.check(bearer, &self.app, env.wall).is_ok())
                             .then_some(9)
                         });
                     self.tally.count(if user.is_some() { route(&call) } else { None }, user);

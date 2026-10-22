@@ -240,6 +240,7 @@ pub struct Service {
     pub(crate) rate_window: skein_lib::Duration,
     pub(crate) deliveries: crate::delivery::Store,
     pub(crate) key_revoked: bool,
+    pub(crate) verified: app::Verified,
     pub(crate) posts: skein_lib::Queue<crate::delivery::Post>,
     pub(crate) base: Box<[u8]>,
     pub(crate) logs: crate::logs::Store,
@@ -324,6 +325,7 @@ impl Service {
             rate_window: config.rate_window,
             deliveries: crate::delivery::Store::new(config.deliveries, limits.deliveries, seed),
             key_revoked: false,
+            verified: app::Verified::empty(),
             posts: skein_lib::Queue::with_capacity(post_capacity),
             base: config.base,
             app: config.app,
@@ -363,6 +365,7 @@ impl Service {
     }
     pub fn revoke_key(&mut self) {
         self.key_revoked = true;
+        self.verified.forget();
     }
     #[must_use]
     pub fn endpoint(&self) -> Option<&crate::delivery::Endpoint> {
@@ -471,7 +474,7 @@ impl Service {
                         self.limits.body,
                     ));
                 }
-                if self.key_revoked || app::check(bearer, &self.app, now).is_err() {
+                if self.key_revoked || self.verified.check(bearer, &self.app, now).is_err() {
                     return Outcome::Reply(answers::unauthorized(limits));
                 }
                 Outcome::Reply(self.app_route(route, request, now))
@@ -967,6 +970,8 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         .checked_add(List::<Box<[u8]>>::worst_case(limits.github.inner)?.checked_mul(2)?)?
         // The fixed JWT reader (512 tokens), its queues and signing scratch.
         .checked_add(65_536)?
+        // One verified entry retains the bounded JWT bytes; its claims are inline.
+        .checked_add(u64::try_from(github::jwt::JWT_BYTES).ok()?)?
         .checked_add(u64::from(limits.body).checked_mul(8)?)?
         // A merge refusal retains one response-sized rule message while the
         // JSON encoder measures and writes it; these fit eight response copies.
