@@ -2,7 +2,7 @@
 #![cfg(target_arch = "wasm32")]
 #![forbid(unsafe_code)]
 use skein_lib::Queue;
-use skein_ui::{Act, NodeId, Owner, Role, Style, View, look::Names};
+use skein_ui::{Act, NodeId, Owner, Patch, Role, Style, View, look::Names};
 use skein_ui_example_view::{Duties, Report as ViewReport, State, limits, places};
 use skein_ui_web::{
     Look, fetch, history,
@@ -38,6 +38,7 @@ enum Report {
 struct Shell {
     state: State,
     view: View,
+    patches: Queue<Patch>,
     page: Rc<RefCell<Page<'static>>>,
     dom: Dom,
     platform: platform::Browser<Report>,
@@ -101,7 +102,18 @@ pub fn start() {
     let history = history::web::History::new(Rc::clone(&inbox), Report::Place);
     let timer = timer::web::Timer::new(Rc::clone(&inbox), || Report::Due);
     let title = title::web::Title::default();
-    let mut shell = Shell { state, view: View::new(&limits), page, dom, platform, store, history, timer, title };
+    let mut shell = Shell {
+        state,
+        view: View::new(&limits),
+        patches: Queue::with_capacity(limits.patches),
+        page,
+        dom,
+        platform,
+        store,
+        history,
+        timer,
+        title,
+    };
     // The inbox keeps the shell and its listeners alive and forbids a turn inside a turn.
     inbox.start(Box::new(move |inbox| shell.turn(inbox)));
     inbox.raise(Report::Start);
@@ -186,9 +198,8 @@ impl Shell {
             }
         }
         // Build once after all waiting reports; document work can raise the next turn's reports.
-        let mut patches = Queue::with_capacity(limits::limits().patches);
-        self.state.build(&mut self.view, &mut patches);
-        let patches: Vec<_> = std::iter::from_fn(|| patches.pop()).collect();
+        self.state.build(&mut self.view, &mut self.patches);
+        let patches: Vec<_> = std::iter::from_fn(|| self.patches.pop()).collect();
         let mut ops = Vec::new();
         self.page.borrow_mut().apply(&patches, &mut ops);
         // Give each link the codec's path, so the browser can follow it without acting.
