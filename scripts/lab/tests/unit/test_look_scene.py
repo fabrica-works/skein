@@ -116,3 +116,92 @@ class Canonical(unittest.TestCase):
         for data in (b'{"format":"other"}\n', b'{"format":"look-scene/1"}', b'{}\n'):
             with self.subTest(data=data):
                 self.assertIsInstance(scene.read(data), list)
+
+
+def expectation(**changes):
+    return dict(id="font", width="phone", region="main", property="font-size", value="12px", cites="design 1", **changes)
+
+
+def entry_expectation():
+    return dict(id="links", width="phone", entry='main > link "Inbox"', count=0, cites="design 2")
+
+
+def departure():
+    return dict(id="accepted", width="phone", signature="style/main/color", cites="design 3")
+
+
+class SceneChecks(unittest.TestCase):
+    def test_accepts_both_expectation_and_departure_forms(self):
+        value = valid()
+        value["expectations"] = [expectation(), entry_expectation()]
+        value["departures"] = [departure(), dict(id="entry", width="phone", entry="main > button", cites="design 4")]
+        self.assertEqual(scene.read(canonical.record_bytes(value)), value)
+
+    def test_accepts_each_property_and_signature_punctuation(self):
+        from look.style import PROPERTIES
+        value = valid()
+        value["expectations"] = [dict(expectation(), id="prop-" + prop, property=prop)
+                                 for prop in PROPERTIES + ["faces", "x", "y", "width", "height", "shown"]]
+        value["departures"] = [dict(departure(), signature="missing/link/Inbox%20%22~._-:80")]
+        self.assertEqual(scene.read(canonical.record_bytes(value)), value)
+
+    def test_refuses_each_invalid_check_member(self):
+        rows = [("expectations", expectation(), "id", x) for x in ("", "Bad", 1)] + [
+            ("expectations", expectation(), "width", x) for x in ("absent", [], None)] + [
+            ("expectations", expectation(), "region", x) for x in ("absent", [], None)] + [
+            ("expectations", expectation(), "property", x) for x in ("unknown", [], None)] + [
+            ("expectations", expectation(), "value", x) for x in (1, None)] + [
+            ("expectations", entry_expectation(), "count", x) for x in (-1, True, "1", None)] + [
+            ("expectations", entry_expectation(), "entry", x) for x in ("", 1)] + [
+            ("departures", departure(), "signature", x) for x in ("", "/style/main/color", "a b", "é", "a\n", "\x7f", 1)]
+        for kind, item, key, bad in rows:
+            with self.subTest(kind=kind, key=key, bad=bad):
+                value = valid()
+                value[kind] = [dict(item, **{key: bad})]
+                self.assertIn(f"{kind}.0.{key}", {r.member for r in scene.read(canonical.record_bytes(value))})
+
+    def test_refuses_missing_unknown_and_mixed_form_members(self):
+        rows = [("expectations", expectation(), {}), ("expectations", entry_expectation(), {}),
+                ("departures", departure(), {}),
+                ("departures", dict(id="entry", width="phone", entry="main", cites="spec"), {"entry": "signature"})]
+        for kind, item, missing_member in rows:
+            for key in item:
+                with self.subTest(kind=kind, missing=key):
+                    value = valid()
+                    value[kind] = [{k: v for k, v in item.items() if k != key}]
+                    self.assertIn(f"{kind}.0.{missing_member.get(key, key)}",
+                                  {r.member for r in scene.read(canonical.record_bytes(value))})
+            with self.subTest(kind=kind, unknown=True):
+                value = valid()
+                value[kind] = [dict(item, extra=True)]
+                self.assertIn(f"{kind}.0.extra", {r.member for r in scene.read(canonical.record_bytes(value))})
+        value = valid()
+        value["expectations"] = [dict(expectation(), entry="main", count=1)]
+        value["departures"] = [dict(departure(), entry="main")]
+        members = {r.member for r in scene.read(canonical.record_bytes(value))}
+        self.assertTrue({"expectations.0.region", "expectations.0.property", "expectations.0.value", "departures.0.signature"} <= members)
+
+    def test_refuses_empty_cites_and_nonobject_items_in_both_lists(self):
+        for kind, item in (("expectations", expectation()), ("departures", departure())):
+            for cites in ("", 0, None):
+                with self.subTest(kind=kind, cites=cites):
+                    value = valid()
+                    value[kind] = [dict(item, cites=cites)]
+                    self.assertIn(f"{kind}.0.cites", {r.member for r in scene.read(canonical.record_bytes(value))})
+            for item in (None, [], "x"):
+                with self.subTest(kind=kind, item=item):
+                    value = valid()
+                    value[kind] = [item]
+                    self.assertIn(f"{kind}.0", {r.member for r in scene.read(canonical.record_bytes(value))})
+
+    def test_ids_are_unique_within_and_across_both_lists(self):
+        for kind in ("expectations", "departures"):
+            with self.subTest(kind=kind):
+                value = valid()
+                item = expectation() if kind == "expectations" else departure()
+                value[kind] = [item, item.copy()]
+                self.assertIn(f"{kind}.1.id", {r.member for r in scene.read(canonical.record_bytes(value))})
+        value = valid()
+        value["expectations"] = [expectation()]
+        value["departures"] = [dict(departure(), id="font")]
+        self.assertIn("departures.0.id", {r.member for r in scene.read(canonical.record_bytes(value))})

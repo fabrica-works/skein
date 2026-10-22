@@ -1,7 +1,7 @@
 """Scene decisions, collecting every member's refusal (lab-browser.md, 4)."""
 import re
 from runner.records import NAME, Refusal, Refused
-from . import canon
+from . import canon, style
 
 
 def read(data: bytes):
@@ -104,6 +104,39 @@ def read(data: bytes):
             bad(f"names.{index}", "repeated name")
         else:
             seen.add(item)
-    array(value, "expectations")
-    array(value, "departures")
+    width_names = {w["name"] for w in widths if type(w) is dict and type(w.get("name")) is str}
+    region_names = {r["name"] for r in regions if type(r) is dict and type(r.get("name")) is str}
+    ids = set()
+    for kind in ("expectations", "departures"):
+        for index, item in enumerate(array(value, kind)):
+            member = f"{kind}.{index}"
+            common = ("id", "width", "cites")
+            by_entry = type(item) is dict and ("entry" in item or (kind == "expectations" and "count" in item))
+            fields = (("entry", "count") if by_entry else ("region", "property", "value")) if kind == "expectations" else (
+                ("entry",) if by_entry else ("signature",))
+            item = shape(item, common + fields, member)
+            identity = item.get("id")
+            if type(identity) is not str or not NAME.fullmatch(identity):
+                bad(member + ".id", "expected a name matching [a-z][a-z0-9-]*")
+            elif identity in ids:
+                bad(member + ".id", "repeated id")
+            else:
+                ids.add(identity)
+            if type(item.get("width")) is not str or item["width"] not in width_names:
+                bad(member + ".width", "expected a scene width name")
+            text(item, "cites", member + ".cites", True)
+            if by_entry:
+                text(item, "entry", member + ".entry", True)
+                if kind == "expectations" and (type(item.get("count")) is not int or item["count"] < 0):
+                    bad(member + ".count", "expected a nonnegative integer")
+            elif kind == "expectations":
+                if type(item.get("region")) is not str or item["region"] not in region_names:
+                    bad(member + ".region", "expected a scene region name")
+                if item.get("property") not in style.PROPERTIES + ["faces", "x", "y", "width", "height", "shown"]:
+                    bad(member + ".property", "expected a style property, faces, box member or shown")
+                text(item, "value", member + ".value")
+            else:
+                signature = item.get("signature")
+                if type(signature) is not str or not re.fullmatch(r"(?!/)[\x21-\x7e]+", signature):
+                    bad(member + ".signature", "expected a relative signature in printable ASCII without spaces")
     return errors if errors else value
