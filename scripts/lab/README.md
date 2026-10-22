@@ -174,6 +174,10 @@ actual transient units, cgroups and spawns:
 heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/process
 ```
 
+`tests/process/test_hand_walk.py` walks `browse` and `sign-in` against the built
+`SKEIN_LAB_BROWSER`, `SKEIN_TEST_CHROMIUM` and `SKEIN_TEST_FONTS` (Debian
+DejaVu by default); missing prerequisites fail.
+
 Missing or denied systemd/bubblewrap capabilities produce an explicit
 process-tier skip/refusal. They prove nothing about native containment. Unit
 stories use supplied times without sleeping; the AST boundary includes `life`
@@ -277,7 +281,7 @@ name whole. `hand/sign-in ADDRESS` reads one sign-in link line from stdin
 and prints the program's redacted answer. Both need the hand's browser
 program running (lab-browser.md, 8.8).
 
-Statuses are 0 answered, 1 refused, 2 usage error (usage on stderr), and
-3 unreachable browser or unreadable answer. A missed wait is answered (0).
+Statuses are 0 answered, 1 refused or a wait missed, 2 usage error (usage on
+stderr), and 3 unreachable browser or unreadable answer.
 The endpoint must be `127.0.0.1:PORT` or `[::1]:PORT`; `go` accepts only a
 path starting with `/`, not `//`, with printable ASCII and no spaces.

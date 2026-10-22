@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<main>
+  <h1>Hand walk</h1>
+  <input aria-label="Title" value="Words already here">
+  <button onclick="document.querySelector('[role=status]').setAttribute('aria-label', document.querySelector('input').value); document.querySelector('[role=status]').textContent=document.querySelector('input').value">Save</button>
+  <p role="status"></p>
+</main>
+<script>history.replaceState(null, '', '/sign-in');</script>

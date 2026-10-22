@@ -65,8 +65,6 @@ class Words(unittest.TestCase):
             cases.append(({'call': verb}, {key: 'http://page/'}, [('' if verb == 'address' else key + ' ') + 'http://page/']))
         cases += [({'call': 'key', 'key': 'Enter', 'shift': True}, {'keyed': 'Shift+Enter'}, ['keyed Shift+Enter']),
                   ({'call': 'wait'}, {'gone': True}, ['gone']),
-                  ({'call': 'wait'}, {'missed': []}, ['missed: nothing of its role']),
-                  ({'call': 'wait'}, {'missed': [PART]}, ['missed', '  button "Send" [disabled]']),
                   ({'call': 'outline'}, {'outline': 'main\n  button "X"\n', 'left': 2}, ['main', '  button "X"', '(2 entries cut)']),
                   ({'call': 'outline'}, {'outline': '', 'left': 0}, []),
                   ({'call': 'outline'}, {'outline': 'text \u2028 value\n\n', 'left': 0}, ['text \u2028 value', '']),
@@ -76,6 +74,9 @@ class Words(unittest.TestCase):
         for call, answer, lines in cases:
             with self.subTest(answer=answer):
                 self.assertEqual(words.text(call, answer), (0, lines))
+        for missed, lines in [([], ['missed: nothing of its role']),
+                             ([PART], ['missed', '  button "Send" [disabled]'])]:
+            self.assertEqual(words.text({'call': 'wait'}, {'missed': missed}), (1, lines))
         self.assertEqual(words.text({'call': 'press'}, {'refused': 'covered', 'detail': 'try later'}), (1, ['refused covered: try later']))
         self.assertEqual(words.part(dict(role='text field', name='', value='a\nb', states=['focused', 'selected'])), 'text field = "a\\nb" [focused] [selected]')
 

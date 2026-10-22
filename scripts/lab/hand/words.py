@@ -151,7 +151,7 @@ def text(call, answer):
         shape(answer, dict(missed=list))
         if len(answer['missed']) > 8:
             raise Unreadable('too many parts')
-        return 0, (['missed'] + ['  ' + part(p) for p in answer['missed']]
+        return 1, (['missed'] + ['  ' + part(p) for p in answer['missed']]
                    if answer['missed'] else ['missed: nothing of its role'])
     if verb == 'outline':
         shape(answer, dict(outline=str, left=int))

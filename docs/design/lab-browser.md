@@ -881,7 +881,7 @@ scripts/lab/hand/sign-in ADDRESS
 - **What it prints:** the answer as lines a person reads (`pressed
   button "Send"`, `refused covered: ...`, the outline as it is, a
   trouble entry a line), and nothing else.
-- **Its statuses:** 0 answered, 1 refused, 2 a usage error (its usage
+- **Its statuses:** 0 answered, 1 refused, or a wait missed, 2 a usage error (its usage
   on its standard error), 3 the browser unreachable or its answer
   unreadable.
 - **Its endpoint is its own** (lab.md, 6.2): `ADDRESS` is its fixed
