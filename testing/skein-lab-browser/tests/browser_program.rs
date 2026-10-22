@@ -16,6 +16,12 @@ use support::{Child, Reader, field, integer, text};
 #[test]
 #[expect(clippy::too_many_lines, reason = "the program story checks one ordered conversation from ready through EOF")]
 fn browser_program() {
+    // lab-browser.md, 4: desktop and phone viewports; a small desktop shot
+    // exposes the scrollbar gutter on tall.html's 2000px body.
+    const DESKTOP: (i64, i64) = (1440, 900);
+    const PHONE: (i64, i64) = (390, 844);
+    const TALL_WIDTH: i64 = 100;
+    const TALL_HEIGHT: i64 = 100;
     let scratch = Scratch::new("lab-program");
     let profile = scratch.path().join("scratch");
     let out = scratch.path().join("out");
@@ -61,12 +67,48 @@ fn browser_program() {
     ]));
     let address = text(field(field(&served, "served"), "address")).to_owned();
     assert_eq!(field(field(&served, "served"), "origin"), &json::bytes(b"fixture"));
+    // lab-browser.md, 6: both emulations precede the story's reads.
+    for (page, size, mobile) in [("blank-desktop", DESKTOP, false), ("blank-phone", PHONE, true)] {
+        call(object([
+            ("call", string("open")),
+            ("page", string(page)),
+            ("width", number(size.0)),
+            ("height", number(size.1)),
+            ("mobile", Value::Bool(mobile)),
+        ]));
+        call(object([
+            ("call", string("go")),
+            ("page", string(page)),
+            ("url", string(format!("{address}/blank.html"))),
+        ]));
+    }
+    // The first shot is an unclipped desktop viewport on a scrolling page.
+    call(object([
+        ("call", string("open")),
+        ("page", string("tall")),
+        ("width", number(TALL_WIDTH)),
+        ("height", number(TALL_HEIGHT)),
+        ("mobile", Value::Bool(false)),
+    ]));
+    call(object([("call", string("go")), ("page", string("tall")), ("url", string(format!("{address}/tall.html")))]));
+    let viewport = call(object([
+        ("call", string("shot")),
+        ("page", string("tall")),
+        ("clip", Value::Null),
+        ("scale", number(1)),
+        ("file", string("tall.png")),
+    ]));
+    let viewport_png = fs::read(out.join("tall.png")).unwrap();
+    assert_eq!(integer(field(field(&viewport, "shot"), "width")), TALL_WIDTH);
+    assert_eq!(integer(field(field(&viewport, "shot"), "height")), TALL_HEIGHT);
+    assert_eq!(i64::from(u32::from_be_bytes(viewport_png[16..20].try_into().unwrap())), TALL_WIDTH);
+    assert_eq!(i64::from(u32::from_be_bytes(viewport_png[20..24].try_into().unwrap())), TALL_HEIGHT);
     assert_eq!(
         call(object([
             ("call", string("open")),
             ("page", string("p")),
-            ("width", number(390)),
-            ("height", number(844)),
+            ("width", number(PHONE.0)),
+            ("height", number(PHONE.1)),
             ("mobile", Value::Bool(true))
         ])),
         object([("opened", string("p"))])
@@ -171,6 +213,12 @@ fn browser_program() {
                 && field(entry, "text") == &string("styles.example:80")),
         "{trouble:?}"
     );
+    let network: Vec<_> = trouble
+        .iter()
+        .filter(|entry| field(entry, "kind") == &string("network"))
+        .map(|entry| text(field(entry, "text")))
+        .collect();
+    assert_eq!(network, ["styles.example:80"], "only the page's external stylesheet asks the proxy");
     let selected = call(object([("call", string("select")), ("page", string("p")), ("selector", string("#part"))]));
     let style = call(object([
         ("call", string("style")),
@@ -181,6 +229,10 @@ fn browser_program() {
     assert_eq!(field(field(field(&style, "style"), "values"), "color"), &string("rgb(51, 68, 85)"));
     let refused = call(object([("call", string("fly"))]));
     assert_eq!(field(&refused, "refused"), &string("call"));
+    for page in ["blank-desktop", "blank-phone"] {
+        let trouble = call(object([("call", string("trouble")), ("page", string(page))]));
+        assert_eq!(field(&trouble, "trouble"), &Value::Array(vec![]), "{page}: {trouble:?}");
+    }
     drop(stdin);
     let deadline = reader.now().saturating_add(Duration::from_secs(10));
     loop {
