@@ -312,7 +312,7 @@ fn full_tables() -> [FullTable; 5] {
 #[test]
 fn a_plain_user_is_refused_the_admin_routes() {
     let mut h = fixtures::setup_harness();
-    h.service.setup_mut().token(2, b"plain", &[b"read:user"], Secret::new(boxed(b"plain-user-token")));
+    h.service.setup_mut().token(2, b"plain", &[b"all"], Secret::new(boxed(b"plain-user-token")));
     h.ask_as(b"GET", b"/api/v1/admin/users/kit/tokens", b"", b"plain-user-token");
     assert_eq!(h.status(), 403);
     assert_eq!(h.body().as_ref(), b"{\"message\":\"user should be the site admin\"}");

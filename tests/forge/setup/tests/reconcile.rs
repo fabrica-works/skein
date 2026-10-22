@@ -193,3 +193,23 @@ fn another_services_bot_is_unmarked() {
     }
     assert!(world.secrets_absent());
 }
+
+#[test]
+fn the_three_scope_admin_token_is_refused_at_the_first_owned_org_read() {
+    use skein_forge_setup::reconcile::{Failure, Stage, Why};
+    let mut world = World::owned(7);
+    world.store_mut().revoke(fixtures::ADMIN);
+    world.store_mut().token(
+        1,
+        b"narrow-admin",
+        &[b"write:admin", b"read:user", b"write:repository"],
+        fixtures::secret(fixtures::ADMIN),
+    );
+    assert_eq!(
+        world.reconcile(),
+        Ended::Stop(Failure { forge: 1, step: Stage::Org, subject: b"acme".as_slice().into(), why: Why::Refused(403) })
+    );
+    assert!(world.store().organization(b"acme").is_none());
+    assert_eq!(world.tally().routes.get(&Route::CreateOrg), None);
+    assert!(world.secrets_absent());
+}

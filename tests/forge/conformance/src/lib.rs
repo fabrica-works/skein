@@ -1,4 +1,5 @@
 //! Records format-faithful exchanges against an isolated Forgejo (protocol/forge.md, 10).
+pub mod admin_scopes;
 mod cases;
 mod cli;
 pub mod component;

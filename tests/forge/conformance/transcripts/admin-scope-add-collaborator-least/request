@@ -1,0 +1,8 @@
+PUT /api/v1/repos/fixture/scopes/collaborators/writer HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 22
+Connection: close
+
+{"permission":"write"}

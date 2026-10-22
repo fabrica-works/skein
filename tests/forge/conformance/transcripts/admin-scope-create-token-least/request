@@ -1,0 +1,8 @@
+POST /api/v1/admin/users/writer/tokens HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 44
+Connection: close
+
+{"name":"made-least","scopes":["read:user"]}

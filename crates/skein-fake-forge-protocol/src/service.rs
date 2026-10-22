@@ -153,20 +153,18 @@ impl Service {
         Some((user, self.setup.accesses_repository(token, write)))
     }
     pub(crate) fn reads_user(&self, authorization: Option<&[u8]>) -> bool {
-        let Some(value) = authorization else {
-            return false;
-        };
-        let Some(token) = value.strip_prefix(b"token ") else {
-            return false;
-        };
-        for (known, _) in &self.config.tokens {
-            if known.expose() == token {
-                return true;
-            }
-        }
-        self.setup.reads_user(token)
+        self.permits(authorization, b"read:user", b"write:user", false)
     }
     pub(crate) fn accesses_repository(&self, authorization: Option<&[u8]>, write: bool) -> bool {
+        self.permits(authorization, b"read:repository", b"write:repository", write)
+    }
+    pub(crate) fn accesses_admin(&self, authorization: Option<&[u8]>, write: bool) -> bool {
+        self.permits(authorization, b"read:admin", b"write:admin", write)
+    }
+    pub(crate) fn accesses_organization(&self, authorization: Option<&[u8]>, write: bool) -> bool {
+        self.permits(authorization, b"read:organization", b"write:organization", write)
+    }
+    fn permits(&self, authorization: Option<&[u8]>, read: &[u8], write: &[u8], writing: bool) -> bool {
         let Some(value) = authorization else {
             return false;
         };
@@ -179,7 +177,7 @@ impl Service {
                 return true;
             }
         }
-        self.setup.accesses_repository(token, write)
+        self.setup.permits(token, read, write, writing)
     }
     /// Scenario state for setup, without changing the repository domain.
     pub fn setup_mut(&mut self) -> &mut crate::setup::Store {

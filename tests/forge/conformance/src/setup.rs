@@ -9,7 +9,7 @@ use crate::{
 };
 use skein_throwaway_forgejo::Token;
 use std::path::Path;
-pub(crate) const ADMIN: &[&str] = &["write:admin", "write:organization", "write:user"];
+pub(crate) const ADMIN: &[&str] = &["write:admin", "read:user", "write:organization", "write:repository"];
 pub(crate) const ADOPT: &[&str] = &["write:admin", "read:user", "write:repository"];
 pub(crate) fn scoped(f: &Fixture, secrets: &mut Secrets, login: &str, name: &str, scopes: &[&str]) -> Result<Token> {
     let row = f.api(
@@ -33,7 +33,8 @@ pub(crate) fn record(f: &Fixture, out: &Path, secrets: &mut Secrets) -> Result<(
     let adopt = scoped(f, recorder.secrets, "fixture", "setup-adopt", ADOPT)?;
     crate::search::record(&mut recorder, &adopt)?;
     crate::repo_setup::record(&mut recorder, &adopt)?;
-    crate::create_repository::record(&mut recorder)
+    crate::create_repository::record(&mut recorder)?;
+    crate::admin_scopes::record(&mut recorder)
 }
 pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     let mut facts = crate::users::facts(out)?;
@@ -44,5 +45,6 @@ pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     facts.extend(crate::search::facts(out)?);
     facts.extend(crate::repo_setup::facts(out, &f.owner.login)?);
     facts.extend(crate::create_repository::facts(out)?);
+    facts.extend(crate::admin_scopes::facts(out)?);
     Ok(facts)
 }

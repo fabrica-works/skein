@@ -620,3 +620,11 @@ fn forgejo_repo_search_facts_reject_refused_reads() {
     let facts = search_facts("refused", &first, &second, &[&all, &search_answer("")], 401);
     assert!(facts.iter().all(|fact| matches!(fact.outcome, crate::facts::Outcome::Fails(_))));
 }
+
+#[test]
+fn recorded_admin_scope_grants_and_refusals_hold() {
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for fact in crate::admin_scopes::facts(out).expect("recorded scope cases") {
+        assert_eq!(fact.outcome, crate::facts::Outcome::Holds, "{}", fact.name);
+    }
+}

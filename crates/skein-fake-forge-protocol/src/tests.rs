@@ -16,3 +16,5 @@ mod setup_deliveries;
 mod observations;
 
 mod git;
+
+mod admin_scopes;

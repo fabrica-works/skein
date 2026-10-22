@@ -307,7 +307,12 @@ pub(crate) fn seeded_config(
     let limits = skein_forge_machine_world::fixtures::fake_limits();
     let mut service = Service::new(config, &limits, seed).expect("world service");
     let admin = service.setup_mut().account(b"kit-admin", true, b"");
-    service.setup_mut().token(admin, b"setup-admin", &[b"all"], fixtures::secret(fixtures::ADMIN));
+    service.setup_mut().token(
+        admin,
+        b"setup-admin",
+        &[b"write:admin", b"read:user", b"write:organization", b"write:repository"],
+        fixtures::secret(fixtures::ADMIN),
+    );
     if owned {
         service.setup_mut().account(b"ada", true, b"Ada");
     }

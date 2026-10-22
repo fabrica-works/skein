@@ -1,0 +1,8 @@
+PATCH /api/v1/repos/fixture/scopes/hooks/1 HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 197
+Connection: close
+
+{"type":"forgejo","config":{"url":"http://127.0.0.1:7200/hooks/1","content_type":"json","secret":"0000000000000000000000000000000000000000000000000000000000000006"},"events":["push"],"active":true}

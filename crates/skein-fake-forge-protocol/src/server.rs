@@ -32,9 +32,13 @@ pub enum Event {
     Close,
     Closed,
 }
+#[expect(clippy::struct_excessive_bools, reason = "independent Forgejo scope grants and the request write mode")]
 struct Scopes {
     user: bool,
     repository: bool,
+    admin: bool,
+    organization: bool,
+    writing: bool,
 }
 #[expect(missing_debug_implementations, reason = "HTTP queues temporarily hold authorization headers")]
 pub struct Server {
@@ -88,7 +92,7 @@ impl Server {
             git: None,
             git_decoder: None,
             user: 0,
-            scopes: Scopes { user: false, repository: false },
+            scopes: Scopes { user: false, repository: false, admin: false, organization: false, writing: false },
             request: None,
             select: response::Select::Document,
             range: Ok(None),
@@ -533,6 +537,9 @@ fn entrance(
     server.user = user;
     server.scopes = Scopes {
         user: service.reads_user(call.header(b"authorization")),
+        admin: service.accesses_admin(call.header(b"authorization"), call.method != Method::Get),
+        organization: service.accesses_organization(call.header(b"authorization"), call.method != Method::Get),
+        writing: call.method != Method::Get,
         repository: service.accesses_repository(call.header(b"authorization"), call.method != Method::Get),
     };
     let method = match call.method {
@@ -595,12 +602,8 @@ fn decoded(
         respond(server, response::failure(&env.limits, errors::refusal(Refusal::MergeStyle)));
         return;
     }
-    if request == Request::User && !server.scopes.user {
-        fail(server, &env.limits, 403);
-        return;
-    }
-    if repository_scoped(&request) && !server.scopes.repository {
-        fail(server, &env.limits, 403);
+    if let Some(message) = missing_scope(&request, &server.scopes) {
+        respond(server, response::failure(&env.limits, errors::Failure { status: 403, message, retry_after: None }));
         return;
     }
     if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, domain) {
@@ -653,8 +656,8 @@ fn decoded(
         (Ok(_), Ok(_), None) => error_reply(server, env, api::Error::Missing(api::What::Repository)),
     }
 }
-fn repository_scoped(request: &Request) -> bool {
-    match request {
+fn missing_scope(request: &Request, scopes: &Scopes) -> Option<&'static [u8]> {
+    let (granted, read, write): (bool, &[u8], &[u8]) = match request {
         Request::RepositoryById { .. }
         | Request::RepoSearch { .. }
         | Request::UserRepos { .. }
@@ -663,9 +666,31 @@ fn repository_scoped(request: &Request) -> bool {
         | Request::RepoHooks { .. }
         | Request::CreateRepoHook { .. }
         | Request::EditRepoHook { .. }
-        | Request::DeleteRepoHook { .. } => true,
-        Request::User
-        | Request::ApiSettings
+        | Request::DeleteRepoHook { .. } => (
+            scopes.repository,
+            b"token does not have at least one of required scope(s): [read:repository]",
+            b"token does not have at least one of required scope(s): [write:repository]",
+        ),
+        Request::User | Request::UserOf { .. } => (
+            scopes.user,
+            b"token does not have at least one of required scope(s): [read:user]",
+            b"token does not have at least one of required scope(s): [write:user]",
+        ),
+        Request::Tokens { .. }
+        | Request::CreateToken { .. }
+        | Request::DeleteToken { .. }
+        | Request::CreateUser { .. }
+        | Request::CreateOrg { .. } => (
+            scopes.admin,
+            b"token does not have at least one of required scope(s): [read:admin]",
+            b"token does not have at least one of required scope(s): [write:admin]",
+        ),
+        Request::Org { .. } | Request::CreateRepository { .. } => (
+            scopes.organization,
+            b"token does not have at least one of required scope(s): [read:organization]",
+            b"token does not have at least one of required scope(s): [write:organization]",
+        ),
+        Request::ApiSettings
         | Request::UserSearch { .. }
         | Request::Repository { .. }
         | Request::Issues { .. }
@@ -701,13 +726,6 @@ fn repository_scoped(request: &Request) -> bool {
         | Request::Update { .. }
         | Request::PostStatus { .. }
         | Request::CreateBranch { .. }
-        | Request::Tokens { .. }
-        | Request::CreateToken { .. }
-        | Request::DeleteToken { .. }
-        | Request::UserOf { .. }
-        | Request::Org { .. }
-        | Request::CreateOrg { .. }
-        | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
         | Request::EditTeam { .. }
@@ -717,8 +735,14 @@ fn repository_scoped(request: &Request) -> bool {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
-        | Request::CreateUser { .. }
-        | Request::DeleteBranch { .. } => false,
+        | Request::DeleteBranch { .. } => return None,
+    };
+    if granted {
+        None
+    } else if scopes.writing {
+        Some(write)
+    } else {
+        Some(read)
     }
 }
 fn table(service: &Service, request: &Request, user: u64) -> Option<documents::Answer> {

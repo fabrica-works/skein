@@ -206,16 +206,19 @@ forge differs.
    site admin, or the run stops with `NotAdmin`. Either failure names
    the admin by the given name. Every later request carries the token,
    but step 3's check of a kept token.
-   - Its scopes, three: `write:admin`, for the users, their tokens and
-     the orgs (steps 2, 3 and 5, and 4.7); `read:user`, for `GET
-     /api/v1/user`; and `write:repository`, for a repository's read,
-     its collaborator and its hooks (4.5) and the admin's search (4.8),
-     which Forgejo files under its repository scope. The owner mints
-     the token with these, or tells the person who mints it to. A site
-     admin passes each repository's own check, so a `403` on one of
-     those routes is the token without `write:repository`: the run
-     stops `Refused(403)` at the step that sent it, and the owner can
-     say which scope is missing.
+   - Its scopes, four: `write:admin`, for making users and orgs and
+     managing users' tokens (steps 2, 3 and 5, and 4.7); `read:user`,
+     for `GET /api/v1/user` and the bot's user read; `write:organization`,
+     for reading orgs (step 5) and making their repositories
+     (`CreateRepository` below); and `write:repository`, for a repository's
+     read, collaborator and hooks (4.5), and the admin's search (4.8).
+     Reconcile alone needs only `read:organization`; setup's repository
+     creation needs the write scope, which includes that read. The owner
+     mints the token with all four, or tells the person who mints it to.
+     A site admin still needs each route's token scope: a missing one
+     answers `403`, and the run stops `Refused(403)` at the step that sent
+     it. Section 8 records the least scope for each route.
+
 2. **The bot.** It reads the user of the bot's login.
    - Absent (404): it draws 32 bytes and makes the user (`POST
      /api/v1/admin/users`) with them as 64 lowercase hex digits for a
@@ -927,8 +930,9 @@ pin (forge.md, section 4.3), and named by the fact's name.
     `setup-admin-route-makes-a-token-answering-201-with-name-scopes-and-value`,
     `setup-token-of-an-existing-name-is-refused`,
     `setup-token-delete-answers-204-and-ends-the-token`;
-  - the scopes: the token routes need `write:admin`; `GET /user` a user
-    scope; the repository routes, 4.5's and the search, the repository
+  - the scopes: listing tokens needs `read:admin`, making and deleting
+    them `write:admin`; `GET /user` and `GET /users/{login}` need
+    `read:user`; the repository routes, 4.5's and the search, the repository
     scope (4.3, step 1); a git token `read:user`; an API token
     `write:issue`:
     `setup-admin-token-without-write-admin-is-refused-the-token-routes`,
@@ -937,6 +941,34 @@ pin (forge.md, section 4.3), and named by the fact's name.
     `setup-a-git-token-of-write-repository-alone-is-refused-user`,
     `setup-a-git-token-of-write-repository-and-read-user-answers-user-as-the-bot`,
     `setup-api-token-without-write-issue-is-refused-an-issue-write`.
+- **Least token scopes, measured per route.** A site-admin token with
+  only the listed scope succeeds; one carrying only unrelated `read:issue`
+  gets `403` naming the required scope. Forgejo refuses to mint a token
+  with an empty scope list. Write includes read within its own category,
+  and `all` includes every category. The eighteen `setup-scope-*` facts
+  record these grants and refusals; settings is
+  `setup-scope-settings-needs-no-scope`.
+
+  | Request | Least scope |
+  |---|---|
+  | `User`, `UserOf` | `read:user` |
+  | `CreateUser` | `write:admin` |
+  | `Tokens` | `read:admin` |
+  | `CreateToken`, `DeleteToken` | `write:admin` |
+  | `Org` | `read:organization` |
+  | `CreateOrg` | `write:admin` |
+  | `CreateRepository` | `write:organization` |
+  | `RepositoryById`, `Permission`, `RepoHooks`, `RepoSearch` | `read:repository` |
+  | `AddCollaborator`, `CreateRepoHook`, `EditRepoHook`, `DeleteRepoHook` | `write:repository` |
+  | `ApiSettings` | none; the route also answers anonymously |
+
+  The conformance runner's `--admin-scopes` mode records each grant and
+  refusal on a fresh loopback Forgejo. The four-scope token succeeds on
+  every route; removing each category is refused at a request that needs
+  it (`setup-admin-scopes-need-each-of-the-four-categories`). The fake enforces these scopes
+  through its issued-token model; its configured tokens have unrestricted
+  scope. Repository creation is still outside the fake's state model:
+  a scoped call reaches its `501`, while a missing scope answers `403`.
 - **Orgs** (step 5): an org an admin makes for a user is private and
   takes `write:admin` alone; a missing org is a 404:
   `setup-org-made-for-a-user-by-an-admin-is-201-and-private`,

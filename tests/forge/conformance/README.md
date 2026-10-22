@@ -60,3 +60,16 @@ Response unit arrays are sorted. Git pkt-line length prefixes stay intact while
 their payloads are masked. Unquoted runner log times use the same canonical
 2020 date and first-appearance ordinal as quoted timestamps. Delivery CI requires `--runner`;
 recording refuses it when the flag is absent.
+
+`--admin-scopes` records just the setup routes' least-scope grants and
+403 refusals on a fresh loopback instance, without Actions or deliveries:
+
+```sh
+heavy cargo run -p forgejo-conformance -- --admin-scopes \
+  --forgejo <absolute path to Forgejo 17.0.0> \
+  --scratch target/admin-scopes --out <output directory>
+```
+
+The missing-scope token carries unrelated `read:issue`: Forgejo refuses
+empty scope lists. The settings route is also checked anonymously. The
+normal setup group records these cases too.

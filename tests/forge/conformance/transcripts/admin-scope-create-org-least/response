@@ -1,0 +1,10 @@
+HTTP/1.1 201 Created
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 310
+
+{"id":6,"name":"scope-org-least","full_name":"","email":"","avatar_url":"http://127.0.0.1:3000/avatars/62505ac5baac34219a8247c652eb9ecf","description":"","website":"","location":"","visibility":"private","repo_admin_change_team_access":false,"created":"2020-01-01T00:00:03+05:30","username":"scope-org-least"}

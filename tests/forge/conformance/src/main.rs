@@ -6,8 +6,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut out = None;
     let mut component = false;
     let mut create_repository = false;
+    let mut admin_scopes = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
+        if arg == "--admin-scopes" {
+            admin_scopes = true;
+            continue;
+        }
         if arg == "--create-repository" {
             create_repository = true;
             continue;
@@ -28,7 +33,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let forgejo = forgejo.ok_or("--forgejo required")?;
     let scratch = scratch.ok_or("--scratch required")?;
     let out = out.ok_or("--out required")?;
-    if create_repository {
+    if admin_scopes {
+        forgejo_conformance::admin_scopes::run(&forgejo, &scratch, &out)
+    } else if create_repository {
         forgejo_conformance::create_repository::run(&forgejo, &scratch, &out)
     } else if component {
         forgejo_conformance::component::record(&forgejo, runner.as_deref(), &scratch, &out)

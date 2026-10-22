@@ -1,0 +1,8 @@
+POST /api/v1/admin/users HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 200
+Connection: close
+
+{"username":"scope-user-admin","email":"scope-admin@example.invalid","full_name":"scope:bot","password":"0000000000000000000000000000000000000000000000000000000000000003","must_change_password":false}

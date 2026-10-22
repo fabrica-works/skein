@@ -122,26 +122,14 @@ impl Store {
         }
         None
     }
-    pub(crate) fn reads_user(&self, secret: &[u8]) -> bool {
-        for token in &self.tokens {
-            if token.secret.expose() == secret {
-                for scope in &token.scopes {
-                    if scope.as_ref() == b"read:user" || scope.as_ref() == b"write:user" || scope.as_ref() == b"all" {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
-    }
     pub(crate) fn accesses_repository(&self, secret: &[u8], write: bool) -> bool {
+        self.permits(secret, b"read:repository", b"write:repository", write)
+    }
+    pub(crate) fn permits(&self, secret: &[u8], read: &[u8], write: &[u8], writing: bool) -> bool {
         for token in &self.tokens {
             if token.secret.expose() == secret {
                 for scope in &token.scopes {
-                    if scope.as_ref() == b"all"
-                        || scope.as_ref() == b"write:repository"
-                        || (!write && scope.as_ref() == b"read:repository")
-                    {
+                    if scope.as_ref() == b"all" || scope.as_ref() == write || (!writing && scope.as_ref() == read) {
                         return true;
                     }
                 }
