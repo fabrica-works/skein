@@ -327,6 +327,23 @@ sparingly. Claude (Sonnet 5.5 or Opus 5.5, through `claude -p` or
 a sub-agent) implements only when Codex is out, or when the task is
 mostly taste: an API's shape, a test suite's organization and names.
 
+An implementer starts through the director's launcher, on every
+machine, which records each run for the spend experiments and may
+lower a high run to medium at launch:
+
+```
+umask 077; bash ~/src/rust/tmp/director/start.sh implementer \
+    TASK WORKTREE REPORT EFFORT SITUATION SIZE
+```
+
+Its paths are absolute, and its report is fresh. `--exempt "reason"`
+keeps the owner's effort: a tight test-time limit, a retry after a
+failed run, a fix across a boundary. The launcher waits, so the owner
+runs it on its detached route with null stdin, and keeps the run's id
+it prints. Once the owner has judged the result, it records it, once:
+`start.sh outcome RUN_ID accepted|fixed|redone|abandoned "note"`, with
+`--gate-first-pass pass|fail|not-applicable|unknown --redispatches N`.
+
 ### 4.3 The task
 
 An implementer other than Opus 5.5 at xhigh reads its task literally.
