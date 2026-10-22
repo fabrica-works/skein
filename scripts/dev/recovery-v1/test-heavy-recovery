@@ -1038,13 +1038,17 @@ def concurrent_land_drift(lab, mode, point='after_receipt'):
         'land_exit': land.returncode, 'no_fresh_cache': point == 'after_receipt'}, indent=2) + '\n')
 
 
-def relocated_after_landing(lab):
+def relocated_after_landing(lab, inherited=False):
     scripts = lab.repo / 'scripts'
     scripts.mkdir()
     (lab.repo / '.gitignore').write_text('target/\n')
+    check = scripts / 'check.sh'
+    check.write_text('#!/bin/sh\ntrue\n')
+    check.chmod(0o700)
     script = scripts / 'after-landing.sh'
     script.write_text('#!/bin/sh\nset -eu\ntest -f "$SKEIN_GATE_POLICY_HELPER"\n'
                       'test -f "$(dirname "$SKEIN_GATE_POLICY_HELPER")/recovery_message.py"\n'
+                      'test "$SKEIN_GATE_COMMAND" = scripts/after-landing.sh\n'
                       'mkdir -p target\necho artifact > target/artifact\n'
                       'echo relocated-after-landing\n')
     script.chmod(0o700)
@@ -1052,16 +1056,28 @@ def relocated_after_landing(lab):
     lab.call(['git', 'commit', '-qm', 'after landing fixture'])
     common = lab.call(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']).stdout.strip()
     commit = lab.call(['git', 'rev-parse', 'HEAD']).stdout.strip()
-    result = lab.call([KIT / 'after-landing', common, commit, 'fixture'])
+    inherited_policy = None
+    environment = dict(lab.env)
+    if inherited:
+        inherited_policy = lab.call(['bash', '-c', 'source "$1"; gate_policy_identity',
+                                    'fixture', KIT / 'gate-policy.sh'],
+                                   environment=dict(lab.env, SKEIN_GATE_COMMAND='scripts/check.sh')).stdout.strip()
+        environment.update(SKEIN_GATE_POLICY_ID=inherited_policy,
+                           SKEIN_GATE_POLICY_HELPER=str(KIT / 'gate-policy.sh'),
+                           SKEIN_GATE_COMMAND='scripts/check.sh')
+    result = lab.call([KIT / 'after-landing', common, commit, 'fixture'], environment=environment)
     (lab.path / 'after-landing.client.txt').write_text(result.stdout + result.stderr)
     task = lab.released('after-landing repo')
     assert task['code'] == 0 and task['args'] == ['scripts/after-landing.sh']
     assert task['policy'].startswith('sha256:')
+    if inherited:
+        assert task['policy'] != inherited_policy, 'after-tier reused the landing policy'
     assert 'relocated-after-landing' in Path(task['log']).read_text()
     assert not (lab.path / 'tmp/after-landing/repo/target').exists()
     assert (lab.path / 'tmp/after-landing/repo.lock').exists()
     (lab.path / 'after-landing-proof.json').write_text(json.dumps({
         'relocated_sibling_heavy_and_helper': True, 'completed_receipt': True,
+        'inherited_landing_policy': inherited_policy, 'after_policy': task['policy'],
         'target_removed_under_lane_lock': True, 'shared_cache_stubbed': True}, indent=2) + '\n')
 
 
@@ -1211,7 +1227,7 @@ def main():
              ('late-launch-release-crash', lambda lab: late_launch(lab, True)),
              ('policy-helper-descendants', policy_helper_descendants),
              ('cancelled-reused-id', cancelled_reused_id), ('stale-pause-5s', stale_pause),
-             ('receipt-publication', publication_crash), ('relocated-after-landing', relocated_after_landing), ('real147-land-cache', real_land),
+             ('receipt-publication', publication_crash), ('inherited-after-landing-policy', lambda lab: relocated_after_landing(lab, True)), ('relocated-after-landing', relocated_after_landing), ('real147-land-cache', real_land),
              ('gate-settle-commit-drift', lambda lab: payload_tree_drift(lab, 'settled', 'commit')),
              ('gate-settle-index-drift', lambda lab: payload_tree_drift(lab, 'settled', 'index')),
              ('gate-payload-commit-drift', lambda lab: payload_tree_drift(lab, 'payload', 'commit')),

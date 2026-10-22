@@ -64,8 +64,13 @@ flock 7
 
 bytes=$(wc -c <"$log")
 status=0
-(cd "$wt" && HEAVY_LABEL="after-landing $repo" "$kit/heavy" --gate -- scripts/after-landing.sh) >>"$log" 2>&1 ||
-    status=$?
+(
+    cd "$wt" || exit 1
+    # This worktree and tier have their own validated policy.
+    unset SKEIN_GATE_POLICY_ID SKEIN_GATE_POLICY_HELPER
+    export SKEIN_GATE_COMMAND=scripts/after-landing.sh
+    HEAVY_LABEL="after-landing $repo" "$kit/heavy" --gate -- scripts/after-landing.sh
+) >>"$log" 2>&1 || status=$?
 if ((status != 0)); then
     out=$(tail -c "+$((bytes + 1))" "$log")
     if grep -qE '^heavy: (queued )?task [0-9]+ ' <<<"$out"; then
