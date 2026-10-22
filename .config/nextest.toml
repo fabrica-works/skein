@@ -29,7 +29,7 @@ slow-timeout = { period = "20s" }
 # Real Chromium over io's process pipes and the ring. A missing browser or
 # unavailable ring is a failure in this suite, not a skip.
 [profile.browser]
-default-filter = "(package(skein-browser-world) or package(skein-ui-web-tests)) and binary(/^browser_/)"
+default-filter = "(package(skein-browser-world) or package(skein-ui-web-tests) or package(skein-lab-browser)) and binary(/^browser_/)"
 global-timeout = "2m"
 slow-timeout = { period = "20s", terminate-after = 3 }
 test-threads = 1

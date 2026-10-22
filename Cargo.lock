@@ -978,6 +978,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-lab-browser"
+version = "0.0.0"
+dependencies = [
+ "skein-browser",
+ "skein-fake-person-browser",
+ "skein-io",
+ "skein-json",
+ "skein-lib",
+ "skein-scratch",
+ "skein-shell",
+ "skein-world",
+]
+
+[[package]]
 name = "skein-lib"
 version = "0.0.0"
 

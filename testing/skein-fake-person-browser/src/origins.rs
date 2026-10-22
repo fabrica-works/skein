@@ -57,7 +57,8 @@ impl Pages {
     pub fn new(pages: Vec<Page>, now: skein_lib::Time, wall: skein_lib::Wall) -> Pages {
         Self::numbered(pages, now, wall, 0)
     }
-    pub(crate) fn numbered(pages: Vec<Page>, now: skein_lib::Time, wall: skein_lib::Wall, number: u64) -> Pages {
+    #[must_use]
+    pub fn numbered(pages: Vec<Page>, now: skein_lib::Time, wall: skein_lib::Wall, number: u64) -> Pages {
         let owner = Token::new(ORIGINS_FIRST + number * 1_000_000);
         let mut requests = VecDeque::new();
         requests

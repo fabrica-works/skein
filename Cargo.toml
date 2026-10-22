@@ -22,6 +22,7 @@ members = [
     "testing/skein-codegen",
     "testing/skein-conformance",
     "testing/skein-browser",
+    "testing/skein-lab-browser",
     "testing/skein-echo-client",
     "testing/skein-fake-machine",
     "testing/skein-fake-channel",
