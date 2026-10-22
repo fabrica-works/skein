@@ -27,6 +27,8 @@ pub(super) enum Step {
     StyleRoot,
     Push,
     Values,
+    Children,
+    Texts,
     Faces,
     Box,
     Metrics,
@@ -40,11 +42,18 @@ pub(super) struct State {
     front: u64,
     values: List<Property>,
     faces: List<Face>,
+    text_nodes: Vec<u64>,
     rect: Option<Rect>,
 }
 impl State {
     fn new() -> State {
-        State { front: 0, values: List::with_capacity(0), faces: List::with_capacity(0), rect: None }
+        State {
+            front: 0,
+            values: List::with_capacity(0),
+            faces: List::with_capacity(0),
+            text_nodes: Vec::new(),
+            rect: None,
+        }
     }
 }
 
@@ -170,14 +179,37 @@ impl Browser {
             self.events.push_back(Event::Looked { op: token, looked });
         }
     }
-    fn style_done(&mut self, token: Token) {
-        if let Some(Operation { kind: OpKind::Look { state, .. }, .. }) = self.remove_op(token) {
+    fn style_done(&mut self, token: Token, text: u32) {
+        if let Some(Operation { kind: OpKind::Look { mut state, .. }, .. }) = self.remove_op(token) {
+            // Merge with whole family names before cutting the boundary's text.
+            for index in 0..state.faces.len() {
+                let face = state.faces.get_mut(index).expect("face index within length");
+                if face.family.len() > usize::try_from(text).expect("text fits usize") {
+                    face.family = Box::from(
+                        face.family
+                            .get(..usize::try_from(text).expect("text fits usize"))
+                            .expect("family exceeds text"),
+                    );
+                }
+            }
             self.events.push_back(Event::Looked {
                 op: token,
                 looked: Looked::Style { values: state.values, faces: state.faces, rect: state.rect },
             });
         }
     }
+    fn next_face(&mut self, env: &Env<Limits>, token: Token) -> Result<(), Refusal> {
+        let state = self.look_state_mut(token).ok_or(Refusal::Protocol)?;
+        match state.text_nodes.pop() {
+            Some(node) => self.look_issue(env, token, b"CSS.getPlatformFontsForNode", &Params::Node(node), Step::Faces),
+            None => {
+                let front = state.front;
+                self.look_issue(env, token, b"DOM.getBoxModel", &Params::Node(front), Step::Box);
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn look_error(&mut self, env: &Env<Limits>, token: Token, step: Step, message: &[u8]) {
         match step {
             Step::Box => {
@@ -191,7 +223,7 @@ impl Browser {
                 }
             }
             Step::Push => self.finish_refused(token, Refusal::Gone),
-            Step::Values | Step::Faces | Step::Metrics | Step::Exists => {
+            Step::Values | Step::Children | Step::Texts | Step::Faces | Step::Metrics | Step::Exists => {
                 let why = if node_missing(message) { Refusal::Gone } else { Refusal::Protocol };
                 self.finish_refused(token, why);
             }
@@ -319,26 +351,51 @@ impl Browser {
                     state.values = values;
                 }
                 let front = self.look_front(token).ok_or(Refusal::Protocol)?;
-                self.look_issue(env, token, b"CSS.getPlatformFontsForNode", &Params::Node(front), Step::Faces);
+                self.look_issue(env, token, b"DOM.requestChildNodes", &Params::Children(front), Step::Children);
+            }
+            Step::Children => {
+                if let Some(Operation { kind: OpKind::Look { look: Look::Style { node, .. }, .. }, .. }) =
+                    self.op(token)
+                {
+                    let params = Params::Describe { backend: *node, depth: -1 };
+                    // Requesting children assigns frontend ids. Describing then reads
+                    // the whole subtree even when Chromium sends no new child event.
+                    self.look_issue(env, token, b"DOM.describeNode", &params, Step::Texts);
+                }
+            }
+            Step::Texts => {
+                let nodes = text_nodes(result.get(b"node").ok_or(Refusal::Protocol)?)?;
+                if let Some(state) = self.look_state_mut(token) {
+                    state.text_nodes = nodes;
+                    state.faces = List::with_capacity(env.limits.entries);
+                }
+                self.next_face(env, token)?;
             }
             Step::Faces => {
                 let fonts = field_array(result, b"fonts").ok_or(Refusal::Protocol)?;
-                let mut faces = List::with_capacity(env.limits.entries);
+                let state = self.look_state_mut(token).ok_or(Refusal::Protocol)?;
                 for font in fonts {
-                    if faces.room() == 0 {
-                        return Err(Refusal::Limit);
-                    }
-                    let family = cut(field_text(font, b"familyName").ok_or(Refusal::Protocol)?, env.limits.text);
+                    let family = field_text(font, b"familyName").ok_or(Refusal::Protocol)?;
                     let custom = opt_bool(font.get(b"isCustomFont")).ok_or(Refusal::Protocol)?;
                     let glyphs = u32::try_from(field_u64(font, b"glyphCount").ok_or(Refusal::Protocol)?)
                         .or(Err(Refusal::Protocol))?;
-                    faces.push(Face { family, custom, glyphs }).expect("face room checked");
+                    let mut merged = false;
+                    for index in 0..state.faces.len() {
+                        let face = state.faces.get_mut(index).expect("face index within length");
+                        if face.family == family && face.custom == custom {
+                            face.glyphs = face.glyphs.checked_add(glyphs).ok_or(Refusal::Protocol)?;
+                            merged = true;
+                            break;
+                        }
+                    }
+                    if !merged {
+                        if state.faces.room() == 0 {
+                            return Err(Refusal::Limit);
+                        }
+                        state.faces.push(Face { family, custom, glyphs }).expect("face room checked");
+                    }
                 }
-                if let Some(state) = self.look_state_mut(token) {
-                    state.faces = faces;
-                }
-                let front = self.look_front(token).ok_or(Refusal::Protocol)?;
-                self.look_issue(env, token, b"DOM.getBoxModel", &Params::Node(front), Step::Box);
+                self.next_face(env, token)?;
             }
             Step::Box => {
                 let rect = border(result).ok_or(Refusal::Protocol)?;
@@ -360,7 +417,7 @@ impl Browser {
             }
             Step::Exists => {
                 nested_u64(result, b"node", b"backendNodeId").ok_or(Refusal::Gone)?;
-                self.style_done(token);
+                self.style_done(token, env.limits.text);
             }
             Step::ShotMetrics => {
                 let viewport = result.get(b"cssVisualViewport").ok_or(Refusal::Protocol)?;
@@ -390,9 +447,31 @@ impl Browser {
     }
 }
 
-fn cut(text: Box<[u8]>, limit: u32) -> Box<[u8]> {
-    let max = usize::try_from(limit).expect("text fits usize");
-    if text.len() > max { Box::from(text.get(..max).expect("text exceeds limit")) } else { text }
+fn text_nodes(root: Value<'_>) -> Result<Vec<u64>, Refusal> {
+    let mut stack = Vec::new();
+    let mut texts = Vec::new();
+    stack.push(root);
+    // The nested DOM reply owns each node once. Its message bound also
+    // bounds this stack and the retained ids; there is no separate walk cap.
+    while let Some(node) = stack.pop() {
+        if field_u64(node, b"nodeType") == Some(3)
+            && !field_text(node, b"nodeValue").ok_or(Refusal::Protocol)?.is_empty()
+        {
+            let id = field_u64(node, b"nodeId").ok_or(Refusal::Protocol)?;
+            if id == 0 {
+                return Err(Refusal::Gone);
+            }
+            texts.push(id);
+        }
+        for key in [b"children".as_slice(), b"shadowRoots".as_slice(), b"pseudoElements".as_slice()] {
+            if let Some(children) = field_array(node, key) {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+    Ok(texts)
 }
 
 fn border(result: Value<'_>) -> Option<Rect> {

@@ -22,13 +22,14 @@ const FILE_LIMIT: u64 = 8 << 20;
 const PAGE: &str = "specimen";
 const FIXTURE: &str = r#"<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
+@font-face {font-family:Fixture;src:url('/fixture.ttf')}
 body {margin:0}
 #part {position:absolute;left:25px;top:1800px;box-sizing:border-box;width:110px;height:50px;padding:4px;border:3px solid black;color:rgb(17,34,51);font:16px 'DejaVu Sans'}
 #hidden {display:none}
 #media {color:rgb(255,0,0)}
 @media (width:390px) and (prefers-color-scheme:light) and (prefers-reduced-motion:reduce) {#media {color:rgb(0,128,0)}}
 </style><h1>First</h1><div role="none"><h3>Second</h3></div>
-<div id="media">Media</div><div id="part">Own text<span style="font-family:'DejaVu Serif'">Descendant</span></div>
+<div id="media">Media</div><div id="part">Own text<span style="font-family:'DejaVu Serif'">Descendant</span><div><span style="font-family:Fixture">Nested web face</span></div></div>
 <div id="hidden">Hidden</div><button aria-label='Quote " slash \ café'>Named</button>"#;
 
 fn start() -> (Scratch, Child, Reader) {
@@ -82,6 +83,9 @@ fn serve(scratch: &Scratch, child: &mut Child, reader: &mut Reader, name: &str, 
     fs::create_dir(&directory).expect("fixture directory");
     fs::write(directory.join("index.html"), body).expect("fixed page");
     fs::write(directory.join("favicon.ico"), []).expect("empty favicon");
+    if body == FIXTURE {
+        fs::copy(support::fonts().join("DejaVuSansMono.ttf"), directory.join("fixture.ttf")).expect("fixture web font");
+    }
     let answer = call(
         child,
         reader,
@@ -353,11 +357,15 @@ fn style_faces_describe_the_text_within_the_node() {
         call(&mut child, &mut reader, &format!(r#"{{"call":"style","node":{node},"page":{PAGE:?},"properties":[]}}"#));
     let Value::Array(faces) = field(field(&answer, "style"), "faces") else { panic!("{answer:?}") };
     let families: Vec<_> = faces.iter().map(|face| text(field(face, "family"))).collect();
-    // Chromium reports the faces of the text within the node, its descendants' among them
-    // (browser.md, 5.1).
+    // A style includes nested blocks as well as inline text (browser.md, 5.1).
     assert!(families.contains(&"DejaVu Sans") && families.contains(&"DejaVu Serif"), "{answer:?}");
+    assert!(
+        faces.iter().any(
+            |face| text(field(face, "family")) == "DejaVu Sans Mono" && field(face, "custom") == &Value::Bool(true)
+        ),
+        "nested web face: {answer:?}"
+    );
     for face in faces {
-        assert!(matches!(field(face, "custom"), Value::Bool(false)), "{answer:?}");
         assert!(integer(field(face, "glyphs")) > 0, "{answer:?}");
     }
     finish(&mut child, &mut reader);

@@ -212,6 +212,7 @@ fn every_look_command_times_out_and_late_reply_is_harmless() {
         (b"Accessibility.getFullAXTree".as_slice(), Look::Tree),
         (b"DOM.querySelector".as_slice(), Look::Select { selector: b"#part".as_slice().into() }),
         (b"CSS.getComputedStyleForNode".as_slice(), Look::Style { node: NODE, properties: properties(&["color"]) }),
+        (b"DOM.requestChildNodes".as_slice(), Look::Style { node: NODE, properties: properties(&[]) }),
         (b"CSS.getPlatformFontsForNode".as_slice(), Look::Style { node: NODE, properties: properties(&[]) }),
         (b"DOM.getBoxModel".as_slice(), Look::Style { node: NODE, properties: properties(&[]) }),
         (b"Page.captureScreenshot".as_slice(), Look::Shot { clip: None, scale: 1 }),

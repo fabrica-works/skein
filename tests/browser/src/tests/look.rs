@@ -152,6 +152,8 @@ fn style_keeps_request_order_missing_values_faces_and_document_border_box() {
             "DOM.getDocument",
             "DOM.pushNodesByBackendIdsToFrontend",
             "CSS.getComputedStyleForNode",
+            "DOM.requestChildNodes",
+            "DOM.describeNode",
             "CSS.getPlatformFontsForNode",
             "DOM.getBoxModel",
             "Page.getLayoutMetrics",
@@ -160,6 +162,9 @@ fn style_keeps_request_order_missing_values_faces_and_document_border_box() {
     );
     assert_eq!(commands(&world)[2].1, r#"{"backendNodeIds":[7]}"#);
     assert_eq!(commands(&world)[3].1, r#"{"nodeId":42}"#);
+    assert_eq!(commands(&world)[4].1, r#"{"nodeId":42,"depth":-1,"pierce":true}"#);
+    assert_eq!(commands(&world)[5].1, r#"{"backendNodeId":7,"depth":-1,"pierce":true}"#);
+    assert_eq!(commands(&world)[6].1, r#"{"nodeId":8}"#);
     world.sent.clear();
     looked(ask(&mut world, style(&[])));
     assert!(!commands(&world).iter().any(|(m, _)| m == "CSS.enable"));
@@ -190,6 +195,7 @@ fn style_a_gone_backend_or_a_node_removed_between_steps_is_gone() {
     for method in [
         b"DOM.pushNodesByBackendIdsToFrontend".as_slice(),
         b"CSS.getComputedStyleForNode",
+        b"DOM.requestChildNodes",
         b"CSS.getPlatformFontsForNode",
         b"DOM.getBoxModel",
         b"DOM.describeNode",
@@ -357,6 +363,7 @@ fn unrelated_style_command_errors_are_protocol_refusals() {
         b"CSS.enable".as_slice(),
         b"DOM.getDocument",
         b"CSS.getComputedStyleForNode",
+        b"DOM.requestChildNodes",
         b"CSS.getPlatformFontsForNode",
         b"DOM.getBoxModel",
         b"Page.getLayoutMetrics",
@@ -373,4 +380,89 @@ fn look_memory_bounds_detect_overflow() {
     assert_eq!(skein_browser::worst_case(&limits), None);
     let limits = Limits { text: u32::MAX, entries: u32::MAX, ops: u32::MAX, ..Limits::default() };
     assert_eq!(skein_browser::worst_case(&limits), None);
+}
+
+#[test]
+fn style_merges_nested_text_once_by_family_and_custom() {
+    let mut world = world(Limits { entries: 3, ..Limits::default() });
+    world.children = r#"[
+      {"nodeId":8,"nodeType":3,"nodeValue":"Own"},
+      {"nodeId":9,"nodeType":1,"nodeName":"DIV","children":[
+        {"nodeId":10,"nodeType":1,"nodeName":"P","children":[
+          {"nodeId":11,"nodeType":3,"nodeValue":"Nested"},
+          {"nodeId":12,"nodeType":3,"nodeValue":""},
+          {"nodeId":13,"nodeType":3,"nodeValue":"Again"}]}]}]"#
+        .into();
+    world.fonts = [
+        (8, r#"{"fonts":[{"familyName":"Family one","isCustomFont":false,"glyphCount":3}]}"#.into()),
+        (11, r#"{"fonts":[{"familyName":"Family two","isCustomFont":true,"glyphCount":6},{"familyName":"Family one","isCustomFont":true,"glyphCount":1}]}"#.into()),
+        (13, r#"{"fonts":[{"familyName":"Family one","isCustomFont":false,"glyphCount":5}]}"#.into()),
+    ].into();
+    let Looked::Style { faces, .. } = looked(ask(&mut world, style(&[]))) else { panic!("style") };
+    assert_eq!(faces.len(), 3);
+    for (family, custom, glyphs) in [("Family one", false, 8), ("Family two", true, 6), ("Family one", true, 1)] {
+        assert!(
+            faces.iter().any(|f| f.family.as_ref() == family.as_bytes() && f.custom == custom && f.glyphs == glyphs),
+            "{faces:?}"
+        );
+    }
+    let calls: Vec<_> =
+        commands(&world).into_iter().filter(|(m, _)| m == "CSS.getPlatformFontsForNode").map(|(_, p)| p).collect();
+    assert_eq!(calls, [r#"{"nodeId":8}"#, r#"{"nodeId":11}"#, r#"{"nodeId":13}"#]);
+    world.env.limits.entries = 2;
+    refused(ask(&mut world, style(&[])), Refusal::Limit);
+}
+
+#[test]
+fn style_walk_reaches_deep_text_without_an_entries_walk_cap() {
+    let mut world = world(Limits { entries: 2, ..Limits::default() });
+    let mut node = r#"{"nodeId":8,"nodeType":3,"nodeValue":"Deep"}"#.to_owned();
+    for id in 20..40 {
+        node = format!(r#"{{"nodeId":{id},"nodeType":1,"children":[{node}]}}"#);
+    }
+    world.children = format!("[{node}]");
+    let Looked::Style { faces, .. } = looked(ask(&mut world, style(&[]))) else { panic!("style") };
+    assert_eq!(faces.len(), 2);
+    assert_eq!(commands(&world).iter().filter(|(m, _)| m == "CSS.getPlatformFontsForNode").count(), 1);
+}
+
+#[test]
+fn style_without_text_has_no_faces_or_font_calls() {
+    let mut world = world(Limits { entries: 0, ..Limits::default() });
+    world.children = r#"[{"nodeId":8,"nodeType":3,"nodeValue":""}]"#.into();
+    let Looked::Style { faces, .. } = looked(ask(&mut world, style(&[]))) else { panic!("style") };
+    assert!(faces.is_empty());
+    assert!(!commands(&world).iter().any(|(m, _)| m == "CSS.getPlatformFontsForNode"));
+}
+
+#[test]
+fn style_glyph_sum_overflow_is_refused() {
+    let mut world = world(Limits::default());
+    world.children = r#"[{"nodeId":8,"nodeType":3,"nodeValue":"A"},{"nodeId":9,"nodeType":3,"nodeValue":"B"}]"#.into();
+    world.fonts.insert(8, r#"{"fonts":[{"familyName":"Fixture","isCustomFont":true,"glyphCount":4294967295}]}"#.into());
+    world.fonts.insert(9, r#"{"fonts":[{"familyName":"Fixture","isCustomFont":true,"glyphCount":1}]}"#.into());
+    refused(ask(&mut world, style(&[])), Refusal::Protocol);
+}
+
+#[test]
+fn style_walk_reply_keeps_the_existing_message_bound() {
+    let mut world = world(Limits::default());
+    world.fault(b"DOM.requestChildNodes", Fault::Oversize);
+    world.ask(Request::Look { page: PAGE, op: READ, look: style(&[]) });
+    assert!(
+        std::iter::from_fn(|| world.above.pop())
+            .any(|e| matches!(e, Event::Refused { op: READ, why: Refusal::Crashed })),
+        "oversized CDP replies close the browser"
+    );
+}
+
+#[test]
+fn style_family_names_merge_before_boundary_text_is_cut() {
+    let mut world = world(Limits { entries: 2, text: 6, ..Limits::default() });
+    world.fonts.insert(8, r#"{"fonts":[{"familyName":"Family one","isCustomFont":true,"glyphCount":3},{"familyName":"Family two","isCustomFont":true,"glyphCount":5}]}"#.into());
+    let Looked::Style { faces, .. } = looked(ask(&mut world, style(&[]))) else { panic!("style") };
+    assert_eq!(
+        faces.iter().map(|f| (f.family.as_ref(), f.glyphs)).collect::<Vec<_>>(),
+        [(b"Family".as_slice(), 3), (b"Family".as_slice(), 5)]
+    );
 }

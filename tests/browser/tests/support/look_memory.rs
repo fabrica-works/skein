@@ -19,9 +19,14 @@ pub fn drive(world: &mut World, limits: Limits) {
     world.ask(Request::Look { page: Token::new(3), op: Token::new(30), look: Look::Tree });
     world.styles = format!(r#"{{"computedStyle":[{{"name":"{text}","value":"{text}"}}]}}"#);
     let faces: Vec<_> = (0..limits.entries)
-        .map(|_| format!(r#"{{"familyName":"{text}","isCustomFont":true,"glyphCount":1}}"#))
+        .map(|n| {
+            format!(
+                r#"{{"familyName":"{n:0width$}","isCustomFont":true,"glyphCount":1}}"#,
+                width = usize::try_from(limits.text).unwrap()
+            )
+        })
         .collect();
-    world.fonts = format!("{{\"fonts\":[{}]}}", faces.join(","));
+    world.fonts.insert(8, format!("{{\"fonts\":[{}]}}", faces.join(",")));
     let mut properties = List::with_capacity(limits.properties);
     for _ in 0..limits.properties {
         properties.push(Box::from(text.as_bytes())).unwrap();

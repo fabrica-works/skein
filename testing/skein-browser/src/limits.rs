@@ -91,13 +91,19 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let persons = u64::from(limits.persons).checked_mul(512_u64.checked_add(text)?)?;
     let pages =
         u64::from(limits.pages).checked_mul(1024_u64.checked_add(command)?.checked_add(text.checked_mul(3)?)?)?;
+    // A style retains at most one text-node id per byte of its bounded DOM message.
+    let text_nodes = message.checked_mul(u64::try_from(size_of::<u64>()).ok()?)?;
+    // Whole family names remain distinct until the merged answer is cut at text.
+    let face_names = u64::from(limits.entries).checked_mul(message)?;
     // Each attribute operation owns a selector and an attribute name.
     let ops = u64::from(limits.ops).checked_mul(
         1024_u64
             .checked_add(report)?
             .checked_add(command)?
             .checked_add(text.checked_mul(2)?)?
-            .checked_add(look_request)?,
+            .checked_add(look_request)?
+            .checked_add(text_nodes)?
+            .checked_add(face_names)?,
     )?;
     let commands = u64::from(limits.commands).checked_mul(512_u64.checked_add(command.checked_mul(2)?)?)?;
     let events = u64::from(limits.persons)

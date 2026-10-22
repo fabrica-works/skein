@@ -18,7 +18,7 @@ body {margin:0;color:rgb(17,17,17);font-size:16px}
 #fallback {top:2060px;font-family:monospace}
 </style></head><body>
 <h1 id="media">Dark reduced 390</h1><div><h2>Second</h2></div><h3>Third</h3>
-<div id="nobox" style="display:none">Hidden</div><button id="styled">Styled</button><button id="fallback">Fallback</button>
+<div id="nobox" style="display:none">Hidden</div><button id="styled">Styled</button><button id="fallback">Fallback<div><span style="font-family:Fixture">Nested</span></div></button>
 <script>document.fonts.load('16px Fixture').then(()=>document.fonts.ready).then(()=>{let p=document.createElement('p');p.setAttribute('role','status');p.setAttribute('aria-label','Fonts ready');p.textContent='Fonts ready';document.body.append(p);window.scrollTo(0,100)})</script>
 </body></html>"#;
 #[derive(Default)]
@@ -141,7 +141,8 @@ impl Rig {
                         self.look_ask(6, Look::Select { selector: b"#fallback".as_slice().into() });
                     }
                     7 => {
-                        assert!(faces.iter().any(|face| !face.custom && face.glyphs > 0), "fallback face: {faces:?}");
+                        assert!(faces.iter().any(|face| !face.custom && face.glyphs == 8), "fallback face: {faces:?}");
+                        assert!(faces.iter().any(|face| face.custom && face.glyphs == 6), "nested web font: {faces:?}");
                         self.look_ask(8, Look::Shot { clip: self.look.rect, scale: 2 });
                     }
                     13 => {

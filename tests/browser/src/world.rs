@@ -36,7 +36,8 @@ pub struct World {
     pub attributes: String,
     pub tree: String,
     pub styles: String,
-    pub fonts: String,
+    pub fonts: BTreeMap<u64, String>,
+    pub children: String,
     pub border: String,
     pub metrics: String,
     pub png: String,
@@ -76,7 +77,8 @@ impl World {
             attributes: r#"["value","first","data-note","named","empty",""]"#.into(),
             tree: r#"{"nodes":[{"nodeId":"1","role":{"value":"RootWebArea"},"childIds":["2"]},{"nodeId":"2","ignored":true,"childIds":["3"]},{"nodeId":"3","backendDOMNodeId":7,"role":{"value":"heading"},"name":{"value":"Title"},"properties":[{"name":"level","value":{"value":1}}]}]}"#.into(),
             styles: r#"{"computedStyle":[{"name":"font-size","value":"16px"},{"name":"color","value":"rgb(17, 17, 17)"}]}"#.into(),
-            fonts: r#"{"fonts":[{"familyName":"Fixture","isCustomFont":true,"glyphCount":5},{"familyName":"Fallback","isCustomFont":false,"glyphCount":2}]}"#.into(),
+            children: r#"[{"nodeId":8,"nodeType":3,"nodeValue":"Fixture"}]"#.into(),
+            fonts: [(8, r#"{"fonts":[{"familyName":"Fixture","isCustomFont":true,"glyphCount":5},{"familyName":"Fallback","isCustomFont":false,"glyphCount":2}]}"#.into())].into(),
             border: r#"{"model":{"border":[10.25,20.5,110.75,20.5,110.75,60.9,10.25,60.9]}}"#.into(),
             metrics: r#"{"cssLayoutViewport":{"pageX":0,"pageY":0},"cssVisualViewport":{"pageX":0,"pageY":0,"clientWidth":390,"clientHeight":844}}"#.into(),
             png: "iVBORw0KGgo=".into(),
@@ -270,7 +272,16 @@ impl World {
         match method {
             b"Accessibility.getFullAXTree" => return self.tree.clone(),
             b"CSS.getComputedStyleForNode" => return self.styles.clone(),
-            b"CSS.getPlatformFontsForNode" => return self.fonts.clone(),
+            b"CSS.getPlatformFontsForNode" => {
+                let node = params.and_then(|p| p.get(b"nodeId")).and_then(|n| n.u64()).expect("font node");
+                return self.fonts.get(&node).cloned().unwrap_or_else(|| r#"{"fonts":[]}"#.into());
+            }
+            b"DOM.describeNode" if params.is_some_and(|p| p.get(b"depth").and_then(|d| d.i64()) == Some(-1)) => {
+                return format!(
+                    r#"{{"node":{{"nodeId":{},"backendNodeId":7,"nodeType":1,"children":{}}}}}"#,
+                    self.frontend, self.children
+                );
+            }
             b"DOM.getBoxModel" => return self.border.clone(),
             b"DOM.pushNodesByBackendIdsToFrontend" => {
                 return format!("{{\"nodeIds\":[{}]}}", if self.gone { 0 } else { self.frontend });

@@ -14,6 +14,7 @@ pub(crate) enum Params<'a> {
     Root,
     Selector { node: u64, selector: &'a [u8] },
     Node(u64),
+    Children(u64),
     Object(&'a [u8]),
     Context(&'a [u8]),
     Target { url: &'a [u8], context: &'a [u8] },
@@ -67,6 +68,14 @@ impl Params<'_> {
                 json.unsigned(*node);
                 json.key(b"selector");
                 json.string(selector);
+            }
+            Params::Children(node) => {
+                json.key(b"nodeId");
+                json.unsigned(*node);
+                json.key(b"depth");
+                json.signed(-1);
+                json.key(b"pierce");
+                json.boolean(true);
             }
             Params::Node(node) => {
                 json.key(b"nodeId");
