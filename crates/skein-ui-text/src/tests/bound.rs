@@ -28,6 +28,9 @@ fn full_node(b: &mut Builder, role: Role, byte: u8) {
     {
         b.state(state);
     }
+    if role == Role::Item {
+        b.state(State::Completed);
+    }
     if [Role::List, Role::Table, Role::Tree].contains(&role) {
         b.count(u32::MAX);
     }

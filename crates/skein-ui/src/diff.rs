@@ -25,6 +25,7 @@ pub struct Attribute {
     pub shortcut: Option<Shortcut>,
     pub source: Option<Source>,
     pub description: Option<Box<[u8]>>,
+    pub placeholder: Option<Box<[u8]>>,
     pub entry: Option<EntryKind>,
     pub focus: Option<u64>,
     pub count: Option<u32>,
@@ -49,6 +50,7 @@ impl Attribute {
             shortcut: node.shortcut,
             source: node.source.clone(),
             description: node.description.clone(),
+            placeholder: node.placeholder.clone(),
             entry: node.entry,
             focus: node.focus,
             count: node.count,
@@ -89,6 +91,13 @@ impl Made {
 
 /// An edit to a shell tree; identity zero names the shell's outer container.
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::large_enum_variant,
+        reason = "the bounded patch queue reserves inline attributes in worst_case (ui.md, 15)"
+    )
+)]
 pub enum Patch {
     /// Insert a whole preorder subtree under a parent, before a sibling or at its end.
     Insert { parent: NodeId, before: Option<NodeId>, nodes: Box<[Made]> },
@@ -276,6 +285,7 @@ fn attributes(old: &Node, new: &Node, out: &mut Queue<Patch>) {
         || old.shortcut != new.shortcut
         || old.source != new.source
         || old.description != new.description
+        || old.placeholder != new.placeholder
         || old.entry != new.entry
         || old.focus != new.focus
         || old.count != new.count

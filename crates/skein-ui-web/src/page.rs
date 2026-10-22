@@ -21,6 +21,13 @@ use crate::{
 
 /// The platform half replays these operations in order.
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::large_enum_variant,
+        reason = "component operations carry a whole node without a separate allocation (ui-web.md, 6.1)"
+    )
+)]
 pub enum Op {
     Insert { node: NodeId, parent: NodeId, before: Option<NodeId>, element: Element },
     Remove { node: NodeId },

@@ -418,3 +418,78 @@ fn required_is_kept_on_each_kind_of_field() {
         assert_eq!(b.finish().get(0).unwrap().states.as_slice(), [State::Required], "{role:?}");
     }
 }
+
+#[test]
+fn a_completed_item_keeps_every_state_it_takes() {
+    const STATES: &[State] = &[
+        State::Disabled,
+        State::Expanded,
+        State::Busy,
+        State::Current,
+        State::Invalid,
+        State::Pressed,
+        State::Selected,
+        State::Completed,
+        State::SubmitsOnEnter,
+    ];
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Item);
+    for &state in STATES {
+        b.state(state);
+    }
+    b.close();
+    let tree = b.finish();
+    assert_eq!(tree.get(0).unwrap().states.as_slice(), STATES);
+    assert_eq!(tree.get(0).unwrap().states.capacity(), 10);
+}
+
+#[test]
+#[should_panic(expected = "completed belongs to items")]
+fn completed_on_a_tree_item_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::TreeItem);
+    b.state(State::Completed);
+}
+
+#[test]
+#[should_panic(expected = "placeholders belong to text fields or text areas")]
+fn a_placeholder_on_a_button_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Button);
+    b.placeholder(b"Hint");
+}
+
+#[test]
+#[should_panic(expected = "node fits its text capacity")]
+fn a_placeholder_shares_the_nodes_byte_bound() {
+    let mut b = Builder::new(&Limits { text_per_node: 5, ..LIMITS });
+    b.open(Role::TextField);
+    b.name(b"Name");
+    b.placeholder(b"Hint");
+}
+
+#[test]
+fn a_replaced_placeholder_counts_at_the_nodes_byte_bound() {
+    const FIELD_BYTES: u32 = 8; // Four name bytes and four placeholder bytes.
+    for role in [Role::TextField, Role::TextArea] {
+        let mut b = Builder::new(&Limits { text_per_node: FIELD_BYTES, text_bytes: FIELD_BYTES, ..LIMITS });
+        b.open(role);
+        b.name(b"Name");
+        b.placeholder(b"Old");
+        b.placeholder(b"Hint");
+        b.close();
+        let tree = b.finish();
+        let node = tree.get(0).unwrap();
+        assert_eq!(node.placeholder.as_deref(), Some(b"Hint".as_slice()));
+        assert_eq!(node.text_bytes(), FIELD_BYTES);
+    }
+}
+
+#[test]
+#[should_panic(expected = "tree fits its text capacity")]
+fn a_placeholder_shares_the_trees_byte_bound() {
+    let mut b = Builder::new(&Limits { text_bytes: 5, ..LIMITS });
+    b.open(Role::TextField);
+    b.name(b"Name");
+    b.placeholder(b"Hint");
+}

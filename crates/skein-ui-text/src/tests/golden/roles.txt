@@ -80,3 +80,6 @@ Picture
 [-] States (disabled) (expanded) (busy) (current) (invalid) (pressed) (selected)
 - Card:
     [14] Nested
+- Branch pushed (completed) (1 of 4)
+- Branch pushed (completed) (1 of 4)
+- Expanded branch (expanded)

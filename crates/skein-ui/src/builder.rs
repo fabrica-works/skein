@@ -171,6 +171,20 @@ impl Builder {
         let description = copy_of(bytes);
         self.node_mut().description = Some(description);
     }
+    /// Hint what to write in an empty text field or text area.
+    pub fn placeholder(&mut self, bytes: &[u8]) {
+        assert!(
+            [Role::TextField, Role::TextArea].contains(&self.node().role),
+            "placeholders belong to text fields or text areas"
+        );
+        let old = match &self.node().placeholder {
+            Some(placeholder) => length(placeholder),
+            None => 0,
+        };
+        self.charge(old, length(bytes));
+        let placeholder = copy_of(bytes);
+        self.node_mut().placeholder = Some(placeholder);
+    }
     /// Offer the keyboard or control for a text field.
     pub fn entry(&mut self, kind: EntryKind) {
         assert!(self.node().role == Role::TextField, "entry kinds belong to text fields");
@@ -222,8 +236,11 @@ impl Builder {
                 "required belongs to fields"
             );
         }
+        if state == State::Completed {
+            assert!(self.node().role == Role::Item, "completed belongs to items");
+        }
         if !self.node().states.as_slice().contains(&state) {
-            self.node_mut().states.push(state).expect("nine closed states fit");
+            self.node_mut().states.push(state).expect("ten closed states fit");
         }
     }
 

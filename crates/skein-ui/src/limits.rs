@@ -13,9 +13,9 @@ use skein_lib::{List, Queue, Stack};
 pub struct Limits {
     pub nodes: u32,
     pub depth: u32,
-    /// Name, runs, field value and external target together on a node.
+    /// Name, description, placeholder, runs, field value and external target together on a node.
     pub text_per_node: u32,
-    /// Name, runs, field value and external target together across the tree.
+    /// Name, description, placeholder, runs, field value and external target together across the tree.
     pub text_bytes: u32,
     pub drawing_bytes: u32,
     pub styles_per_node: u32,
@@ -31,7 +31,7 @@ pub struct Limits {
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     let nodes = List::<Node>::worst_case(limits.nodes)?;
-    let states = List::<State>::worst_case(9)?.checked_mul(u64::from(limits.nodes))?;
+    let states = List::<State>::worst_case(10)?.checked_mul(u64::from(limits.nodes))?;
     let styles = List::<Style>::worst_case(limits.styles_per_node)?.checked_mul(u64::from(limits.nodes))?;
     let runs = List::<TextRun>::worst_case(limits.text_per_node)?.checked_mul(u64::from(limits.nodes))?;
     let drawings = u64::from(limits.drawing_bytes).checked_mul(u64::from(limits.nodes))?;

@@ -59,6 +59,7 @@ pub fn roles(b: &mut Builder) {
     select(b);
     remaining(b);
     nested_item(b);
+    completed_items(b);
 }
 fn groups(b: &mut Builder) {
     leaf(b, Role::Heading { level: 1 }, b"Every role");
@@ -158,6 +159,8 @@ fn controls(b: &mut Builder) {
             b.value(b"hello", 1);
             b.state(State::Required);
             b.state(State::SubmitsOnEnter);
+        } else {
+            b.placeholder("Message T6…".as_bytes());
         }
         b.close();
     }
@@ -391,6 +394,29 @@ pub fn control_bytes(b: &mut Builder) {
     b.value(b"Value\xc2\x80", 1);
     b.description(b"Detail\xff");
     b.bind(binding());
+    b.close();
+    b.close();
+}
+
+fn completed_items(b: &mut Builder) {
+    b.open(Role::List);
+    b.count(4);
+    for child in [false, true] {
+        b.open(Role::Item);
+        b.position(1);
+        b.state(State::Completed);
+        if child {
+            b.text(Run::Plain, b"Branch pushed");
+        } else {
+            b.name(b"Branch pushed");
+        }
+        b.close();
+    }
+    b.close();
+    b.open(Role::Tree);
+    b.open(Role::TreeItem);
+    b.state(State::Expanded);
+    b.text(Run::Plain, b"Expanded branch");
     b.close();
     b.close();
 }

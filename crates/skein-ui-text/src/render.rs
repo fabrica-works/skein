@@ -360,6 +360,13 @@ fn finish_items(tree: &Tree, pending: &mut List<PendingItem>, out: &mut List<u8>
         return;
     }
     for item in pending.iter() {
+        let n = tree.get(item.at).expect("pending item exists");
+        if n.size > 1 {
+            let end = first_line_end(out, item.line);
+            let old_end = out.len();
+            states(n, out);
+            insert_tail(out, end, old_end);
+        }
         position(tree, item.at, item.line, out);
     }
     for item in pending.iter() {
@@ -488,6 +495,7 @@ fn states(n: &Node, out: &mut List<u8>) {
         State::Pressed,
         State::Selected,
         State::Required,
+        State::Completed,
         State::SubmitsOnEnter,
     ] {
         if !has(n, state) {
@@ -505,6 +513,7 @@ fn states(n: &Node, out: &mut List<u8>) {
                 }
             }
             State::Required => raw(out, b" (required)"),
+            State::Completed => raw(out, b" (completed)"),
             State::SubmitsOnEnter => {
                 if n.role == Role::TextField || n.role == Role::TextArea {
                     raw(out, b" (enter sends)");

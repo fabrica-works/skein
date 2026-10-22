@@ -401,3 +401,39 @@ fn a_changed_sort_is_one_attribute_patch() {
         }
     }
 }
+
+fn placeholder_tree(placeholder: Option<&[u8]>) -> Tree {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::TextArea);
+    if let Some(placeholder) = placeholder {
+        b.placeholder(placeholder);
+    }
+    b.close();
+    b.finish()
+}
+
+#[test]
+fn setting_changing_and_clearing_a_placeholder_patch_its_attribute() {
+    let mut old = placeholder_tree(None);
+    let mut next_id = 0;
+    let mut out = Queue::with_capacity(LIMITS.patches);
+    crate::diff(&Tree::new(LIMITS.nodes), &mut old, &LIMITS, &mut next_id, &mut out);
+    while out.pop().is_some() {}
+    for placeholder in [Some(b"Hint".as_slice()), Some(b"Changed".as_slice()), None] {
+        let mut new = placeholder_tree(placeholder);
+        crate::diff(&old, &mut new, &LIMITS, &mut next_id, &mut out);
+        assert_eq!(out.len(), 1);
+        match out.pop().unwrap() {
+            Patch::Attribute { node, attribute } => {
+                assert_eq!(node, old.get(0).unwrap().id);
+                assert_eq!(attribute.placeholder.as_deref(), placeholder);
+            }
+            Patch::Insert { .. }
+            | Patch::Remove { .. }
+            | Patch::Move { .. }
+            | Patch::Text { .. }
+            | Patch::Value { .. } => unreachable!("only the placeholder changed"),
+        }
+        old = new;
+    }
+}

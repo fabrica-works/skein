@@ -142,6 +142,8 @@ pub enum State {
     Selected,
     /// The form needs this field filled.
     Required,
+    /// The item is done: a step finished, a checklist entry met.
+    Completed,
     /// The node is submitsonenter.
     SubmitsOnEnter,
 }
@@ -285,6 +287,7 @@ pub struct Node {
     pub shortcut: Option<Shortcut>,
     pub source: Option<Source>,
     pub description: Option<Box<[u8]>>,
+    pub placeholder: Option<Box<[u8]>>,
     pub entry: Option<EntryKind>,
     pub focus: Option<u64>,
     pub count: Option<u32>,
@@ -315,6 +318,7 @@ impl Node {
             shortcut: None,
             source: None,
             description: None,
+            placeholder: None,
             entry: None,
             focus: None,
             count: None,
@@ -338,12 +342,13 @@ impl Node {
             role,
             size: 1,
             name: None,
-            states: List::with_capacity(9),
+            states: List::with_capacity(10),
             styles: List::with_capacity(limits.styles_per_node),
             region: None,
             shortcut: None,
             source: None,
             description: None,
+            placeholder: None,
             entry: None,
             focus: None,
             count: None,
@@ -368,6 +373,9 @@ impl Node {
         }
         if let Some(description) = &self.description {
             bytes = bytes.checked_add(length(description)).expect("node bytes fit u32");
+        }
+        if let Some(placeholder) = &self.placeholder {
+            bytes = bytes.checked_add(length(placeholder)).expect("node bytes fit u32");
         }
         if let Some(source) = &self.source {
             match source {

@@ -54,6 +54,7 @@ fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -
         State::Pressed,
         State::Selected,
         State::Required,
+        State::Completed,
         State::SubmitsOnEnter,
     ] {
         if a.states.as_slice().contains(&state) {
@@ -312,6 +313,7 @@ fn state_attribute(e: &mut Element, role: Role, state: State) {
             },
             if role == Role::Choice || role == Role::Option { "" } else { "true" },
         ),
+        State::Completed => {}
         State::Required => {
             let native = [Role::TextField, Role::TextArea, Role::Select, Role::Check].contains(&role);
             e.set(if native { "required" } else { "aria-required" }, if native { "" } else { "true" });
