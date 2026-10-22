@@ -354,15 +354,17 @@ How each part is tested, and what its worlds cover, is in the part's own
 document; the echo's worlds are examples.md, 7.
 
 The two suites of testing-strategy.md, section 8, are
-`.config/nextest.toml`'s profiles, each with its budget as a global
-timeout: the focused suite by default, within 15 seconds, and the fuzzy
-suite, the `fuzzy_*` binaries, with `--profile fuzzy`, within a minute.
-Two profiles stay out of both: `browser`, the browser kit against real
-Chromium and the UI example's browser tier, within two minutes for both
-(`cargo nextest run --workspace --profile browser`; browser.md, section
-9; ui-web.md, 14.1), and `live`,
-skein-llm against real endpoints, with a key or a plan's token from the
-environment. `measure` runs a suite with no budget, to time each test.
+`.config/nextest.toml`'s profiles, each with its budget as a global timeout:
+the focused suite by default, within 30 seconds (15 seconds before the
+user's doubling of 10-22, provisional), and the fuzzy suite, the `fuzzy_*`
+binaries, with `--profile fuzzy`, within two minutes (a minute before the
+user's doubling of 10-22, provisional). Two profiles stay out of both:
+`browser`, the browser kit against real Chromium and the UI example's
+browser tier, within four minutes (two minutes before the user's doubling of
+10-22, provisional) for both (`cargo nextest run --workspace --profile
+browser`; browser.md, section 9; ui-web.md, 14.1), and `live`, skein-llm
+against real endpoints, with a key or a plan's token from the environment.
+`measure` runs a suite with no budget, to time each test.
 
 Replay: a seed replays to the same trace of submissions and completions,
 and a JSON world, an HTTP world, an io world and an echo world to the
@@ -381,9 +383,11 @@ full at once) and holds it to at least half its worst case, so that it
 keeps reaching them.
 
 The forge's worlds (section 6) keep within a budget of their own: a step
-test under 20 ms, a focused world test under half a second, and a fuzzy
-run within 5 seconds, its seeds included, so that `tests/forge` stays
-within half of each suite's.
+test under 40 ms (20 ms before the user's doubling of 10-22, provisional), a
+focused world test under one second (half a second before the user's
+doubling of 10-22, provisional), and a fuzzy run within 10 seconds (5
+seconds before the user's doubling of 10-22, provisional), its seeds
+included, so that `tests/forge` stays within half of each suite's.
 
 ## 8. Not built yet
 

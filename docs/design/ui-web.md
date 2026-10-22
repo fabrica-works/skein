@@ -863,11 +863,13 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
 ### 14.1 The browser tier
 
 - **In the browser suite,** `--profile browser`, which skein's gate runs
-  after it builds the example's bundle: the profile takes the binaries
-  of `tests/ui-web` named `browser_*` beside the browser kit's own tests
-  against Chromium, and its global timeout, two minutes, holds both
-  (browser.md, section 9; testing.md, section 7). The example's tier
-  aims at one minute of it on the slowest machine, a guide.
+  after it builds the example's bundle: the profile takes the binaries of
+  `tests/ui-web` named `browser_*` beside the browser kit's own tests
+  against Chromium, and its global timeout, four minutes (two minutes before
+  the user's doubling of 10-22, provisional), holds both (browser.md,
+  section 9; testing.md, section 7). The example's tier aims at two minutes
+  (one minute before the user's doubling of 10-22, provisional) of it on the
+  slowest machine, a guide.
 - **Each of the example's tests** starts one server, the example's
   binary, and one Chromium, and plays its stories with a person each: a
   browser context, its own cookies and storage (browser.md, section 5).

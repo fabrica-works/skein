@@ -1006,22 +1006,22 @@ The owner's domain owes:
   the dialect does not hint; a hint held while the owner has no room,
   and dropped at its deadline or the owner's close; `hooks` connections
   full; faults at every byte.
-- **The protocol world,** in skein's `tests/forge/protocol`: the client
-  and the component against the fake forge's protocol layer and domain
-  (fake-forge.md, section 4), joined by in-memory streams cut at random
-  and driven by a scripted durable owner that restarts
-  (forge-client.md, section 10). Its stories: a creation whose answer
-  was lost is found after a restart and not made twice; listings keep up
-  with another party's changes; deliveries, signed or read from the log,
-  reach the owner. Its invariants: each call is answered once, however
-  its streams are cut; the requests of a forge's own aside, the costs
-  the answers reported equal the requests whose first byte the
-  component wrote, which the streams count apart from it (4.1), and the
-  fake served those but the ones whose stream was cut before their head
-  was whole, which are charged and not served; no credential reaches a
-  record, a request line or a fact, the handed, replaced and renewed
-  ones too. The fuzzy runs take seeds and stay within 5 seconds
-  (testing.md, section 7).
+- **The protocol world,** in skein's `tests/forge/protocol`: the client and
+  the component against the fake forge's protocol layer and domain
+  (fake-forge.md, section 4), joined by in-memory streams cut at random and
+  driven by a scripted durable owner that restarts (forge-client.md, section
+  10). Its stories: a creation whose answer was lost is found after a
+  restart and not made twice; listings keep up with another party's changes;
+  deliveries, signed or read from the log, reach the owner. Its invariants:
+  each call is answered once, however its streams are cut; the requests of a
+  forge's own aside, the costs the answers reported equal the requests whose
+  first byte the component wrote, which the streams count apart from it
+  (4.1), and the fake served those but the ones whose stream was cut before
+  their head was whole, which are charged and not served; no credential
+  reaches a record, a request line or a fact, the handed, replaced and
+  renewed ones too. The fuzzy runs take seeds and stay within 10 seconds (5
+  seconds before the user's doubling of 10-22, provisional) (testing.md,
+  section 7).
 - **The worst case,** against the counting allocator (skein-heap): every
   limit at its maximum, all `calls` outstanding, the tables full, every
   webhook connection holding a hint, and every holder filled: the

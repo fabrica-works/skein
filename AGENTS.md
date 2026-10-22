@@ -28,8 +28,10 @@ your task names.
   `cargo check -p skein-tls` alone, then the focused, fuzzy and browser
   suites. `land` runs it; do not run it yourself before `land`.
 - The suites' budgets are in `.config/nextest.toml`: the focused suite
-  within 15 seconds, the fuzzy one (binaries named `fuzzy_*`) within 60.
-  A test past its slow period is flagged SLOW.
+  within 30 seconds (15 seconds before the user's doubling of 10-22,
+  provisional), the fuzzy one (binaries named `fuzzy_*`) within 120 seconds
+  (60 seconds before the user's doubling of 10-22, provisional). A test past
+  its slow period is flagged SLOW.
 - Run what compiles and the tests of the crates you touch through
   `heavy`: `heavy cargo nextest run -p <crate>`.
 

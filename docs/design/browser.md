@@ -504,37 +504,37 @@ allocator's high water against `worst_case`.
   after `Closed`, every command answered or failed, and a press never
   dispatched on a node that was refused. A few seeds run in the focused
   suite, and many in the fuzzy one.
-- **The real browser:** the kit in the real loop against Chromium,
-  opening fixed pages served by a small `skein-http` server in the same
-  loop: a button that changes a heading, a form, a dialog that covers a
-  button, a button far down a long page, a script that throws, a
-  resource the content security policy blocks, a sentence whose text is
-  found by a few of its words, a named figure holding an inline SVG
-  hidden from assistive technology, whose shape, pressed through the
-  figure at a point, changes a heading, and a page that holds a closing
-  warning once a button is pressed and asks a confirm at another's
-  press, and a page that reloads itself. These tests check the facts the
-  fake browser assumes: the framing, flattened sessions, what the
-  accessibility queries match, with a name and without one, boxes and
-  the hit test, on an element and on a shape of an SVG, the events each
-  step waits for, the dialogs (a reload accepting the closing warning, a
-  close meeting none, a confirm dismissed), and a find across a reload
-  (a page that reloads itself found again after it, a scope found before
-  it `Gone`). The look's reads have theirs: a page at a phone's viewport
-  whose media queries show the scheme and the motion it was given, by a
-  part they name; a tree's depths and its headings' levels; a selector's
-  node, and none; a styled part's computed values, its faces (a web font
-  served by the fixture, DejaVu Sans from the fonts' directory the
-  lab's browser's story names (lab-browser.md, 6), and a fallback) and its box; and a part's shot
-  at scale 2, twice its box's size, far down the page. The keys a native date or time field takes, and
-  their order, are the face's facts, checked with its others in this
-  suite (ui-web.md, 14.1). A new Chromium version is a run of these,
-  and a fact that changed is fixed in the fake first. They need
-  Chromium and do not replay, so they form a suite of their own, beside
-  the focused and fuzzy suites (`--profile browser`, within two minutes,
-  which the browser parts' tier shares: ui-web.md, 14.1). A missing
-  Chromium fails that suite, naming what is missing; it is never a
-  skip.
+- **The real browser:** the kit in the real loop against Chromium, opening
+  fixed pages served by a small `skein-http` server in the same loop: a
+  button that changes a heading, a form, a dialog that covers a button, a
+  button far down a long page, a script that throws, a resource the content
+  security policy blocks, a sentence whose text is found by a few of its
+  words, a named figure holding an inline SVG hidden from assistive
+  technology, whose shape, pressed through the figure at a point, changes a
+  heading, and a page that holds a closing warning once a button is pressed
+  and asks a confirm at another's press, and a page that reloads itself.
+  These tests check the facts the fake browser assumes: the framing,
+  flattened sessions, what the accessibility queries match, with a name and
+  without one, boxes and the hit test, on an element and on a shape of an
+  SVG, the events each step waits for, the dialogs (a reload accepting the
+  closing warning, a close meeting none, a confirm dismissed), and a find
+  across a reload (a page that reloads itself found again after it, a scope
+  found before it `Gone`). The look's reads have theirs: a page at a phone's
+  viewport whose media queries show the scheme and the motion it was given,
+  by a part they name; a tree's depths and its headings' levels; a
+  selector's node, and none; a styled part's computed values, its faces (a
+  web font served by the fixture, DejaVu Sans from the fonts' directory the
+  lab's browser's story names (lab-browser.md, 6), and a fallback) and its
+  box; and a part's shot at scale 2, twice its box's size, far down the
+  page. The keys a native date or time field takes, and their order, are the
+  face's facts, checked with its others in this suite (ui-web.md, 14.1). A
+  new Chromium version is a run of these, and a fact that changed is fixed
+  in the fake first. They need Chromium and do not replay, so they form a
+  suite of their own, beside the focused and fuzzy suites (`--profile
+  browser`, within four minutes (two minutes before the user's doubling of
+  10-22, provisional), which the browser parts' tier shares: ui-web.md,
+  14.1). A missing Chromium fails that suite, naming what is missing; it is
+  never a skip.
 
 The kit's tests are a crate of their own, `tests/browser`
 (`skein-browser-world`) (testing.md, 6).

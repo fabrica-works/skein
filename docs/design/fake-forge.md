@@ -650,8 +650,10 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
   and refused versions and scratches need no binary and run in the focused
   suite; those that need one are ignored unless the caller names it. The
   tool itself runs outside both suites.
-- **Budgets:** the focused suite's 15 seconds and the fuzzy suite's minute
-  (testing.md, section 7) bind these tests.
+- **Budgets:** the focused suite's 30 seconds (15 seconds before the user's
+  doubling of 10-22, provisional) and the fuzzy suite's two minutes (suite's
+  minute before the user's doubling of 10-22, provisional) (testing.md,
+  section 7) bind these tests.
 
 ## 9. Open questions
 
@@ -1102,10 +1104,10 @@ the fake.
   connection uses the same bounded HTTP envelope. `worst_case` also
   counts the blob record slots and paths, seed key, configured origins
   and signed-target scratch.
-- **The budget** is the focused suite's, as section 8 says. The
-  conformance against the fake (section 11) runs there as one test,
-  within 3 seconds. The fake's clock carries the CI's and the queue's
-  waits, so nothing sleeps.
+- **The budget** is the focused suite's, as section 8 says. The conformance
+  against the fake (section 11) runs there as one test, within 6 seconds (3
+  seconds before the user's doubling of 10-22, provisional). The fake's
+  clock carries the CI's and the queue's waits, so nothing sleeps.
 
 ## 11. GitHub's conformance
 

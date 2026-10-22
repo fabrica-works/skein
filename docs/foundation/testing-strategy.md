@@ -443,25 +443,41 @@ same. Then it moves into skein.
 
 ## 8. Two suites
 
-- **Focused tests** check what the code is expected to do: the step
-  tests, each world's scenarios, referee tests, replay, and memory at the
-  worst case, and the end-to-end tests against fakes. A scenario that
-  needs randomness runs the few seeds that show its behaviour, and a cheap
-  random world may stand as a smoke test. They run by default
-  (`cargo nextest run --workspace`), and the suite takes at most
-  **15 seconds**, so it can serve as quick feedback during development,
-  as often as is useful.
+- **Focused tests** check what the code is expected to do: the step tests,
+  each world's scenarios, referee tests, replay, and memory at the worst
+  case, and the end-to-end tests against fakes. A scenario that needs
+  randomness runs the few seeds that show its behaviour, and a cheap random
+  world may stand as a smoke test. They run by default (`cargo nextest run
+  --workspace`), and the suite takes at most **30 seconds** (15 seconds
+  before the user's doubling of 10-22, provisional), so it can serve as
+  quick feedback during development, as often as is useful.
 - **Fuzzy tests** look for what no scenario names: sweeps of many random
   worlds, each settled under every invariant; domains driven at random
   against their worst case; conformance over many seeds of faults; a
   function against a naive one. They run with `--profile fuzzy`, and the
-  suite takes at most **1 minute**: too slow to run in full at every turn
-  of development. It is usually left alone until the merge gate, or run in
-  part (one world's sweep, a few seeds) when that is worth it.
+  suite takes at most **2 minutes** (1 minute before the user's doubling of
+  10-22, provisional): too slow to run in full at every turn of development.
+  It is usually left alone until the merge gate, or run in part (one world's
+  sweep, a few seeds) when that is worth it.
 
 **The merge gate runs both suites in full,** whatever ran before it.
 **Live tests** (2.9) are a third suite, run only with `--profile live`,
 one at a time and outside any budget. The gate never runs them.
+
+**The user's doubling of 10-22 is provisional.** Every test-time budget,
+ceiling, guide and harness deadline is twice its earlier value. This also
+applies to test-cost guides quoted by earlier implementation plans; their
+recorded measurements and decisions remain historical records. Product
+timeouts, including a test's settings that prove timeout behaviour, keep
+their values. Common per-test guides quoted by those plans are:
+
+| Guide before the doubling | Provisional guide |
+|---|---|
+| 20 ms for a unit test | 40 ms (20 ms before the user's doubling of 10-22, provisional) |
+| 0.1 s for an in-memory world test | 0.2 s (0.1 s before the user's doubling of 10-22, provisional) |
+| 0.3 s for a joint world test | 0.6 s (0.3 s before the user's doubling of 10-22, provisional) |
+| 0.5 s for a focused world test | 1 s (0.5 s before the user's doubling of 10-22, provisional) |
+| 5 s for a fuzzy test | 10 s (5 s before the user's doubling of 10-22, provisional) |
 
 The budgets are wall time on the development machine, run idle, and they
 are enforced: each nextest profile has a global timeout, so a suite that

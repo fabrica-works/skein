@@ -284,12 +284,14 @@ and where they pay:
 - **Each task proves itself** at the highest layer within its reach,
   and layers open as early as they can: the first joint, process or
   real-loop story as soon as the code can run it.
-- **Test cost holds from the first task.** A new world costs at most
-  about 1 s focused and 5 s fuzzy. A suite's first breach of its budget
-  is profiled and its tests made cheaper; the budget is not raised. A
-  bound over a sum of several tasks' parts is computed by the first
-  task that can, and kept current. A suite that several tasks add to
-  ends merged: their copies of captures, polls and helpers become one.
+- **Test cost holds from the first task.** A new world costs at most about 2
+  s (1 s before the user's doubling of 10-22, provisional) focused and 10 s
+  (5 s before the user's doubling of 10-22, provisional) fuzzy. A suite's
+  first breach of its budget is profiled and its tests made cheaper; the
+  budget is not raised. A bound over a sum of several tasks' parts is
+  computed by the first task that can, and kept current. A suite that
+  several tasks add to ends merged: their copies of captures, polls and
+  helpers become one.
 
 The one that pays most often: **the meeting point comes first.** Where two parts
 meet (a client and its server, a protocol's two ends, a domain and its

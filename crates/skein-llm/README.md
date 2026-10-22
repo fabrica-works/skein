@@ -113,12 +113,15 @@ export SKEIN_TEST_LIVE_ANTHROPIC_ACCESS_TOKEN="$(jq -er '.claudeAiOauth.accessTo
 cargo nextest run --workspace --profile live
 ```
 
-The tests consume only environment variables; they never read those auth files
-themselves. Missing credentials fail the live run. The default, fuzzy and
-measure profiles exclude the `live` binary, and its tests perform no network
-I/O outside `NEXTEST_PROFILE=live`, including under `cargo test`.
-The live profile selects only these tests, runs them serially, and allows ten
-minutes overall with a three-minute per-test limit and 30-second socket timeouts.
+The tests consume only environment variables; they never read those auth
+files themselves. Missing credentials fail the live run. The default, fuzzy
+and measure profiles exclude the `live` binary, and its tests perform no
+network I/O outside `NEXTEST_PROFILE=live`, including under `cargo test`.
+The live profile selects only these tests, runs them serially, and allows
+twenty minutes (ten minutes before the user's doubling of 10-22,
+provisional) overall with a six-minute (three-minute before the user's
+doubling of 10-22, provisional) per-test limit and 60-second (30-second
+before the user's doubling of 10-22, provisional) socket timeouts.
 
 Optional `SKEIN_TEST_LIVE_OPENAI_MODEL` and `SKEIN_TEST_LIVE_ANTHROPIC_MODEL`
 override `gpt-5.5` and `claude-haiku-4-5`. `SKEIN_TEST_LIVE_CA_FILE` overrides

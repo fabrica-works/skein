@@ -148,5 +148,7 @@ reusable forge.
 The fuzzy binary sweeps small independent line edits and conflicts, checks
 expected trees/parents/object presence and compares the complete checkout
 and remote fixture on replay. Existing services retain their worlds and
-referees. Its tests run within the focused 15-second and fuzzy one-minute
-suites (testing-strategy.md, section 8).
+referees. Its tests run within the focused 30-second (15-second before the
+user's doubling of 10-22, provisional) and fuzzy two-minute (one-minute
+before the user's doubling of 10-22, provisional) suites
+(testing-strategy.md, section 8).
