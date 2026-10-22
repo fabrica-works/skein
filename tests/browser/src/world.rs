@@ -75,7 +75,7 @@ impl World {
             ax_visible: true,
             selected: 7,
             attributes: r#"["value","first","data-note","named","empty",""]"#.into(),
-            tree: r#"{"nodes":[{"nodeId":"1","role":{"value":"RootWebArea"},"childIds":["2"]},{"nodeId":"2","ignored":true,"childIds":["3"]},{"nodeId":"3","backendDOMNodeId":7,"role":{"value":"heading"},"name":{"value":"Title"},"properties":[{"name":"level","value":{"value":1}}]}]}"#.into(),
+            tree: r#"{"nodes":[{"nodeId":"1","role":{"value":"RootWebArea"},"childIds":["2"]},{"nodeId":"2","ignored":true,"childIds":["3"]},{"nodeId":"3","backendDOMNodeId":7,"role":{"value":"heading"},"name":{"value":"Title"},"value":{"value":"Words"},"properties":[{"name":"level","value":{"value":1}},{"name":"focused","value":{"value":true}},{"name":"disabled","value":{"value":true}},{"name":"checked","value":{"value":true}},{"name":"expanded","value":{"value":true}},{"name":"selected","value":{"value":true}},{"name":"multiline","value":{"value":true}}]}]}"#.into(),
             styles: r#"{"computedStyle":[{"name":"font-size","value":"16px"},{"name":"color","value":"rgb(17, 17, 17)"}]}"#.into(),
             children: r#"[{"nodeId":8,"nodeType":3,"nodeValue":"Fixture"}]"#.into(),
             fonts: [(8, r#"{"fonts":[{"familyName":"Fixture","isCustomFont":true,"glyphCount":5},{"familyName":"Fallback","isCustomFont":false,"glyphCount":2}]}"#.into())].into(),

@@ -500,3 +500,16 @@ fn a_drawing_takes_only_its_drawing_act() {
         assert_eq!(face.allows(random::DRAWING, &act), expected, "{act:?}");
     }
 }
+
+#[test]
+fn role_names_round_trip_every_role() {
+    for role in core::iter::successors(Some(skein_ui::Role::Page), |role| crate::tree::next_role(*role)) {
+        assert_eq!(crate::role_named(crate::role_name(role)), Some(role));
+    }
+    assert_eq!(crate::role_named("unknown"), None);
+    assert_eq!(crate::role_named("Heading"), None);
+    assert_eq!(
+        crate::role_named(crate::role_name(skein_ui::Role::Heading { level: 6 })),
+        Some(skein_ui::Role::Heading { level: 0 })
+    );
+}

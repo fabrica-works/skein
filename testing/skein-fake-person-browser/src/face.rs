@@ -1,9 +1,14 @@
 //! Queries and acts translated without executing script in the page.
-use skein_browser::boundary::{Event, Go, Key, Match, Query, Read, Request, Seen};
+use skein_browser::boundary::{Event, Go, Key, Match, Query, Read, Refusal, Request, Seen};
 use skein_fake_person::{Doing, Face, Find, Found, Target};
 use skein_lib::Token;
 use skein_ui::{Act, NodeId, Role};
 use skein_ui_web::mapping::accessible;
+
+enum Input {
+    Select { node: u64, value: Box<[u8]> },
+    Type { node: u64, value: Box<[u8]> },
+}
 
 struct Choice {
     option: u64,
@@ -49,6 +54,9 @@ pub struct BrowserFace<'a> {
     acting: Option<Token>,
     expected_path: Option<Box<[u8]>>,
     failure: Option<String>,
+    refusal: Option<Refusal>,
+    read_address: Option<Box<[u8]>>,
+    input: Option<Input>,
     trouble: Vec<Box<[u8]>>,
     warned: bool,
     go: Option<Token>,
@@ -63,12 +71,17 @@ pub struct BrowserFace<'a> {
 impl<'a> BrowserFace<'a> {
     #[must_use]
     pub fn new(page: Token, address: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+        Self::continuing(page, address, page.raw().checked_mul(1_000_000).expect("page operation range fits"))
+    }
+    /// Make a face whose next operation follows `serial` from the previous face.
+    #[must_use]
+    pub fn continuing(page: Token, address: impl Into<std::borrow::Cow<'a, str>>, serial: u64) -> Self {
         Self {
             page,
             first_url: String::new(),
             origins: Vec::new(),
             address: address.into(),
-            serial: page.raw().checked_mul(1_000_000).expect("page operation range fits"),
+            serial,
             requests: Vec::new(),
             search: None,
             answer: None,
@@ -76,6 +89,9 @@ impl<'a> BrowserFace<'a> {
             acting: None,
             expected_path: None,
             failure: None,
+            refusal: None,
+            read_address: None,
+            input: None,
             trouble: Vec::new(),
             warned: false,
             go: None,
@@ -181,12 +197,28 @@ impl<'a> BrowserFace<'a> {
     pub(crate) fn fail(&mut self, why: String) {
         self.failure = Some(why);
     }
+    /// The last allocated operation number, for the next face's continuation.
+    #[must_use]
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+    /// The kit's refusal of the last act, if it refused one.
+    #[must_use]
+    pub fn refusal(&self) -> Option<Refusal> {
+        self.refusal
+    }
+    /// The last observation of a node numbered by this face.
+    #[must_use]
+    pub fn seen(&self, node: NodeId) -> Option<&Seen> {
+        self.seen.get(usize::try_from(node.0).expect("node fits")).map(|(seen, _)| seen)
+    }
     pub fn failure(&mut self) -> Option<String> {
         self.failure.take()
     }
     pub(crate) fn text(&mut self, node: NodeId, words: Box<[u8]>, compose: bool) -> Result<(), String> {
         let seen = &self.seen.get(usize::try_from(node.0).expect("node fits")).ok_or("unknown field")?.0;
         let node = seen.node;
+        self.refusal = None;
         let op = self.token();
         let request = if compose {
             Request::Compose { page: self.page, op, node, text: words }
@@ -220,15 +252,31 @@ impl<'a> BrowserFace<'a> {
     pub(crate) fn press_at(&mut self, node: NodeId, at: skein_browser::boundary::Point) -> Result<(), String> {
         let seen = &self.seen.get(usize::try_from(node.0).expect("node fits")).ok_or("unknown drawing")?.0;
         let node = seen.node;
+        self.refusal = None;
         let op = self.token();
         self.acting = Some(op);
         self.requests.push(Request::Press { page: self.page, op, node, at: Some(at) });
         Ok(())
     }
-    pub(crate) fn key(&mut self, key: Key, shift: bool) {
+    /// Press a key into the focused control, optionally with Shift held.
+    pub fn key(&mut self, key: Key, shift: bool) {
+        self.refusal = None;
         let op = self.token();
         self.acting = Some(op);
         self.requests.push(Request::Key { page: self.page, op, key, shift });
+    }
+    /// Read the current whole URL; take its answer once the face is no longer pending.
+    pub fn address(&mut self) {
+        self.refusal = None;
+        self.expected_path = None;
+        self.read_address = None;
+        let op = self.token();
+        self.acting = Some(op);
+        self.requests.push(Request::Address { page: self.page, op });
+    }
+    /// Take the last address read once, after its operation completes.
+    pub fn take_address(&mut self) -> Option<Box<[u8]>> {
+        self.read_address.take()
     }
     /// Read the page's address; the failure names it unless its path, query kept, is `path`.
     pub(crate) fn read_address(&mut self, path: &[u8]) {
@@ -245,12 +293,14 @@ impl<'a> BrowserFace<'a> {
             .get(usize::try_from(node.0).expect("node fits"))
             .is_some_and(|(seen, _)| seen.states.focused && seen.value.as_ref() == words)
     }
-    pub(crate) fn history(&mut self, forward: bool) {
+    /// Move back or forward, or reload, accepting the page's closing warning.
+    pub fn history(&mut self, to: Go) {
+        self.refusal = None;
         let op = self.token();
         self.warned = false;
         self.go = Some(op);
         self.acting = Some(op);
-        self.requests.push(Request::Go { page: self.page, op, to: if forward { Go::Forward } else { Go::Back } });
+        self.requests.push(Request::Go { page: self.page, op, to });
     }
     pub(crate) fn reopen(&mut self) {
         self.absolute(self.first_url.as_bytes().into());
@@ -263,11 +313,11 @@ impl<'a> BrowserFace<'a> {
         }
     }
     pub(crate) fn absolute(&mut self, url: Box<[u8]>) {
-        let op = self.token();
-        self.warned = false;
-        self.go = Some(op);
-        self.acting = Some(op);
-        self.requests.push(Request::Go { page: self.page, op, to: Go::Address(url) });
+        self.go_to(url);
+    }
+    /// Navigate to a whole URL, accepting the page's closing warning.
+    pub fn go_to(&mut self, url: Box<[u8]>) {
+        self.history(Go::Address(url));
     }
     fn ask(&mut self, mut search: Search) {
         let target = search.find.within.get(search.depth).unwrap_or(&search.find.target);
@@ -337,12 +387,14 @@ impl<'a> BrowserFace<'a> {
             Event::Done { op } => {
                 if self.acting == Some(*op) {
                     self.acting = None;
+                    self.input_next();
                     self.choice_key();
                 }
             }
             Event::Address { op, url } => {
                 if self.acting == Some(*op) {
                     self.acting = None;
+                    self.read_address = Some(url.clone());
                     if let Some(path) = self.expected_path.take()
                         && url_path(url) != &*path
                     {
@@ -378,6 +430,8 @@ impl<'a> BrowserFace<'a> {
                 if self.acting == Some(*op) {
                     self.acting = None;
                     self.choice = None;
+                    self.input = None;
+                    self.refusal = Some(*why);
                     self.failure = Some(format!("browser refused act: {why:?}"));
                 }
             }
@@ -396,11 +450,12 @@ impl<'a> BrowserFace<'a> {
             | Event::Closed { .. } => {}
         }
     }
-    /// Translate one person's operation, naming a field when replacement is unavailable.
+    /// Translate one person's operation, replacing a typed field's whole value.
     ///
     /// # Errors
-    /// An unknown node, drawing act or nonempty field cannot be acted on.
+    /// An unknown node, drawing act or invalid native field value cannot be acted on.
     pub fn perform(&mut self, doing: Doing<Box<[u8]>>) -> Result<(), String> {
+        self.refusal = None;
         let op = self.token();
         let request = match doing {
             Doing::Go { address } => {
@@ -438,12 +493,6 @@ impl<'a> BrowserFace<'a> {
                 match act {
                     Act::Press | Act::Toggle => Request::Press { page: self.page, op, node: seen.node, at: None },
                     Act::Input { value } => {
-                        if !seen.value.is_empty() {
-                            return Err(format!(
-                                "field '{}' holds words; the kit cannot replace them",
-                                String::from_utf8_lossy(&seen.name)
-                            ));
-                        }
                         let keys = match seen.role.as_ref() {
                             b"Date" => Some(crate::keys::date(&value)),
                             b"InputTime" => Some(crate::keys::time(&value)),
@@ -459,7 +508,8 @@ impl<'a> BrowserFace<'a> {
                             })?;
                             Request::Keys { page: self.page, op, node: seen.node, text }
                         } else {
-                            Request::Type { page: self.page, op, node: seen.node, text: value }
+                            self.input = Some(Input::Select { node: seen.node, value });
+                            Request::Type { page: self.page, op, node: seen.node, text: Box::new([]) }
                         }
                     }
                     Act::Submit => Request::Key { page: self.page, op, key: Key::Enter, shift: false },
@@ -470,6 +520,20 @@ impl<'a> BrowserFace<'a> {
         self.acting = Some(op);
         self.requests.push(request);
         Ok(())
+    }
+    fn input_next(&mut self) {
+        match self.input.take() {
+            Some(Input::Select { node, value }) => {
+                self.key(Key::SelectAll, false);
+                self.input = Some(Input::Type { node, value });
+            }
+            Some(Input::Type { node, value }) => {
+                let op = self.token();
+                self.acting = Some(op);
+                self.requests.push(Request::Type { page: self.page, op, node, text: value });
+            }
+            None => {}
+        }
     }
     fn choice_query(&mut self, role: &[u8], within: Option<u64>) {
         let op = self.token();

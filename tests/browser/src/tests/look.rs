@@ -481,3 +481,24 @@ fn style_pushes_text_that_has_only_a_backend_id() {
         .expect("text pushed");
     assert_eq!(calls[push + 1], ("CSS.getPlatformFontsForNode".into(), r#"{"nodeId":80}"#.into()));
 }
+
+#[test]
+fn tree_reads_cut_values_all_states_and_multiline() {
+    let mut world = world(Limits { text: 4, ..Limits::default() });
+    world.tree = r#"{"nodes":[{"nodeId":"field","backendDOMNodeId":7,"role":{"value":"textbox"},"name":{"value":"Title"},"value":{"value":"Words to cut"},"properties":[{"name":"focused","value":{"value":true}},{"name":"disabled","value":{"value":true}},{"name":"checked","value":{"value":"true"}},{"name":"expanded","value":{"value":true}},{"name":"selected","value":{"value":true}},{"name":"multiline","value":{"value":true}}]}]}"#.into();
+    let Looked::Tree(entries) = looked(ask(&mut world, Look::Tree)) else { panic!("tree") };
+    let entry = entries.get(0).unwrap();
+    assert_eq!(entry.value.as_ref(), b"Word");
+    assert_eq!(entry.name.as_ref(), b"Titl");
+    assert_eq!(
+        entry.states,
+        skein_browser::boundary::States {
+            focused: true,
+            disabled: true,
+            checked: true,
+            expanded: true,
+            selected: true
+        }
+    );
+    assert!(entry.multiline);
+}

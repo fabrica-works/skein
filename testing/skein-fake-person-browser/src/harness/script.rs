@@ -304,7 +304,11 @@ impl Play for Script {
                 self.at += 1;
             }
             Step::Back | Step::Forward => {
-                face.history(matches!(step, Step::Forward));
+                face.history(if matches!(step, Step::Forward) {
+                    skein_browser::boundary::Go::Forward
+                } else {
+                    skein_browser::boundary::Go::Back
+                });
                 self.at += 1;
             }
             Step::Person(step) => {

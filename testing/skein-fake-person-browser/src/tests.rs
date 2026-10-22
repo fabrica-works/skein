@@ -1,5 +1,5 @@
 use crate::BrowserFace;
-use skein_browser::boundary::{Event, Match, Query, Request, Seen, States};
+use skein_browser::boundary::{Event, Go, Key, Match, Query, Refusal, Request, Seen, States};
 use skein_fake_person::{Doing, Face, Find, Found};
 use skein_lib::{List, Token};
 use skein_ui::{Act, NodeId, Role};
@@ -104,16 +104,46 @@ fn a_press_becomes_the_kits_press_at_the_centre() {
     );
 }
 #[test]
-fn an_input_into_a_field_holding_words_fails_naming_it() {
-    let mut face = face();
-    let find = Find::named(Role::TextField, b"Title");
-    face.find(&find);
-    found(&mut face, Some(seen(b"Words")));
-    face.find(&find);
-    assert_eq!(
-        face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Input { value: b"New".as_slice().into() } }),
-        Err("field 'Title' holds words; the kit cannot replace them".into())
-    );
+fn input_replaces_words_and_clears_by_focusing_selecting_then_typing() {
+    for value in [b"New".as_slice(), b""] {
+        let mut face = face();
+        let find = Find::named(Role::TextField, b"Title");
+        face.find(&find);
+        found(&mut face, Some(seen(b"Words")));
+        face.find(&find);
+        face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Input { value: value.into() } }).unwrap();
+        assert!(face.pending());
+        assert_eq!(
+            face.requests().collect::<Vec<_>>(),
+            vec![Request::Type {
+                page: Token::new(7),
+                op: Token::new(7_000_002),
+                node: 9_000_000_000,
+                text: Box::new([]),
+            }]
+        );
+        face.event(&Event::Done { op: Token::new(7_000_002) });
+        assert!(face.pending());
+        assert_eq!(
+            face.requests().collect::<Vec<_>>(),
+            vec![Request::Key { page: Token::new(7), op: Token::new(7_000_003), key: Key::SelectAll, shift: false }]
+        );
+        face.event(&Event::Done { op: Token::new(7_000_002) });
+        assert!(face.requests().next().is_none(), "stale terminal cannot advance typing");
+        face.event(&Event::Done { op: Token::new(7_000_003) });
+        assert!(face.pending());
+        assert_eq!(
+            face.requests().collect::<Vec<_>>(),
+            vec![Request::Type {
+                page: Token::new(7),
+                op: Token::new(7_000_004),
+                node: 9_000_000_000,
+                text: value.into(),
+            }]
+        );
+        face.event(&Event::Done { op: Token::new(7_000_004) });
+        assert!(!face.pending());
+    }
 }
 #[test]
 fn a_disabled_node_refuses_acts() {
@@ -421,12 +451,12 @@ fn an_invalid_native_field_value_fails_naming_the_field_and_value() {
     );
 }
 #[test]
-fn native_keys_still_refuse_a_field_holding_words_first() {
+fn native_keys_validate_a_field_already_holding_a_value() {
     let mut face = face();
     native_field(&mut face, b"Date", b"2026-10-15");
     assert_eq!(
         face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Input { value: b"invalid".as_slice().into() } }),
-        Err("field 'Due date' holds words; the kit cannot replace them".into())
+        Err("field 'Due date' takes no value 'invalid'".into())
     );
 }
 
@@ -446,4 +476,75 @@ fn an_origins_favicon_is_204() {
     let wire = origins::response("/favicon.ico");
     assert!(wire.starts_with(b"HTTP/1.1 204 No Content\r\n"), "{}", String::from_utf8_lossy(&wire));
     assert!(wire.ends_with(b"\r\n\r\n"), "{}", String::from_utf8_lossy(&wire));
+}
+
+#[test]
+fn address_reads_return_the_whole_url_once_and_continue_operation_numbers() {
+    let mut face = BrowserFace::continuing(Token::new(7), "127.0.0.1:9000", 84);
+    face.address();
+    assert!(face.pending());
+    assert_eq!(face.take_address(), None);
+    assert_eq!(face.requests().collect::<Vec<_>>(), vec![Request::Address { page: Token::new(7), op: Token::new(85) }]);
+    let url: Box<[u8]> = b"http://127.0.0.1:9000/notes/4?sort=up#title".as_slice().into();
+    face.event(&Event::Address { op: Token::new(84), url: b"stale".as_slice().into() });
+    assert!(face.pending());
+    face.event(&Event::Address { op: Token::new(85), url: url.clone() });
+    assert!(!face.pending());
+    assert_eq!(face.take_address(), Some(url));
+    assert_eq!(face.take_address(), None);
+    assert_eq!(face.failure(), None);
+    let mut next = BrowserFace::continuing(Token::new(7), "127.0.0.1:9000", face.serial());
+    next.key(Key::Tab, true);
+    assert_eq!(next.serial(), 86);
+}
+#[test]
+fn public_history_and_whole_url_go_accept_closing_warnings() {
+    let mut face = face();
+    for to in [Go::Back, Go::Forward, Go::Reload] {
+        face.history(to.clone());
+        assert!(!face.warned());
+        let Request::Go { op, to: got, .. } = face.requests().next().unwrap() else { panic!("go") };
+        assert_eq!(got, to);
+        face.event(&Event::Warned { op });
+        face.event(&Event::Done { op });
+        assert!(face.warned());
+        assert!(!face.pending());
+    }
+    let url = b"http://127.0.0.1:9000/whole?query=yes".as_slice();
+    face.go_to(url.into());
+    let Request::Go { op, to, .. } = face.requests().next().unwrap() else { panic!("go") };
+    assert_eq!(to, Go::Address(url.into()));
+    assert!(!face.warned());
+    face.event(&Event::Warned { op });
+    face.event(&Event::Done { op });
+    assert!(face.warned());
+}
+#[test]
+fn a_refused_replacement_stops_its_sequence_and_retains_the_kit_refusal() {
+    for stage in 0..3 {
+        let mut face = face();
+        let find = Find::named(Role::TextField, b"Title");
+        face.find(&find);
+        let observation = seen(b"Words");
+        found(&mut face, Some(observation.clone()));
+        face.find(&find);
+        assert_eq!(face.seen(FOUND_TARGET), Some(&observation));
+        assert_eq!(face.seen(NodeId(100)), None);
+        face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Input { value: b"New".as_slice().into() } }).unwrap();
+        for _ in 0..stage {
+            let op = face.serial();
+            face.requests().for_each(drop);
+            face.event(&Event::Done { op: Token::new(op) });
+        }
+        face.requests().for_each(drop);
+        let op = Token::new(face.serial());
+        face.event(&Event::Refused { op, why: Refusal::Gone });
+        assert!(!face.pending());
+        assert_eq!(face.refusal(), Some(Refusal::Gone));
+        assert!(face.failure().unwrap().contains("Gone"));
+        face.event(&Event::Done { op });
+        assert!(face.requests().next().is_none());
+        face.key(Key::Tab, false);
+        assert_eq!(face.refusal(), None);
+    }
 }

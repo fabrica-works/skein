@@ -73,7 +73,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let message = u64::from(limits.message).checked_add(1)?;
     let seen = u64::try_from(size_of::<crate::boundary::Seen>()).ok()?.checked_add(text.checked_mul(3)?)?;
     let matches = u64::from(limits.matches).checked_mul(seen)?;
-    let entry = u64::try_from(size_of::<crate::boundary::Entry>()).ok()?.checked_add(text.checked_mul(2)?)?;
+    let entry = u64::try_from(size_of::<crate::boundary::Entry>()).ok()?.checked_add(text.checked_mul(3)?)?;
     let face = u64::try_from(size_of::<crate::boundary::Face>()).ok()?.checked_add(text)?;
     let property = u64::try_from(size_of::<crate::boundary::Property>()).ok()?.checked_add(text.checked_mul(2)?)?;
     let tree = u64::from(limits.entries).checked_mul(entry)?;

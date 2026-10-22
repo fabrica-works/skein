@@ -376,3 +376,32 @@ fn named_fields_use_a_visible_label_and_text_areas_keep_their_aria_label() {
         assert_eq!(dom::print(&mapping::element(&made, &fixtures::look(), b"/", Primary::Control)), expected);
     }
 }
+
+#[test]
+fn browser_roles_map_back_to_roles_that_find_them() {
+    use crate::mapping::{accessible, next_role, person};
+    for role in core::iter::successors(Some(Role::Page), |role| next_role(*role)) {
+        for browser in accessible(role) {
+            for multiline in [false, true] {
+                let mapped = person(browser, multiline).expect("mapped browser role");
+                assert!(accessible(mapped).contains(browser), "{role:?}: {browser:?} -> {mapped:?}");
+            }
+        }
+    }
+    for (browser, expected) in [
+        (b"figure".as_slice(), Role::Figure),
+        (b"generic", Role::Page),
+        (b"LayoutTableCell", Role::Cell),
+        (b"spinbutton", Role::TextField),
+        (b"Date", Role::TextField),
+        (b"InputTime", Role::TextField),
+        (b"DisclosureTriangle", Role::Disclosure),
+        (b"heading", Role::Heading { level: 0 }),
+        (b"StaticText", Role::Text),
+    ] {
+        assert_eq!(person(browser, false), Some(expected));
+    }
+    assert_eq!(person(b"textbox", false), Some(Role::TextField));
+    assert_eq!(person(b"textbox", true), Some(Role::TextArea));
+    assert_eq!(person(b"article", false), None);
+}

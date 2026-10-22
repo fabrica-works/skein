@@ -548,3 +548,22 @@ fn keys_refuse_text_that_is_not_utf8() {
 mod attribute;
 
 mod look;
+
+#[test]
+fn select_all_sends_control_a_without_text_and_ignores_shift() {
+    for shift in [false, true] {
+        let mut world = World::new();
+        world.start();
+        world.open();
+        world.sent.clear();
+        world.ask(Request::Key { page: Token::new(3), op: Token::new(4), key: Key::SelectAll, shift });
+        assert_eq!(
+            key_commands(&world),
+            [
+                r#"Input.dispatchKeyEvent {"type":"keyDown","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"text":"","modifiers":2}"#,
+                r#"Input.dispatchKeyEvent {"type":"keyUp","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"text":"","modifiers":2}"#,
+            ]
+        );
+        assert!(matches!(world.above.pop(), Some(Event::Done { op }) if op == Token::new(4)));
+    }
+}

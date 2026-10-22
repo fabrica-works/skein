@@ -14,7 +14,7 @@ fn chromium_opens_finds_and_presses_a_button() {
 }
 
 #[test]
-fn chromium_types_submits_and_snapshots_a_form() {
+fn chromium_selects_all_replaces_and_submits_a_form() {
     let chromium = chromium();
     let profile = Profile::fresh();
     Rig::new(&chromium, &profile.0, Scenario::Form).run();

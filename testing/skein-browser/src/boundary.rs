@@ -233,6 +233,12 @@ pub struct Entry {
     pub name: Box<[u8]>,
     /// A heading's or a tree item's level; 0 for none.
     pub level: u32,
+    /// The field's value, cut at `Limits::text`.
+    pub value: Box<[u8]>,
+    /// The same accessibility properties a find reports.
+    pub states: States,
+    /// Whether the text box takes several lines.
+    pub multiline: bool,
 }
 
 /// A computed value, whole, as the browser computes it (`16px`, `rgb(17, 17, 17)`).
@@ -279,6 +285,8 @@ pub enum Key {
     ArrowDown,
     ArrowLeft,
     ArrowRight,
+    /// Select the focused field's whole value with Control+A; `shift` is ignored.
+    SelectAll,
 }
 
 /// An accessible role and name, optionally scoped beneath a node.

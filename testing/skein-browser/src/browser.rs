@@ -746,7 +746,20 @@ impl Browser {
             env,
             op,
             b"Input.dispatchKeyEvent",
-            &Params::Key { kind, key: name, code, windows, text, modifiers: if shift { SHIFT } else { 0 } },
+            &Params::Key {
+                kind,
+                key: name,
+                code,
+                windows,
+                text,
+                modifiers: if key == Key::SelectAll {
+                    2
+                } else if shift {
+                    SHIFT
+                } else {
+                    0
+                },
+            },
             step,
         );
     }
@@ -938,6 +951,11 @@ fn parse_seen(node: Value<'_>, text_limit: u32) -> Option<Seen> {
     let role = ax_text(node, b"role", text_limit);
     let name = ax_text(node, b"name", text_limit);
     let value = ax_text(node, b"value", text_limit);
+    let states = ax_states(node);
+    Some(Seen { node: backend, role, name, value, states, rect: None })
+}
+
+fn ax_states(node: Value<'_>) -> States {
     let mut states = States { focused: false, disabled: false, checked: false, expanded: false, selected: false };
     if let Some(properties) = field_array(node, b"properties") {
         for property in properties {
@@ -953,7 +971,7 @@ fn parse_seen(node: Value<'_>, text_limit: u32) -> Option<Seen> {
             }
         }
     }
-    Some(Seen { node: backend, role, name, value, states, rect: None })
+    states
 }
 
 fn ax_text(node: Value<'_>, key: &[u8], limit: u32) -> Box<[u8]> {
@@ -977,7 +995,11 @@ fn ax_disabled(node: Value<'_>) -> bool {
 }
 
 fn ax_property_bool(property: Value<'_>) -> bool {
-    opt_bool(opt_field(property.get(b"value"), b"value")).unwrap_or(false)
+    let value = opt_field(property.get(b"value"), b"value");
+    match opt_bool(value) {
+        Some(value) => value,
+        None => opt_text(value).as_deref() == Some(b"true"),
+    }
 }
 
 fn parse_rect(result: Value<'_>) -> Option<Rect> {
@@ -1245,6 +1267,7 @@ fn key_info(key: Key) -> (&'static [u8], &'static [u8], u64, &'static [u8]) {
         Key::ArrowDown => (b"ArrowDown", b"ArrowDown", 40, b""),
         Key::ArrowLeft => (b"ArrowLeft", b"ArrowLeft", 37, b""),
         Key::ArrowRight => (b"ArrowRight", b"ArrowRight", 39, b""),
+        Key::SelectAll => (b"a", b"KeyA", 65, b""),
     }
 }
 

@@ -1,8 +1,8 @@
 //! The lab's bounded reads of a page's drawing (browser.md, 5.1).
 #![expect(clippy::disallowed_types, reason = "the tree traversal uses a stack bounded by the reply's node count")]
 use super::{
-    Browser, OpKind, Operation, PendingKind, ax_text, contains, field_array, field_text, field_u64, opt_bool,
-    viewport_offset,
+    Browser, OpKind, Operation, PendingKind, ax_property_bool, ax_states, ax_text, contains, field_array, field_text,
+    field_u64, opt_bool, viewport_offset,
 };
 use crate::boundary::{Entry, Event, Face, Look, Looked, Property, Rect, Refusal};
 use crate::{Limits, params::Params, wire::decode::Value};
@@ -547,10 +547,14 @@ fn tree(result: Value<'_>, limits: &Limits) -> Result<List<Entry>, Refusal> {
                 return Err(Refusal::Limit);
             }
             let mut level = 0;
+            let mut multiline = false;
             if let Some(properties) = field_array(node, b"properties") {
                 for property in properties {
                     if field_text(property, b"name").as_deref() == Some(b"level") {
                         level = level_value(property).unwrap_or(0);
+                    }
+                    if field_text(property, b"name").as_deref() == Some(b"multiline") {
+                        multiline = ax_property_bool(property);
                     }
                 }
             }
@@ -561,6 +565,9 @@ fn tree(result: Value<'_>, limits: &Limits) -> Result<List<Entry>, Refusal> {
                     role: ax_text(node, b"role", limits.text),
                     name: ax_text(node, b"name", limits.text),
                     level,
+                    value: ax_text(node, b"value", limits.text),
+                    states: ax_states(node),
+                    multiline,
                 })
                 .expect("entry room checked");
         }

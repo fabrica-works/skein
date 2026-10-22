@@ -398,6 +398,74 @@ pub const fn accessible(role: Role) -> &'static [&'static [u8]] {
     }
 }
 
+/// Map a browser role to the first person's role that queries it, splitting text boxes by line count.
+#[must_use]
+pub fn person(browser_role: &[u8], multiline: bool) -> Option<Role> {
+    if browser_role == b"textbox" {
+        return Some(if multiline { Role::TextArea } else { Role::TextField });
+    }
+    let roles = || core::iter::successors(Some(Role::Page), |role| next_role(*role));
+    roles()
+        .find(|role| accessible(*role).first().copied() == Some(browser_role))
+        .or_else(|| roles().find(|role| accessible(*role).contains(&browser_role)))
+}
+
+// Declaration order in ui.md; an added role requires its successor here.
+pub(crate) fn next_role(role: Role) -> Option<Role> {
+    match role {
+        Role::Page => Some(Role::Banner),
+        Role::Banner => Some(Role::Navigation),
+        Role::Navigation => Some(Role::Main),
+        Role::Main => Some(Role::Complementary),
+        Role::Complementary => Some(Role::ContentInfo),
+        Role::ContentInfo => Some(Role::Form),
+        Role::Form => Some(Role::Search),
+        Role::Search => Some(Role::Region),
+        Role::Region => Some(Role::Heading { level: 0 }),
+        Role::Heading { .. } => Some(Role::Paragraph),
+        Role::Paragraph => Some(Role::Text),
+        Role::Text => Some(Role::List),
+        Role::List => Some(Role::Item),
+        Role::Item => Some(Role::Table),
+        Role::Table => Some(Role::Row),
+        Role::Row => Some(Role::Cell),
+        Role::Cell => Some(Role::ColumnHeader),
+        Role::ColumnHeader => Some(Role::RowHeader),
+        Role::RowHeader => Some(Role::Select),
+        Role::Select => Some(Role::Option),
+        Role::Option => Some(Role::Term),
+        Role::Term => Some(Role::Description),
+        Role::Description => Some(Role::Button),
+        Role::Button => Some(Role::Link),
+        Role::Link => Some(Role::TextField),
+        Role::TextField => Some(Role::TextArea),
+        Role::TextArea => Some(Role::Choice),
+        Role::Choice => Some(Role::ChoiceGroup),
+        Role::ChoiceGroup => Some(Role::Check),
+        Role::Check => Some(Role::Dialog),
+        Role::Dialog => Some(Role::Status),
+        Role::Status => Some(Role::Alert),
+        Role::Alert => Some(Role::Log),
+        Role::Log => Some(Role::Tree),
+        Role::Tree => Some(Role::TreeItem),
+        Role::TreeItem => Some(Role::Tabs),
+        Role::Tabs => Some(Role::Tab),
+        Role::Tab => Some(Role::Progress),
+        Role::Progress => Some(Role::Time),
+        Role::Time => Some(Role::Code),
+        Role::Code => Some(Role::Quote),
+        Role::Quote => Some(Role::Separator),
+        Role::Separator => Some(Role::Menu),
+        Role::Menu => Some(Role::MenuItem),
+        Role::MenuItem => Some(Role::Disclosure),
+        Role::Disclosure => Some(Role::Image),
+        Role::Image => Some(Role::Figure),
+        Role::Figure => Some(Role::Slot),
+        Role::Slot => Some(Role::Drawing),
+        Role::Drawing => None,
+    }
+}
+
 fn name(e: &mut Element, made: &Made) {
     let a = &made.attribute;
     if let Some(name) = &a.name {

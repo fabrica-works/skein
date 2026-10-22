@@ -1,5 +1,5 @@
 #![expect(clippy::disallowed_types, reason = "the kit's own tests of the look's reads (browser.md, 5.1)")]
-use skein_browser::boundary::{Event, Look, Motion, Refusal, Request, Scheme};
+use skein_browser::boundary::{Event, Look, Looked, Motion, Refusal, Request, Scheme};
 use skein_browser_world::{
     referee::Referee,
     world::{Fault, World},
@@ -64,6 +64,21 @@ pub fn run(cases: u64) {
         let mut terminals = 0;
         while let Some(event) = world.above.pop() {
             referee.event(&event, 0);
+            if let Event::Looked { looked: Looked::Tree(entries), .. } = &event {
+                let entry = entries.iter().find(|entry| entry.name.as_ref() == b"Title").expect("tree field");
+                assert_eq!(entry.value.as_ref(), b"Words");
+                assert_eq!(
+                    entry.states,
+                    skein_browser::boundary::States {
+                        focused: true,
+                        disabled: true,
+                        checked: true,
+                        expanded: true,
+                        selected: true
+                    }
+                );
+                assert!(entry.multiline);
+            }
             if matches!(event, Event::Looked { .. } | Event::Refused { .. }) {
                 terminals += 1;
                 if kind == 4 {

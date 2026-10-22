@@ -147,6 +147,9 @@ fn populated_kit_answers_sort_properties_and_keep_evidence() {
             role: b"heading".as_slice().into(),
             name: b"Title".as_slice().into(),
             level: 2,
+            value: Box::new([]),
+            states: b::States { focused: false, disabled: false, checked: false, expanded: false, selected: false },
+            multiline: false,
         })
         .unwrap();
     assert_eq!(

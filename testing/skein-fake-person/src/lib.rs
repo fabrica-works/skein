@@ -27,7 +27,7 @@ pub use random::{RandomDoing, RandomPerson};
 use skein_lib::{Duration, Time};
 use skein_ui::Act;
 use skein_ui::{NodeId, Role};
-pub use tree::TreeFace;
+pub use tree::{TreeFace, role_name, role_named};
 
 /// A semantic target, scoped through named ancestors, outermost first.
 #[derive(Clone, PartialEq, Eq, Debug)]

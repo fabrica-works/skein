@@ -11,7 +11,7 @@ pub fn drive(world: &mut World, limits: Limits) {
         .map(|n| {
             let children = if n + 1 < limits.entries { format!("[\"{}\"]", n + 1) } else { "[]".into() };
             format!(
-                r#"{{"nodeId":"{n}","role":{{"value":"{text}"}},"name":{{"value":"{text}"}},"childIds":{children}}}"#
+                r#"{{"nodeId":"{n}","role":{{"value":"{text}"}},"name":{{"value":"{text}"}},"value":{{"value":"{text}"}},"childIds":{children}}}"#
             )
         })
         .collect();
@@ -39,7 +39,10 @@ pub fn drive(world: &mut World, limits: Limits) {
     world.png = String::from_utf8(writer.finish().into_vec()).unwrap();
     world.ask(Request::Look { page: Token::new(3), op: Token::new(32), look: Look::Shot { clip: None, scale: 2 } });
     match world.above.pop().unwrap() {
-        Event::Looked { looked: Looked::Tree(entries), .. } => assert_eq!(entries.len(), limits.entries),
+        Event::Looked { looked: Looked::Tree(entries), .. } => {
+            assert_eq!(entries.len(), limits.entries);
+            assert!(entries.iter().all(|entry| entry.value.as_ref() == text.as_bytes()));
+        }
         other => panic!("tree at bound: {other:?}"),
     }
     match world.above.pop().unwrap() {

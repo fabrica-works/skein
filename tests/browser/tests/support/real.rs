@@ -222,6 +222,7 @@ pub struct Rig {
     pub snapshot: Box<[u8]>,
     dialog: dialogs::State,
     scope: Option<u64>,
+    form_node: u64,
     look: look::State,
 }
 
@@ -261,6 +262,7 @@ impl Rig {
             scenario,
             dialog: dialogs::State::new(scenario),
             scope: None,
+            form_node: 0,
             look: look::State::default(),
             context_ready: false,
             exception_seen: false,
@@ -603,6 +605,25 @@ impl Rig {
                 };
                 self.ask(Request::Keys { page: PAGE, op: PRESS, node, text: text.into() });
             }
+            Event::Found { op, seen, more } if matches!(self.scenario, Scenario::Form) => {
+                assert_eq!((op, seen.len(), more), (FIND, 1, 0));
+                let field = seen.get(0).expect("form field");
+                self.form_node = field.node;
+                match self.stage {
+                    Stage::Finding => {
+                        assert_eq!(field.value.as_ref(), b"Old words");
+                        self.stage = Stage::Pressing;
+                        self.ask(Request::Type { page: PAGE, op: PRESS, node: field.node, text: Box::new([]) });
+                    }
+                    Stage::Capturing => {
+                        assert_eq!(field.value.as_ref(), b"Ada");
+                        assert!(field.states.focused);
+                        self.stage = Stage::Keying;
+                        self.ask(Request::Key { page: PAGE, op: KEY, key: Key::Enter, shift: false });
+                    }
+                    stage => panic!("unexpected form find at {stage:?}"),
+                }
+            }
             Event::Found { op, seen, more } => {
                 assert_eq!(op, FIND);
                 assert_eq!(self.stage, Stage::Finding);
@@ -652,6 +673,31 @@ impl Rig {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Press { page: PAGE, op: PRESS, node, at: None });
                     }
+                }
+            }
+            Event::Done { op } if matches!(self.scenario, Scenario::Form) && self.stage != Stage::Keying => {
+                match self.stage {
+                    Stage::Pressing => {
+                        assert_eq!(op, PRESS);
+                        self.stage = Stage::Reloading;
+                        self.ask(Request::Key { page: PAGE, op: KEY, key: Key::SelectAll, shift: false });
+                    }
+                    Stage::Reloading => {
+                        assert_eq!(op, KEY);
+                        self.stage = Stage::Typing;
+                        self.ask(Request::Type {
+                            page: PAGE,
+                            op: PRESS,
+                            node: self.form_node,
+                            text: b"Ada".as_slice().into(),
+                        });
+                    }
+                    Stage::Typing => {
+                        assert_eq!(op, PRESS);
+                        self.stage = Stage::Capturing;
+                        self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"textbox", b"Name") });
+                    }
+                    stage => panic!("unexpected form done at {stage:?}"),
                 }
             }
             Event::Done { op } if matches!(self.scenario, Scenario::Dates) => {

@@ -18,6 +18,8 @@ body {margin:0;color:rgb(17,17,17);font-size:16px}
 #fallback {top:2060px;font-family:monospace}
 </style></head><body>
 <h1 id="media">Dark reduced 390</h1><div><h2>Second</h2></div><h3>Third</h3>
+<input aria-label="Words" value="Old words" autofocus><textarea aria-label="Lines">Several lines</textarea>
+<input type="checkbox" aria-label="Checked" checked><button disabled>Disabled</button>
 <div id="nobox" style="display:none">Hidden</div><button id="styled">Styled</button><button id="fallback">Fallback<div><span style="font-family:Fixture">Nested</span></div></button>
 <script>document.fonts.load('16px Fixture').then(()=>document.fonts.ready).then(()=>{let p=document.createElement('p');p.setAttribute('role','status');p.setAttribute('aria-label','Fonts ready');p.textContent='Fonts ready';document.body.append(p);window.scrollTo(0,100)})</script>
 </body></html>"#;
@@ -102,6 +104,18 @@ impl Rig {
                     [1, 1, 1],
                     "ignored body and wrapper children lifted"
                 );
+                let named =
+                    |name: &[u8]| entries.iter().find(|entry| entry.name.as_ref() == name).expect("named tree entry");
+                let field = named(b"Words");
+                assert_eq!(field.value.as_ref(), b"Old words");
+                assert!(field.states.focused);
+                assert!(!field.multiline);
+                let area = named(b"Lines");
+                assert_eq!(area.value.as_ref(), b"Several lines");
+                assert!(area.multiline);
+                assert!(!area.states.focused);
+                assert!(named(b"Checked").states.checked);
+                assert!(named(b"Disabled").states.disabled);
                 self.look.step = 2;
                 self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"button", b"Styled") });
             }

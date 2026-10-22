@@ -454,3 +454,38 @@ fn an_exited_deadline_fails_and_command_teardown_settles() {
     assert!(report.contains("harness_fixture: Exited deadline passed"), "{report}");
     assert!(!report.contains("browser harness deadline passed"), "command teardown settles: {report}");
 }
+
+#[test]
+fn a_person_types_over_words_then_clears_the_field() {
+    let scratch = Scratch::new("harness-replace");
+    let bundle = fixture_bundle(
+        &scratch,
+        br#"export default function init() {
+        const field = document.createElement('input');
+        field.setAttribute('aria-label', 'Title'); field.value = 'Old words';
+        const heading = document.createElement('h1'); heading.textContent = 'Old words';
+        field.addEventListener('input', () => { heading.textContent = field.value || 'Empty'; });
+        document.querySelector('#app').append(field, heading);
+    }"#,
+    );
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See {
+            find: Find::exactly_named(Role::Heading { level: 1 }, b"Old words"),
+            within: Duration::from_secs(2),
+        }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"New words".as_slice().into(),
+        }),
+        harness::Step::Person(Step::See {
+            find: Find::exactly_named(Role::Heading { level: 1 }, b"New words"),
+            within: Duration::from_secs(2),
+        }),
+        harness::Step::Person(Step::Type { find: Find::exactly_named(Role::TextField, b"Title"), words: Box::new([]) }),
+        harness::Step::Person(Step::See {
+            find: Find::exactly_named(Role::Heading { level: 1 }, b"Empty"),
+            within: Duration::from_secs(2),
+        }),
+    ]));
+    assert_eq!(fixture_harness(&bundle).run(&mut [&mut person]), Outcome::Done);
+}
