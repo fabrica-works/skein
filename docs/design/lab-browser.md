@@ -127,6 +127,9 @@ skein-lab-browser --chromium PATH --fonts DIR --scratch DIR --out DIR
   nothing is looked up.
 - **Loopback goes direct,** whatever its port: a page could reach
   another listener on the machine's loopback, which no lab page names.
+  The program does not close it; its caller does, starting it in a
+  network namespace of its own, whose loopback holds only the program's
+  listeners. The capture does (5.1).
 - **Its bounds:** a request's first line is read up to 8 KiB, and a
   `trouble` reports at most 64 refusals, the rest as one `network`
   entry counting them.
@@ -189,9 +192,11 @@ a node by the kit (browser.md, section 5).
 
 ## 4. The scene file
 
-`look-scene/1`, canonical JSON, one file a scene, kept by the product
-beside its look experiment. The capture reads it; the look's checks
-read it too, with the members they add (`expectations`, `departures`).
+`look-scene/1`, canonical JSON (lab.md, 2.2), one file a scene, kept by
+the product beside its look experiment. The capture reads it; the
+look's checks read it too, with the members they add (`expectations`,
+`departures`). Shown spread out here; the file holds its canonical
+bytes.
 
 ```json
 {"format": "look-scene/1",
@@ -212,25 +217,37 @@ read it too, with the members they add (`expectations`, `departures`).
  "departures": []}
 ```
 
-- **`name`** matches `[a-z][a-z0-9-]*`, and names the scene's files.
-- **`widths`:** each a viewport, `mobile` as a phone's.
-- **`mockup` and `page`:** each side's path on its origin, and its
-  readiness, a part awaited; `mockup` is null for a page no mockup
-  draws, which is captured alone.
-- **`regions`:** pairs of a part found on each side, by role and name,
-  or on the mockup's side by a CSS selector where its part has no role
-  of its own. The page's side is found by role and name only, as a
-  person finds it. An empty name by words matches any name; a finder
-  that matches several takes the first in document order, and the
-  record counts the rest.
-- **`names`:** the words the structure shows: the frame's and the
-  controls', never content.
-- **`expectations` and `departures`:** the look's checks' (qa-web.md,
-  5.3), which the capture does not read.
-- **Refused,** each problem named, before the browser starts: another
-  format, a missing or unknown member, a name that repeats, a finder
-  with both a role and a selector or neither, a selector on the page's
-  side, a path not starting with `/`.
+- **`name`** matches `[a-z][a-z0-9-]*`, as every name in the file does,
+  and names the scene's files.
+- **`widths`:** at least one, each a viewport: its `name`, its `width`
+  and `height` in CSS pixels, from 1 to 4096, and `mobile`, a phone's
+  handling of the page's viewport tag.
+- **`mockup` and `page`:** each side's `path` on its origin, and its
+  `ready`, a part awaited, by role and name. `mockup` is null for a page
+  no mockup draws, which is captured alone; `page` is never null.
+- **A path** starts with `/` but not `//`, and holds printable ASCII
+  without spaces: a path on the side's origin, and its query.
+- **A finder** is `{"role", "name", "match"}`, `match` being `exact` or
+  `words` (section 3's `find`), or, on the mockup's side of a region
+  alone, `{"selector"}`, CSS, where the mockup's part has no role of its
+  own. The page's side is found by role and name only, as a person
+  finds it. An empty name by words matches any name; a finder that
+  matches several takes the first in document order, and the record
+  counts the rest.
+- **`regions`:** pairs of a part found on each side, each named. With
+  no mockup, a region's `mockup` is null.
+- **`names`:** the words the structure shows (5.3): the frame's and the
+  controls', never content. Each nonempty, none repeated.
+- **`expectations` and `departures`:** lists, the look's checks'
+  (qa-web.md, 5.3), which the capture does not read.
+- **Refused,** every problem named with its member, before the browser
+  starts: bytes not canonical, another format, a missing, unknown or
+  mistyped member, a name not matching or repeated (a scene's among the
+  command's scenes, a width's or a region's in its scene), a finder with
+  both a role and a selector or neither, a selector on the page's side
+  or in a readiness, another `match`, a path or a size out of its rule,
+  a region's mockup finder in a scene without a mockup, or none in one
+  with.
 
 ## 5. The capture
 
@@ -238,21 +255,52 @@ read it too, with the members they add (`expectations`, `departures`).
 
 ```
 scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
-    --mockups DIR --page DIR --ready-seconds N --out DIR SCENE...
+    [--mockups DIR] --page DIR --ready-seconds N --out DIR SCENE...
 ```
 
-- **The program its child,** started with the paths given, its scratch
-  a temporary directory the capture removes at its end; the two
-  directories served, `mockups` and `page`, each its own origin.
-- **For each scene, each width, each side:** `open` at the width;
-  `go` to the side's path on its origin; `await` its readiness within
-  `--ready-seconds`; then `tree`; each region found (`find` or
-  `select`), its `style` with the properties of 5.3, its `shot` at scale
-  2 clipped to its box; the page's `shot` at scale 1; `trouble`;
-  `close`. A side that misses its readiness, or a region not found, is
-  recorded so, and the rest goes on.
-- **Exits** 0 once every scene is recorded, whatever it shows, 2 on a
-  scene refused (section 4), 1 when the program fails.
+- **Its arguments:** absolute paths, the program and Chromium
+  executable files, the fonts, mockups and page directories; `--mockups`
+  given when a scene has a mockup; `--ready-seconds` a positive integer;
+  `--out` a directory the capture makes, `0700`, refusing one that
+  exists. Every scene is read and checked before anything starts.
+- **The program in a namespace of its own,** under bubblewrap (`bwrap`,
+  found as the runner finds it, on the default path, and among the
+  key's `programs`, lab.md 2.3):
+  - a network namespace of its own (`--unshare-net`), whose loopback
+    holds only the program's origins and proxy, so that a page reaches
+    no other listener of the machine (2.4);
+  - the file system read-only (`--ro-bind / /`), with `/dev`, `/proc`,
+    `/tmp` and `/run` of its own, and its scratch and `--out` bound
+    writable;
+  - its environment `PATH=/usr/bin:/bin` alone, and its end bound to
+    the capture's (`--die-with-parent`).
+
+  Its scratch is a temporary directory the capture removes at its end;
+  its `--out` is the capture's; its standard error is kept as
+  `browser.log` in `--out`. Its ready line gives the browser's version,
+  which the record keeps.
+- **The two directories served,** `mockups` (when given) and `page`,
+  each its own origin.
+- **For each scene, each width, each side, one page at a time,** since
+  the proxy cannot tell pages apart (2.4), the mockup's side first:
+  `open` at the width; `go` to the side's path on its origin; `await`
+  its readiness within `--ready-seconds`; `tree`; for each region, its
+  part found (`find`, or `select` on the mockup's side), its `style`
+  with the properties of 5.3, and its `shot` at scale 2 clipped to its
+  box; the viewport's `shot` at scale 1; `trouble`; `close`. Then the
+  width's views (5.3), from the files written.
+- **It goes on:** a side that misses its readiness is recorded
+  `missed`, and read all the same; a region not found, without a box,
+  or whose call is refused (a shot past the program's limit, say) is
+  recorded so, with the refusal, and the rest goes on.
+- **Each answer is awaited** within `--ready-seconds` and 30 seconds
+  more. Past that, at an answer it cannot read, or at the program's
+  end, the program has failed.
+- **Exits** 0 once every scene is recorded, whatever it shows; 2 on a
+  refusal (an argument, a scene, an `--out` that exists), before the
+  program starts; 1 when the program fails, with its standard error's
+  tail on the capture's, and `--out` left as it is, without
+  `capture.json`.
 
 ### 5.2 The record
 
@@ -260,7 +308,8 @@ In `--out`, beside the files it names:
 
 ```
 capture.json                          look-capture/1
-<scene>/<width>/<side>/tree.json      the tree call's answer
+browser.log                           the program's standard error
+<scene>/<width>/<side>/tree.json      the tree call's answer, canonical
 <scene>/<width>/<side>/outline.txt    the structure (5.3)
 <scene>/<width>/<side>/page.png       the viewport, scale 1
 <scene>/<width>/<side>/<region>.png   a region, scale 2
@@ -271,38 +320,99 @@ capture.json                          look-capture/1
 <scene>/<width>/diff/<region>.png     a region's difference image
 ```
 
-`capture.json` is `{"format": "look-capture/1", "browser", "scenes"}`:
-each scene its file's digest and, per width, each side's address, its
-readiness (`met` or `missed`), its trouble, its files, and per region
-whether it was found, its box, its values and faces, and, where its
-content matches, its PSNR in hundredths of a decibel; every file named
-by its path, size and digest (lab.md, 2.2). `<side>` is `mockup` or
-`page`.
+`<side>` is `mockup` or `page`. `capture.json` is canonical JSON
+(lab.md, 2.2), its lists in the scenes' order, as the command named
+them, and in each scene's own:
+
+```
+{"format": "look-capture/1", "browser": VERSION, "scenes": [SCENE]}
+SCENE   {"name", "scene": DIGEST, "widths": [WIDTH]}
+WIDTH   {"name", "width", "height", "mobile", "mockup": SIDE or null,
+         "page": SIDE, "structure": FILE or null, "style": FILE,
+         "pair": FILE or null, "regions": [REGION]}
+SIDE    {"address", "ready", "trouble", "tree", "outline", "shot"}
+REGION  {"name", "mockup": PART or null, "page": PART,
+         "pair": FILE or null, "content", "diff": FILE or null,
+         "psnr", "differing", "pixels"}
+PART    {"found": true, "more", "box", "values", "faces", "shot"}
+        or {"found": false} or REFUSED
+FILE    {"path", "bytes", "sha256"}
+REFUSED {"refused", "detail"}
+```
+
+- **A scene's `scene`** is its file's digest, `sha256:` and the hex of
+  its bytes.
+- **A side's** `address` is the URL it went to; `ready` is `met`,
+  `missed`, or the refusal of its `go` or `await`; `trouble` is the
+  `trouble` call's list, the proxy's refusals among it; `tree`,
+  `outline` and `shot` are files, or the refusal of their call.
+- **A part's** `more` is how many others its finder matched; `box` is
+  its style's border box (a `RECT`, or null for a part not displayed);
+  `values` and `faces` are its style's; `shot` is its crop, null
+  without a box, or the refusal.
+- **A region's** `content` is `same`, `differs` or `unknown` (5.3);
+  `diff`, `psnr`, `differing` and `pixels` are its difference image's,
+  null where none is made.
+- **Every file** is named by its path from `--out`, `/`-separated, its
+  size and its digest (lab.md, 2.2).
 
 ### 5.3 The views
 
-- **Structure:** `outline.txt`, from the tree: the landmarks (banner,
-  navigation, main, complementary, contentinfo, a named region, form,
-  search), the headings with their levels, the lists with their items'
-  count, and the controls by role (button, link, textbox, checkbox,
-  radio, combobox, tab, menuitem, switch), in document order, indented
-  by the landmarks they are in. An entry shows its name when the name
-  is one of the scene's `names`, and its role alone otherwise.
-  `structure.diff` is the two outlines' unified difference.
-- **Style:** per region pair, the computed `font-family`, `font-size`,
-  `font-weight`, `line-height` and `letter-spacing`; `color` and
-  `background-color`; each side's `border-*-width`, `-style` and
-  `-color`, each corner's `border-*-radius`, and `box-shadow`; each
-  side's `padding-*`, `row-gap` and `column-gap`; the used faces; and
-  the box's `x`, `y`, `width` and `height`. `style.md` is the table of
-  both sides, a difference marked by the default rule: colours, faces
-  and keywords exact, lengths within one pixel.
-- **Picture:** `pair.png`, the two page shots side by side; for each
-  region, its two crops side by side; and, where the region's content
-  matches (the names of every node under it equal on both sides), the
-  difference image, the two crops placed at their top left on the larger
-  of their sizes, the area one does not cover counted as differing, and
-  its PSNR. A region found on one side only has its one crop.
+- **Structure:** `outline.txt`, from the tree, one entry a line, in
+  document order: the landmarks (`banner`, `navigation`, `main`,
+  `complementary`, `contentinfo`, `region`, `form`, `search`), the
+  headings with their levels (`heading 2`), the lists with their items'
+  count, the `listitem` entries one level deeper in the tree
+  (`list (4)`), and the controls by role (`button`, `link`, `textbox`,
+  `searchbox`, `checkbox`, `radio`, `combobox`, `tab`, `menuitem`,
+  `switch`). Each line is indented two spaces for each landmark it is
+  in, and ends with its name, quoted as JSON, when the name is one of
+  the scene's `names`; otherwise it shows its role alone.
+  `structure.diff` is the two outlines' unified difference, three lines
+  of context, from `mockup/outline.txt` to `page/outline.txt`, empty
+  when they agree; with no mockup, there is none.
+- **Style:** per region, these computed properties: `font-family`,
+  `font-size`, `font-weight`, `line-height`, `letter-spacing`;
+  `color`, `background-color`; each side's `border-*-width`,
+  `border-*-style` and `border-*-color`, each corner's
+  `border-*-radius`, `box-shadow`; each side's `padding-*`, `row-gap`,
+  `column-gap`; then the used faces and the box's `x`, `y`, `width` and
+  `height`. `style.md` holds a table per region, a row per property,
+  the mockup's value, the page's and a mark, `≠` where they differ by
+  the default rule:
+  - two values agree when, split into tokens (a number with `px`, or
+    any other run of characters outside spaces, commas and
+    parentheses), they have as many tokens, each `px` length within one
+    pixel of the other's, and every other token equal: so colours,
+    keywords and families exactly, lengths within one pixel;
+  - the faces agree when their families and `custom` flags, sorted, are
+    equal, their glyphs' counts left out; the box's members within one
+    pixel;
+  - a part missing on one side shows `—` there, and marks nothing.
+- **Picture:**
+  - `pair.png`: the two viewport shots side by side, the mockup's on
+    the left, top-aligned, 16 pixels apart, on white; for each region
+    found on both sides, its two crops the same way in
+    `pairs/<region>.png`. A region found on one side only has its one
+    crop; a scene without a mockup has no pairs.
+  - **Content:** a region's content is the names of its node's entry in
+    the tree and of the entries under it. It is `same` when the two
+    sides' are equal, `differs` when not, and `unknown` when a part was
+    not found or its node is not in the tree (an ignored node, such as
+    an element no role names).
+  - **The difference image,** `diff/<region>.png`, only where the
+    content is `same` and both crops were taken: the two crops placed at
+    their top left on a canvas of the larger width and the larger
+    height; each pixel both cover with equal colours drawn as the
+    mockup's in grey, faded to a quarter of its contrast, and each other
+    pixel, those only one covers among them, drawn magenta
+    (`#ff00ff`). `differing` counts those, of `pixels`, the canvas's.
+  - **PSNR,** over the red, green and blue of every pixel of the
+    canvas, a pixel one crop does not cover at the largest error, 255:
+    `10 log10(255² / MSE)`, in hundredths of a decibel, rounded to the
+    nearest; null when no pixel differs.
+- **Images** are PNG, read as 8-bit RGB or RGBA without interlace,
+  as Chromium writes them, and written as 8-bit RGB.
 
 ## 6. Tests
 
@@ -313,30 +423,59 @@ by its path, size and digest (lab.md, 2.2). `<side>` is `mockup` or
   (`SKEIN_TEST_CHROMIUM`) and a fonts' directory named as it is
   (`SKEIN_TEST_FONTS`, else Debian's `fonts-dejavu-core` directory,
   `/usr/share/fonts/truetype/dejavu`; neither holding DejaVu fails the
-  suite at its start, naming both and the package), a fixture directory served, a page
-  opened at the phone's size, a part awaited, its tree, a selector's
-  node, a style, a clipped shot at scale 2, a page whose external
-  stylesheet the proxy refuses (its `network` trouble, and the page
-  drawn without it), a call refused, and the end of its input closing
-  everything.
+  suite at its start, naming both and the package), a fixture directory
+  served, a page opened at the phone's size, a part awaited, its tree,
+  a selector's node, a style, a clipped shot at scale 2, a page whose
+  external stylesheet the proxy refuses (its `network` trouble, and the
+  page drawn without it), a call refused, and the end of its input
+  closing everything.
 - **The capture's decisions** in the runner's unit tier (lab.md, 10.3),
-  pure: the scene file and its refusals; the outline from a tree; the
-  style table and its rule; PNG's reading and writing, the side by
-  side, the difference image and the PSNR on small images; the record's
-  canonical form.
+  pure: the scene file and each refusal of section 4; the outline from
+  a tree, with landmarks nested, levels, a list's items and names shown
+  or not; the structure's difference; the style rule from both sides of
+  each bound (a length one pixel off and past it, a colour, a keyword,
+  faces); the content's three answers; PNG's reading (RGB, RGBA, each
+  filter) and writing; the side by side; the difference image and the
+  PSNR on small images, equal, one pixel off, and of unequal sizes; the
+  record's canonical form.
 - **The capture's run** in the runner's process tier: the built program
-  and the lab's Chromium on a fixture scene whose page side moves one
-  region and changes one colour, its record showing both. A missing
-  program or Chromium fails the story, naming what is missing.
+  (`SKEIN_LAB_BROWSER`), Chromium (`SKEIN_TEST_CHROMIUM`) and the fonts
+  (`SKEIN_TEST_FONTS`, else Debian's directory, as the program's story)
+  on a fixture scene at one small width whose page side moves one
+  region and changes one colour. Its record shows both: the moved
+  region's entries in `structure.diff`, its box's `y` and the colour
+  marked in `style.md`, the recoloured region's difference image with
+  its pixels and PSNR, and the pair. The fixture's page also asks for a
+  listener the story holds on the machine's loopback, which sees no
+  connection. A missing program, Chromium or bubblewrap fails the
+  story, naming what is missing.
 
 ## 7. In the lab
 
-The look experiment and the settings that name the lab's browser, its
-Chromium and its fonts are designed with the look's checks (qa-web.md,
-section 5); until then the capture runs by hand. What is settled: the
-program, Chromium (with its version) and the fonts' directory are the
-lab's, named in its settings and digested in its key (lab.md, 2.3), as
-the driver's host is.
+- **Named in the lab's settings,** `browser` (lab.md, 2.3): the
+  program's path, Chromium's path, digest and version, and the fonts
+  directory's path and tree digest. Validation refuses a Chromium or
+  fonts directory that differs from them, and the run checks them
+  again before it starts.
+- **Digested in the key** of an experiment that names the browser by
+  its templates (lab.md, 4.2): Chromium and the fonts directory in the
+  lab's `browser`, the program among its `programs`. An experiment that
+  names none keeps its key.
+- **The lab's copies:** `~/src/rust/tmp/lab/browser/`, holding the
+  program, built from skein (`cargo build --release -p
+  skein-lab-browser`) and copied there, and `fonts/`, made by
+  `scripts/lab/look/fonts` from fonts-dejavu-core's directory: the
+  regular, bold and oblique faces of DejaVu Sans, Sans Mono and Serif
+  it holds, the three regular ones required, and the runner's
+  `look/aliases.conf` (the generic families and the browser's defaults,
+  such as Arial, Helvetica, Times New Roman, Georgia and Courier New,
+  to the three), each file `0400`, the directory `0500`. It prints its
+  `fonts` member for the settings. Chromium is the one the lab names,
+  by path; the machine's packaged browser is never used.
+- **By hand, for now:** until the look experiment (qa-web.md, section
+  5) runs it as its collection, the capture runs on demand, with the
+  same paths. It runs in no gate, and its shots are evidence, never
+  goldens.
 
 ## 8. Open questions
 

@@ -98,7 +98,7 @@ What is still open is in section 11.
 | verdict | the evidence judged by the policy (section 8) | `.../verdict.json`, derived |
 | finding | a failure with a signature, and its history (section 9) | `findings/<id>.jsonl`; `findings/index.json`, derived |
 | campaign | the runs of one campaign, and its note | `campaigns/<name>.jsonl`, `<name>.md` |
-| settings | the lab's own: the driver host, the triager, the cost classes | `settings.json` |
+| settings | the lab's own: the driver host, the triager, the cost classes, the browser | `settings.json` |
 
 ### 2.2 Canonical JSON and digests
 
@@ -170,7 +170,20 @@ named by its digest.
     (6.1) as JSON: its arguments, permission profile, disabled features,
     server and schema, with each run's own paths left as their template
     names;
-  - `cost`, the class's `name` and every value.
+  - `cost`, the class's `name` and every value;
+  - `browser`, only for an experiment that names the browser by its
+    templates (4.2): `chromium`, its `{"path", "sha256", "version"}`,
+    and `fonts`, the fonts directory's tree digest; the browser's
+    program is then among `programs`. An experiment that names none has
+    no `browser`, and its key is as it was.
+
+  The lab's settings name the browser in `browser`, `{"program",
+  "chromium", "fonts"}`: the program's absolute path, Chromium's
+  `{"path", "sha256", "version"}`, and the fonts directory's `{"path",
+  "tree"}` (lab-browser.md, section 7). Validation refuses a Chromium
+  file or a fonts tree whose digest differs from the settings', and a
+  run checks them again before it starts, as it checks `programs`.
+  Settings without `browser` serve every experiment that names none.
 
   A runner whose checks change, a helper or a host updated, another
   model, a changed configuration or a changed value is a new key.
@@ -180,8 +193,10 @@ named by its digest.
   facts (host name, kernel, the user manager's version, processors and
   memory) go in each run's `about`.
 - **Programs are named by absolute path** after templating: an
-  artifact, a file of the experiment, or a system program. The first two
-  are in the key through their trees; the third is in `programs`.
+  artifact, a file of the experiment, a program of the runner's own
+  tree (`{runner}`, 4.2), or a system program. The first three are in
+  the key through their trees (the runner's by `runner`); the last is
+  in `programs`.
   The program's identity is known before the run: an executable's path
   uses no run-specific value or readiness capture. Its arguments may.
 
@@ -207,7 +222,8 @@ named by its digest.
 
 ```
 ~/src/rust/tmp/lab/                 the lab, 0700
-├── settings.json                   the driver host, the triager, the cost classes
+├── settings.json                   the driver host, the triager, the cost classes, the browser
+├── browser/                        the browser's program and fonts/ (lab-browser.md, 7)
 ├── lock                            held by every command that writes
 ├── canary                          a file no driver or triager may read (6.2)
 ├── store/experiments/<digest>/     immutable experiment trees
@@ -340,6 +356,8 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 | Name | Value | Known in |
 |---|---|---|
 | `{experiment}` | the experiment's tree in the store | everything |
+| `{runner}` | the runner's own directory, `scripts/lab/` as it runs, as `{runner}/look/capture` | everything |
+| `{browser.program}`, `{browser.chromium}`, `{browser.fonts}` | the settings' browser: the program, Chromium and the fonts directory, by path (2.3) | everything |
 | `{artifact.A}` | the subject's artifact A | everything |
 | `{source}` | the subject's source tree | everything |
 | `{run.id}`, `{run.seed}` | the run's id and seed, the seed in decimal | everything |
@@ -493,7 +511,8 @@ run:
   or without a source when `{source}` is used;
 - a cost class missing from the settings, or a value of it missing or
   not a positive integer; the driver's or the triager's settings missing
-  when needed;
+  when needed; the browser's missing when a template names it, or its
+  Chromium or fonts differing from them (2.3);
 - a seed that is not a canonical decimal string (2.2); a seed new to a
   key that already has three (section 8);
 - the lab: not private, its lock held, the disk below its floor, no
@@ -1087,9 +1106,12 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   functions apart from the code that spawns, signals and reads files
   (10.4), held to vectors the port is held to as well (10.3).
 - **In `scripts/lab/`,** outside skein's workspace and its builds:
-  `lab`, the command; `runner/`, its package (10.4); `preamble/`, the
-  driver's and the triager's preambles; `schemas/`, the report's and the
-  triage's; `tests/`, its tests and their support (10.3).
+  `lab`, the command; `runner/`, its package (10.4); `look/`, the
+  look's capture, its command `look/capture`, its fonts' maker
+  `look/fonts` and their package (lab-browser.md, 5 and 7);
+  `preamble/`, the driver's and the triager's preambles; `schemas/`,
+  the report's and the triage's; `tests/`, its tests and their support
+  (10.3). The capture runs as `lab` does, isolated.
 - **Isolated:** `lab` runs its interpreter with `-I` (no user site, no
   environment variable, not the current directory) and `-B` (no
   bytecode written), and puts its own directory first on its path; so
@@ -1163,7 +1185,10 @@ root:
     reopening (section 9);
   - the host's events read as actions, turns and usage, unknown kept
     null (6.5); the report held to its schema (6.4);
-  - each pure module's imports (10.4).
+  - each pure module's imports (10.4);
+  - the capture's decisions (lab-browser.md, section 6): the scene file
+    and its refusals, the outline, the style rule, PNG, the difference
+    image and the PSNR, the record's form.
 - **Its vectors are files:** canonical bytes, digests, draws, start
   orders and verdicts, as JSON in `tests/unit/vectors/`, so that the lab
   application's code is held to the same.
@@ -1187,7 +1212,10 @@ root:
     failure when the profile is weakened;
   - three seeds of the parity stand-in giving flaky, and three passes
     giving pass; a planted fault's finding through its whole life;
-    pruning's refusals.
+    pruning's refusals;
+  - the capture on real Chromium (lab-browser.md, section 6), which
+    needs the built browser program and Chromium, and fails, never
+    skips, without them.
 - **Wiring** the two commands into the gate and the after-landing lane
   is the kit's, by its owner, not the runner's.
 
@@ -1213,10 +1241,25 @@ host's carry out.
 | `tool` | the MCP server, over stdio (6.3) | host |
 | `cli` | the commands, their arguments and exit statuses (10.2) | host |
 
+The look's capture is a package of its own, `look/`, of the same two
+kinds (lab-browser.md, sections 4 and 5):
+
+| Module | Holds | Kind |
+|---|---|---|
+| `scene` | `look-scene/1` read and its refusals (4) | pure |
+| `outline` | the outline from a tree, the structure's difference (5.3) | pure |
+| `style` | the properties, the default rule, `style.md` (5.3) | pure |
+| `png` | PNG read and written, as pixel rows | pure |
+| `picture` | the side by side, the content, the difference image and the PSNR (5.3) | pure |
+| `record` | `capture.json`'s shape (5.2) | pure |
+| `capture` | the program under bubblewrap, its calls, the files, the run (5.1) | host |
+| `fonts` | the lab's fonts directory made (7) | host |
+
 - **A pure module** imports, of the standard library, `json`,
   `hashlib`, `re`, `dataclasses`, `enum` and `typing`, and other pure
   modules; no `os`, `subprocess`, `signal`, `time`, `random`, `socket`
-  or `selectors`, and it opens no file. Time, draws, files' bytes,
+  or `selectors`, and it opens no file; the look's add `difflib`,
+  `math`, `struct` and `zlib`. Time, draws, files' bytes,
   machine facts and processes' ends are its inputs; records, requests
   and refusals are its outputs.
 - **The life's requests are the host's whole vocabulary:** make a tree's
