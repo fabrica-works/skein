@@ -226,7 +226,9 @@ bytes.
   `ready`, a part awaited, by role and name. `mockup` is null for a page
   no mockup draws, which is captured alone; `page` is never null.
 - **A path** starts with `/` but not `//`, and holds printable ASCII
-  without spaces: a path on the side's origin, and its query.
+  without spaces: a path on the side's origin, and its query. The
+  origin serves the file the path names, its query left to the page's
+  script.
 - **A finder** is `{"role", "name", "match"}`, `match` being `exact` or
   `words` (section 3's `find`), or, on the mockup's side of a region
   alone, `{"selector"}`, CSS, where the mockup's part has no role of its
@@ -235,7 +237,8 @@ bytes.
   matches several takes the first in document order, and the record
   counts the rest.
 - **`regions`:** pairs of a part found on each side, each named. With
-  no mockup, a region's `mockup` is null.
+  no mockup, a region's `mockup` is null. `page` is no region's name:
+  its crop would be the viewport's shot (5.2).
 - **`names`:** the words the structure shows (5.3): the frame's and the
   controls', never content. Each nonempty, none repeated.
 - **`expectations` and `departures`:** lists, the look's checks'
@@ -247,7 +250,7 @@ bytes.
   both a role and a selector or neither, a selector on the page's side
   or in a readiness, another `match`, a path or a size out of its rule,
   a region's mockup finder in a scene without a mockup, or none in one
-  with.
+  with, a region named `page`.
 
 ## 5. The capture
 
@@ -266,6 +269,8 @@ scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
 - **The program in a namespace of its own,** under bubblewrap (`bwrap`,
   found as the runner finds it, on the default path, and among the
   key's `programs`, lab.md 2.3):
+  - a process namespace of its own (`--unshare-pid`), so that every
+    process the program starts, Chromium's among them, ends with it;
   - a network namespace of its own (`--unshare-net`), whose loopback
     holds only the program's origins and proxy, so that a page reaches
     no other listener of the machine (2.4);
@@ -275,7 +280,9 @@ scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
   - its environment `PATH=/usr/bin:/bin` alone, and its end bound to
     the capture's (`--die-with-parent`).
 
-  Its scratch is a temporary directory the capture removes at its end;
+  Its scratch is a temporary directory the capture removes at its end,
+  once the program has ended (on a failure, its input closed, and
+  killed past its deadline); one it cannot remove fails the capture;
   its `--out` is the capture's; its standard error is kept as
   `browser.log` in `--out`. Its ready line gives the browser's version,
   which the record keeps.
@@ -294,8 +301,9 @@ scripts/lab/look/capture --browser PROGRAM --chromium PATH --fonts DIR
   or whose call is refused (a shot past the program's limit, say) is
   recorded so, with the refusal, and the rest goes on.
 - **Each answer is awaited** within `--ready-seconds` and 30 seconds
-  more. Past that, at an answer it cannot read, or at the program's
-  end, the program has failed.
+  more. Past that, at an answer it cannot read, at the program's end,
+  or at a refused `serve`, `open` or `close` (with no origin or page,
+  nothing after it can be read), the program has failed.
 - **Exits** 0 once every scene is recorded, whatever it shows; 2 on a
   refusal (an argument, a scene, an `--out` that exists), before the
   program starts; 1 when the program fails, with its standard error's
