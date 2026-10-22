@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>QA mockup</title>
+<style>
+html,body{margin:0;background:#fff;font-family:"DejaVu Sans";font-size:12px}
+header,nav,main,section{display:block} header{height:20px}nav{height:20px}
+.tile{display:block;width:8px;height:8px;background:rgb(255,0,0)}
+#size{width:4px;height:4px}#unknown{width:8px;height:8px;background:#111}
+#contents{font-size:12px}#boxless{display:contents}#hidden{display:none}
+</style>
+<header aria-label="Frame"><nav><a href="#">Home</a></nav></header>
+<main aria-label="Workspace"><h2>Private heading</h2><ul><li>Secret alpha</li><li>Secret beta</li></ul>
+<div class="tile" role="img" aria-label="Equal"></div>
+<div class="tile" role="img" aria-label="Color"></div>
+<div class="tile" id="size" role="img" aria-label="Resize"></div>
+<div id="unknown" aria-hidden="true"></div>
+<section id="contents" aria-label="Contents"><p>Private mock text</p></section>
+<button>Send</button><button>Send</button><button role="switch" aria-label="Missing">off</button>
+<div id="boxless"><span>Boxless text</span></div><div id="hidden">Hidden text</div>
+</main></html>
