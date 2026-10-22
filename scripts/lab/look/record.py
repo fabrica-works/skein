@@ -80,8 +80,12 @@ def _part(value, member):
         _answer_file(value["shot"], member + ".shot")
 
 
-def _side(value, member):
-    _shape(value, "address ready trouble tree outline shot", member)
+def _side(value, member, page=False):
+    live = page and type(value) is dict and "focus" in value
+    _shape(value, "address ready trouble tree outline shot" + (" focus" if live else ""), member)
+    if live and value["focus"] is not None:
+        _shape(value["focus"], "role name", member + ".focus")
+        _require(all(type(v) is str for v in value["focus"].values()), member + ".focus", "expected text")
     _require(type(value["address"]) is str, member + ".address", "expected address text")
     if not _refusal(value["ready"], member + ".ready"):
         _require(value["ready"] in ("met", "missed"), member + ".ready", "expected met or missed")
@@ -115,7 +119,7 @@ def check(value):
             _require(type(width["mobile"]) is bool, "width.mobile", "expected boolean")
             if width["mockup"] is not None:
                 _side(width["mockup"], "width.mockup")
-            _side(width["page"], "width.page")
+            _side(width["page"], "width.page", page=True)
             _maybe_file(width["structure"], "width.structure")
             _file(width["style"], "width.style")
             _maybe_file(width["pair"], "width.pair")

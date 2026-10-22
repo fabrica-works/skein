@@ -45,11 +45,17 @@ def read(data: bytes):
                 bad(member + ".match", "expected exact or words")
 
     def side(obj, member):
-        obj = shape(obj, ("path", "ready"), member)
-        path = obj.get("path")
-        if type(path) is not str or not re.fullmatch(r"/(?!/)[\x21-\x7e]*", path):
-            bad(member + ".path", "expected an origin path in printable ASCII without spaces")
+        live = member == "page" and type(obj) is dict and "live" in obj
+        obj = shape(obj, ("live", "ready", "focus") if live else ("path", "ready"), member)
+        key = "live" if live else "path"
+        path = obj.get(key)
+        if (type(path) is not str or not re.fullmatch(r"/(?!/)[\x21-\x7e]*", path)
+                or (live and "?" in path)):
+            bad(member + "." + key, "expected an origin path in printable ASCII without spaces"
+                + (" or query" if live else ""))
         finder(obj.get("ready"), member + ".ready")
+        if live and obj.get("focus") is not None:
+            finder(obj["focus"], member + ".focus")
 
     def array(obj, key, nonempty=False):
         items = obj.get(key)

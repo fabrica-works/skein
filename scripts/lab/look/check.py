@@ -28,6 +28,8 @@ def _match(value, captured):
             raise Refused(member, "capture viewport differs from scene")
         if (width["mockup"] is None) != (value["mockup"] is None):
             raise Refused(member, "capture mockup differs from scene")
+        if ("focus" in width["page"]) != ("live" in value["page"]):
+            raise Refused(member, "capture page kind differs from scene")
         if [r["name"] for r in width["regions"]] != [r["name"] for r in value["regions"]]:
             raise Refused(member, "capture regions differ from scene")
         if any((r["mockup"] is None) != (value["mockup"] is None) for r in width["regions"]):
@@ -50,15 +52,21 @@ def main(argv=None):
     try:
         parser = Arguments(description=__doc__, add_help=False)
         parser.add_argument("kind", choices=("structure", "style"))
-        parser.add_argument("--capture", required=True, type=Path)
+        parser.add_argument("--capture", required=True, type=Path, action="append")
         parser.add_argument("scenes", nargs="+", type=Path)
         args = parser.parse_args(argv)
-        capture = record.check(canon.loads((args.capture / "capture.json").read_bytes(), "look-capture/1"))
     except (OSError, ValueError, Refused, RecursionError) as error:
         undecided.append(str(error))
     else:
+        captures = []
+        for directory in args.capture:
+            try:
+                captured = record.check(canon.loads((directory / "capture.json").read_bytes(), "look-capture/1"))
+                captures.append((directory, captured))
+            except (OSError, ValueError, Refused, RecursionError) as error:
+                undecided.append(f"{directory}: {error}")
         seen = set()
-        for path in args.scenes:
+        for path in args.scenes if captures else []:
             try:
                 data = path.read_bytes()
                 value = scene.read(data)
@@ -69,10 +77,11 @@ def main(argv=None):
                 if name in seen:
                     raise Refused(str(path), "repeated scene name: " + name)
                 seen.add(name)
-                matches = [s for s in capture["scenes"] if s["name"] == name]
+                matches = [(directory, s) for directory, capture in captures
+                           for s in capture["scenes"] if s["name"] == name]
                 if len(matches) != 1:
-                    raise Refused(name, "expected scene once in capture")
-                captured = matches[0]
+                    raise Refused(name, "expected scene once in captures")
+                directory, captured = matches[0]
                 if _digest(data) != captured["scene"]:
                     raise Refused(str(path), "scene digest differs from capture")
                 _match(value, captured)
@@ -86,7 +95,7 @@ def main(argv=None):
                         texts = []
                         for side in ("mockup", "page"):
                             try:
-                                texts.append(_outline(args.capture, width[side]))
+                                texts.append(_outline(directory, width[side]))
                             except (OSError, ValueError, Refused) as error:
                                 undecided.append(f"{prefix}/{side}: {error}")
                                 texts.append(None)

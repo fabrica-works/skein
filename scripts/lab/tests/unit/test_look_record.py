@@ -64,3 +64,20 @@ class Record(unittest.TestCase):
         self.assertEqual(record.check(value), value)
         width["regions"][0]["page"] = dict(refused="gone", detail="node")
         self.assertEqual(record.check(value), value)
+
+    def test_live_focus_round_trip_and_refusals(self):
+        for focus in (None, dict(role='textbox', name='Message')):
+            value = sample()
+            value['scenes'][0]['widths'][0]['page']['focus'] = focus
+            self.assertEqual(record.check(canon.loads(canonical.record_bytes(value), 'look-capture/1')), value)
+        for focus in ({}, {'role': 'textbox'}, dict(role=1, name='Message'),
+                      dict(role='textbox', name=None), dict(role='textbox', name='Message', extra=1)):
+            with self.subTest(focus=focus), self.assertRaises(Refused):
+                value = sample()
+                value['scenes'][0]['widths'][0]['page']['focus'] = focus
+                record.check(value)
+        value = sample()
+        width = value['scenes'][0]['widths'][0]
+        width['mockup'] = dict(width['page'], focus=None)
+        with self.assertRaises(Refused):
+            record.check(value)

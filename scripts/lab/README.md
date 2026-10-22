@@ -201,6 +201,14 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/pro
 `SKEIN_LAB_BROWSER`, `SKEIN_TEST_CHROMIUM` and `SKEIN_TEST_FONTS` (Debian
 DejaVu by default); missing prerequisites fail.
 
+`look/capture` accepts `--live ADDRESS --live-out DIR` in place of `--page DIR`
+for scenes whose page has `live`, `ready` and `focus`. It reads the hand's page
+in place at each scene width, copies and verifies its shots, records its focus
+and trouble, and gives back the hand's viewport after each scene or a failure.
+The mockup runs in its own bubblewrap namespace. `look/check structure|style`
+accepts repeated `--capture DIR` arguments: each scene must occur in exactly
+one record, and structure checks a live scene's focus finder as `focus/page`.
+
 Missing or denied systemd/bubblewrap capabilities produce an explicit
 process-tier skip/refusal. They prove nothing about native containment. Unit
 stories use supplied times without sleeping; the AST boundary includes `life`

@@ -31,6 +31,7 @@ class Words(unittest.TestCase):
         for argv, expected in cases:
             with self.subTest(argv=argv):
                 self.assertEqual(words.call(argv), expected)
+                self.assertFalse(words.call(argv)['call'].startswith('look-'))
 
     def test_scopes_and_exact(self):
         self.assertEqual(words.call(['choose', 'select', 'Size', 'Large', '--in', 'main', '',

@@ -5,10 +5,13 @@ from pathlib import Path
 import selectors
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
+from hand import words
 from runner import canonical
 from runner.records import Refused
 from . import canon, outline, picture, png, record, scene, style
@@ -16,6 +19,72 @@ from . import canon, outline, picture, png, record, scene, style
 
 class ProgramFailure(Exception):
     pass
+
+
+class Hand:
+    """One canonical call per connection, within one answer deadline (8.2)."""
+    def __init__(self, endpoint, out, seconds):
+        self.endpoint, self.out, self.seconds = endpoint, out, seconds
+
+    def call(self, call, **members):
+        deadline = time.monotonic() + self.seconds
+
+        def remaining():
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise ProgramFailure("hand answer deadline passed")
+            return seconds
+
+        family = socket.AF_INET6 if self.endpoint[0] == "::1" else socket.AF_INET
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as connection:
+                connection.settimeout(remaining())
+                connection.connect(self.endpoint)
+                connection.settimeout(remaining())
+                connection.sendall(canonical.dumps({"call": call, **members}) + b"\n")
+                data = bytearray()
+                while b"\n" not in data:
+                    connection.settimeout(remaining())
+                    chunk = connection.recv(65536)
+                    if not chunk:
+                        raise ProgramFailure("hand closed before an answer")
+                    data.extend(chunk)
+                    if len(data) > 16 * 1024 * 1024:
+                        raise ProgramFailure("hand answer too long")
+                answer = canon.loads(bytes(data).split(b"\n", 1)[0], None)
+        except (OSError, Refused) as error:
+            raise ProgramFailure("hand " + call + ": " + str(error)) from error
+        if "refused" in answer:
+            if set(answer) != {"refused", "detail"} or any(type(v) is not str for v in answer.values()):
+                raise ProgramFailure("malformed hand refusal: " + repr(answer))
+            if call in ("look-viewport", "address", "trouble", "look-focus"):
+                raise ProgramFailure(call + ": " + answer["refused"] + ": " + answer["detail"])
+        else:
+            result = {"look-viewport": "viewport", "address": "address", "look-await": "met",
+                      "look-tree": "tree", "look-find": "found", "look-style": "style",
+                      "look-shot": "shot", "look-focus": "focus", "trouble": "trouble"}[call]
+            if result not in answer and not (call == "look-await" and "missed" in answer):
+                raise ProgramFailure("unexpected answer to " + call + ": " + repr(answer))
+            try:
+                if call == "look-viewport":
+                    words.shape(answer, {"viewport": dict})
+                    words.shape(answer["viewport"], {"width": int, "height": int, "mobile": bool})
+                    if any(not 1 <= answer["viewport"][key] <= 4096 for key in ("width", "height")):
+                        raise words.Unreadable("invalid viewport size")
+                elif call == "address":
+                    words.shape(answer, {"address": str})
+                elif call == "look-focus":
+                    words.shape(answer, {"focus": type(None) if answer["focus"] is None else dict})
+                    if answer["focus"] is not None:
+                        words.shape(answer["focus"], {"role": str, "name": str})
+                elif call == "trouble":
+                    words.shape(answer, {"trouble": list, "more": int})
+                    words.nonnegative(answer["more"])
+                    for entry in answer["trouble"]:
+                        words.shape(entry, {"kind": str, "text": str, "address": str})
+            except words.Unreadable as error:
+                raise ProgramFailure("hand " + call + ": " + str(error)) from error
+        return answer
 
 
 class Program:
@@ -98,9 +167,24 @@ class Program:
 
 
 class Capture:
-    def __init__(self, program, out, ready_seconds, addresses):
+    def __init__(self, program, out, ready_seconds, addresses, hand=None):
         self.program, self.out = program, out
         self.ready_seconds, self.addresses = ready_seconds, addresses
+        self.hand, self.live_started = hand, False
+
+    def read(self, call, live=False, **members):
+        if live:
+            return self.hand.call("look-" + call, **members)
+        return self.program.call(call, page="p", **members)
+
+    def scene(self, value, digest):
+        try:
+            return {"name": value["name"], "scene": digest,
+                    "widths": [self.width(value, width) for width in value["widths"]]}
+        finally:
+            if self.live_started:
+                self.hand.call("look-viewport")
+                self.live_started = False
 
     def write(self, path, data):
         target = self.out / path
@@ -114,20 +198,26 @@ class Capture:
             return None
         return png.read((self.out / entry["path"]).read_bytes())
 
-    def shot(self, path, clip, scale):
-        answer = self.program.call("shot", page="p", clip=clip, scale=scale, file=path)
+    def shot(self, path, clip, scale, live=False):
+        answer = self.read("shot", live, clip=clip, scale=scale, file=path)
         if "refused" in answer:
             return answer
         result = answer["shot"]
-        entry = record.file(path, (self.out / path).read_bytes())
-        if (result["file"] != path or result["bytes"] != entry["bytes"]
+        expected = "look/" + path if live else path
+        if result["file"] != expected:
+            raise ProgramFailure("shot file differs from requested path: " + path)
+        data = ((self.hand.out / expected) if live else (self.out / path)).read_bytes()
+        entry = record.file(path, data)
+        if (result["bytes"] != entry["bytes"]
                 or result["sha256"] != entry["sha256"].removeprefix("sha256:")):
             raise ProgramFailure("shot metadata differs from its file: " + path)
+        if live:
+            self.write(path, data)
         return entry
 
-    def part(self, finder, path):
+    def part(self, finder, path, live=False):
         call = "select" if "selector" in finder else "find"
-        answer = self.program.call(call, page="p", **finder)
+        answer = self.read(call, live, **finder)
         if "refused" in answer:
             return answer, None
         if call == "select":
@@ -138,22 +228,33 @@ class Capture:
             more = max(0, len(found) - 1) + answer["more"]
         if node is None:
             return {"found": False}, None
-        answer = self.program.call("style", page="p", node=node, properties=style.PROPERTIES)
+        answer = self.read("style", live, node=node, properties=style.PROPERTIES)
         if "refused" in answer:
             return answer, node
         values = answer["style"]
-        shot = None if values["box"] is None else self.shot(path, values["box"], 2)
+        shot = None if values["box"] is None else self.shot(path, values["box"], 2, live)
         return {"found": True, "more": more, "box": values["box"], "values": values["values"],
                 "faces": values["faces"], "shot": shot}, node
 
     def side(self, scene, width, side, base):
-        self.program.call("open", page="p", **{key: width[key] for key in ("width", "height", "mobile")})
-        address = self.addresses[side] + scene[side]["path"]
-        ready = self.program.call("go", page="p", url=address)
-        if "refused" not in ready:
-            answer = self.program.call("await", page="p", seconds=self.ready_seconds, **scene[side]["ready"])
+        live = side == "page" and "live" in scene[side]
+        viewport = {key: width[key] for key in ("width", "height", "mobile")}
+        if live:
+            self.live_started = True
+            self.hand.call("look-viewport", **viewport)
+            address = self.hand.call("address")["address"]
+            answer = self.read("await", live, seconds=self.ready_seconds, **scene[side]["ready"])
             ready = answer if "refused" in answer else "met" if "met" in answer else "missed"
-        tree_answer = self.program.call("tree", page="p")
+            if urlsplit(address).path != scene[side]["live"]:
+                ready = "missed"
+        else:
+            self.program.call("open", page="p", **viewport)
+            address = self.addresses[side] + scene[side]["path"]
+            ready = self.program.call("go", page="p", url=address)
+            if "refused" not in ready:
+                answer = self.read("await", seconds=self.ready_seconds, **scene[side]["ready"])
+                ready = answer if "refused" in answer else "met" if "met" in answer else "missed"
+        tree_answer = self.read("tree", live)
         tree, text = None, None
         if "refused" in tree_answer:
             tree_file, outline_file = tree_answer, tree_answer
@@ -164,14 +265,24 @@ class Capture:
             outline_file = self.write(base + "/outline.txt", text.encode("utf-8"))
         parts, contents = [], []
         for region in scene["regions"]:
-            part, node = self.part(region[side], base + "/" + region["name"] + ".png")
+            part, node = self.part(region[side], base + "/" + region["name"] + ".png", live)
             parts.append(part)
             contents.append(picture.content(tree, node) if part.get("found") else None)
-        shot = self.shot(base + "/page.png", None, 1)
-        trouble = self.program.call("trouble", page="p")
-        self.program.call("close", page="p")
+        extra = {"focus": self.hand.call("look-focus")["focus"]} if live else {}
+        shot = self.shot(base + "/page.png", None, 1, live)
+        if live:
+            trouble = {"trouble": []}
+            while True:
+                answer = self.hand.call("trouble")
+                trouble["trouble"].extend({key: item[key] for key in ("kind", "text")} for item in answer["trouble"])
+                if answer["more"] == 0:
+                    break
+        else:
+            trouble = self.program.call("trouble", page="p")
+            self.program.call("close", page="p")
         return ({"address": address, "ready": ready, "tree": tree_file, "outline": outline_file,
-                 "shot": shot, "trouble": trouble if "refused" in trouble else trouble["trouble"]}, parts, contents, text)
+                 "shot": shot, "trouble": trouble if "refused" in trouble else trouble["trouble"],
+                 **extra}, parts, contents, text)
 
     def width(self, scene, width):
         base = scene["name"] + "/" + width["name"]
@@ -211,24 +322,38 @@ class Capture:
 
 def arguments(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    for option in ("browser", "chromium", "fonts", "page", "out"):
+    for option in ("browser", "chromium", "fonts", "out"):
         parser.add_argument("--" + option, required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--page", type=Path)
+    source.add_argument("--live")
+    parser.add_argument("--live-out", type=Path)
     parser.add_argument("--mockups", type=Path)
     parser.add_argument("--ready-seconds", required=True, type=int)
     parser.add_argument("scenes", nargs="+", type=Path)
     args = parser.parse_args(argv)
     errors, scenes, names = [], [], set()
-    for key in ("browser", "chromium", "fonts", "mockups", "page", "out"):
+    if args.live is not None:
+        try:
+            args.live = words.address(args.live)
+        except words.Usage as error:
+            errors.append("--live: " + str(error))
+        if args.live_out is None:
+            errors.append("--live-out: required with --live")
+    elif args.live_out is not None:
+        errors.append("--live-out: requires --live")
+    for key in ("browser", "chromium", "fonts", "mockups", "page", "live_out", "out"):
         path = getattr(args, key)
+        option = key.replace("_", "-")
         if path is None:
             continue
         if not path.is_absolute():
-            errors.append(f"--{key}: expected an absolute path")
+            errors.append(f"--{option}: expected an absolute path")
         elif key in ("browser", "chromium"):
             if not path.is_file() or not os.access(path, os.X_OK):
-                errors.append(f"--{key}: expected an executable file: {path}")
+                errors.append(f"--{option}: expected an executable file: {path}")
         elif key != "out" and not path.is_dir():
-            errors.append(f"--{key}: expected a directory: {path}")
+            errors.append(f"--{option}: expected a directory: {path}")
     if os.path.lexists(args.out):
         errors.append("--out: directory exists")
     if args.ready_seconds <= 0:
@@ -247,6 +372,8 @@ def arguments(argv):
             names.add(value["name"])
             if value["mockup"] is not None and args.mockups is None:
                 errors.append(str(path) + ": --mockups: required for this scene")
+            if ("live" in value["page"]) != (args.live is not None):
+                errors.append(str(path) + ": page: scene kind differs from --page or --live")
             scenes.append((value, record.file("scene.json", data)["sha256"]))
         except OSError as error:
             errors.append(str(path) + ": " + str(error))
@@ -304,9 +431,9 @@ def main(argv=None):
             for side, directory in (("mockup", args.mockups), ("page", args.page)):
                 if directory is not None:
                     addresses[side] = program.call("serve", origin=side, dir=str(directory))["served"]["address"]
-            capture = Capture(program, args.out, args.ready_seconds, addresses)
-            values = [{"name": s["name"], "scene": digest,
-                       "widths": [capture.width(s, width) for width in s["widths"]]} for s, digest in scenes]
+            hand = Hand(args.live, args.live_out, args.ready_seconds + 30) if args.live is not None else None
+            capture = Capture(program, args.out, args.ready_seconds, addresses, hand)
+            values = [capture.scene(s, digest) for s, digest in scenes]
             value = record.build(ready["ready"]["browser"], values)
             program.finish()
             capture.write("capture.json", canonical.record_bytes(value))

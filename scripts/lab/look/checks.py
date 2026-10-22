@@ -101,6 +101,16 @@ def _prefix(scene, width):
     return scene["name"] + "/" + width["name"]
 
 
+def focus_matches(finder, focus):
+    if focus is None or finder["role"] != focus["role"]:
+        return False
+    if not finder["name"]:
+        return True
+    if finder["match"] == "exact":
+        return finder["name"] == focus["name"]
+    return all(word in focus["name"].split() for word in finder["name"].split())
+
+
 def _parts(scene, width, undecided):
     captured = {region["name"]: region for region in width["regions"]}
     for region in scene["regions"]:
@@ -143,6 +153,10 @@ def _finish(scene, width, kind, differences, undecided):
 def structure(scene: dict, width: dict, mockup_text: str | None, page_text: str | None) -> Result:
     differences, undecided = [], []
     prefix = _prefix(scene, width)
+    finder = scene["page"].get("focus")
+    if finder is not None and not focus_matches(finder, width["page"]["focus"]):
+        differences.append(("focus/page", "page focus " + json.dumps(width["page"]["focus"], ensure_ascii=False)
+                            + ", expected " + json.dumps(finder, ensure_ascii=False), None))
     for side in ("mockup", "page"):
         captured = width[side]
         if captured is None:
