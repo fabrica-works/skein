@@ -438,3 +438,61 @@ fn setting_changing_and_clearing_a_placeholder_patch_its_attribute() {
         old = new;
     }
 }
+
+fn bound_node(builder: &mut Builder, field: bool, changed: bool) {
+    builder.open(if field { Role::TextField } else { Role::Text });
+    builder.name(if changed { b"new" } else { b"old" });
+    if field {
+        builder.value(if changed { b"new" } else { b"old" }, u64::from(changed));
+    } else {
+        builder.run(Run::Plain, if changed { b"new" } else { b"old" });
+    }
+}
+
+#[test]
+fn a_diff_reaches_four_patches_a_node_less_one() {
+    let limits = Limits { patches: 4 * LIMITS.nodes, ..LIMITS };
+    let mut old = Builder::new(&limits);
+    bound_node(&mut old, false, false);
+    for index in 1..limits.nodes {
+        bound_node(&mut old, index > limits.nodes / 2, false);
+        old.close();
+    }
+    old.close();
+    let mut new = Builder::new(&limits);
+    bound_node(&mut new, true, true);
+    for index in (1..limits.nodes).rev() {
+        bound_node(&mut new, index > limits.nodes / 2, true);
+        new.close();
+    }
+    new.close();
+    let mut patches = Queue::with_capacity(limits.patches);
+    let mut rows = Vec::new();
+    let mut old = old.finish();
+    let mut new = new.finish();
+    let mut next_id = 0;
+    crate::diff(&Tree::new(limits.nodes), &mut old, &limits, &mut next_id, &mut patches);
+    while let Some(patch) = patches.pop() {
+        apply(&mut rows, patch);
+    }
+    crate::diff(&old, &mut new, &limits, &mut next_id, &mut patches);
+    // Keys belong to items, runs to text, and values to fields. Below the root,
+    // matching therefore preserves the role of every node carrying runs or a value.
+    // Those pairs take at most two updates and a move; only the root takes all three updates.
+    assert_eq!(patches.len(), 3 * limits.nodes);
+    let mut counts = [0; 6];
+    while let Some(patch) = patches.pop() {
+        let kind = match &patch {
+            Patch::Insert { .. } => 0,
+            Patch::Remove { .. } => 1,
+            Patch::Move { .. } => 2,
+            Patch::Attribute { .. } => 3,
+            Patch::Text { .. } => 4,
+            Patch::Value { .. } => 5,
+        };
+        counts[kind] += 1;
+        apply(&mut rows, patch);
+    }
+    assert_eq!(counts, [0, 0, limits.nodes - 1, limits.nodes, limits.nodes / 2 + 1, limits.nodes / 2]);
+    equal(&rows, &new);
+}
