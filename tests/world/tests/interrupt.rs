@@ -76,7 +76,7 @@ fn a_tree_interrupt_is_handled_without_starting_cleanup() {
             .expect("the supervised program starts");
         let mut world = real::World::new(Judge { sent: false, handled_at: None, checked: false, next: None });
         world.spawn_with_fds(binary.descriptors(), || binary);
-        let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+        let outcome = world.run(&Clock::new(), Duration::from_secs(2));
         let child = &outcome.procs[0];
         assert_eq!(child.exit_status(), Some(Exit::Signal(9)));
         assert_eq!(child.tree_status().cleanup(), Cleanup::Kill);

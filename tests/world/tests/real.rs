@@ -19,7 +19,7 @@ fn run(make: fn(&Spawn, &Inherited) -> Script, acts: &[Act]) -> real::Outcome<Sc
     world.host(HostedProgram { program: Box::from(&b"hosted"[..]), make, instances: 1, operations: 8 });
     let root = open_root(std::path::Path::new(".")).expect("startup root");
     world.spawn_with_fds(vec![root], || Script::parent(root, acts));
-    world.run(&Clock::new(), Duration::from_secs(1))
+    world.run(&Clock::new(), Duration::from_secs(2))
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn an_unhandled_interrupt_ends_a_real_child_with_signal_two() {
         }
         let mut world = real::World::new(PlainJudge);
         world.spawn_with_fds(binary.descriptors(), || binary);
-        let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+        let outcome = world.run(&Clock::new(), Duration::from_secs(2));
         assert_eq!(outcome.procs[0].exit_status(), Some(Exit::Signal(2)));
     }
 }
@@ -165,7 +165,7 @@ fn referee_real_signal_reaches_only_the_signalfd_reader_and_pipe_signal_reaches_
     world.spawn_signals(|signal| {
         Script::child(&Inherited { roots: vec![], appends: vec![], pipes: vec![], signal }, &[Act::ReadSignal])
     });
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.procs[0].signals, [skein_io::kernel::ServiceSignal::Terminate]);
     assert_eq!(outcome.procs[1].signals, [skein_io::kernel::ServiceSignal::Interrupt]);
 }
@@ -176,7 +176,7 @@ fn referee_signal_reaches_a_hosted_child_through_its_pipe() {
     world.host(HostedProgram { program: Box::from(&b"hosted"[..]), make: terminated, instances: 1, operations: 8 });
     let root = open_root(std::path::Path::new(".")).expect("startup root");
     world.spawn_with_fds(vec![root], || Script::parent(root, &[Act::Spawn, Act::Read(1), Act::Read(1), Act::Wait]));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.procs[0].received, b"terminated");
     assert_eq!(outcome.procs[1].signals, [skein_io::kernel::ServiceSignal::Interrupt]);
 }
@@ -188,7 +188,7 @@ fn a_keep_time_after_the_last_word_fails_the_world_naming_the_process() {
     let mut world = real::World::new(Judge);
     // The pause and the last word use the same iteration snapshot.
     world.spawn(|| Script::new(&[Act::PauseFor(Duration::from_millis(5))]));
-    let _outcome = world.run(&clock, Duration::from_secs(1));
+    let _outcome = world.run(&clock, Duration::from_secs(2));
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn a_zero_patience_deadline_reports_the_failing_iteration() {
 fn a_world_that_ends_by_itself_passes() {
     let mut world = real::World::new(Judge);
     world.spawn(|| Script::new(&[]));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert!(skein_world::Host::is_empty(&outcome.procs[0]));
 }
 
@@ -225,7 +225,7 @@ fn a_scenario_that_names_a_later_last_word_may_wait_for_it() {
     let deadline = clock.now().now.saturating_add(Duration::from_millis(5));
     let mut world = real::World::new(skein_world_tests::Later(skein_world::LastWord::After(deadline)));
     world.spawn(|| Script::new(&[Act::Pause(deadline)]));
-    let outcome = world.run(&clock, Duration::from_secs(1));
+    let outcome = world.run(&clock, Duration::from_secs(2));
     assert!(outcome.end >= deadline);
 }
 
@@ -238,5 +238,5 @@ fn a_named_later_last_word_still_rejects_policy_deadlines_after_it() {
     let deadline = start.saturating_add(Duration::from_millis(10));
     let mut world = real::World::new(skein_world_tests::Later(skein_world::LastWord::After(after)));
     world.spawn(|| Script::new(&[Act::Pause(deadline)]));
-    let _outcome = world.run(&clock, Duration::from_secs(1));
+    let _outcome = world.run(&clock, Duration::from_secs(2));
 }

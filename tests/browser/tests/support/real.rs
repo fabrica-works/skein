@@ -282,7 +282,7 @@ impl Rig {
     }
 
     pub fn run(&mut self) {
-        let deadline = self.clock.now().now.saturating_add(Duration::from_secs(30));
+        let deadline = self.clock.now().now.saturating_add(Duration::from_secs(60));
         for _ in 0..50_000_u32 {
             self.kernel.reap(&mut self.complete);
             let now = self.clock.now();

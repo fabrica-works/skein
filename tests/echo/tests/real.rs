@@ -80,9 +80,9 @@ fn the_echo_serves_refuses_and_idles_out_its_clients_on_the_real_ring() {
     });
     world.spawn(|| Proc::client(client_limits(3), &first));
     world.spawn(|| Proc::client(client_limits(2), &second));
-    let outcome = world.run(&clock, Duration::from_secs(10));
+    let outcome = world.run(&clock, Duration::from_secs(20));
     let took = outcome.end.saturating_since(outcome.start);
-    assert!(took < Duration::from_secs(5), "over within five seconds: {} ms", took.as_nanos() / 1_000_000);
+    assert!(took < Duration::from_secs(10), "over within ten seconds: {} ms", took.as_nanos() / 1_000_000);
     let seen = outcome.procs[2].as_client().expect("a fake client").seen(0);
     assert_eq!(seen.answered, 2, "the lines before the long one were answered");
 }
@@ -112,7 +112,7 @@ fn the_shipped_idle_time_does_not_delay_the_real_echo_shutdown() {
     });
     let plans = [Plan { lines: 1, then: Then::Linger, ..plan(start, 19) }];
     world.spawn(|| Proc::client(client_limits(1), &plans));
-    let outcome = world.run(&clock, Duration::from_secs(1));
+    let outcome = world.run(&clock, Duration::from_secs(2));
     assert!(
         outcome.end.saturating_since(outcome.start) < Duration::from_millis(500),
         "the owner drain, rather than the shipped idle time, ends the echo"

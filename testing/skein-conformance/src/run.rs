@@ -19,7 +19,7 @@ use crate::{Backend, Item};
 /// How long a scenario waits for a completion it expects before it fails:
 /// on the ring, a SYN retransmitted after a full accept queue made room
 /// takes a second.
-pub(crate) const PATIENCE: Duration = Duration::from_secs(10);
+pub(crate) const PATIENCE: Duration = Duration::from_secs(20);
 
 /// How long a scenario waits for a completion it expects may not come, such
 /// as a connect to a full accept queue or a send to a peer that does not

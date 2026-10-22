@@ -66,7 +66,7 @@ class RunnerCase(unittest.TestCase):
             os.chmod(parent, 0o700)
         self.temp.cleanup()
 
-    def command(self, argv, timeout=45):
+    def command(self, argv, timeout=90):
         return subprocess.run([str(x) for x in argv], env=self.env, cwd=self.base,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
 

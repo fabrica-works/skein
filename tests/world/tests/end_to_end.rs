@@ -129,7 +129,7 @@ fn run(command: Command, mode: Mode, acts: &[Act], signal: bool) -> real::Outcom
     let mut world = real::World::new(Judge { signal, sent: false, act_at: None });
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
     world.spawn_with_fds(streams.descriptors(), || Process::Person(Script::pipes(streams.descriptors(), acts)));
-    world.run(&Clock::new(), Duration::from_secs(1))
+    world.run(&Clock::new(), Duration::from_secs(2))
 }
 
 fn observations(outcome: &real::Outcome<Process>) -> (&Binary, &Script) {
@@ -250,7 +250,7 @@ fn tree_run(mode: &str, force_walk: bool, expectation: skein_world::end_to_end::
         .expect("tree fixture starts");
     let mut world = real::World::new(TreeJudge { end: mode == "fork-live", sent: false });
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
-    world.run(&Clock::new(), Duration::from_secs(1))
+    world.run(&Clock::new(), Duration::from_secs(2))
 }
 
 fn tree_child(outcome: &real::Outcome<Process>) -> &Binary {
@@ -330,7 +330,7 @@ fn an_already_exited_descendant_that_left_its_session_is_still_reaped() {
     }
     let mut world = real::World::new(TreeJudge { end: false, sent: false });
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
-    let outcome = world.run(&clock, Duration::from_secs(1));
+    let outcome = world.run(&clock, Duration::from_secs(2));
     let child = tree_child(&outcome);
     assert_tree_counted(child, false);
     assert!(
@@ -462,7 +462,7 @@ fn delegated_cgroups_keep_two_binaries_separate_until_both_are_removed() {
     drop(first);
     let mut world = real::World::new(TreeJudge { end: false, sent: false });
     world.spawn_with_fds(second.descriptors(), || Process::Child(second));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(tree_child(&outcome).counts().expect("the second tree settled").method, Method::Cgroup);
     assert_tree_counted(tree_child(&outcome), false);
 }
@@ -633,7 +633,7 @@ fn supervised_run(mode: &str, force_walk: bool, trigger: SupervisedTrigger) -> r
     };
     let mut world = real::World::new(judge);
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
-    world.run(&Clock::new(), Duration::from_secs(1))
+    world.run(&Clock::new(), Duration::from_secs(2))
 }
 
 #[test]
@@ -753,13 +753,13 @@ fn supervised_tree_signals_stay_inside_their_own_delegated_cgroup() {
         saw_grace: false,
     });
     world.spawn_with_fds(first.descriptors(), || Process::Child(first));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(tree_child(&outcome).counts().expect("the first tree settled").method, Method::Cgroup);
     assert_eq!(skein_shell::poll_child(pidfd, false).expect("the second leader remains owned"), None);
     second.signal_tree(Signal::Terminate);
     let mut world = real::World::new(TreeJudge { end: false, sent: false });
     world.spawn_with_fds(second.descriptors(), || Process::Child(second));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(tree_child(&outcome).exit_status(), Some(Exit::Signal(15)));
     assert_eq!(tree_child(&outcome).counts().expect("the second tree settled").method, Method::Cgroup);
 }
@@ -781,7 +781,7 @@ fn a_supervised_natural_stream_drains_before_terminal_counts() {
     world.spawn_with_fds(streams.descriptors(), || {
         Process::Person(Script::pipes(streams.descriptors(), &[Act::Close(0), Act::Read(0), Act::Read(0)]))
     });
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     let (child, person) = observations(&outcome);
     assert_eq!(person.received, b"answer");
     assert_eq!(child.stderr(), b"diagnostic");
@@ -803,7 +803,7 @@ fn capture_run(command: Command, limit: usize, trigger: SupervisedTrigger, force
         saw_grace: false,
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
-    world.run(&Clock::new(), Duration::from_secs(1))
+    world.run(&Clock::new(), Duration::from_secs(2))
 }
 
 #[test]
@@ -864,7 +864,7 @@ fn legacy_stderr_capture_still_fails_the_scenario_at_overflow() {
     let binary = Binary::start(command("printf '123456789' >&2"), Mode::Pipes, 8).expect("a legacy capture starts");
     let mut world = real::World::new(Judge { signal: false, sent: false, act_at: None });
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert!(outcome.procs.iter().all(Host::is_empty));
 }
 

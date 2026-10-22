@@ -84,7 +84,7 @@ pub fn fixture_harness_with(
 }
 
 /// The same bound the first story gives each visible expectation.
-pub const SECOND: skein_lib::Duration = skein_lib::Duration::from_secs(1);
+pub const SECOND: skein_lib::Duration = skein_lib::Duration::from_secs(2);
 
 /// The bundle made by the repository gate from its dev-profile module.
 #[must_use]

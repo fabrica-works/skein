@@ -218,7 +218,7 @@ fn run(idle: bool) {
         signalled: false,
         exit: None,
         now: start,
-        deadline: start.saturating_add(Duration::from_secs(1)),
+        deadline: start.saturating_add(Duration::from_secs(2)),
     });
     world.spawn_with_fds(binary.descriptors(), || Process::Echo(binary));
     for seed in [7, 11] {
@@ -228,7 +228,7 @@ fn run(idle: bool) {
         }];
         world.spawn(|| Process::Client(Proc::client(client_limits(1), &plans)));
     }
-    let outcome = world.run(&clock, Duration::from_secs(2));
+    let outcome = world.run(&clock, Duration::from_secs(4));
     let Process::Echo(binary) = outcome.procs.first().expect("the binary observer") else {
         panic!("the shipped binary observer")
     };

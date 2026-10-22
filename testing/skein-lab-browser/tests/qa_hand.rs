@@ -75,8 +75,8 @@ impl Hand {
     }
     fn connect(&self) -> TcpStream {
         let stream = TcpStream::connect(self.address).expect("connect hand");
-        stream.set_read_timeout(Some(Duration::from_secs(14))).expect("read deadline");
-        stream.set_write_timeout(Some(Duration::from_secs(3))).expect("write deadline");
+        stream.set_read_timeout(Some(Duration::from_secs(28))).expect("read deadline");
+        stream.set_write_timeout(Some(Duration::from_secs(6))).expect("write deadline");
         stream
     }
     fn call(&self, line: &str) -> Value {

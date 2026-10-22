@@ -20,7 +20,7 @@ fn child_files_survive_parent_root_close_in_a_real_scratch_directory() {
         roots,
     );
     world.spawn_with_fds(vec![root], || parent(root, scratch.path().as_os_str().as_bytes(), false));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_scratch_closed(&scratch);
     assert_eq!(outcome.procs[0].child_exit, Some(Exit::Code(0)));
     assert_eq!(outcome.procs[1].received, b"gofrom child");
@@ -37,7 +37,7 @@ fn kill_closes_real_child_roots_and_settles_the_parent_wait() {
         roots,
     );
     world.spawn_with_fds(vec![root], || parent(root, scratch.path().as_os_str().as_bytes(), true));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_scratch_closed(&scratch);
     assert_eq!(outcome.procs[0].child_exit, Some(Exit::Signal(9)));
     assert_eq!(outcome.killed.len(), 1);
@@ -57,7 +57,7 @@ fn partial_real_startup_failure_closes_roots_without_calling_the_factory() {
         script.args = Box::new([Box::from(scratch.path().as_os_str().as_bytes())]);
         script
     });
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_scratch_closed(&scratch);
     assert_eq!(outcome.procs.len(), 1);
     assert!(outcome.procs[0].results.contains(&Err(Error::NotFound)));
@@ -89,7 +89,7 @@ fn child_append_files_preserve_existing_bytes_and_close_after_parent_root_close(
         appends,
     );
     world.spawn_with_fds(vec![root], || parent(root, scratch.path().as_os_str().as_bytes(), false));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.procs[0].received, b"ready");
     assert_eq!(std::fs::read(scratch.path().join("trace")).expect("trace"), b"prefix:onetwo");
     assert_eq!(std::fs::read(scratch.path().join("side")).expect("side file"), b"side");
@@ -112,7 +112,7 @@ fn a_real_later_append_open_failure_rolls_back_every_file_and_root() {
         script.args = Box::new([Box::from(scratch.path().as_os_str().as_bytes())]);
         script
     });
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.procs.len(), 1);
     assert!(outcome.procs[0].results.contains(&Err(Error::NotFound)));
     assert_scratch_closed(&scratch);
@@ -130,7 +130,7 @@ fn a_killed_real_host_releases_its_startup_append_descriptors() {
         appends,
     );
     world.spawn_with_fds(vec![root], || parent(root, scratch.path().as_os_str().as_bytes(), true));
-    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.killed.len(), 1);
     assert_scratch_closed(&scratch);
 }

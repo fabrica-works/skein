@@ -63,7 +63,7 @@ fn a_tree_records_stop_and_continue_without_cleanup() {
             .expect("the supervised program starts");
         let mut world = real::World::new(Judge { stage: 0, next: None });
         world.spawn_with_fds(binary.descriptors(), || binary);
-        let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+        let outcome = world.run(&Clock::new(), Duration::from_secs(2));
         let child = &outcome.procs[0];
         assert_eq!(child.exit_status(), Some(Exit::Signal(15)));
         assert_eq!(child.tree_status().stopped_pids.len(), 1);

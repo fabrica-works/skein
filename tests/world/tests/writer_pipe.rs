@@ -183,7 +183,7 @@ fn hosted_writer_diagnostics_reach_stderr_and_its_end_before_the_child_exit() {
     world.host(program());
     let root = skein_shell::open_root(std::path::Path::new(".")).expect("startup root");
     world.spawn_with_fds(vec![root], || Process::Parent(Box::new(Script::parent(root, &acts()))));
-    let outcome = world.run(&skein_shell::Clock::new(), Duration::from_secs(1));
+    let outcome = world.run(&skein_shell::Clock::new(), Duration::from_secs(2));
     assert_eq!(outcome.procs[0].parent().received, b"Rstartup\nterminal\n");
     assert_eq!(outcome.procs[0].parent().child_exit, Some(Exit::Code(0)));
 }

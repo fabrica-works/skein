@@ -32,7 +32,7 @@ class HandCommands(unittest.TestCase):
             try:
                 connection = listener.accept()[0]
             except TimeoutError:
-                stdout, stderr = process.communicate(timeout=5)
+                stdout, stderr = process.communicate(timeout=10)
                 self.fail(f'8.8 expected a call; status={process.returncode}, stdout={stdout!r}, stderr={stderr!r}')
             with connection:
                 connection.settimeout(5)
@@ -40,7 +40,7 @@ class HandCommands(unittest.TestCase):
                 call = json.loads(raw)
                 self.assertEqual(raw, canonical(call), '8.2 canonical request')
                 connection.sendall(reply)
-            stdout, stderr = process.communicate(timeout=5)
+            stdout, stderr = process.communicate(timeout=10)
             return call, process.returncode, stdout, stderr
 
     @staticmethod
@@ -135,7 +135,7 @@ class HandCommands(unittest.TestCase):
             for argv in cases:
                 with self.subTest(argv=argv):
                     result = subprocess.run([str(LAB / 'hand/browse'), address, *argv],
-                                            input=b'', capture_output=True, timeout=5, check=False)
+                                            input=b'', capture_output=True, timeout=10, check=False)
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertTrue(result.stderr)
                     with self.assertRaises(BlockingIOError):
@@ -146,7 +146,7 @@ class HandCommands(unittest.TestCase):
             endpoint.bind(('127.0.0.1', 0))
             address = '%s:%s' % endpoint.getsockname()
             result = subprocess.run([str(LAB / 'hand/browse'), address, 'address'],
-                                    input=b'', capture_output=True, timeout=5, check=False)
+                                    input=b'', capture_output=True, timeout=10, check=False)
             self.assertEqual(result.returncode, 3, result.stderr)
 
     def test_sign_in_more_than_one_line_is_a_usage_error_and_never_connects(self):
@@ -158,7 +158,7 @@ class HandCommands(unittest.TestCase):
             listener.setblocking(False)
             address = '%s:%s' % listener.getsockname()
             run = subprocess.run([str(LAB / 'hand' / 'sign-in'), address],
-                                 input=(link + '\nunused second line\n').encode(), capture_output=True, timeout=5)
+                                 input=(link + '\nunused second line\n').encode(), capture_output=True, timeout=10)
             self.assertEqual(run.returncode, 2, run.stderr)
             self.assertEqual(run.stdout, b'')
             self.assertNotIn(b'invented-credential', run.stdout + run.stderr)

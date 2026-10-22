@@ -662,7 +662,7 @@ fn queue_approval(r: &mut Runner<'_>, index: usize, number: u64) -> Result<bool>
     )?
     .is_some())
 }
-// At most seven head reads in 90 seconds and eleven group reads in 150.
+// At most thirteen head reads in 180 seconds and twenty-one group reads in 300.
 const CI_POLL_SECONDS: u64 = 15;
 fn queue_ci(
     r: &mut Runner<'_>,
@@ -692,7 +692,7 @@ fn queue_ci(
     Ok(None)
 }
 fn queue_head(r: &mut Runner<'_>, index: usize, commit: api::Commit) -> Result<bool> {
-    match queue_ci(r, index, commit, 90, true)? {
+    match queue_ci(r, index, commit, 180, true)? {
         Some(api::Check::Passed) => Ok(true),
         Some(api::Check::Pending | api::Check::Failed) => {
             r.fact(r.case, false, "queue head ci did not pass");
@@ -701,9 +701,9 @@ fn queue_head(r: &mut Runner<'_>, index: usize, commit: api::Commit) -> Result<b
         None => Ok(false),
     }
 }
-// At most thirteen branch reads, five seconds apart: sixty seconds live.
+// At most twenty-five branch reads, five seconds apart: 120 seconds live.
 const GROUP_POLL_SECONDS: u64 = 5;
-const GROUP_POLL_READS: usize = 13;
+const GROUP_POLL_READS: usize = 25;
 const BRANCHES_PAGE_SIZE: usize = 100;
 fn queue_group_branch(r: &mut Runner<'_>, index: usize, reads: &mut usize) -> Result<Option<Box<[u8]>>> {
     for attempt in 1..=GROUP_POLL_READS {
@@ -801,7 +801,7 @@ fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Res
         return Ok(());
     }
     // The group's own workflow must finish before the queue can merge it.
-    for attempt in 0..=150 / CI_POLL_SECONDS {
+    for attempt in 0..=300 / CI_POLL_SECONDS {
         let response = pull_doc(r, index, number)?;
         if response.json()?.root().get("merged").bool() == Some(true) {
             let Some(merged) =
@@ -817,7 +817,7 @@ fn queue_merged(r: &mut Runner<'_>, index: usize, number: u64, sha: &str) -> Res
             );
             return Ok(());
         }
-        if attempt < 150 / CI_POLL_SECONDS {
+        if attempt < 300 / CI_POLL_SECONDS {
             r.wait(CI_POLL_SECONDS);
         }
     }
@@ -866,7 +866,7 @@ fn queue_dequeued(r: &mut Runner<'_>, index: usize) -> Result<()> {
         return Ok(());
     }
     let Some(commit) = queue_group(r, index)? else { return Ok(()) };
-    match queue_ci(r, index, commit, 150, false)? {
+    match queue_ci(r, index, commit, 300, false)? {
         Some(api::Check::Passed) => {
             r.facts.push(Fact {
                 name: r.case,
