@@ -340,7 +340,11 @@ Its task file is whole, and holds:
   goes out: the names, files and behaviours they assume are there (a
   Codex survey may check a large task's);
 - the files it may touch;
-- done when: the tests that pass, and the gate;
+- done when: the tests that pass, and the gate, with what it checks
+  beyond the tests (the commit's trailers, the profiles it runs, the
+  figures it compares);
+- the security lines of `director.md` 10, verbatim: a brief's copy
+  doesn't reach an implementer that reads only its task;
 - on a doubt: stop, write the question in the owner's `inbox/`, and
   end. Never improvise across a boundary.
 
