@@ -13,7 +13,7 @@ from runner.canonical import record_bytes, tree_digest
 ROOT = Path(__file__).resolve().parents[4]
 LAB = ROOT / 'scripts/lab'
 FIXTURES = Path(__file__).parent / 'look'
-QA = Path('/home/free/src/rust/tmp/owners/qa-b-m2/qa')
+QA = Path('/home/free/src/rust/tmp/owners/qa-b-m3/qa')
 BROWSER = Path(os.environ.get('SKEIN_LAB_BROWSER', '/home/free/src/rust/tmp/lab/browser/skein-lab-browser'))
 CHROMIUM = Path(os.environ.get('SKEIN_TEST_CHROMIUM', '/home/free/.local/opt/chromium-147.0.7727.101/usr/lib/chromium/chromium'))
 FONTS = Path('/home/free/src/rust/tmp/lab/browser/fonts')

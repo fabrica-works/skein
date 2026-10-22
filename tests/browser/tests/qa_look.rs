@@ -340,3 +340,154 @@ fn exact_property_and_selector_input_limits_are_admitted() {
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|window| window == needle)
 }
+
+fn faces(world: &mut World) -> Vec<(String, bool, u32)> {
+    let event = answer(world, Look::Style { node: NODE, properties: properties(&[]) });
+    let Event::Looked { looked: Looked::Style { faces, .. }, .. } = event else { panic!("{event:?}") };
+    let mut faces: Vec<_> = faces
+        .iter()
+        .map(|face| (String::from_utf8(face.family.to_vec()).expect("font family is UTF-8"), face.custom, face.glyphs))
+        .collect();
+    faces.sort();
+    faces
+}
+
+#[test]
+fn faces_include_text_beneath_nested_elements_and_ignore_empty_elements() {
+    let mut world = opened(Limits::default());
+    world.children = r#"[
+      {"nodeId":8,"nodeType":3,"nodeValue":"Direct"},
+      {"nodeId":9,"nodeType":1,"children":[
+        {"nodeId":10,"nodeType":1,"children":[{"nodeId":11,"nodeType":3,"nodeValue":"Deep"}]},
+        {"nodeId":12,"nodeType":1,"children":[]}]},
+      {"nodeId":13,"nodeType":8,"nodeValue":"Comment"}]
+    "#
+    .into();
+    world.fonts.clear();
+    world.fonts.insert(8, r#"{"fonts":[{"familyName":"Direct face","isCustomFont":false,"glyphCount":6}]}"#.into());
+    world.fonts.insert(11, r#"{"fonts":[{"familyName":"Deep face","isCustomFont":true,"glyphCount":4}]}"#.into());
+    world.fonts.insert(12, r#"{"fonts":[{"familyName":"Unused","isCustomFont":false,"glyphCount":99}]}"#.into());
+    assert_eq!(faces(&mut world), vec![("Deep face".into(), true, 4), ("Direct face".into(), false, 6)]);
+}
+
+#[test]
+fn faces_without_text_have_no_used_fonts() {
+    let mut world = opened(Limits::default());
+    world.children = r#"[{"nodeId":8,"nodeType":1,"children":[]}]"#.into();
+    assert_eq!(faces(&mut world), vec![]);
+}
+
+#[test]
+fn faces_merge_the_same_family_and_custom_flag_across_text_nodes() {
+    let mut world = opened(Limits { entries: 1, ..Limits::default() });
+    world.children = r#"[{"nodeId":8,"nodeType":3,"nodeValue":"One"},
+                         {"nodeId":9,"nodeType":1,"children":[{"nodeId":10,"nodeType":3,"nodeValue":"Two"}]}]"#
+        .into();
+    world.fonts.clear();
+    for (node, glyphs) in [(8, 3), (10, 4)] {
+        world.fonts.insert(
+            node,
+            format!(r#"{{"fonts":[{{"familyName":"Shared","isCustomFont":true,"glyphCount":{glyphs}}}]}}"#),
+        );
+    }
+    assert_eq!(faces(&mut world), vec![("Shared".into(), true, 7)]);
+}
+
+#[test]
+fn faces_keep_web_and_platform_fonts_with_the_same_family_distinct() {
+    let mut world = opened(Limits::default());
+    world.fonts.insert(
+        8,
+        r#"{"fonts":[
+      {"familyName":"Shared","isCustomFont":true,"glyphCount":3},
+      {"familyName":"Shared","isCustomFont":false,"glyphCount":2}]}"#
+            .into(),
+    );
+    assert_eq!(faces(&mut world), vec![("Shared".into(), false, 2), ("Shared".into(), true, 3)]);
+}
+
+#[test]
+fn faces_limit_counts_distinct_faces_across_all_descendants() {
+    for (entries, accepted) in [(2, true), (1, false)] {
+        let mut world = opened(Limits { entries, ..Limits::default() });
+        world.children = r#"[{"nodeId":8,"nodeType":3,"nodeValue":"One"},
+                             {"nodeId":9,"nodeType":1,"children":[{"nodeId":10,"nodeType":3,"nodeValue":"Two"}]}]"#
+            .into();
+        world.fonts.clear();
+        for (node, family) in [(8, "One"), (10, "Two")] {
+            world.fonts.insert(
+                node,
+                format!(r#"{{"fonts":[{{"familyName":"{family}","isCustomFont":false,"glyphCount":3}}]}}"#),
+            );
+        }
+        let event = answer(&mut world, Look::Style { node: NODE, properties: properties(&[]) });
+        if accepted {
+            let Event::Looked { looked: Looked::Style { faces, .. }, .. } = event else { panic!("{event:?}") };
+            assert_eq!(faces.len(), 2);
+        } else {
+            assert!(matches!(event, Event::Refused { why: Refusal::Limit, .. }), "{event:?}");
+        }
+    }
+}
+
+#[test]
+fn faces_read_does_not_keep_the_previous_nodes_fonts() {
+    let mut world = opened(Limits::default());
+    assert_eq!(faces(&mut world).len(), 2);
+    world.children = "[]".into();
+    world.ask(Request::Look {
+        page: PAGE,
+        op: Token::new(42),
+        look: Look::Style { node: NODE, properties: properties(&[]) },
+    });
+    let event = world.above.pop().expect("second style terminal");
+    let Event::Looked { op, looked: Looked::Style { faces, .. } } = event else { panic!("{event:?}") };
+    assert_eq!(op, Token::new(42));
+    assert_eq!(faces.len(), 0);
+    assert!(world.above.pop().is_none());
+    world.assert_commands_settled();
+}
+
+#[test]
+fn faces_glyph_sum_past_u32_is_refused_instead_of_wrapping() {
+    let mut world = opened(Limits::default());
+    world.children = r#"[{"nodeId":8,"nodeType":3,"nodeValue":"One"},
+                         {"nodeId":9,"nodeType":3,"nodeValue":"Two"}]"#
+        .into();
+    for (node, glyphs) in [(8, u32::MAX), (9, 1)] {
+        world.fonts.insert(
+            node,
+            format!(r#"{{"fonts":[{{"familyName":"Shared","isCustomFont":false,"glyphCount":{glyphs}}}]}}"#),
+        );
+    }
+    let event = answer(&mut world, Look::Style { node: NODE, properties: properties(&[]) });
+    assert!(
+        matches!(event, Event::Refused { op: OP, .. }),
+        "overflow must not return a wrapped glyph count: {event:?}"
+    );
+}
+
+#[test]
+fn faces_pending_read_close_cancels_once_and_late_reply_adds_nothing() {
+    let mut world = opened(Limits::default());
+    world.fault(b"CSS.getPlatformFontsForNode", Fault::Delay);
+    world.ask(Request::Look { page: PAGE, op: OP, look: Look::Style { node: NODE, properties: properties(&[]) } });
+    assert!(world.above.pop().is_none());
+    world.ask(Request::Close { entity: PAGE });
+    let mut referee = Referee::new();
+    referee.look_op(OP, world.env.limits);
+    let mut refused = 0;
+    let mut closed = 0;
+    while let Some(event) = world.above.pop() {
+        referee.event(&event, 0);
+        match event {
+            Event::Refused { op: OP, .. } => refused += 1,
+            Event::Closed { owner: PAGE } => closed += 1,
+            other => panic!("close cancels style once: {other:?}"),
+        }
+    }
+    assert_eq!((refused, closed), (1, 1));
+    world.release_delayed();
+    assert!(world.above.pop().is_none());
+    world.assert_commands_settled();
+}
