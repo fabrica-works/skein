@@ -281,13 +281,18 @@ pub enum Looked {
     Viewport,
     Tree(List<Entry>),
     Selected(Option<Node>),
-    Style { values: List<(Box<[u8]>, Box<[u8]>)>, faces: List<Face>, rect: Option<Rect> },
+    Style { values: List<Property>, faces: List<Face>, rect: Option<Rect> },
     Shot(Box<[u8]>),                                     // PNG
 }
 pub struct Entry { node: Option<Node>, depth: u32, role: Box<[u8]>, name: Box<[u8]>, level: u32 }
+pub struct Property { name: Box<[u8]>, value: Box<[u8]> }       // a computed value, whole
 pub struct Face  { family: Box<[u8]>, custom: bool, glyphs: u32 }   // custom: a web font
 ```
 
+- **Refused at once,** before any command: a style naming more than
+  `Limits::properties` properties, or a property name or a selector
+  past `Limits::text`, is refused `Limit`; a viewport or a clip without
+  width or height, or a shot's scale other than 1 or 2, `Protocol`.
 - **For the lab's browser alone** (lab-browser.md), which captures a
   page's look beside its mockup. No test sends `Look`: each test crate's
   `clippy.toml` names `skein_browser::boundary::Look` among its
@@ -308,10 +313,13 @@ pub struct Face  { family: Box<[u8]>, custom: bool, glyphs: u32 }   // custom: a
   does (section 5): for a mockup's part that has no role of its own.
   Its answer is the node, or none.
 - **A style** reads a node's computed values for the properties named,
-  each whole, as the browser computes them (`16px`, `rgb(17, 17, 17)`),
-  refused `Limit` past `Limits::text`; the faces that drew the node's
+  in the order named, each whole, as the browser computes them (`16px`,
+  `rgb(17, 17, 17)`), refused `Limit` past `Limits::text`, and empty for
+  a property the browser does not compute; the faces that drew the node's
   own text, by family, whether a web font, and their glyphs; and its
-  border box in the document's CSS pixels. A find's boxes are content
+  border box in the document's CSS pixels, none for a node without a box
+  (one not displayed). Its faces past `Limits::entries` are refused
+  `Limit`. A find's boxes are content
   boxes in the viewport, as a press needs them; a style's is what a crop
   needs.
 - **A shot** is a PNG of the clip, in the document's CSS pixels, drawn
@@ -370,7 +378,8 @@ to the next command, never a closure waiting on a reply:
   until the navigation commits, as a go's does. A find in flight when the
   navigation begins starts again, and asks once it has committed. An
   attribute read waits and starts again the same way, so that it reads
-  one document from its root to its answer.
+  one document from its root to its answer, and so do the look's tree,
+  select and style; a look's viewport and shot do not wait.
 - **A press at a point reaches a shape of an inline SVG.** The hit test
   there lands on the shape, inside the node that holds it, and the mouse
   goes down on the shape; something over the shape covers it, as it would
@@ -499,7 +508,8 @@ allocator's high water against `worst_case`.
   whose media queries show the scheme and the motion it was given, by a
   part they name; a tree's depths and its headings' levels; a selector's
   node, and none; a styled part's computed values, its faces (a web font
-  served by the fixture, and a fallback) and its box; and a part's shot
+  served by the fixture, DejaVu Sans from the fonts' directory the
+  lab's browser's story names (lab-browser.md, 6), and a fallback) and its box; and a part's shot
   at scale 2, twice its box's size, far down the page. The keys a native date or time field takes, and
   their order, are the face's facts, checked with its others in this
   suite (ui-web.md, 14.1). A new Chromium version is a run of these,

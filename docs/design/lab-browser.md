@@ -303,7 +303,9 @@ by its path, size and digest (lab.md, 2.2). `<side>` is `mockup` or
 - **The program:** one story in skein's browser suite (browser.md,
   section 9): the built program, with the suite's Chromium
   (`SKEIN_TEST_CHROMIUM`) and a fonts' directory named as it is
-  (`SKEIN_TEST_FONTS`), a fixture directory served, a page
+  (`SKEIN_TEST_FONTS`, else Debian's `fonts-dejavu-core` directory,
+  `/usr/share/fonts/truetype/dejavu`; neither holding DejaVu fails the
+  suite at its start, naming both and the package), a fixture directory served, a page
   opened at the phone's size, a part awaited, its tree, a selector's
   node, a style, a clipped shot at scale 2, a page whose external
   stylesheet the proxy refuses (its `network` trouble, and the page

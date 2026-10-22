@@ -75,7 +75,8 @@ pub fn fonts() -> PathBuf {
     let directory = configured.as_ref().unwrap_or(&fallback);
     assert!(
         directory.join("DejaVuSans.ttf").is_file(),
-        "DejaVuSans.ttf is required: SKEIN_TEST_FONTS={configured:?}; fallback {}",
+        "the browser suite needs DejaVuSans.ttf in SKEIN_TEST_FONTS ({configured:?}) or, unset, in {} \
+         (Debian's fonts-dejavu-core)",
         fallback.display()
     );
     directory.clone()
