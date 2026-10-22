@@ -129,9 +129,17 @@ class SceneRefusals(LookCase):
                 self.assertFalse((out / 'browser.log').exists())
                 self.assertFalse((out / 'capture.json').exists())
 
-    def test_every_independent_problem_is_named(self):
+    def test_another_format_is_refused_for_that_alone(self):
         value = scene()
         value['format'] = 'look-scene/0'
+        value['name'] = 'BAD'
+        path = self.write_scene(value, 'other.json')
+        result = self.cli(self.capture_args([path]))
+        self.assertEqual(result.returncode, 2, result.stderr.decode(errors='replace'))
+        self.assertIn('format', result.stderr.decode(errors='replace'))
+
+    def test_every_independent_problem_is_named(self):
+        value = scene()
         value['name'] = 'BAD'
         value['widths'][0]['height'] = 0
         value['page']['path'] = '//remote.invalid/'
@@ -139,7 +147,7 @@ class SceneRefusals(LookCase):
         result = self.cli(self.capture_args([path]))
         self.assertEqual(result.returncode, 2, result.stderr.decode(errors='replace'))
         diagnostic = result.stderr.decode(errors='replace')
-        for member in ['format', 'name', 'height', 'path']:
+        for member in ['name', 'height', 'path']:
             with self.subTest(member=member):
                 self.assertIn(member, diagnostic, 'lab-browser.md, 4: every problem named with its member')
 

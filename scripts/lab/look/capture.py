@@ -76,7 +76,8 @@ class Program:
             raise ProgramFailure("program exit deadline passed") from error
         if status != 0:
             raise ProgramFailure("program exited " + str(status))
-        if not self.selector.select(0):
+        # A process of its namespace may still hold the output a moment.
+        if not self.selector.select(self.seconds):
             raise ProgramFailure("program left its output pipe open")
         if self.pending or os.read(self.child.stdout.fileno(), 1):
             raise ProgramFailure("unexpected program output after its final answer")
