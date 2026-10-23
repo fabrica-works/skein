@@ -6,7 +6,11 @@ mod dialogs;
 mod look;
 #[path = "real/scope.rs"]
 mod scope;
-use skein_fake_person_browser::origins as serve;
+use skein_fake_person_browser::{
+    BrowserFace, origins as serve,
+    person::{Doing, Face, Find, Found},
+};
+use skein_ui::{Act, Role};
 #[path = "../../src/pages.rs"]
 mod pages;
 
@@ -156,7 +160,7 @@ pub enum Scenario {
     Words,
     Figure,
     Facts,
-    Choose,
+    Choose { name: &'static [u8] },
     Select,
     Dates,
     Reduction,
@@ -180,7 +184,7 @@ impl Scenario {
             Scenario::Words => "/words",
             Scenario::Figure => "/figure",
             Scenario::Facts
-            | Scenario::Choose
+            | Scenario::Choose { .. }
             | Scenario::Select
             | Scenario::Dates
             | Scenario::Reduction
@@ -223,6 +227,8 @@ pub struct Rig {
     pub tree: Option<skein_lib::List<skein_browser::boundary::Entry>>,
     dialog: dialogs::State,
     scope: Option<u64>,
+    choice: Option<BrowserFace<'static>>,
+    pub choice_failure: Option<String>,
     form_node: u64,
     look: look::State,
 }
@@ -263,6 +269,8 @@ impl Rig {
             scenario,
             dialog: dialogs::State::new(scenario),
             scope: None,
+            choice: None,
+            choice_failure: None,
             form_node: 0,
             look: look::State::default(),
             context_ready: false,
@@ -479,7 +487,38 @@ impl Rig {
         browser::down(&mut self.browser, &self.browser_env, request, &mut self.events, &mut self.browser_down);
     }
 
+    fn choice_event(&mut self, event: &Event) {
+        let Scenario::Choose { name } = self.scenario else { unreachable!("choice scenario") };
+        let face = self.choice.as_mut().expect("choice face active");
+        face.event(event);
+        if self.stage == Stage::Finding {
+            match face.find(&Find::exactly_named(Role::Option, name)) {
+                Found::Pending => {}
+                Found::Absent => panic!("option {} absent", String::from_utf8_lossy(name)),
+                Found::Node(node) => {
+                    face.perform(Doing::Act { node, act: Act::Press }).expect("press option");
+                    self.stage = Stage::Typing;
+                }
+            }
+        }
+        let done = self.stage == Stage::Typing && !face.pending();
+        let requests: Vec<_> = face.requests().collect();
+        self.choice_failure = face.failure();
+        for request in requests {
+            self.ask(request);
+        }
+        if done {
+            self.choice = None;
+            self.stage = Stage::Capturing;
+            self.ask(Request::Snapshot { page: PAGE, op: SNAPSHOT });
+        }
+    }
+
     fn browser_event(&mut self, event: Event) {
+        if self.choice.is_some() {
+            self.choice_event(&event);
+            return;
+        }
         let event = if matches!(self.scenario, Scenario::Look) {
             match self.look_event(event) {
                 Ok(()) => return,
@@ -563,7 +602,11 @@ impl Rig {
                     Scenario::Dates => {
                         self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"Date", b"case-entry_date") });
                     }
-                    Scenario::Choose | Scenario::Select => {
+                    Scenario::Choose { .. } => {
+                        self.choice = Some(BrowserFace::new(PAGE, ""));
+                        self.choice_event(&event);
+                    }
+                    Scenario::Select => {
                         self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"combobox", b"Pick") });
                     }
                     Scenario::Button => {
@@ -645,10 +688,7 @@ impl Rig {
                     | Scenario::Attribute { .. } => {
                         unreachable!("dialog scenario handled above")
                     }
-                    Scenario::Choose => {
-                        self.stage = Stage::Pressing;
-                        self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::default() });
-                    }
+                    Scenario::Choose { .. } => unreachable!("choice handled by the face"),
                     Scenario::Select => {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Press { page: PAGE, op: PRESS, node, at: None });
@@ -729,21 +769,6 @@ impl Rig {
                 assert_eq!((self.stage, op), (Stage::Pressing, PRESS));
                 self.close_browser();
             }
-            Event::Done { op } if matches!(self.scenario, Scenario::Choose) => match self.stage {
-                Stage::Pressing => {
-                    self.stage = Stage::Keying;
-                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::ArrowDown, shift: false });
-                }
-                Stage::Keying => {
-                    self.stage = Stage::Typing;
-                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::Enter, shift: false });
-                }
-                Stage::Typing => {
-                    self.stage = Stage::Capturing;
-                    self.ask(Request::Snapshot { page: PAGE, op: SNAPSHOT });
-                }
-                _ => panic!("unexpected option action {op:?}"),
-            },
             Event::Done { op } => match self.stage {
                 Stage::Typing => {
                     assert_eq!(op, PRESS);
@@ -765,7 +790,7 @@ impl Rig {
                         | Scenario::Csp
                         | Scenario::Words
                         | Scenario::Facts
-                        | Scenario::Choose
+                        | Scenario::Choose { .. }
                         | Scenario::Select
                         | Scenario::Dates
                         | Scenario::Reduction

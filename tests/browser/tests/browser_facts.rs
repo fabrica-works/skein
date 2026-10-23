@@ -164,6 +164,7 @@ fn snapshot(scenario: Scenario) -> String {
     let mut rig = Rig::new(&chromium, &profile.0, scenario);
     rig.fixed_page(fixed_page());
     rig.run();
+    assert_eq!(rig.choice_failure, None, "the choice succeeds");
     String::from_utf8(rig.snapshot.into_vec()).expect("UTF-8 snapshot")
 }
 
@@ -194,9 +195,21 @@ fn chromium_computes_each_roles_accessible_role() {
 
 #[test]
 fn chromium_chooses_an_option_by_the_kits_keys() {
-    let snapshot = snapshot(Scenario::Choose);
+    let snapshot = snapshot(Scenario::Choose { name: b"Second" });
     let selected = snapshot.lines().find(|line| line.starts_with("combobox Pick "));
     assert_eq!(selected, Some("combobox Pick Second"), "snapshot:\n{snapshot}");
+}
+
+#[test]
+fn chromium_reports_both_labels_when_type_ahead_chooses_a_shared_prefix() {
+    let chromium = chromium();
+    let profile = Profile::fresh();
+    let mut rig = Rig::new(&chromium, &profile.0, Scenario::Choose { name: b"task" });
+    rig.fixed_page(br#"<!doctype html><html><body><select aria-label="Pick"><option>idea</option><option>tasks</option><option>task</option></select></body></html>"#.to_vec());
+    rig.run();
+    assert_eq!(rig.choice_failure.as_deref(), Some("type-ahead requested option 'task', but selected 'tasks'"));
+    let snapshot = String::from_utf8(rig.snapshot.into_vec()).expect("UTF-8 snapshot");
+    assert!(snapshot.lines().any(|line| line == "combobox Pick tasks"), "snapshot:\n{snapshot}");
 }
 
 #[test]

@@ -123,6 +123,13 @@ impl Backend for Simulated {
         self.sim.advance_to(until);
     }
 
+    fn wait_for_connection(&mut self, _process: Pid, _listener: Fd, bound: Duration) {
+        // Sim has no public listener queue probe. Connect enqueues the
+        // connection synchronously; advancing only time delivers its delayed
+        // completion while leaving the server's Accept undecided.
+        self.sleep(bound);
+    }
+
     fn assert_settled(&self, process: Pid) {
         self.sim.assert_quiescent(process);
         self.sim.assert_no_open_fds(process);

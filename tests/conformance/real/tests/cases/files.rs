@@ -126,6 +126,6 @@ fn a_directory_lock_is_busy_through_a_second_open_until_the_first_closes() {
 }
 
 #[test]
-fn a_no_replace_rename_refuses_a_taken_target_in_linux_order() {
+fn a_no_replace_rename_refuses_a_taken_target_in_system_order() {
     on(BACKEND, |backend| skein_conformance::no_replace(backend, PathLimits::HOST));
 }

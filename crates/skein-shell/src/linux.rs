@@ -85,6 +85,44 @@ pub(crate) fn bind(fd: Fd, addr: &Addr) -> Result<(), i32> {
     })
 }
 
+/// Waits up to `bound` for `POLLIN`, without consuming input or driving a
+/// `Kernel`. Returns false on timeout and an errno on descriptor or poll
+/// errors. Interrupted waits keep the same monotonic deadline.
+pub fn wait_readable(fd: Fd, bound: skein_lib::Duration) -> Result<bool, i32> {
+    if fd.raw() < 0 {
+        return Err(libc::EBADF);
+    }
+    let clock = crate::Clock::new();
+    let deadline = clock.now().now.saturating_add(bound);
+    loop {
+        let left = deadline.saturating_since(clock.now().now);
+        let millis = i32::try_from(left.as_nanos().div_ceil(1_000_000)).unwrap_or(i32::MAX);
+        let mut watched = libc::pollfd { fd: fd.raw(), events: libc::POLLIN, revents: 0 };
+        // SAFETY: watched is one initialized, exclusive pollfd, writable until
+        // poll returns. The call retains no pointer and takes no ownership of fd.
+        let result = unsafe { libc::poll(ptr::from_mut(&mut watched), 1, millis) };
+        if result < 0 {
+            let errno = last_errno();
+            if errno == libc::EINTR && clock.now().now < deadline {
+                continue;
+            }
+            return Err(errno);
+        }
+        if watched.revents & libc::POLLNVAL != 0 {
+            return Err(libc::EBADF);
+        }
+        if watched.revents & (libc::POLLERR | libc::POLLHUP) != 0 {
+            return Err(libc::EIO);
+        }
+        if watched.revents & libc::POLLIN != 0 {
+            return Ok(true);
+        }
+        if clock.now().now >= deadline {
+            return Ok(false);
+        }
+    }
+}
+
 pub(crate) fn listen(fd: Fd, backlog: u32) -> Result<(), i32> {
     let backlog = i32::try_from(backlog).unwrap_or(i32::MAX);
     retry(|| {

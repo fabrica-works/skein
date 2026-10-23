@@ -14,7 +14,8 @@ struct Choice {
     option: u64,
     selects: std::collections::VecDeque<u64>,
     select: Option<u64>,
-    keys: std::collections::VecDeque<Key>,
+    name: Box<[u8]>,
+    checking: bool,
 }
 
 struct Search {
@@ -388,7 +389,7 @@ impl<'a> BrowserFace<'a> {
                 if self.acting == Some(*op) {
                     self.acting = None;
                     self.input_next();
-                    self.choice_key();
+                    self.choice_check();
                 }
             }
             Event::Address { op, url } => {
@@ -485,7 +486,8 @@ impl<'a> BrowserFace<'a> {
                         option,
                         selects: std::collections::VecDeque::new(),
                         select: None,
-                        keys: std::collections::VecDeque::new(),
+                        name: seen.name.clone(),
+                        checking: false,
                     });
                     self.choice_query(b"combobox", None);
                     return Ok(());
@@ -552,15 +554,34 @@ impl<'a> BrowserFace<'a> {
             return;
         }
         let choice = self.choice.as_mut().expect("choice active");
+        if choice.checking {
+            let chosen = seen.iter().find(|node| node.states.selected);
+            let failure = match chosen {
+                Some(chosen) if chosen.node == choice.option => None,
+                Some(chosen) => Some(format!(
+                    "type-ahead requested option '{}', but selected '{}'",
+                    String::from_utf8_lossy(&choice.name),
+                    String::from_utf8_lossy(&chosen.name)
+                )),
+                None => Some(format!(
+                    "type-ahead requested option '{}', but no option was selected",
+                    String::from_utf8_lossy(&choice.name)
+                )),
+            };
+            self.choice = None;
+            self.acting = None;
+            if let Some(failure) = failure {
+                self.fail(failure);
+            }
+            return;
+        }
         if let Some(select) = choice.select {
-            if let Some(target) = seen.iter().position(|node| node.node == choice.option) {
-                let current = seen.iter().position(|node| node.states.selected).unwrap_or(0);
-                let key = if target < current { Key::ArrowUp } else { Key::ArrowDown };
-                choice.keys.extend(std::iter::repeat_n(key, target.abs_diff(current)));
-                choice.keys.push_back(Key::Enter);
+            if seen.iter().any(|node| node.node == choice.option) {
+                choice.checking = true;
+                let text = choice.name.clone();
                 let op = self.token();
                 self.acting = Some(op);
-                self.requests.push(Request::Press { page: self.page, op, node: select, at: None });
+                self.requests.push(Request::Keys { page: self.page, op, node: select, text });
                 return;
             }
         } else {
@@ -575,14 +596,11 @@ impl<'a> BrowserFace<'a> {
             self.fail("the option no longer belongs to a select".into());
         }
     }
-    fn choice_key(&mut self) {
-        let Some(choice) = self.choice.as_mut() else { return };
-        if let Some(key) = choice.keys.pop_front() {
-            let op = self.token();
-            self.acting = Some(op);
-            self.requests.push(Request::Key { page: self.page, op, key, shift: false });
-        } else {
-            self.choice = None;
+    fn choice_check(&mut self) {
+        let Some(choice) = self.choice.as_ref() else { return };
+        if choice.checking {
+            let select = choice.select.expect("typing into the option's select");
+            self.choice_query(b"option", Some(select));
         }
     }
 }

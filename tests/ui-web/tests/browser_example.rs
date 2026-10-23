@@ -1,5 +1,5 @@
 //! The reference shell starts the example under the strict browser policy.
-use skein_fake_person::{Find, Step};
+use skein_fake_person::{Find, Step, Target};
 use skein_fake_person_browser::{Outcome, Script, harness};
 use skein_ui::Role;
 use skein_ui_web_tests::{SECOND, example_harness};
@@ -181,12 +181,17 @@ fn a_person_chooses_a_label_by_its_option() {
         harness::Step::Person(Step::See { find: Find::text(b"Live"), within: SECOND }),
         harness::Step::Person(Step::Type {
             find: Find::exactly_named(Role::TextField, b"Title"),
-            words: b"A reference".as_slice().into(),
+            words: b"A source".as_slice().into(),
         }),
         harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Option, b"reference") }),
         harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
-        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"A reference"), within: SECOND }),
-        harness::Step::Person(Step::See { find: Find::text(b"reference"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"A source"), within: SECOND }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Link, b"A source") }),
+        harness::Step::Person(Step::See {
+            find: Find::text(b"reference")
+                .within(Box::new([Target::ExactRole { role: Role::Region, name: b"A source".as_slice().into() }])),
+            within: SECOND,
+        }),
     ]));
     assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
 }

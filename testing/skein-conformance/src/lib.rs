@@ -93,6 +93,11 @@ pub trait Backend {
     /// a process stays undecided.
     fn sleep(&mut self, span: Duration);
 
+    /// Waits for a connection in `listener`'s queue, with no process entering
+    /// the kernel and no connection consumed. Fails if none arrives within
+    /// `bound`. A simulator without a queue probe lets only virtual time pass.
+    fn wait_for_connection(&mut self, process: Self::Process, listener: Fd, bound: Duration);
+
     /// Fails unless `process` has nothing in flight, as the backend sees it.
     fn assert_settled(&self, process: Self::Process);
 

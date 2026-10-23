@@ -187,7 +187,7 @@ mod lines;
 mod peers;
 pub use lines::printed;
 pub(crate) use lines::{opening, restart, server_pipes, substitute};
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum ServerState {
     Running,
     Stopping,
@@ -237,6 +237,8 @@ struct Runtime {
     context: bool,
     opening: usize,
     opened: Vec<bool>,
+    // The last request asked of the browser, for a deadline's report.
+    asked: String,
     outcome: Option<Outcome>,
     capturing: u8,
     snapshot: String,
@@ -362,6 +364,7 @@ impl Runtime {
             context: false,
             opening: 0,
             opened: vec![false; people.len()],
+            asked: String::new(),
             outcome: None,
             capturing: 0,
             snapshot: String::new(),
@@ -370,6 +373,7 @@ impl Runtime {
         }
     }
     fn ask(&mut self, request: Request) {
+        self.asked = format!("{request:?}").chars().take(200).collect();
         browser::down(&mut self.browser, &self.benv, request, &mut self.events, &mut self.down);
     }
     fn read_server(&mut self, pipe: Token) {
@@ -377,6 +381,25 @@ impl Runtime {
             stream: pipe,
             down: stream::Down::Demand { read: stream::Read::Arrived { max: 32768 }, room: 0 },
         });
+    }
+    /// Where each person stood when the run's deadline passed.
+    fn stuck(&self, people: &[&mut dyn Play], faces: &[BrowserFace<'_>], done: &[bool], began: bool) -> String {
+        let each = people.iter().enumerate().map(|(index, play)| {
+            format!(
+                "\nperson {index}: step {}, opened {}, done {}, pending {}",
+                play.at(),
+                self.opened[index],
+                done[index],
+                faces.get(index).is_some_and(BrowserFace::pending)
+            )
+        });
+        format!(
+            "browser harness deadline passed: began {began}, ready {}, server {:?}, last request {}{}",
+            self.ready,
+            self.server_state,
+            self.asked,
+            each.collect::<String>()
+        )
     }
     fn fail(&mut self, person: usize, step: u32, report: String) {
         if !matches!(self.outcome, Some(Outcome::Failed { .. })) {
@@ -909,7 +932,7 @@ impl Runtime {
             }
             if time.now >= close_at {
                 let report = if started {
-                    "browser harness deadline passed".into()
+                    self.stuck(people, &faces, &done, began)
                 } else {
                     format!("lent peer startup deadline: {}", peers.waiting())
                 };

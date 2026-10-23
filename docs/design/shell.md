@@ -623,6 +623,12 @@ other module is safe Rust, the same on both systems.
   loop's thread makes both calls and every spawn, so no child starts
   between them. Addresses carry their length byte. `SIGPIPE` is blocked
   on the loop's thread, as on Linux.
+  A V6ONLY socket's bind to an IPv4-mapped address is `AddressNotAvailable`
+  (`bsd/netinet/tcp_usrreq.c:334-354`, `bsd/netinet6/in6_pcb.c:273-281`),
+  and its mapped connect is `InvalidArgument` (`tcp_usrreq.c:546-552`'s
+  `EAFNOSUPPORT`). Linux and the simulator assert `InvalidArgument` for
+  the bind and `Unreachable` for the connect; both systems keep families
+  separate.
 - **The wait** is a kqueue: `EVFILT_READ` and `EVFILT_WRITE` for a
   descriptor's sides, level-triggered, added and deleted as its waiters
   change (7.2). `EV_EOF` and `EV_ERROR` wake both sides, as epoll's
@@ -644,6 +650,17 @@ other module is safe Rust, the same on both systems.
 - **Files:** `pread`, `pwrite`, `write`, `ftruncate`, `fstat` (decoded by
   `darwin`), `renameatx_np` with `RENAME_EXCL` for a rename that never
   replaces and `renameat` otherwise, `unlinkat`, `mkdirat`, `flock`.
+  A no-replace rename to the identical name succeeds without changing
+  it on case-insensitive APFS (macOS conformance run 40003540284): XNU
+  `bsd/vfs/vfs_syscalls.c:9538-9564` admits the same vnode on those
+  volumes, and `9748-9753` returns success for the identical name.
+  Linux and the simulator refuse it with `Exists`; conformance keeps
+  the distinct-name hard-link refusal separate.
+  Component lookup is the volume's (`bsd/vfs/vfs_lookup.c:1518-1524,1552`).
+  APFS refuses a 300-byte component with `NameTooLong` before a removed
+  directory's missing entry or a creation's final-slash refusal
+  (`1766-1767`), as observed in that run. Linux and the simulator
+  assert `NotFound` and `IsADirectory`, respectively.
   `Sync` is `fcntl(F_FULLFSYNC)`, which reaches the disk as Linux's
   `fsync` does, where Darwin's `fsync` stops at the drive's cache.
 - **Listing a directory** keeps `readdir`'s positions: the backend holds
@@ -692,6 +709,16 @@ other module is safe Rust, the same on both systems.
   is `kill`, or `killpg` for the group the child leads; one after the
   reap answers `ESRCH`, as a pidfd's does, and never signals the number.
   A handle not in the table answers `EBADF`.
+  A stop posts `NOTE_SIGNAL`, which this `NOTE_EXIT` registration does
+  not request (`bsd/kern/kern_sig.c:2124-2125`,
+  `bsd/kern/kern_event.c:1213-1218`). `waitid` skips stopped children
+  without `WSTOPPED` (`bsd/kern/kern_exit.c:3270-3276`); a stop must
+  leave `Wait` pending. To distinguish run 40003540284's `ECHILD`,
+  Darwin reports diagnostic `Other(-10001)` for an already-reaped
+  table entry, `Other(-10002)` for `waitid`'s own `ECHILD`, and
+  `Other(-10003)` for a non-exit status, whose pid, code and status
+  also print to stderr. The source does not establish which path fired;
+  these diagnostics preserve the failure while identifying its source.
 - **Signals to the service:** startup sets the signals the service
   watches (`SIGINT`, `SIGTERM`, and `SIGWINCH` at a terminal) to be
   ignored, which Darwin still reports to a kqueue, and opens a kqueue with
@@ -742,11 +769,16 @@ other module is safe Rust, the same on both systems.
 - **A descriptor closed outside io leaves its waiters waiting.** The
   ring holds an in-flight operation's file, so the operation completes
   however its descriptor is closed; a readiness waiter holds only the
-  number, and a close removes it from kqueue without an event. io closes
-  a descriptor only once nothing is in flight on it (io.md, Settling;
-  kernel.md, 7); only an abandoned
-  observer's failure-path destructor (`abandon_binary`) closes outside
-  it, and its reads then wait until the kernel is dropped.
+  number, and a close removes it from kqueue or epoll without an event.
+  io closes a descriptor only once nothing is in flight on it (io.md,
+  Settling; kernel.md, 7). An abandoned binary observer follows that rule:
+  `Binary::abandon` queues cancels for its outstanding wait and stderr read;
+  its driver reaps the targets and the cancels before the observer settles
+  the tree and queues its closes. The host stays in the loop until empty
+  on every backend. Its emergency destructor kills the tree and closes
+  only quiescent descriptors; it leaves an outstanding record's descriptor
+  open, and its leader unreaped while a wait or signal remains outstanding.
+  A caller that needs full resource settlement must drive explicit abandonment.
 - **A `PathNoFollow` open needs the entry readable on macOS.** Linux's
   `O_PATH` asks nothing of the entry; Darwin's nearest, `O_EVTONLY`,
   still checks read access (XNU `vfs_syscalls.c`, `vfs_subr.c`), so an

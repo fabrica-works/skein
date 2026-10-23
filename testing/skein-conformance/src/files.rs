@@ -342,6 +342,10 @@ fn path_mode<B: Backend>(run: &mut Run<'_, B>, process: B::Process, root: Fd, pa
 pub struct NoReplace {
     pub limits: PathLimits,
     pub commits: [Result<Done, Error>; 2],
+    /// A no-replace rename onto its own name. No backend ever replaces another
+    /// entry; Linux refuses a rename onto its own name, and APFS takes it as a
+    /// no-op.
+    pub same_name: Result<Done, Error>,
     pub contents: [Result<Vec<u8>, Error>; 3],
     pub refusals: Vec<(Result<Done, Error>, Error)>,
     pub unreadable_mode: Result<u32, Error>,
@@ -376,13 +380,10 @@ pub fn no_replace<B: Backend>(backend: &mut B, limits: PathLimits) -> NoReplace 
         run.rename_absent(process, (root, b"second"), (root, b"target")),
     ];
     let long = too_long();
+    let same_name = run.rename_absent(process, (root, b"target"), (root, b"target"));
     let mut refusals = Vec::new();
-    // XNU bsd_vfs_vfs_syscalls.c:9538-9564 leaves same-vnode EXCL renames
-    // on case-insensitive volumes to the filesystem. Keep these exact rows:
-    // the APFS runner must show that identical names and hard links refuse.
     for (from_dir, from, to_dir, to, error) in [
-        (root, b"target".as_slice(), root, b"target".as_slice(), Error::Exists),
-        (root, b"second", root, b"alias", Error::Exists),
+        (root, b"second".as_slice(), root, b"alias".as_slice(), Error::Exists),
         (root, b"second", root, b"unreadable", Error::Exists),
         (root, b"second", root, b"dangling", Error::Exists),
         (root, b"second", root, b"dir", Error::Exists),
@@ -414,19 +415,27 @@ pub fn no_replace<B: Backend>(backend: &mut B, limits: PathLimits) -> NoReplace 
         run.close(process, fd);
     }
     run.finish();
-    NoReplace { limits, commits, contents, refusals, unreadable_mode, readable_mode, dangling }
+    NoReplace { limits, commits, same_name, contents, refusals, unreadable_mode, readable_mode, dangling }
 }
 
 impl Check for NoReplace {
     fn check(&self) {
         assert_eq!(self.commits, [NOTHING, Err(Error::Exists)], "one no-replace commit wins");
+        if self.limits.models_linux() {
+            assert_eq!(self.same_name, Err(Error::Exists), "Linux refuses a no-replace rename to the same name");
+        } else {
+            // XNU bsd_vfs_vfs_syscalls.c:9538-9564 admits same-vnode EXCL
+            // on case-insensitive volumes; 9748-9753 succeeds for identical
+            // names. APFS confirms the no-op in macOS run 40003540284.
+            assert_eq!(self.same_name, NOTHING, "APFS's no-replace rename to the same name does nothing");
+        }
         assert_eq!(
             self.contents,
             [file(b"winner"), file(b"loser"), Err(Error::NotFound)],
             "winner and losing source preserved"
         );
         for (index, (seen, error)) in self.refusals.iter().enumerate() {
-            assert_eq!(*seen, Err(*error), "no-replace refusal order, case {index}");
+            assert_eq!(*seen, Err(*error), "distinct-name no-replace refusal order, case {index}");
         }
         // XNU bsd_vfs_vfs_syscalls.c:4894-4900 and bsd_vfs_vfs_subr.c:8434-8438:
         // O_EVTONLY still authorizes READ_DATA on Darwin.
@@ -540,10 +549,10 @@ pub struct MakeDirectories {
     /// A `MakeDirectory`, `Create`, `Rename` out and `Remove` in the removed directory.
     pub in_removed: [Result<Done, Error>; 4],
     pub removed_listed: Result<Vec<(Vec<u8>, Kind)>, Error>,
-    /// Beneath the directory removed: an `Open` of a name too long, which it
-    /// does not hold however long; an `Open` to create a path ending in
-    /// `/`, refused for the `/` first.
+    /// Beneath the directory removed: an `Open` of a name too long,
+    /// refused in the system's lookup order.
     pub removed_long: Result<(), Error>,
+    /// A `Create` ending in `/`, refused with the system's slash error.
     pub removed_slash: Result<(), Error>,
 }
 
@@ -621,8 +630,14 @@ impl Check for MakeDirectories {
             // The empty list is APFS's, observed on the macOS runner (run 39997549771).
             assert_eq!(self.removed_listed, Ok(Vec::new()), "APFS's List of a removed directory, observed");
         }
-        let empty = "the contract: a directory removed holds no name, however long";
-        assert_eq!(self.removed_long, Err(Error::NotFound), "{empty}");
+        if self.limits.models_linux() {
+            assert_eq!(self.removed_long, Err(Error::NotFound), "Linux looks up the removed directory first");
+        } else {
+            // XNU bsd_vfs_vfs_lookup.c:1552 delegates component lookup to
+            // the volume. APFS refuses the long name before the removed
+            // directory's missing entry (macOS run 40003540284).
+            assert_eq!(self.removed_long, Err(Error::NameTooLong), "APFS checks the component length first");
+        }
         let slash = "the contract: Create of a path ending in `/` is refused for it first";
         assert_eq!(self.removed_slash, Err(self.limits.create_slash_error()), "{slash}");
     }
@@ -833,6 +848,10 @@ fn escape_cases(limits: PathLimits) -> Vec<(Vec<u8>, OpenHow, Outcome)> {
     assert_eq!(first_too_long.len(), limits.path, "the first refused path reaches the system's limit");
     let extra_link = limits.links.checked_add(1).expect("room for one more link");
     let slashed = [far_too_long().as_slice(), b"/"].concat();
+    // XNU bsd_vfs_vfs_lookup.c:1518-1524,1552 delegates the component to
+    // the volume before lookup_validate_creation_path's slash refusal
+    // (1766-1767). APFS returns ENAMETOOLONG (macOS run 40003540284).
+    let long_slash_error = if limits.models_linux() { Error::IsADirectory } else { Error::NameTooLong };
     vec![
         (b"..".to_vec(), OpenHow::Read, refused(Error::Escape)),
         (b"../a.txt".to_vec(), OpenHow::Read, refused(Error::Escape)),
@@ -878,7 +897,7 @@ fn escape_cases(limits: PathLimits) -> Vec<(Vec<u8>, OpenHow, Outcome)> {
         (longest_name, OpenHow::Create { mode: None }, Outcome::Opened),
         (longest_path, OpenHow::Read, a()),
         (first_too_long, OpenHow::Read, refused(Error::NameTooLong)),
-        (slashed, OpenHow::Create { mode: None }, refused(limits.create_slash_error())),
+        (slashed, OpenHow::Create { mode: None }, refused(long_slash_error)),
         // `..` steps from where a link led, not back along the path.
         (b"deep/../x".to_vec(), OpenHow::Read, Outcome::File(b"x".to_vec())),
         (b"deep/../../a.txt".to_vec(), OpenHow::Read, a()),

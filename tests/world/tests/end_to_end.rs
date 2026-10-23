@@ -1,6 +1,6 @@
 //! Binary startup and outside observations over the world's shared ring.
 
-use skein_io::kernel::{Complete, Exit, Signal, Submit};
+use skein_io::kernel::{Complete, Exit, Op, Signal, Submit};
 use skein_lib::{Duration, Queue, Time, Wall};
 use skein_shell::Clock;
 use skein_world::end_to_end::{Binary, Command, Containment, Mode, StartError};
@@ -426,6 +426,19 @@ fn a_measured_binary_is_killed_and_counted() {
 
 #[test]
 fn a_dropped_observer_ends_its_tree() {
+    for cancels_first in [true, false] {
+        abandoned_observer(None, cancels_first);
+    }
+}
+
+#[test]
+fn an_abandoned_observer_drains_on_readiness() {
+    for cancels_first in [true, false] {
+        abandoned_observer(Some(skein_shell::Backend::Readiness), cancels_first);
+    }
+}
+
+fn abandoned_observer(backend: Option<skein_shell::Backend>, cancels_first: bool) {
     use skein_shell::{Config, Kernel, Wait};
     for containment in ALL {
         let mut child = Binary::start_contained(
@@ -436,7 +449,12 @@ fn a_dropped_observer_ends_its_tree() {
             containment,
         )
         .expect("the fixture starts");
-        let mut kernel = Kernel::open(Config { operations: child.operations() }).expect("a real ring");
+        let config = Config { operations: child.operations() };
+        let mut kernel = match backend {
+            Some(backend) => Kernel::open_on(config, backend),
+            None => Kernel::open(config),
+        }
+        .expect("a real kernel");
         let clock = Clock::new();
         let until = clock.now().now.saturating_add(Duration::from_secs(2));
         while ready_descendant(child.stderr()).is_none() {
@@ -448,27 +466,153 @@ fn a_dropped_observer_ends_its_tree() {
         }
         let pid = descendant(child.stderr());
         let descriptors = child.descriptors();
+        assert!(kernel.in_flight() > 0, "abandonment interrupts observation");
+        child.abandon();
+        let cancels = child.submissions().len();
+        assert_eq!(cancels, 2, "the pending wait and stderr read each get a cancel");
+        child.abandon();
+        assert_eq!(child.submissions().len(), cancels, "repeated abandonment adds no cancels");
+        assert!(!child.is_empty(), "abandonment waits for its completions");
+        for fd in &descriptors {
+            assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_ok(), "pending descriptors stay open");
+        }
+        kernel.submit(child.submissions(), Wait::No);
+        let mut completed = Queue::with_capacity(child.operations());
+        while kernel.in_flight() > 0 {
+            kernel.reap(&mut completed);
+            if kernel.in_flight() > 0 {
+                kernel.submit(&mut Queue::with_capacity(0), Wait::Until(until));
+            }
+            assert!(clock.now().now < until, "the killed tree completes its interrupted operations");
+        }
+        let mut held = Queue::with_capacity(child.operations());
+        while let Some(complete) = completed.pop() {
+            if matches!(complete.kind, Op::Cancel { .. }) == cancels_first {
+                child.completions().push(complete);
+            } else {
+                held.push(complete);
+            }
+        }
+        let now = clock.now();
+        child.iterate(now.now, now.wall);
+        assert!(child.submissions().is_empty(), "neither target nor cancel answers alone permit closure");
+        assert!(!child.is_empty(), "the other answers still belong to the observer");
+        for fd in &descriptors {
+            assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_ok(), "settling descriptors stay open");
+        }
+        while let Some(complete) = held.pop() {
+            child.completions().push(complete);
+        }
+        drain_abandoned(&mut child, &mut kernel, &clock, until);
         drop(child);
         assert_eq!(skein_shell::process_live(pid), Ok(false), "the abandoned descendant was reaped");
         for fd in descriptors {
             assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
         }
-        // The ring holds each in-flight read's file, so the killed tree ends
-        // them. The readiness backend's waiter holds only the descriptor's
-        // number, which the drop closed outside io, and a closed descriptor
-        // leaves kqueue and epoll silently: those reads wait until the kernel
-        // is dropped (shell.md, 7.7).
-        if !cfg!(target_os = "linux") {
-            continue;
+    }
+}
+
+fn drain_abandoned(child: &mut Binary, kernel: &mut skein_shell::Kernel, clock: &Clock, until: Time) {
+    while !child.is_empty() || kernel.in_flight() > 0 {
+        kernel.reap(child.completions());
+        let now = clock.now();
+        child.iterate(now.now, now.wall);
+        if !child.is_empty() || kernel.in_flight() > 0 {
+            kernel.submit(child.submissions(), skein_shell::Wait::Until(until));
         }
-        let mut completions = Queue::with_capacity(8);
-        while kernel.in_flight() > 0 {
-            kernel.reap(&mut completions);
-            while completions.pop().is_some() {}
-            if kernel.in_flight() > 0 {
-                kernel.submit(&mut Queue::with_capacity(0), Wait::Until(until));
+        assert!(clock.now().now < until, "the killed tree completes its interrupted operations");
+    }
+}
+
+#[test]
+fn an_observer_can_be_abandoned_before_its_first_submission() {
+    use skein_shell::{Backend, Config, Kernel};
+    for backend in [None, Some(Backend::Readiness)] {
+        for mode in [Mode::Pipes, Mode::Terminal] {
+            for queued in [false, true] {
+                let mut child = Binary::start_contained(
+                    fixture("never"),
+                    mode,
+                    4096,
+                    skein_world::end_to_end::Expectation::Measure,
+                    Containment::Group,
+                )
+                .expect("the fixture starts");
+                let descriptors = child.descriptors();
+                let config = Config { operations: child.operations() };
+                let mut kernel = match backend {
+                    Some(backend) => Kernel::open_on(config, backend),
+                    None => Kernel::open(config),
+                }
+                .expect("a real kernel");
+                let clock = Clock::new();
+                let now = clock.now();
+                let until = now.now.saturating_add(Duration::from_secs(2));
+                if queued {
+                    child.iterate(now.now, now.wall);
+                }
+                child.abandon();
+                assert!(child.work_pending(now.now), "abandonment has submission or settlement work");
+                drain_abandoned(&mut child, &mut kernel, &clock, until);
+                for fd in descriptors {
+                    assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
+                }
             }
-            assert!(clock.now().now < until, "the killed tree completes its interrupted operations");
+        }
+    }
+}
+
+#[test]
+fn emergency_drop_leaves_outstanding_descriptors_and_the_waited_leader_owned() {
+    use skein_shell::{Backend, Config, Kernel, Wait};
+    for backend in [None, Some(Backend::Readiness)] {
+        for containment in ALL {
+            let mut child = Binary::start_contained(
+                fixture("never"),
+                Mode::Pipes,
+                4096,
+                skein_world::end_to_end::Expectation::Measure,
+                containment,
+            )
+            .expect("the fixture starts");
+            let leader = child.descriptors()[0];
+            let config = Config { operations: child.operations() };
+            let mut kernel = match backend {
+                Some(backend) => Kernel::open_on(config, backend),
+                None => Kernel::open(config),
+            }
+            .expect("a real kernel");
+            let clock = Clock::new();
+            let now = clock.now();
+            let until = now.now.saturating_add(Duration::from_secs(2));
+            child.iterate(now.now, now.wall);
+            kernel.submit(child.submissions(), Wait::No);
+            let descriptors = child.descriptors();
+            drop(child);
+            for fd in &descriptors {
+                assert!(
+                    std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_ok(),
+                    "an outstanding descriptor stays open"
+                );
+            }
+            let mut completions = Queue::with_capacity(8);
+            while kernel.in_flight() > 0 {
+                kernel.reap(&mut completions);
+                while completions.pop().is_some() {}
+                if kernel.in_flight() > 0 {
+                    kernel.submit(&mut Queue::with_capacity(0), Wait::Until(until));
+                }
+                assert!(clock.now().now < until, "the killed binary completes observation through open descriptors");
+            }
+            assert_eq!(
+                skein_shell::poll_child(leader, false),
+                Ok(Some(Exit::Signal(9))),
+                "Drop retained the unreaped leader"
+            );
+            skein_shell::abandon_binary(Some(leader), &descriptors);
+            for fd in descriptors {
+                assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
+            }
         }
     }
 }

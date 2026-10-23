@@ -6,6 +6,7 @@ mod keys;
 pub mod origins;
 pub use face::BrowserFace;
 pub use harness::{Command, Harness, Kept, Lent, Opens, Outcome, Play, Script, Sent, Setup, Stdin, Step};
+pub use skein_fake_person as person;
 #[cfg(test)]
 mod tests;
 

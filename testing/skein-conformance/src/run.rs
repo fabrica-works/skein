@@ -225,6 +225,11 @@ impl<'b, B: Backend> Run<'b, B> {
         self.backend.sleep(span);
     }
 
+    /// Waits for a queued connection without driving any process's kernel.
+    pub(crate) fn wait_for_connection(&mut self, process: B::Process, listener: Fd) {
+        self.backend.wait_for_connection(process, listener, PATIENCE);
+    }
+
     /// Sends on `fd` until a `Send` fails, or for as long as the peer's
     /// reset may take to arrive: every answer, in order.
     pub(crate) fn send_until_refused(&mut self, process: B::Process, fd: Fd) -> Vec<Result<Done, Error>> {

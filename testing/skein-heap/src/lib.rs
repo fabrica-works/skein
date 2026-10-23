@@ -39,14 +39,20 @@
 //!
 //! # The runtime's own
 //!
-//! A thread's first thread-local with a destructor makes std record that
+//! A thread's thread-locals with a destructor make std record each
 //! destructor: on macOS in a list on the heap (std's
-//! `sys/thread_local/destructors/list.rs`, 64 bytes for its first four),
-//! allocated through this allocator and held until the thread ends; on Linux
-//! through glibc's `__cxa_thread_atexit_impl`, outside it. That record is the
-//! runtime's, not a step's: a meter and a span register one destructor of
-//! their own before they read their base, on every system, so that the list
-//! exists before anything is measured.
+//! `sys/thread_local/destructors/list.rs`, 64 bytes for its first four,
+//! doubling as it grows), allocated through this allocator and held until the
+//! thread ends; on Linux through glibc's `__cxa_thread_atexit_impl`, outside
+//! it. That list is the runtime's, not a step's, yet a thread-local reached
+//! for the first time inside a step (std's own, as a channel's waiting
+//! context) would grow it there. So a meter and a span register 33
+//! destructors of their own before they read their base, on every system:
+//! the list then holds 64, room for 31 more less those std registered first,
+//! before anything is measured. The count leans on std's growth policy:
+//! `tests/heap`'s `runtime` test reaches 16 new thread-locals with a
+//! destructor inside a span and inside a step, more than any world reaches,
+//! and fails when that policy leaves them less room.
 //!
 //! # The `unsafe`
 //!
@@ -119,21 +125,31 @@ enum Phase {
     },
 }
 
+/// Makes thread-locals with a destructor, and the function that reaches each
+/// once a thread (see "The runtime's own").
+macro_rules! runtime_records {
+    ($($record:ident)*) => {
+        thread_local! {
+            static WARM: Cell<bool> = const { Cell::new(false) };
+            $(static $record: Cell<Option<Box<()>>> = const { Cell::new(None) };)*
+        }
+
+        /// Fills the thread's destructor record before a base is read.
+        fn warm_runtime() {
+            if !WARM.replace(true) {
+                $($record.with(|record| record.set(None));)*
+            }
+        }
+    };
+}
+
+// Reached before a base is read, never on the allocator's paths: 33, so that
+// std's list doubles to 64 (see "The runtime's own").
+runtime_records!(R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29 R30 R31 R32);
+
 // Const-initialised and without a destructor: reaching them never allocates
 // and never fails, so the allocator can use them. Nothing allocates while it
 // borrows the highs.
-thread_local! {
-    /// Reached before a base is read, never on the allocator's paths: its
-    /// destructor makes the thread's destructor record (see "The runtime's
-    /// own").
-    static RUNTIME: Cell<Option<Box<()>>> = const { Cell::new(None) };
-}
-
-/// Makes the thread's destructor record before a base is read.
-fn warm_runtime() {
-    RUNTIME.with(|runtime| runtime.set(None));
-}
-
 thread_local! {
     static LIVE: Cell<i64> = const { Cell::new(0) };
     static PEAK: Cell<i64> = const { Cell::new(0) };

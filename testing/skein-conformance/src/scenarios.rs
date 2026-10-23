@@ -495,14 +495,8 @@ pub fn ipv6_only<B: Backend>(backend: &mut B) -> Ipv6Only {
     Ipv6Only { mapped_bind, mapped_connect, across, beside }
 }
 
-impl Check for Ipv6Only {
-    fn check(&self) {
-        assert_eq!(self.mapped_bind, Err(Error::InvalidArgument), "the contract: an IPv6 socket binds no IPv4 address");
-        assert_eq!(
-            self.mapped_connect,
-            Err(Error::Unreachable),
-            "the contract: an IPv6 socket reaches no IPv4 address"
-        );
+impl Ipv6Only {
+    fn check_common(&self) {
         rule(
             matches!(self.across, Err(Error::Refused | Error::Cancelled)),
             "the contract: families never mix: an IPv4 connect never reaches the IPv6 listener",
@@ -511,6 +505,27 @@ impl Check for Ipv6Only {
         #[cfg(target_os = "linux")]
         assert_eq!(self.across, Err(Error::Refused), "Linux resets a SYN to a bound socket that does not listen");
         assert_eq!(self.beside, NOTHING, "the contract: families never mix, nor clash");
+    }
+
+    /// Darwin rejects the mapped address as unavailable on an IPv6 interface.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        // XNU bsd_netinet_tcp_usrreq.c:334-354 keeps V6ONLY binds in IPv6;
+        // bsd_netinet6_in6_pcb.c:273-281 finds no interface for the mapped
+        // address and returns EADDRNOTAVAIL (macOS run 40003540284).
+        assert_eq!(self.mapped_bind, Err(Error::AddressNotAvailable), "Darwin: an IPv6 socket binds no IPv4 address");
+        // XNU bsd_netinet_tcp_usrreq.c:546-552 rejects a mapped Connect
+        // on V6ONLY with EAFNOSUPPORT, decoded as InvalidArgument.
+        assert_eq!(self.mapped_connect, Err(Error::InvalidArgument), "Darwin: an IPv6 socket reaches no IPv4 address");
+    }
+}
+
+impl Check for Ipv6Only {
+    fn check(&self) {
+        self.check_common();
+        assert_eq!(self.mapped_bind, Err(Error::InvalidArgument), "Linux: an IPv6 socket binds no IPv4 address");
+        assert_eq!(self.mapped_connect, Err(Error::Unreachable), "Linux: an IPv6 socket reaches no IPv4 address");
     }
 }
 
@@ -1120,7 +1135,7 @@ pub fn cancel_accept_racing_a_connect<B: Backend>(backend: &mut B, race: Race) -
         // on loopback. Waiting for Connect drives every process (Backend::pass),
         // including the Accept that ArrivedAway must leave undecided.
         let connect = run.start(client, Op::Connect { fd, addr });
-        run.sleep(BRIEFLY);
+        run.wait_for_connection(server, listener);
         if race == Race::ArrivedEntered {
             run.enter(server);
         }

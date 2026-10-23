@@ -99,6 +99,12 @@ impl ConformanceBackend for Real {
         std::thread::sleep(std::time::Duration::from_nanos(span.as_nanos()));
     }
 
+    fn wait_for_connection(&mut self, process: usize, listener: Fd, bound: Duration) {
+        let readable = skein_shell::wait_readable(listener, bound)
+            .unwrap_or_else(|errno| panic!("polling listener {listener:?} of process {process} failed: errno {errno}"));
+        assert!(readable, "no connection arrived on listener {listener:?} of process {process} within {bound:?}");
+    }
+
     fn assert_settled(&self, process: usize) {
         let kernel = self.kernels.get(process).expect("a process of this backend");
         assert_eq!(kernel.in_flight(), 0, "nothing in flight on process {process}");

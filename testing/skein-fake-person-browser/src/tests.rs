@@ -310,67 +310,57 @@ fn answer_nodes(face: &mut BrowserFace<'_>, nodes: &[Seen]) {
     }
     face.event(&Event::Found { op, seen, more: 0 });
 }
+fn options(selected: usize) -> Vec<Seen> {
+    ["idea", "task", "référence"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let mut option = seen(b"");
+            option.node = 100 + u64::try_from(index).unwrap();
+            option.name = name.as_bytes().into();
+            option.states.selected = index == selected;
+            option
+        })
+        .collect()
+}
 fn choosing(face: &mut BrowserFace<'_>, selected: usize, target: usize) {
-    let mut options = vec![seen(b""), seen(b""), seen(b"")];
-    for (index, node) in options.iter_mut().enumerate() {
-        node.node = 100 + u64::try_from(index).unwrap();
-        node.states.selected = index == selected;
-    }
-    face.find(&Find::exactly_named(Role::Option, b"task"));
+    let options = options(selected);
+    face.find(&Find::exactly_named(Role::Option, &options[target].name));
     answer_nodes(face, &options[target..=target]);
-    face.find(&Find::exactly_named(Role::Option, b"task"));
+    face.find(&Find::exactly_named(Role::Option, &options[target].name));
     face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Press }).unwrap();
     answer_nodes(face, &[seen(b"")]);
     answer_nodes(face, &options);
 }
 #[test]
-fn choosing_an_option_presses_its_select() {
-    let mut face = face();
-    choosing(&mut face, 0, 1);
-    assert_eq!(
-        face.requests().collect::<Vec<_>>(),
-        vec![Request::Press { page: Token::new(7), op: Token::new(7_000_005), node: 9_000_000_000, at: None }]
-    );
-}
-const OPTION_KEYS: &[(usize, usize, &[skein_browser::boundary::Key])] = &[
-    (
-        0,
-        2,
-        &[
-            skein_browser::boundary::Key::ArrowDown,
-            skein_browser::boundary::Key::ArrowDown,
-            skein_browser::boundary::Key::Enter,
-        ],
-    ),
-    (
-        2,
-        0,
-        &[
-            skein_browser::boundary::Key::ArrowUp,
-            skein_browser::boundary::Key::ArrowUp,
-            skein_browser::boundary::Key::Enter,
-        ],
-    ),
-    (1, 1, &[skein_browser::boundary::Key::Enter]),
-];
-#[test]
-fn choosing_an_option_uses_keys_from_the_current_selection() {
-    for &(selected, target, expected) in OPTION_KEYS {
+fn choosing_an_option_focuses_and_types_its_accessible_name() {
+    for (selected, target) in [(0, 2), (2, 0), (1, 1)] {
         let mut face = face();
         choosing(&mut face, selected, target);
-        let Request::Press { mut op, .. } = face.requests().next().expect("press select") else {
-            panic!("expected press");
-        };
-        let mut keys = Vec::new();
-        while face.pending() {
-            face.event(&Event::Done { op });
-            if let Some(Request::Key { op: next, key, .. }) = face.requests().next() {
-                op = next;
-                keys.push(key);
-            }
-        }
-        assert_eq!(keys, expected, "selected {selected}, target {target}");
+        assert_eq!(
+            face.requests().collect::<Vec<_>>(),
+            vec![Request::Keys {
+                page: Token::new(7),
+                op: Token::new(7_000_005),
+                node: 9_000_000_000,
+                text: options(selected)[target].name.clone(),
+            }]
+        );
     }
+}
+#[test]
+fn choosing_an_option_waits_to_read_the_selected_option() {
+    let mut face = face();
+    choosing(&mut face, 0, 1);
+    let Request::Keys { op, .. } = face.requests().next().expect("type option name") else {
+        panic!("expected character keys");
+    };
+    face.event(&Event::Done { op });
+    assert!(face.pending(), "sending the keys does not finish the choice");
+    answer_nodes(&mut face, &options(1));
+    assert!(!face.pending());
+    assert!(face.failure().is_none());
+    assert!(face.requests().next().is_none());
 }
 
 type NativeKeys = (bool, &'static [u8], Option<&'static [u8]>);

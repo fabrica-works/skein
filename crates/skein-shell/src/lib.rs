@@ -66,6 +66,7 @@ pub use startup::{
     DirectoryAccess, OutputKind, RootBounds, Roots, RootsRefusal, Trust, Unread, directory_access, effective_user,
     make_root, open_append, open_root, prepare_output, process_id, read_file, read_private_file, read_trust_roots,
 };
+pub use system::wait_readable;
 
 pub use terminal::{Input, Kept, Keys, Modes, Watch, open_signals, raw_input, resize_terminal, terminal_modes};
 

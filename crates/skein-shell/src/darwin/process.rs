@@ -318,6 +318,9 @@ fn finish_spawn(command: &mut Spawn, pid: libc::pid_t, parents: Vec<OwnedFd>) ->
 
 fn child_handle(pid: libc::pid_t) -> Result<Fd, i32> {
     let queue = kqueue::open()?;
+    // XNU bsd_kern_kern_event.c:1213-1218 records only requested notes.
+    // A stop posts NOTE_SIGNAL (bsd_kern_kern_sig.c:2124-2125), not the
+    // NOTE_EXIT posted at termination (bsd_kern_kern_exit.c:2561-2562).
     let change = kqueue::event(
         usize::try_from(pid).map_err(|_| libc::EINVAL)?,
         libc::EVFILT_PROC,
@@ -351,14 +354,22 @@ pub(super) fn child_id(handle: Fd) -> Result<u32, Error> {
     u32::try_from(child.pid).map_err(|_| Error::Other(libc::EOVERFLOW))
 }
 
+// Diagnostic Other values for macOS run 40003540284's stopped-child Wait.
+// Negative values cannot collide with Darwin errno numbers (shell.md, 7.5).
+const WAIT_REAPED: i32 = -10_001;
+const WAITID_NO_CHILD: i32 = -10_002;
+const WAIT_UNEXPECTED_STATUS: i32 = -10_003;
+
 pub(crate) fn poll_child(handle: Fd, reap: bool) -> Result<Option<Exit>, Error> {
     let mut children = CHILDREN.lock().expect("child table is not poisoned");
     let child = children.get_mut(&handle).ok_or(Error::Other(libc::EBADF))?;
     if child.reaped {
-        return Err(Error::Other(libc::ECHILD));
+        return Err(Error::Other(WAIT_REAPED));
     }
     // SAFETY: siginfo_t is local C output storage, valid when zeroed.
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    // XNU bsd_kern_kern_exit.c:3270-3276 skips stops without WSTOPPED;
+    // 3364-3380 leaves info untouched when WNOHANG finds no exit.
     retry(|| {
         // SAFETY: pid names this table's unreaped child; info is exclusive
         // writable storage. Holding the lock excludes signal/reap races.
@@ -371,7 +382,7 @@ pub(crate) fn poll_child(handle: Fd, reap: bool) -> Result<Option<Exit>, Error> 
             )
         })
     })
-    .map_err(Error::Other)?;
+    .map_err(|errno| Error::Other(if errno == libc::ECHILD { WAITID_NO_CHILD } else { errno }))?;
     if info.si_pid == 0 {
         return Ok(None);
     }
@@ -383,7 +394,13 @@ pub(crate) fn poll_child(handle: Fd, reap: bool) -> Result<Option<Exit>, Error> 
     let exit = match info.si_code {
         libc::CLD_EXITED => Exit::Code(u8::try_from(status).expect("a child exit code fits in a byte")),
         libc::CLD_KILLED | libc::CLD_DUMPED => Exit::Signal(u32::try_from(status).expect("a signal is positive")),
-        _ => return Err(Error::Other(libc::ECHILD)),
+        _ => {
+            eprintln!(
+                "Darwin poll_child: unexpected waitid status: handle={handle:?}, pid={}, reap={reap}, si_pid={}, si_code={}, si_status={status}",
+                child.pid, info.si_pid, info.si_code,
+            );
+            return Err(Error::Other(WAIT_UNEXPECTED_STATUS));
+        }
     };
     Ok(Some(exit))
 }
@@ -495,9 +512,6 @@ pub(crate) fn abandon_binary(handle: Option<Fd>, descriptors: &[Fd]) {
     }
     for descriptor in descriptors {
         close_keeper_fd(*descriptor);
-    }
-    if let Some(handle) = handle {
-        forget(handle);
     }
 }
 

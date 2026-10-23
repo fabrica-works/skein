@@ -48,6 +48,9 @@ pub fn close_keeper_fd(descriptor: Fd) {
 
 /// Reaps and releases an external child abandoned by a failing test. Normal
 /// end-to-end settlement uses the kernel (testing-strategy.md, section 2.9).
+/// Every descriptor must be quiescent: an observer with outstanding records
+/// cancels and drains them before closure, or leaves their descriptors open
+/// in its emergency destructor (kernel.md, section 7).
 pub fn abandon_binary(pidfd: Option<Fd>, descriptors: &[Fd]) {
     system::process::abandon_binary(pidfd, descriptors);
 }

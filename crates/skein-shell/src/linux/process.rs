@@ -468,8 +468,8 @@ pub(crate) fn abandon_binary(pidfd: Option<Fd>, descriptors: &[Fd]) {
         };
     }
     for descriptor in descriptors {
-        // SAFETY: these are the observer's remaining owned descriptors,
-        // taken out of normal use by its failure-path destructor.
+        // SAFETY: the observer owns these quiescent descriptors: no record
+        // remains outstanding on them (kernel.md, section 7).
         let _closed = unsafe { libc::close(descriptor.raw()) };
     }
 }

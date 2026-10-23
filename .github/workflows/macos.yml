@@ -146,6 +146,35 @@ jobs:
               error(f"{title} {index}/{min(len(found), MOST - 1)}", body)
           error(f"{name}: the output's end", tail or "\n".join(lines[-40:]))
           EOF
+          # What a suite's tests took, for its budget, whatever it gave: the
+          # slowest, and how many took how long.
+          cat >"$RUNNER_TEMP/durations.py" <<'EOF'
+          import re, sys
+          name, path = sys.argv[1:]
+          STATUS = re.compile(r"\s+([A-Z][A-Z-]+)\s+\[\s*([\d.]+)s\]\s+(?:\(\s*\d+/\d+\)\s+)?(\S+)\s+(.+)$")
+          tests, summary = [], ""
+          for line in open(path, encoding="utf-8", errors="replace"):
+              if line.strip().startswith("Summary ["):
+                  summary = line.strip()
+              match = STATUS.match(line)
+              if match:
+                  tests.append((float(match.group(2)), match.group(1), match.group(3), match.group(4).strip()))
+          if tests:
+              bands = [0.1, 0.5, 1, 5, 15, 30]
+              counts = [sum(1 for t in tests if low <= t[0] < high) for low, high in zip([0] + bands, bands + [float("inf")])]
+              labels = [f"<{bands[0]}s"] + [f"{low}-{high}s" for low, high in zip(bands, bands[1:])] + [f">={bands[-1]}s"]
+              total = sum(t[0] for t in tests)
+              # Each test's process start, priced as the median of those under 50 ms.
+              fast = sorted(t[0] for t in tests if t[0] < 0.05)
+              spawn = fast[len(fast) // 2] * len(tests) if fast else 0.0
+              head = [f"{len(tests)} tests, {total:.1f} s of test time; {summary}",
+                      f"spawn: median of the {len(fast)} under 50 ms {spawn / len(tests) * 1000:.1f} ms x {len(tests)} = {spawn:.1f} s, {spawn / total:.0%} of the test time" if total else "spawn: no test time",
+                      "bands: " + ", ".join(f"{label} {count}" for label, count in zip(labels, counts))]
+              slowest = [f"{t[0]:7.3f} {t[1]} {t[2]} {t[3]}"[:150] for t in sorted(tests, reverse=True)[:25]]
+              body = "\n".join(head + slowest)[:4000]
+              title = f"{name}: durations".replace(":", "%3A")
+              print(f"::notice title={title}::" + body.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          EOF
           cat >"$RUNNER_TEMP/run" <<'EOF'
           #!/bin/bash
           # run NAME COMMAND...
@@ -154,6 +183,7 @@ jobs:
           log="$RUNNER_TEMP/logs/$name.log"
           "$@" 2>&1 | tee "$log"
           status=${PIPESTATUS[0]}
+          python3 -I "$RUNNER_TEMP/durations.py" "$name" "$log"
           if [ "$status" -ne 0 ]; then
               python3 -I "$RUNNER_TEMP/annotate.py" "$name" "$log"
           fi
@@ -271,7 +301,7 @@ jobs:
 
       - name: The focused suite
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: $RUN default cargo nextest run --workspace --no-fail-fast
+        run: $RUN default cargo nextest run --workspace --profile macos --no-fail-fast
 
       - name: The fuzzy suite
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}

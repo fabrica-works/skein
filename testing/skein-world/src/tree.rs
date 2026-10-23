@@ -315,15 +315,17 @@ impl Tree {
     pub(crate) fn finish(&mut self, leader: Fd, expectation: Expectation, observed: bool) -> Result<Counts, String> {
         match self {
             #[cfg(target_os = "linux")]
-            Self::Linux(tree) => tree.finish(leader, expectation, observed),
+            Self::Linux(tree) => {
+                tree.finish(leader, expectation, if observed { LeaderWait::Observed } else { LeaderWait::Observe })
+            }
             Self::Group(tree) => tree.finish(leader, expectation, observed),
         }
     }
 
-    pub(crate) fn abandon(&mut self, leader: Fd) {
+    pub(crate) fn abandon(&mut self, leader: Fd, retain_leader: bool) {
         match self {
             #[cfg(target_os = "linux")]
-            Self::Linux(tree) => tree.abandon(leader),
+            Self::Linux(tree) => tree.abandon(leader, retain_leader),
             Self::Group(tree) => {
                 if tree.finished {
                     return;
@@ -332,7 +334,9 @@ impl Tree {
                 if let Some(id) = tree.leader {
                     let _killed = skein_shell::signal_group(id, Signal::Kill);
                 }
-                let _settled = tree.finish(leader, Expectation::Measure, false);
+                if !retain_leader {
+                    let _settled = tree.finish(leader, Expectation::Measure, false);
+                }
             }
         }
     }
@@ -399,6 +403,16 @@ impl GroupTree {
 
 fn group_live(id: u32) -> Result<bool, String> {
     skein_shell::group_live(id).map_err(|error| format!("probing process group {id}: {error:?}"))
+}
+
+// An emergency destructor cannot reap a leader while its driver's wait or
+// signal record remains outstanding. Its keeper can still settle descendants.
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LeaderWait {
+    Observe,
+    Observed,
+    Retain,
 }
 
 #[cfg(target_os = "linux")]
@@ -601,7 +615,7 @@ impl LinuxTree {
         (delivered, forced)
     }
 
-    pub(crate) fn finish(&mut self, leader: Fd, expectation: Expectation, observed: bool) -> Result<Counts, String> {
+    fn finish(&mut self, leader: Fd, expectation: Expectation, wait: LeaderWait) -> Result<Counts, String> {
         let mut kernel = Kernel::open(Config { operations: 4 }).map_err(|error| format!("tree ring: {error}"))?;
         let clock = Clock::new();
         let until = clock.now().now.saturating_add(Duration::from_secs(2));
@@ -649,7 +663,7 @@ impl LinuxTree {
                 call(&mut kernel, Op::Close { fd: descriptor }, until)?;
                 self.children.remove(&pid);
             }
-            if !observed && self.leader.is_some() {
+            if wait == LeaderWait::Observe && self.leader.is_some() {
                 call(&mut kernel, Op::Wait { pidfd: leader, reap: false }, until)?;
             }
             self.refresh();
@@ -665,7 +679,9 @@ impl LinuxTree {
                 return Err("tree did not settle within its kill deadline".into());
             }
         }
-        call(&mut kernel, Op::Wait { pidfd: leader, reap: true }, until)?;
+        if wait != LeaderWait::Retain {
+            call(&mut kernel, Op::Wait { pidfd: leader, reap: true }, until)?;
+        }
         for descriptor in core::mem::take(&mut self.members).into_values() {
             call(&mut kernel, Op::Close { fd: descriptor }, until)?;
         }
@@ -696,11 +712,26 @@ impl LinuxTree {
         Ok(counts)
     }
 
-    pub(crate) fn abandon(&mut self, leader: Fd) {
+    pub(crate) fn abandon(&mut self, leader: Fd, retain_leader: bool) {
         if self.finished {
             return;
         }
-        let _settled = self.finish(leader, Expectation::Measure, false);
+        let wait = if retain_leader {
+            let _killed = self.signal(leader, Signal::Kill);
+            let clock = Clock::new();
+            let until = clock.now().now.saturating_add(Duration::from_secs(2));
+            // Poll without reaping: the shared kernel still owns its wait.
+            while skein_shell::poll_child(leader, false).is_ok_and(|exit| exit.is_none()) {
+                if clock.now().now >= until {
+                    break;
+                }
+                std::thread::sleep(core::time::Duration::from_millis(1));
+            }
+            LeaderWait::Retain
+        } else {
+            LeaderWait::Observe
+        };
+        let _settled = self.finish(leader, Expectation::Measure, wait);
         // A failed ring cleanup still settles each known identity through the
         // adapter; this path is test-only and may block after SIGKILL.
         if !self.finished {
@@ -708,7 +739,9 @@ impl LinuxTree {
                 let _kill = fs::write(group.binary.join("cgroup.kill"), b"1");
             }
             let _killed = skein_shell::signal_kept_child(leader, Signal::Kill, Target::Group);
-            skein_shell::abandon_binary(Some(leader), &[]);
+            if !retain_leader {
+                skein_shell::abandon_binary(Some(leader), &[]);
+            }
             loop {
                 self.refresh();
                 if self.children.is_empty() {

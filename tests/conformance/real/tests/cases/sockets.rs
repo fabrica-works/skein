@@ -58,7 +58,11 @@ fn where_an_address_is_in_use() {
 
 #[test]
 fn ipv6_sockets_are_ipv6_only() {
-    on(BACKEND, ipv6_only);
+    let seen = ipv6_only(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]

@@ -7,6 +7,8 @@
 //! the world's shared ring. The referee observes stderr and `exit_status`.
 //! A supervised tree retains its keeper after leader exit; `signal_tree` queues
 //! member-pidfd delivery by the keeper, while the referee owns the grace.
+//! `abandon` cancels observation through the shared kernel before tree cleanup
+//! and closure; its host stays in the loop until empty.
 
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStrExt;
@@ -80,7 +82,10 @@ pub struct Binary {
     capture: Capture,
     status: Option<Exit>,
     wait_started: bool,
-    reading: bool,
+    waiting: Option<Token>,
+    reading: Option<Token>,
+    abandoning: bool,
+    cancelling: u32,
     signal: Option<(Signal, Target)>,
     tree_signal: Option<Signal>,
     tree_sweep: Option<Signal>,
@@ -232,7 +237,10 @@ impl Binary {
             capture: Capture::new(stderr_limit),
             status: None,
             wait_started: false,
-            reading: false,
+            waiting: None,
+            reading: None,
+            abandoning: false,
+            cancelling: 0,
             signal: None,
             tree_signal: None,
             tree_sweep: None,
@@ -263,6 +271,7 @@ impl Binary {
 
     /// Queues a referee's pidfd signal for the next shared-ring iteration.
     pub fn signal(&mut self, signal: Signal) {
+        assert!(!self.abandoning, "an abandoned observer accepts no signals");
         assert!(self.status.is_none(), "the referee signals a child before its exit");
         assert!(self.signal.is_none(), "one pending referee signal at a time");
         self.signal = Some((signal, Target::Child));
@@ -270,6 +279,7 @@ impl Binary {
 
     /// Queues a group signal while the binary's leader is retained.
     pub fn signal_group(&mut self, signal: Signal) {
+        assert!(!self.abandoning, "an abandoned observer accepts no signals");
         assert!(self.pidfd.is_some(), "the leader remains owned until tree settlement");
         assert!(self.signal.is_none(), "one pending referee signal at a time");
         self.signal = Some((signal, Target::Group));
@@ -279,6 +289,7 @@ impl Binary {
     /// detached descendants after leader exit. `Supervise` leaves its grace and
     /// escalation deadlines to the referee. Membership is refreshed at delivery.
     pub fn signal_tree(&mut self, signal: Signal) {
+        assert!(!self.abandoning, "an abandoned observer accepts no signals");
         assert_eq!(self.expectation, Expectation::Supervise, "whole-tree policy belongs to a supervised observer");
         assert!(self.tree.is_some(), "a signal needs a retained tree keeper");
         assert!(self.tree_signal.is_none(), "one pending tree signal at a time");
@@ -297,6 +308,25 @@ impl Binary {
         match self.expectation {
             Expectation::Supervise => self.signal_tree(Signal::Kill),
             Expectation::EndsWithBinary | Expectation::Measure => self.signal_group(Signal::Kill),
+        }
+    }
+
+    /// Abandons observation and cancels its pending reads and wait. Keep driving
+    /// this host until `is_empty`: target and cancel completions precede tree
+    /// reaping and descriptor closure, on every kernel backend (kernel.md, 7).
+    /// Repeating the request while it settles has no effect.
+    pub fn abandon(&mut self) {
+        if self.abandoning {
+            return;
+        }
+        self.abandoning = true;
+        self.signal = None;
+        self.tree_signal = None;
+        self.tree_sweep = None;
+        self.poll_at = None;
+        for target in [self.waiting, self.reading].into_iter().flatten() {
+            self.cancelling = self.cancelling.checked_add(1).expect("at most two cancels");
+            let _op = self.submit(Op::Cancel { target });
         }
     }
 
@@ -326,24 +356,65 @@ impl Binary {
         self.status
     }
 
-    fn submit(&mut self, kind: Op) {
+    fn submit(&mut self, kind: Op) -> Token {
         self.next = self.next.checked_add(1).expect("binary operation tokens do not wrap");
-        self.submissions.push(Submit { op: Token::new(self.next), kind });
+        let op = Token::new(self.next);
+        self.submissions.push(Submit { op, kind });
+        op
     }
 
     fn close(&mut self, fd: Fd) {
         self.closing = self.closing.checked_add(1).expect("a small number of descriptors");
-        self.submit(Op::Close { fd });
+        let _op = self.submit(Op::Close { fd });
+    }
+
+    fn observation_pending(&self) -> bool {
+        self.waiting.is_some() || self.reading.is_some() || self.signalling || self.cancelling != 0 || self.closing != 0
+    }
+
+    fn settle_abandoned(&mut self) {
+        if self.observation_pending() {
+            return;
+        }
+        if let Some(tree) = &mut self.tree
+            && let Some(pidfd) = self.pidfd
+        {
+            tree.abandon(pidfd, false);
+        }
+        self.tree = None;
+        if let Some(pidfd) = self.pidfd.take() {
+            self.close(pidfd);
+        }
+        if let Some(stderr) = self.stderr.take() {
+            self.close(stderr);
+        }
+        if let Some(streams) = self.streams.take() {
+            for fd in streams.descriptors() {
+                self.close(fd);
+            }
+        }
     }
 
     fn completed(&mut self, complete: Complete) {
         if let Op::Wait { .. } = complete.kind {
+            assert_eq!(self.waiting.take(), Some(complete.op), "the pending wait completed");
+            if self.abandoning && complete.result == Err(Error::Cancelled) {
+                return;
+            }
             let Ok(Done::Exit(status)) = complete.result else {
                 crate::fail(&format!("binary wait failed: {complete:?}"))
             };
             self.status = Some(status);
         } else if let Op::PipeRead { buf, .. } = complete.kind {
-            self.reading = false;
+            assert_eq!(self.reading.take(), Some(complete.op), "the pending read completed");
+            if self.abandoning {
+                assert!(
+                    matches!(complete.result, Ok(Done::Count(_)) | Err(Error::Cancelled)),
+                    "abandoned stderr read failed: {:?}",
+                    complete.result
+                );
+                return;
+            }
             let Ok(Done::Count(count)) = complete.result else {
                 crate::fail(&format!("binary stderr read failed: {:?}", complete.result))
             };
@@ -361,10 +432,17 @@ impl Binary {
                 // Exit and a referee's signal may cross in the kernel.
                 assert!(error == Error::NotFound || error == Error::Other(3), "binary signal failed: {error:?}");
             }
+        } else if let Op::Cancel { .. } = complete.kind {
+            self.cancelling = self.cancelling.checked_sub(1).expect("a submitted cancel completed");
+            assert!(
+                matches!(complete.result, Ok(Done::Nothing) | Err(Error::TooLate)),
+                "binary cancel failed: {:?}",
+                complete.result
+            );
         } else if let Op::Close { .. } = complete.kind {
             self.closing = self.closing.checked_sub(1).expect("a submitted close completed");
         } else {
-            unreachable!("the binary observer submits only wait, read, signal and close");
+            unreachable!("the binary observer submits only wait, read, signal, cancel and close");
         }
     }
 }
@@ -374,20 +452,37 @@ impl Binary {
 // observer is discarded; a normally settled observer owns no descriptors.
 impl Drop for Binary {
     fn drop(&mut self) {
+        let retain_leader = self.waiting.is_some() || self.signalling;
         if let Some(tree) = &mut self.tree
             && let Some(pidfd) = self.pidfd
         {
-            tree.abandon(pidfd);
+            tree.abandon(pidfd, retain_leader);
         }
-        let descriptors = self.descriptors();
+        // Drop cannot drain the driver's kernel. Leave descriptors with an
+        // outstanding record open; explicit abandonment settles them first.
+        let descriptors = self
+            .descriptors()
+            .into_iter()
+            .filter(|fd| {
+                !(Some(*fd) == self.pidfd && retain_leader || Some(*fd) == self.stderr && self.reading.is_some())
+            })
+            .collect::<Vec<_>>();
+        let leader = if retain_leader { None } else { self.pidfd.take() };
         if !descriptors.is_empty() {
-            skein_shell::abandon_binary(self.pidfd.take(), &descriptors);
+            skein_shell::abandon_binary(leader, &descriptors);
         }
     }
 }
 
 impl Host for Binary {
     fn iterate(&mut self, now: Time, _wall: Wall) {
+        if self.abandoning {
+            while let Some(complete) = self.completions.pop() {
+                self.completed(complete);
+            }
+            self.settle_abandoned();
+            return;
+        }
         let poll_tree = self.poll_at.is_some_and(|at| at <= now);
         if poll_tree {
             if let Some(tree) = &mut self.tree {
@@ -433,19 +528,19 @@ impl Host for Binary {
         }
         if !self.wait_started {
             self.wait_started = true;
-            self.submit(Op::Wait { pidfd: self.pidfd.expect("a child has its pidfd"), reap: false });
+            self.waiting =
+                Some(self.submit(Op::Wait { pidfd: self.pidfd.expect("a child has its pidfd"), reap: false }));
         }
-        if !self.reading
+        if self.reading.is_none()
             && let Some(fd) = self.stderr
         {
-            self.reading = true;
-            self.submit(Op::PipeRead { fd, buf: bytes::zeroed(4096) });
+            self.reading = Some(self.submit(Op::PipeRead { fd, buf: bytes::zeroed(4096) }));
         }
         if !self.signalling
             && let Some((signal, to)) = self.signal.take()
         {
             self.signalling = true;
-            self.submit(Op::Signal { pidfd: self.pidfd.expect("a running child has its pidfd"), signal, to });
+            let _op = self.submit(Op::Signal { pidfd: self.pidfd.expect("a running child has its pidfd"), signal, to });
         }
         if self.status.is_some()
             && !self.signalling
@@ -476,13 +571,19 @@ impl Host for Binary {
     }
 
     fn work_pending(&self, now: Time) -> bool {
+        if self.abandoning {
+            return !self.completions.is_empty()
+                || !self.submissions.is_empty()
+                || (!self.observation_pending()
+                    && (self.pidfd.is_some() || self.stderr.is_some() || self.streams.is_some()));
+        }
         self.poll_at.is_some_and(|at| at <= now)
             || !self.completions.is_empty()
             || !self.wait_started
             || self.streams.is_some()
             || (self.signal.is_some() && !self.signalling)
             || self.tree_signal.is_some()
-            || (self.stderr.is_some() && !self.reading)
+            || (self.stderr.is_some() && self.reading.is_none())
             || (self.expectation != Expectation::Supervise
                 && self.status.is_some()
                 && self.pidfd.is_some()
@@ -501,6 +602,9 @@ impl Host for Binary {
         self.pidfd.is_none()
             && self.stderr.is_none()
             && self.streams.is_none()
+            && self.waiting.is_none()
+            && self.reading.is_none()
+            && self.cancelling == 0
             && self.closing == 0
             && !self.signalling
             && self.signal.is_none()
