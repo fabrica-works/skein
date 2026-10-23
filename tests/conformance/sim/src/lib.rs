@@ -1,7 +1,7 @@
 //! The conformance suite against the simulator (kernel.md, 8): every
 //! scenario of `skein_conformance`, over seeds, in a calm world and with the
 //! faults loopback can show. The same scenarios run against the ring in
-//! `tests/conformance/ring`.
+//! `tests/conformance/real`.
 //!
 //! What the test binaries share: [`Simulated`], the simulator as the suite's
 //! backend, with the minimal fake machine behind its seam for files; the

@@ -5,7 +5,7 @@
 //!
 //! `tests/conformance/sim` runs every scenario against the simulator over
 //! many seeds, calm and with the faults loopback can show;
-//! `tests/conformance/ring` runs them against the ring on the real kernel.
+//! `tests/conformance/real` runs them against the ring on the real kernel.
 //! Each implements [`Backend`] there. Where the kernel answers one way, a
 //! check demands that answer; where the simulator draws among answers the
 //! contract allows (a short send, a cancel that loses its race), it accepts

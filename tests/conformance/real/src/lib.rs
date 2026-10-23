@@ -1,5 +1,5 @@
-//! The conformance suite against the ring on the real kernel, on loopback
-//! and in scratch directories (kernel.md, 8): [`Ring`], the ring as the
+//! The conformance suite against both backends on the real kernel, on loopback
+//! and in scratch directories (kernel.md, 8): [`Real`], the chosen kernel as the
 //! suite's backend, each process of a scenario a `Kernel` of its own, each
 //! root a scratch directory of its own. The tests are
 //! `tests/conformance.rs`.
@@ -11,11 +11,11 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;
 use std::process::Command;
 
-use skein_conformance::{Backend, Item, Made};
+use skein_conformance::{Backend as ConformanceBackend, Item, Made};
 use skein_io::kernel::{Complete, Error, Fd, Submit};
 use skein_lib::{Duration, Queue, Time};
 use skein_scratch::Scratch;
-use skein_shell::{Clock, Config, Kernel, OpenError, Wait, open_root};
+use skein_shell::{Backend, Clock, Config, Kernel, Wait, open_root};
 
 /// Operations in flight per process: a scenario has a few at most.
 const OPERATIONS: u32 = 16;
@@ -24,19 +24,19 @@ const OPERATIONS: u32 = 16;
 /// entered: their deferred completions run only when they are.
 const SLICE: Duration = Duration::from_millis(5);
 
-/// One `Kernel` per process, and a scratch directory per root, removed
+/// One forced backend per process, and a scratch directory per root, removed
 /// with the backend.
-pub struct Ring {
+pub struct Real {
+    backend: Backend,
     kernels: Vec<Kernel>,
     clock: Clock,
     scratches: Vec<Scratch>,
 }
 
-impl Ring {
+impl Real {
     #[must_use]
-    #[expect(clippy::new_without_default, reason = "a scenario's backend is made for it, never defaulted")]
-    pub fn new() -> Ring {
-        Ring { kernels: Vec::new(), clock: Clock::new(), scratches: Vec::new() }
+    pub fn new(backend: Backend) -> Real {
+        Real { backend, kernels: Vec::new(), clock: Clock::new(), scratches: Vec::new() }
     }
 
     /// Whether the kernel checks this process's permissions on its files:
@@ -48,23 +48,17 @@ impl Ring {
     }
 
     fn kernel(&mut self, process: usize) -> &mut Kernel {
-        self.kernels.get_mut(process).expect("a process of this ring")
+        self.kernels.get_mut(process).expect("a process of this backend")
     }
 }
 
-impl Backend for Ring {
+impl ConformanceBackend for Real {
     type Process = usize;
 
     fn open(&mut self) -> usize {
-        let kernel = match Kernel::open(Config { operations: OPERATIONS }) {
+        let kernel = match Kernel::open_on(Config { operations: OPERATIONS }, self.backend) {
             Ok(kernel) => kernel,
-            // Rings closed a moment ago are freed by the kernel in its own
-            // time: many opened at once can run out of memory, which is not
-            // io_uring missing.
-            Err(OpenError::Setup(libc::ENOMEM)) => {
-                panic!("the kernel had no memory for another ring (ENOMEM): too many rings at once")
-            }
-            Err(error) => panic!("io_uring is not usable here, so the ring cannot be tested: {error}"),
+            Err(error) => panic!("{:?} is not usable here, so it cannot be tested: {error}", self.backend),
         };
         self.kernels.push(kernel);
         self.kernels.len().checked_sub(1).expect("the kernel just pushed")
@@ -86,8 +80,8 @@ impl Backend for Ring {
         self.kernel(process).submit(&mut Queue::with_capacity(0), Wait::No);
     }
 
-    /// Enters every other process's ring, so that what they deferred runs,
-    /// then waits on this one's for a slice of `bound`.
+    /// Enters every other process's kernel to process completions and readiness,
+    /// then waits on this one for a slice of `bound`.
     fn pass(&mut self, process: usize, bound: Duration) {
         let mut nothing = Queue::with_capacity(0);
         for (other, kernel) in self.kernels.iter_mut().enumerate() {
@@ -99,14 +93,14 @@ impl Backend for Ring {
         self.kernel(process).submit(&mut nothing, Wait::Until(until));
     }
 
-    /// Blocks the thread: no ring is entered, while the kernel's network
+    /// Blocks the thread: no backend is entered, while the kernel's network
     /// runs on.
     fn sleep(&mut self, span: Duration) {
         std::thread::sleep(std::time::Duration::from_nanos(span.as_nanos()));
     }
 
     fn assert_settled(&self, process: usize) {
-        let kernel = self.kernels.get(process).expect("a process of this ring");
+        let kernel = self.kernels.get(process).expect("a process of this backend");
         assert_eq!(kernel.in_flight(), 0, "nothing in flight on process {process}");
     }
 

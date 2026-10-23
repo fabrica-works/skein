@@ -3,7 +3,7 @@
 //! runs itself at submit, the position it hands from one `List` to the next
 //! across its own buffer, a large file through its reads and writes, and an
 //! invalid record refused. The records' behaviour is the conformance
-//! suite's, in `tests/conformance/ring`.
+//! suite's, in `tests/conformance/real`.
 //!
 //! A machine without `io_uring` fails every test here, saying so.
 

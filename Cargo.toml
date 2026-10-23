@@ -40,7 +40,7 @@ members = [
     "testing/skein-scratch",
     "testing/skein-throwaway-forgejo",
     "testing/skein-world",
-    "tests/conformance/ring",
+    "tests/conformance/real",
     "tests/conformance/sim",
     "tests/browser",
     "tests/codec",

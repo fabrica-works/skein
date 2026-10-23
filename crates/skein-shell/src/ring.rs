@@ -9,7 +9,7 @@
 //! One slot per operation the [`Config`] allows, allocated once at its final
 //! capacity in a `Box<[Slot]>` that is never resized or replaced while
 //! anything is in flight, so a slot's address is fixed for the life of the
-//! [`Kernel`]. A slot holds the [`Submit`] record and the kernel structures
+//! [`crate::Kernel`]. A slot holds the [`Submit`] record and the kernel structures
 //! its operation needs (a socket address and its length, an `open_how`, a
 //! `statx` buffer, a `signalfd_siginfo`, and a path or two as the NUL-terminated strings the
 //! kernel reads); those structures never leave this module, and a record's
@@ -50,7 +50,7 @@
 //!   table's listing buffer, each of which lives across the call, with their
 //!   true sizes. `getdents64` is not a ring operation, so a `List` runs at
 //!   its submit and completes at the next reap.
-//! - **Dropping a [`Kernel`]** with operations in flight leaks the table
+//! - **Dropping a [`crate::Kernel`]** with operations in flight leaks the table
 //!   through `Box::into_raw`, creating no reference to it, so the kernel
 //!   never writes into freed memory while the ring winds down.
 //!
@@ -234,17 +234,17 @@ use skein_io::kernel::{
 };
 use skein_lib::{Queue, Time, Token};
 
-/// How large a [`Kernel`] is.
+/// How large a [`crate::Kernel`] is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Config {
     /// The most operations in flight at once, cancels included, as io's
     /// operation slab counts them (kernel.md, 5). Both rings are
     /// sized from it, so the completion queue cannot overflow, and
-    /// [`Kernel::submit`] takes no record past it.
+    /// [`crate::Kernel::submit`] takes no record past it.
     pub operations: u32,
 }
 
-/// Whether [`Kernel::submit`] blocks for a completion, and until when.
+/// Whether [`crate::Kernel::submit`] blocks for a completion, and until when.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Wait {
     /// Submit and return: work is pending above.
@@ -258,7 +258,7 @@ pub enum Wait {
     Forever,
 }
 
-/// Why [`Kernel::open`] refused: the shell does not start (shell.md, 4).
+/// Why [`crate::Kernel::open`] refused: the shell does not start (shell.md, 4).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OpenError {
     /// A config of no operations, which could never submit one.
@@ -294,7 +294,11 @@ impl std::error::Error for OpenError {}
 
 /// io's kernel, on io_uring: opened once, then submitted to and reaped from
 /// once per iteration (programming-model.md, section 2).
-pub struct Kernel {
+pub(crate) struct Ring {
+    #[expect(
+        clippy::struct_field_names,
+        reason = "the ring adapter keeps its io_uring field named for the ring it owns"
+    )]
     ring: IoUring,
     table: Table,
     /// Neither `Send` nor `Sync`: `SINGLE_ISSUER` and `DEFER_TASKRUN` bind
@@ -302,9 +306,9 @@ pub struct Kernel {
     thread: PhantomData<*const ()>,
 }
 
-impl fmt::Debug for Kernel {
+impl fmt::Debug for Ring {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Kernel")
+        f.debug_struct("Ring")
             .field("operations", &self.table.slots.len())
             .field("in_flight", &self.table.tokens.len())
             .field("ready", &self.table.ready.len())
@@ -427,12 +431,12 @@ const EMPTY: &CStr = c"";
 /// defaults).
 const FILE_MODE: u64 = 0o666;
 
-impl Kernel {
+impl Ring {
     /// Sets up the ring for this thread alone: one issuer, and completions
     /// processed only when the loop enters the ring (shell.md, 3).
     /// Probes the ring for every operation it uses, and refuses to open below
     /// the floor.
-    pub fn open(config: Config) -> Result<Kernel, OpenError> {
+    pub fn open(config: Config) -> Result<Ring, OpenError> {
         let operations = config.operations;
         if operations == 0 {
             return Err(OpenError::NoOperations);
@@ -466,7 +470,7 @@ impl Kernel {
         if let Err(errno) = process::block_sigpipe() {
             return Err(OpenError::Setup(errno));
         }
-        Ok(Kernel { ring, table: Table::new(operations), thread: PhantomData })
+        Ok(Ring { ring, table: Table::new(operations), thread: PhantomData })
     }
 
     /// How many operations are in flight, those completed but not yet reaped
@@ -476,7 +480,7 @@ impl Kernel {
         u32::try_from(self.table.tokens.len()).expect("no more in flight than the config's u32")
     }
 
-    /// How many more records [`submit`](Kernel::submit) would take now.
+    /// How many more records [`submit`](crate::Kernel::submit) would take now.
     #[must_use]
     pub fn room(&self) -> u32 {
         u32::try_from(self.table.free.len()).expect("no more slots than the config's u32")
@@ -642,7 +646,7 @@ impl Kernel {
 /// the table, with every record and buffer in it, is leaked so that nothing
 /// the kernel may still write is freed. Descriptors are not closed: only a
 /// `Close` record closes one.
-impl Drop for Kernel {
+impl Drop for Ring {
     fn drop(&mut self) {
         if self.table.tokens.is_empty() {
             return;
@@ -989,7 +993,7 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
 /// The error number `errno` of `kind`, as `skein_io::kernel::Error`
 /// documents it, per operation. `cancelled` says a `Cancel` was submitted
 /// for the operation, so an `EINTR` is that cancel landing.
-fn error(kind: &Op, errno: i32, cancelled: bool) -> Error {
+pub(crate) fn error(kind: &Op, errno: i32, cancelled: bool) -> Error {
     match kind {
         Op::Cancel { .. } => match errno {
             libc::ENOENT | libc::EALREADY => Error::TooLate,
@@ -1451,7 +1455,7 @@ fn stream_error(errno: i32) -> Option<Error> {
     }
 }
 
-fn domain(family: Family) -> i32 {
+pub(crate) fn domain(family: Family) -> i32 {
     match family {
         Family::Ipv4 => libc::AF_INET,
         Family::Ipv6 => libc::AF_INET6,
@@ -1473,7 +1477,7 @@ fn slot_index(index: u32) -> usize {
     usize::try_from(index).expect("a u32 fits in a usize")
 }
 
-fn socklen_of<T>() -> libc::socklen_t {
+pub(crate) fn socklen_of<T>() -> libc::socklen_t {
     libc::socklen_t::try_from(size_of::<T>()).expect("a socket structure's size fits a socklen_t")
 }
 
@@ -1481,7 +1485,7 @@ fn errno_of(error: &io::Error) -> i32 {
     error.raw_os_error().unwrap_or(libc::EIO)
 }
 
-fn last_errno() -> i32 {
+pub(crate) fn last_errno() -> i32 {
     errno_of(&io::Error::last_os_error())
 }
 
@@ -1489,7 +1493,7 @@ fn family_of(family: i32) -> libc::sa_family_t {
     libc::sa_family_t::try_from(family).expect("an address family fits a sa_family_t")
 }
 
-fn zeroed_storage() -> libc::sockaddr_storage {
+pub(crate) fn zeroed_storage() -> libc::sockaddr_storage {
     // SAFETY: `sockaddr_storage` is a plain C struct of integers, for which
     // all zeroes is a valid value (an unspecified family).
     unsafe { mem::zeroed() }
@@ -1503,7 +1507,7 @@ fn zeroed_statx() -> libc::statx {
 
 /// Writes `addr` into `storage` as the kernel lays it out, and returns its
 /// length.
-fn encode(addr: &Addr, storage: &mut libc::sockaddr_storage) -> libc::socklen_t {
+pub(crate) fn encode(addr: &Addr, storage: &mut libc::sockaddr_storage) -> libc::socklen_t {
     match addr {
         SocketAddr::V4(v4) => {
             let raw = libc::sockaddr_in {
@@ -1537,7 +1541,7 @@ fn encode(addr: &Addr, storage: &mut libc::sockaddr_storage) -> libc::socklen_t 
 
 /// The address the kernel wrote into `storage`, `len` bytes of it, or `None`
 /// when it is neither IPv4 nor IPv6.
-fn decode_addr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Option<Addr> {
+pub(crate) fn decode_addr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Option<Addr> {
     let family = i32::from(storage.ss_family);
     if family == libc::AF_INET && len >= socklen_of::<libc::sockaddr_in>() {
         // SAFETY: the kernel wrote a `sockaddr_in`, as its family says, and
@@ -1562,7 +1566,7 @@ fn decode_addr(storage: &libc::sockaddr_storage, len: libc::socklen_t) -> Option
 // seed (shell.md, 5).
 
 /// Sets the integer socket option `name` at `level` to 1.
-fn set_option(fd: i32, level: i32, name: i32) -> Result<(), i32> {
+pub(crate) fn set_option(fd: i32, level: i32, name: i32) -> Result<(), i32> {
     let one: libc::c_int = 1;
     let len = socklen_of::<libc::c_int>();
     // SAFETY: the value points at a live `c_int` of `len` bytes, which the
@@ -1573,7 +1577,7 @@ fn set_option(fd: i32, level: i32, name: i32) -> Result<(), i32> {
 
 /// Reads the address `fd` is bound to into `storage`, and its length into
 /// `len`.
-fn local_addr(fd: i32, storage: &mut libc::sockaddr_storage, len: &mut libc::socklen_t) -> Result<(), i32> {
+pub(crate) fn local_addr(fd: i32, storage: &mut libc::sockaddr_storage, len: &mut libc::socklen_t) -> Result<(), i32> {
     *len = socklen_of::<libc::sockaddr_storage>();
     // SAFETY: `storage` is a live, exclusive borrow of `*len` bytes, and the
     // kernel writes at most that many, and the length, during the call only.
@@ -1749,13 +1753,13 @@ mod tests {
     use skein_io::kernel::{Done, Op, ServiceSignal, Submit};
     use skein_lib::{Duration, Queue, Token};
 
-    use super::{Config, Kernel, Wait, open_termination_signals};
+    use super::{Config, Ring, Wait, open_termination_signals};
     use crate::Clock;
 
     #[test]
     fn blocked_termination_signal_arrives_through_the_ring() {
         let fd = open_termination_signals().expect("block the signals and open signalfd");
-        let mut kernel = Kernel::open(Config { operations: 2 }).expect("open the ring");
+        let mut kernel = Ring::open(Config { operations: 2 }).expect("open the ring");
         let mut submits = Queue::with_capacity(1);
         submits.push(Submit { op: Token::new(1), kind: Op::ReadSignal { fd } });
         kernel.submit(&mut submits, Wait::No);

@@ -4,7 +4,7 @@
 //! arrives. What is the adapter's own: its slots and waits, a large transfer
 //! through short sends, what it completes itself, the broken invariants it
 //! asserts, dropping it. The sockets' behaviour is the conformance suite's,
-//! in `tests/conformance/ring`.
+//! in `tests/conformance/real`.
 //!
 //! A machine without `io_uring` (a seccomp profile, `io_uring_disabled`) fails
 //! every test here, saying so, rather than passing them silently.

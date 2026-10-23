@@ -9,7 +9,7 @@ use skein_io::kernel::{Complete, Done, Entry, Op, OpenHow, Submit};
 use skein_lib::{Queue, Token};
 use skein_scratch::Scratch;
 
-use crate::ring::{Config, Kernel, Wait, close, list, open_root, status_flags};
+use crate::ring::{Config, Ring, Wait, close, list, open_root, status_flags};
 
 #[test]
 fn startup_process_id_is_this_process() {
@@ -41,7 +41,7 @@ fn a_file_opened_blocks_again() {
     let scratch = Scratch::new("shell");
     fs::write(scratch.path().join("f"), b"f").expect("a file laid");
     let dir = open_root(scratch.path()).expect("a scratch directory opens");
-    let mut kernel = Kernel::open(Config { operations: 4 }).expect("io_uring is usable here");
+    let mut kernel = Ring::open(Config { operations: 4 }).expect("io_uring is usable here");
     let mut submissions = Queue::with_capacity(1);
     let path = Box::from(&b"f"[..]);
     submissions.push(Submit { op: Token::new(1), kind: Op::Open { root: dir, path, how: OpenHow::Read } });

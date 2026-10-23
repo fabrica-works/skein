@@ -2,7 +2,7 @@
 //! empty beneath the system's temporary directory, and removed when
 //! dropped, whatever it holds and whatever modes a test gave what is in it,
 //! a failing test's included. The conformance suite lays out a root there
-//! for each scenario on files (`tests/conformance/ring`; kernel.md, 8), and
+//! for each scenario on files (`tests/conformance/real`; kernel.md, 8), and
 //! the ring's own tests their files (`tests/ring`).
 //!
 //! Ordinary Rust (programming-model.md, 10.2): it runs in tests only.

@@ -39,7 +39,7 @@ disallowed_methods = "deny"
 # another executable with the same behaviour.
 [[bin]]
 name = "world_process_fixture"
-path = "../conformance/ring/src/bin/process_fixture.rs"
+path = "../conformance/real/src/bin/process_fixture.rs"
 
 [[bin]]
 name = "world_terminal_fixture"

@@ -41,4 +41,4 @@ disallowed_methods = "deny"
 
 [[bin]]
 name = "io_process_fixture"
-path = "../conformance/ring/src/bin/process_fixture.rs"
+path = "../conformance/real/src/bin/process_fixture.rs"

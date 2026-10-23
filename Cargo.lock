@@ -513,7 +513,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "skein-conformance-ring"
+name = "skein-conformance-real"
 version = "0.0.0"
 dependencies = [
  "libc",

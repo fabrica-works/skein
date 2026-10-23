@@ -56,7 +56,7 @@
 //! The conformance suite (`testing/skein-conformance`; kernel.md, 8;
 //! testing-strategy.md, 5) holds the simulator and the ring to the same
 //! contract: its scenarios run against the simulator in
-//! `tests/conformance/sim`, and against the ring in `tests/conformance/ring`.
+//! `tests/conformance/sim`, and against the ring in `tests/conformance/real`.
 //!
 //! # Its choices, where the contract leaves one
 //!
