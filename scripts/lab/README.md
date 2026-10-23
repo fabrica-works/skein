@@ -40,9 +40,11 @@ There are no default cost values. For experiments with `driver: null`, settings
 For agent experiments, settings `driver` is `{program, model, effort}`, with an
 optional `catalog`; `program` is `{path, sha256, version}`. The runner derives the
 key's `driver.config`. `catalog` is `{path, sha256}`: a pinned Codex model catalog,
-keyed, whose driver-model entry must be `tool_mode: null` (lab.md 6.1). Make it from
-the account's catalog with that one field changed: every model of a ChatGPT login is
-`code_mode_only`, and the code-mode host stays off.
+keyed, whose driver-model entry must be `tool_mode: null`, `multi_agent_version: null`,
+`experimental_supported_tools: []` and `apply_patch_tool_type: null` (lab.md 6.1). Make it
+from the account's catalog with those four fields changed: every model of a ChatGPT login
+is `code_mode_only`, and the code-mode host stays off; the other three offer built-in
+tools the audit does not admit.
 `triager` must be null. `codex_home` optionally names a private absolute directory;
 its default is the lab's `codex/`. Only `config.toml` is written there; the runner
 never opens a credential file. The host owns its login.

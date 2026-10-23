@@ -11,6 +11,10 @@ DISABLED = ('apps', 'plugins', 'remote_plugin', 'recommended_plugins', 'hooks',
             'skill_search', 'code_mode', 'code_mode_host', 'sleep_tool', 'goals',
             'tool_suggest', 'shell_snapshot', 'api_key_model_discovery', 'workspace_dependencies')
 NON_ACTIONS = ('userMessage', 'agentMessage', 'reasoning', 'plan', 'contextCompaction')
+# tool_mode: code mode; multi_agent_version: collaboration tools; experimental_supported_tools:
+# clock and asynchronous questions; apply_patch_tool_type: apply_patch.
+CATALOG_FIELDS = (('tool_mode', None), ('multi_agent_version', None),
+                  ('experimental_supported_tools', []), ('apply_patch_tool_type', None))
 INVENTORY_METHODS = ('mcpServerStatus/list', 'app/installed', 'plugin/list',
                      'hooks/list', 'skills/list', 'config/read')
 
@@ -43,7 +47,8 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
             + f'command = {json.dumps(python)}\n'
             + 'args = ' + json.dumps(['-I', '-B', runner + '/runner/launch.py', lab_root, 'tool', run]) + '\n'
             + 'env_vars = []\nrequired = true\nenabled_tools = ' + json.dumps(sorted(tools)) + '\n'
-            + '[skills.bundled]\nenabled = false\n[model_providers.lab-openai]\n'
+            + '[skills.bundled]\nenabled = false\n[tools.experimental_request_user_input]\nenabled = false\n'
+            + '[model_providers.lab-openai]\n'
             + 'name = "OpenAI"\nwire_api = "responses"\n'
             + 'requires_openai_auth = true\nsupports_websockets = false\n')
 
@@ -71,9 +76,10 @@ def catalog_refusals(data: bytes, model: str) -> list:
     entries = [m for m in models if type(m) is dict and m.get('slug') == model]
     if len(entries) != 1:
         return [Refusal(member, f'catalog must hold the driver model {model!r} once')]
-    if 'tool_mode' not in entries[0] or entries[0]['tool_mode'] is not None:
-        return [Refusal(member, 'the driver model\'s tool_mode must be null')]
-    return []
+    # Each field adds built-in tools outside the audit's admitted actions (lab.md 6.1).
+    return [Refusal(member, f'the driver model\'s {field} must be {json.dumps(value)}')
+            for field, value in CATALOG_FIELDS
+            if field not in entries[0] or entries[0][field] != value]
 
 
 def expected_inventory(tools: list[str], config_path: str) -> dict:

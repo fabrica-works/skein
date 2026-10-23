@@ -51,6 +51,7 @@ class Codex(unittest.TestCase):
         self.assertEqual(parsed['shell_environment_policy']['inherit'], 'none')
         self.assertEqual(parsed['features'], {**dict.fromkeys(codex.DISABLED, False), 'skip_host_skill_discovery': True})
         self.assertFalse(parsed['skills']['bundled']['enabled'])
+        self.assertEqual(parsed['tools'], {'experimental_request_user_input': {'enabled': False}})
         self.assertEqual(parsed['default_permissions'], 'lab')
         self.assertIn('{codex.home}', value['inventory']['configuration_layers'])
         text = codex.config_toml('/python', '/runner', 'r', [], 'script', 'low', 'default_permissions="special"\n')
@@ -68,15 +69,22 @@ class Codex(unittest.TestCase):
         def refused(value, model='m'):
             data = value if type(value) is bytes else json.dumps(value).encode()
             return [r.why for r in codex.catalog_refusals(data, model)]
-        entry = dict(slug='m', tool_mode=None, context_window=1)
+        entry = dict(slug='m', tool_mode=None, multi_agent_version=None, experimental_supported_tools=[],
+                     apply_patch_tool_type=None, context_window=1)
         self.assertEqual(refused(dict(models=[entry, dict(slug='other', tool_mode='code_mode_only')])), [])
         self.assertEqual(refused(b'{'), ['catalog is not JSON'])
         self.assertEqual(refused(b'\xff'), ['catalog is not JSON'])
         self.assertEqual(refused([entry]), ['catalog has no models list'])
         self.assertEqual(refused(dict(models=[entry]), model='absent'), ["catalog must hold the driver model 'absent' once"])
         self.assertEqual(refused(dict(models=[entry, entry])), ["catalog must hold the driver model 'm' once"])
-        for mode in ({'tool_mode': 'code_mode_only'}, {}):
-            self.assertEqual(refused(dict(models=[dict(slug='m', **mode)])), ["the driver model's tool_mode must be null"])
+        for field, offering in (('tool_mode', 'code_mode_only'), ('multi_agent_version', 'v2'),
+                                ('experimental_supported_tools', ['clock']), ('apply_patch_tool_type', 'freeform'),
+                                ('experimental_supported_tools', None), ('apply_patch_tool_type', False)):
+            for changed in ({**entry, field: offering}, {k: v for k, v in entry.items() if k != field}):
+                with self.subTest(field=field, changed=changed):
+                    wanted = 'null' if field != 'experimental_supported_tools' else '[]'
+                    self.assertEqual(refused(dict(models=[changed])), [f"the driver model's {field} must be {wanted}"])
+        self.assertEqual(len(refused(dict(models=[dict(slug='m')]))), 4)
 
     def test_catalog_settings_are_absolute_and_digested(self):
         exp, subject, settings, facts, _ = fixture()
