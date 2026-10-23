@@ -682,3 +682,79 @@ fn without_records_omits_the_observation_bound() {
         limits().observation_bytes,
     );
 }
+
+#[test]
+fn responses_function_output_and_user_text_select_the_same_input_turn() {
+    let config = skein_llm_world::fake::config();
+    let text_turn = |text: &[u8]| api::Turn {
+        lines: Box::new([api::Line::Text { text: text.into() }]),
+        finish: api::Finish::Stop,
+        tokens: 1,
+    };
+    let scripts = api::Scripts {
+        cued: Box::new([api::Script {
+            cue: b"input script".as_slice().into(),
+            turns: Box::new([text_turn(b"wait"), text_turn(b"selected")]),
+        }]),
+        asked: Box::new([]),
+        otherwise: Box::new([]),
+    };
+    let rules = api::Rules {
+        cued: Box::new([Box::new([
+            api::Rule { cue: b"expected".as_slice().into(), turn: 1 },
+            api::Rule { cue: Box::new([]), turn: 0 },
+        ])]),
+        asked: Box::new([]),
+    };
+    let domain = domain::Domain::played_by_input(
+        &config,
+        23,
+        scripts,
+        api::Menu { arguments: Box::new([]), invalid: Box::new([]) },
+        rules,
+    )
+    .expect("input-selected domain");
+    let endpoint = Endpoint::openai();
+    let mut peer = make_domain_with_limits(
+        endpoint.clone(),
+        key(),
+        (Ipv4Addr::LOCALHOST, 0).into(),
+        Transport::Plaintext,
+        domain,
+        limits(),
+    )
+    .expect("input-selected byte peer");
+    let mut sim = skein_sim::Sim::new(23, skein_sim::Config::calm());
+    let (server, client) = (sim.spawn_process(), sim.spawn_process());
+    for input in [
+        r#"[{"type":"function_call","call_id":"waiting","name":"wait","arguments":"{}"},{"type":"function_call_output","call_id":"waiting","output":"expected"}]"#,
+        r#"[{"role":"user","content":[{"type":"input_text","text":"expected"}]}]"#,
+    ] {
+        let body =
+            format!(r#"{{"model":"gpt","store":false,"instructions":"input script","input":{input},"stream":true}}"#);
+        let response = request::request(
+            &mut sim,
+            server,
+            client,
+            &mut peer,
+            &endpoint.target,
+            b"authorization: Bearer k0\r\n",
+            body.as_bytes(),
+        );
+        let response = core::str::from_utf8(&response).expect("HTTP response");
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(response.contains(r#""text":"selected""#), "{response}");
+        assert!(response.contains("response.completed"), "{response}");
+    }
+    peer.shutdown();
+    for _ in 0..1000 {
+        request::pass(&mut sim, server, &mut peer);
+        if peer.is_empty() {
+            break;
+        }
+    }
+    assert!(peer.is_empty());
+    sim.assert_quiescent(server);
+    sim.assert_no_open_fds(server);
+    sim.assert_no_open_fds(client);
+}

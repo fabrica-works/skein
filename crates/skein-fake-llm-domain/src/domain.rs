@@ -7,7 +7,7 @@ use core::mem;
 
 use skein_lib::{Deadlines, Duration, Env, Id, List, Queue, ReplyTo, Rng, Set, Slab, Time, Token};
 
-use crate::api::{Answer, Error, Failure, Query, Script, Scripts, Usage};
+use crate::api::{Answer, Error, Failure, Query, Rule, Rules, Script, Scripts, Usage};
 use crate::{cache, limits, pieces, respond};
 
 /// The most requests an entry point emits per call.
@@ -28,7 +28,7 @@ pub struct Config {
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     pub query_bytes: u32,
-    /// Joint owned script, reset-state and caller-menu bytes, including their arrays, held at startup.
+    /// Joint owned script, rule, reset-state and caller-menu bytes, including their arrays, held at startup.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     pub script_bytes: u32,
@@ -183,6 +183,7 @@ pub struct Domain {
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     played: Played,
+    rules: Rules,
     menu: crate::api::Menu,
     cache: cache::Cache,
 }
@@ -197,11 +198,24 @@ pub(crate) struct Played {
 }
 
 impl Played {
+    #[cfg(test)]
     pub(crate) fn new(config: &Config, scripts: Scripts, menu: &crate::api::Menu) -> Result<Self, Error> {
+        Self::by_input(config, scripts, menu, &Rules { cued: Box::new([]), asked: Box::new([]) })
+    }
+
+    pub(crate) fn by_input(
+        config: &Config,
+        scripts: Scripts,
+        menu: &crate::api::Menu,
+        rules: &Rules,
+    ) -> Result<Self, Error> {
         let Scripts { cued, asked, otherwise } = scripts;
+        if !valid_rules(&rules.cued, &cued) || !valid_rules(&rules.asked, &asked) {
+            return Err(Error::InvalidRequest);
+        }
         let otherwise = Script { cue: Box::new([]), turns: otherwise };
         let fallback = if otherwise.turns.is_empty() { &[][..] } else { core::slice::from_ref(&otherwise) };
-        let mut held = Some(0_u64);
+        let mut held = limits::rules(rules);
         for group in [&*cued, &*asked, fallback] {
             if !pieces::valid(group) {
                 return Err(Error::InvalidRequest);
@@ -243,6 +257,28 @@ impl Played {
         let resets = List::with_capacity(respond::reset_count(&scripts).expect("admitted reset state bytes"));
         Ok(Played { scripts, cued: cued_count, asked: asked_count, resets })
     }
+}
+
+fn valid_rules(group: &[Box<[Rule]>], scripts: &[Script]) -> bool {
+    if group.len() > scripts.len() {
+        return false;
+    }
+    for (rules, script) in group.iter().zip(scripts) {
+        let mut default = false;
+        for rule in rules {
+            let Ok(turn) = usize::try_from(rule.turn) else {
+                return false;
+            };
+            if default || turn >= script.turns.len() {
+                return false;
+            }
+            default = rule.cue.is_empty();
+        }
+        if !rules.is_empty() && !default {
+            return false;
+        }
+    }
+    true
 }
 
 /// A call being answered.
@@ -311,7 +347,21 @@ impl Domain {
     ///
     /// Contract: docs/design/fake-llm.md, section 2.4.
     pub fn played(config: &Config, seed: u64, scripts: Scripts, menu: crate::api::Menu) -> Result<Domain, Error> {
-        let played = Played::new(config, scripts, &menu)?;
+        Self::played_by_input(config, seed, scripts, menu, Rules { cued: Box::new([]), asked: Box::new([]) })
+    }
+
+    /// Admits scripts, menu and fresh-input rules under one byte cap.
+    /// Missing or empty rule entries retain assistant-message counting.
+    ///
+    /// Contract: docs/design/fake-llm.md, section 2.4.
+    pub fn played_by_input(
+        config: &Config,
+        seed: u64,
+        scripts: Scripts,
+        menu: crate::api::Menu,
+        rules: Rules,
+    ) -> Result<Domain, Error> {
+        let played = Played::by_input(config, scripts, &menu, &rules)?;
         Ok(Domain {
             calls: Slab::with_capacity(config.calls),
             held: Set::with_capacity(config.calls),
@@ -319,6 +369,7 @@ impl Domain {
             rng: Rng::new(seed),
             minted: 0,
             played,
+            rules,
             menu,
             cache: cache::Cache::new(config.cache_entries, config.cache_lifetime),
         })
@@ -419,11 +470,12 @@ fn call(
     let mut result = if !cache::valid(query) {
         Err(Error::InvalidRequest.into())
     } else if limits::fits(limits::query(query), config.query_bytes) {
-        match respond::respond(
+        match respond::by_input(
             &mut domain.rng,
             &mut domain.minted,
             config,
             &mut domain.played,
+            &domain.rules,
             &domain.menu,
             query,
             env.now,

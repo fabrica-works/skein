@@ -201,6 +201,30 @@ answer ownership is checked before effects or payload copies.
   document gives (temper's `protocol/setup.md`, 8.4), and a world that
   answers a person's words rather than a charter's.
 
+`Domain::played_by_input(&Config, seed, Scripts, Menu, Rules)` admits
+optional turn rules beside the scripts. `Rules.cued` and `Rules.asked`
+are index-parallel to their script groups; missing or empty entries keep
+the counting above. Script selection still follows system, request, then
+fallback order. Each nonempty rule list is searched in declared order;
+the first matching `Rule.cue` selects its zero-based `Rule.turn`. Exactly
+one empty cue must end the list and always matches as its default. A
+table longer than its group or a turn outside its script is refused.
+Rule arrays and cue bytes share `script_bytes` with scripts and menu;
+empty tables charge nothing. `played` supplies empty rule tables.
+
+Fresh input is the parts of messages after the latest assistant message,
+or all conversation messages when there is no assistant message. Rules
+search each text part's text and each tool output's output, never system
+text, older history or opaque blocks. A cue never spans two parts. Rule
+order takes precedence over part or message order, so expected input can
+win when delivered in the same fresh batch as other news.
+
+An opted-in script has no count or conversation cursor: a retry or repeated
+request plays the same selected turn, and an older message never selects
+a turn. Its answer, failures, pieces, holds, accounting and `(script,
+turn)` place belong to that turn; selection draws no randomness. A recap
+is not understood, but a known recap prompt can have its own rule.
+
 ## 3. Byte peer
 
 `Service` owns bounded routing across connections; `Server` owns one HTTP

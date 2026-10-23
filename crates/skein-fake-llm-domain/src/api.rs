@@ -314,14 +314,38 @@ pub enum Error {
 /// Contract: docs/design/fake-llm.md, section 2.4.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Scripts {
-    /// System-cued scripts; turns count every assistant message.
+    /// System-cued scripts; turns count every assistant message unless ruled by input.
     pub cued: Box<[Script]>,
     /// Request-cued scripts; turns count assistant messages after the last
-    /// user message holding text, so each new request starts again.
+    /// user message holding text, so each new request starts again, unless ruled by input.
     pub asked: Box<[Script]>,
     /// Turns played when neither cue matches, counted as an asked script's.
     /// Empty turns leave the answer to chance.
     pub otherwise: Box<[Turn]>,
+}
+
+/// Fresh-input turn rules, index-parallel to the corresponding `Scripts` groups.
+/// Missing or empty entries retain assistant-message counting.
+///
+/// Contract: docs/design/fake-llm.md, section 2.4.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Rules {
+    /// Rules for system-cued scripts, in script order.
+    pub cued: Box<[Box<[Rule]>]>,
+    /// Rules for request-cued scripts, in script order.
+    pub asked: Box<[Box<[Rule]>]>,
+}
+
+/// A cue selecting a fixed turn from fresh text or tool output.
+/// Nonempty lists end with their only empty cue, the default.
+///
+/// Contract: docs/design/fake-llm.md, section 2.4.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Rule {
+    /// Bytes contained within one fresh input part; empty always matches.
+    pub cue: Box<[u8]>,
+    /// Zero-based turn within the corresponding script.
+    pub turn: u32,
 }
 
 /// A conversation the fake plays from a cue in the system text or the
@@ -334,7 +358,8 @@ pub struct Script {
     /// A request's cue does not span two text parts.
     pub cue: Box<[u8]>,
     /// Answers in order, counting assistant messages from the system's or
-    /// request's start; past the last turn the answer is "done".
+    /// request's start; past the last turn the answer is "done". Input rules
+    /// select a turn directly instead of counting.
     pub turns: Box<[Turn]>,
 }
 

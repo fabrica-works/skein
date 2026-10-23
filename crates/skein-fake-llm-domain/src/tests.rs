@@ -444,3 +444,185 @@ fn asked_and_fallback_holds_release_at_their_flat_places() {
         assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"Hello") }]);
     }
 }
+
+fn ruled_scripts(asked: bool) -> crate::api::Scripts {
+    use crate::api::Scripts;
+    let scripts = Box::new([script(b"cue", Box::new([says(b"wait"), says(b"answer")]))]);
+    if asked {
+        Scripts { cued: Box::new([]), asked: scripts, otherwise: Box::new([]) }
+    } else {
+        Scripts { cued: scripts, asked: Box::new([]), otherwise: Box::new([]) }
+    }
+}
+
+fn rule(cue: &[u8], turn: u32) -> crate::api::Rule {
+    crate::api::Rule { cue: copy_of(cue), turn }
+}
+
+fn rules_in(asked: bool, group: Box<[Box<[crate::api::Rule]>]>) -> crate::api::Rules {
+    use crate::api::Rules;
+    if asked { Rules { cued: Box::new([]), asked: group } } else { Rules { cued: group, asked: Box::new([]) } }
+}
+
+#[test]
+fn input_rules_refuse_a_table_longer_than_its_script_group() {
+    for asked in [false, true] {
+        let rules = rules_in(asked, Box::new([Box::new([]), Box::new([])]));
+        assert_eq!(
+            Domain::played_by_input(&CONFIG, 1, ruled_scripts(asked), empty_menu(), rules).err(),
+            Some(crate::api::Error::InvalidRequest),
+            "asked {asked}"
+        );
+    }
+}
+
+#[test]
+fn input_rules_refuse_turn_indices_past_the_script() {
+    for asked in [false, true] {
+        for rules in [Box::<[crate::api::Rule]>::from([rule(b"", 2)]), Box::new([rule(b"expected", 2), rule(b"", 0)])] {
+            assert_eq!(
+                Domain::played_by_input(
+                    &CONFIG,
+                    1,
+                    ruled_scripts(asked),
+                    empty_menu(),
+                    rules_in(asked, Box::new([rules]))
+                )
+                .err(),
+                Some(crate::api::Error::InvalidRequest),
+                "asked {asked}"
+            );
+        }
+    }
+}
+
+#[test]
+fn input_rules_require_exactly_one_empty_cue_at_the_end() {
+    for asked in [false, true] {
+        for (label, rules) in [
+            ("missing default", Box::<[crate::api::Rule]>::from([rule(b"expected", 1)])),
+            ("early default", Box::new([rule(b"", 0), rule(b"expected", 1)])),
+            ("duplicate default", Box::new([rule(b"", 0), rule(b"", 1)])),
+        ] {
+            assert_eq!(
+                Domain::played_by_input(
+                    &CONFIG,
+                    1,
+                    ruled_scripts(asked),
+                    empty_menu(),
+                    rules_in(asked, Box::new([rules]))
+                )
+                .err(),
+                Some(crate::api::Error::InvalidRequest),
+                "{label} asked {asked}"
+            );
+        }
+    }
+}
+
+#[test]
+fn input_rule_arrays_and_cues_share_the_script_and_menu_byte_cap() {
+    use crate::api::Rule;
+    const SCRIPT: usize =
+        size_of::<Script>() + b"cue".len() + 2 * (size_of::<Turn>() + size_of::<Line>()) + b"waitanswer".len();
+    const MENU: usize = size_of::<Box<[u8]>>() + b"{}".len();
+    const RULES: usize = size_of::<Box<[Rule]>>() + 2 * size_of::<Rule>() + b"expected".len();
+    const CAP: usize = SCRIPT + MENU + RULES;
+    for asked in [false, true] {
+        for (cap, expected) in [(CAP, None), (CAP - 1, Some(crate::api::Error::ContextTooLong))] {
+            let config = Config { script_bytes: u32::try_from(cap).expect("fixture cap"), ..CONFIG };
+            let rules = rules_in(asked, Box::new([Box::new([rule(b"expected", 1), rule(b"", 0)])]));
+            let menu = crate::api::Menu { arguments: Box::new([copy_of(b"{}")]), invalid: Box::new([]) };
+            assert_eq!(
+                Domain::played_by_input(&config, 1, ruled_scripts(asked), menu, rules).err(),
+                expected,
+                "cap {cap} asked {asked}"
+            );
+        }
+    }
+}
+
+#[test]
+fn empty_rule_tables_charge_nothing_and_empty_entries_charge_their_array() {
+    use crate::api::{Rule, Rules, Scripts};
+    const SCRIPT: usize =
+        size_of::<Script>() + b"cue".len() + 2 * (size_of::<Turn>() + size_of::<Line>()) + b"waitanswer".len();
+    const CAP: usize = SCRIPT + size_of::<Box<[Rule]>>();
+    let config = Config { script_bytes: 0, ..CONFIG };
+    Domain::played_by_input(
+        &config,
+        1,
+        Scripts { cued: Box::new([]), asked: Box::new([]), otherwise: Box::new([]) },
+        empty_menu(),
+        Rules { cued: Box::new([]), asked: Box::new([]) },
+    )
+    .expect("empty tables fit a zero byte cap");
+    for (cap, expected) in [(CAP, None), (CAP - 1, Some(crate::api::Error::ContextTooLong))] {
+        let config = Config { script_bytes: u32::try_from(cap).expect("fixture cap"), ..CONFIG };
+        assert_eq!(
+            Domain::played_by_input(
+                &config,
+                1,
+                ruled_scripts(false),
+                empty_menu(),
+                rules_in(false, Box::new([Box::new([])])),
+            )
+            .err(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn an_input_selected_turn_keeps_its_holds_failure_reset_and_accounting() {
+    use crate::api::{Error, Report, Scripts};
+    let turn = Turn {
+        lines: Box::new([
+            Line::Pieces { pieces: Box::new([piece(b"be", None), piece(b"fore", Some(b"h"))]) },
+            Line::Fail {
+                error: Error::Exhausted { retry_after: Some(Duration::from_secs(2)) },
+                report: Report::none(),
+                credentials: Box::new([0]),
+            },
+            Line::Text { text: copy_of(b"after") },
+        ]),
+        finish: Finish::Length,
+        tokens: 7,
+    };
+    // One unselected cued script precedes the asked script's selected second turn.
+    let scripts = Scripts {
+        cued: Box::new([script(b"unselected", Box::new([says(b"other")]))]),
+        asked: Box::new([script(b"ask", Box::new([says(b"wait"), turn]))]),
+        otherwise: Box::new([]),
+    };
+    let domain = Domain::played_by_input(
+        &STREAM_CONFIG,
+        1,
+        scripts,
+        empty_menu(),
+        rules_in(true, Box::new([Box::new([rule(b"expected", 1), rule(b"", 0)])])),
+    )
+    .expect("ruled held turn");
+    let mut query = query(Box::new([user(Box::new([Part::Text { text: copy_of(b"ask expected") }]))]));
+    query.credential = Some(0);
+    let mut play = Playback::from_domain(STREAM_CONFIG, domain, query.clone());
+    let Some(Request::Piece { text, .. }) = play.fire(1) else { panic!("selected turn's first piece") };
+    assert_eq!(&*text, b"be");
+    assert_eq!(play.fire(2), Some(Request::Hold { call: CALL, usage: crate::api::Usage::NONE }));
+    play.release(b"h");
+    let Some(Request::Reply { result: Err(failure), .. }) = play.fire(3) else { panic!("selected turn's failure") };
+    assert_eq!(failure.error, Error::Exhausted { retry_after: Some(Duration::from_secs(2)) });
+    assert_eq!(&*failure.parts, &[Part::Text { text: copy_of(b"before") }]);
+    play.domain.reclaim();
+    play.call(OTHER_CALL, query);
+    let Some(Request::Piece { call, usage, text }) = play.fire(4) else { panic!("retry's first piece") };
+    assert_eq!((call, usage.output, &*text), (OTHER_CALL, Some(7), b"be".as_slice()));
+    let Some(Request::Hold { call, .. }) = play.fire(5) else { panic!("retry's hold") };
+    assert_eq!(call, OTHER_CALL);
+    play.release(b"h");
+    let Some(Request::Reply { result: Ok(answer), .. }) = play.fire(6) else {
+        panic!("reset passes at the selected place")
+    };
+    assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"before") }, Part::Text { text: copy_of(b"after") }]);
+    assert_eq!((answer.finish, answer.usage.output), (Finish::Length, Some(7)));
+}

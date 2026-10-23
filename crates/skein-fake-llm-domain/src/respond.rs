@@ -11,6 +11,7 @@
 //! - A system cue, then the latest request's cue, then fallback turns choose
 //!   the script. System turns count every assistant message; request and
 //!   fallback turns count those after the last user message holding text.
+//!   Opted-in rules select a fixed turn from fresh text and tool output.
 //!   Past its last turn, a script answers "done".
 //! - While the conversation has had fewer rounds of tool calls than
 //!   configured since the client last wrote, and the query offers tools, the
@@ -30,7 +31,7 @@ use alloc::boxed::Box;
 use skein_lib::bytes::copy_of;
 use skein_lib::{Duration, List, Rng, Time};
 
-use crate::api::{Answer, Error, Failure, Finish, Line, Message, Part, Query, Role, Script, Turn, Usage};
+use crate::api::{Answer, Error, Failure, Finish, Line, Message, Part, Query, Role, Rule, Rules, Script, Turn, Usage};
 use crate::domain::{Config, Played};
 use crate::{limits, pieces};
 
@@ -76,11 +77,26 @@ fn before_reset(
     true
 }
 
+#[cfg(test)]
 pub(crate) fn respond(
     rng: &mut Rng,
     minted: &mut u64,
     config: &Config,
     played: &mut Played,
+    menu: &crate::api::Menu,
+    query: &Query,
+    now: Time,
+) -> Response {
+    by_input(rng, minted, config, played, &Rules { cued: Box::new([]), asked: Box::new([]) }, menu, query, now)
+}
+
+#[expect(clippy::too_many_arguments, reason = "response inputs include independent script rules and injected time")]
+pub(crate) fn by_input(
+    rng: &mut Rng,
+    minted: &mut u64,
+    config: &Config,
+    played: &mut Played,
+    rules: &Rules,
     menu: &crate::api::Menu,
     query: &Query,
     now: Time,
@@ -115,7 +131,7 @@ pub(crate) fn respond(
         let parts = Box::new([Part::Text { text: copy_of(b"let me call a tool") }]);
         return Ok((answer(query, parts, Finish::ToolCalls, 4, cut_text()), None));
     }
-    if let Some((script, turn_index)) = played.choose(query) {
+    if let Some((script, turn_index)) = played.choose_by_input(query, rules) {
         let turns = &played.scripts.get(script).expect("found among the scripts").turns;
         if let Some(turn) = turns.get(turn_index) {
             if !limits::fits(limits::scripted_answer(turn), config.answer_bytes) {
@@ -295,19 +311,30 @@ fn answer(query: &Query, parts: Box<[Part]>, finish: Finish, tokens: u64, cut: B
 
 impl Played {
     /// The script and turn answering this query, in system/request/fallback order.
+    #[cfg(test)]
     pub(crate) fn choose(&self, query: &Query) -> Option<(usize, usize)> {
+        self.choose_by_input(query, &Rules { cued: Box::new([]), asked: Box::new([]) })
+    }
+
+    pub(crate) fn choose_by_input(&self, query: &Query, rules: &Rules) -> Option<(usize, usize)> {
         let cued_scripts = self.scripts.get(..self.cued).expect("retained cued range");
         if let Some(script) = cued(cued_scripts, &query.system) {
+            if let Some(turn) = input_turn(&rules.cued, script, &query.messages) {
+                return Some((script, turn));
+            }
             return Some((script, said(&query.messages)));
         }
         let end = self.cued.checked_add(self.asked).expect("retained asked range");
         let asked = self.scripts.get(self.cued..end).expect("retained asked range");
-        let (request, turn) = requested(&query.messages);
-        if let Some(request) = request {
+        if let Some(request) = latest_request(&query.messages) {
             for part in &request.parts {
                 match part {
                     Part::Text { text } => {
                         if let Some(script) = cued(asked, text) {
+                            let turn = match input_turn(&rules.asked, script, &query.messages) {
+                                Some(turn) => turn,
+                                None => requested(&query.messages).1,
+                            };
                             return Some((self.cued.checked_add(script).expect("retained asked index"), turn));
                         }
                     }
@@ -315,8 +342,60 @@ impl Played {
                 }
             }
         }
-        if self.scripts.len() > end { Some((end, turn)) } else { None }
+        if self.scripts.len() > end { Some((end, requested(&query.messages).1)) } else { None }
     }
+}
+
+fn latest_request(messages: &[Message]) -> Option<&Message> {
+    for message in messages.iter().rev() {
+        match message.role {
+            Role::User => {
+                if says_any(&message.parts) {
+                    return Some(message);
+                }
+            }
+            Role::Assistant => {}
+        }
+    }
+    None
+}
+
+/// Rules take precedence across parts and messages, and their default also
+/// answers an empty fresh batch. No cue spans two parts.
+fn input_turn(group: &[Box<[Rule]>], script: usize, messages: &[Message]) -> Option<usize> {
+    let rules = group.get(script)?;
+    if rules.is_empty() {
+        return None;
+    }
+    let mut start = 0;
+    for (index, message) in messages.iter().enumerate().rev() {
+        match message.role {
+            Role::Assistant => {
+                start = index.checked_add(1).expect("bounded by message count");
+                break;
+            }
+            Role::User => {}
+        }
+    }
+    let fresh = messages.get(start..).expect("fresh input is a conversation suffix");
+    for rule in rules {
+        if rule.cue.is_empty() {
+            return Some(usize::try_from(rule.turn).expect("admitted turn index"));
+        }
+        for message in fresh {
+            for part in &message.parts {
+                let text = match part {
+                    Part::Text { text } => text,
+                    Part::ToolOutput { output, .. } => output,
+                    Part::Opaque { .. } | Part::ToolCall { .. } => continue,
+                };
+                if skein_lib::bytes::find(text, &rule.cue).is_some() {
+                    return Some(usize::try_from(rule.turn).expect("admitted turn index"));
+                }
+            }
+        }
+    }
+    unreachable!("admitted input rules end with an empty cue")
 }
 
 /// Which of `scripts` cues the conversation of `system`: the one whose cue

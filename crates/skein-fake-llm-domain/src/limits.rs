@@ -7,7 +7,7 @@ use core::mem::size_of;
 
 use skein_lib::{Deadlines, Id, Set, Slab};
 
-use crate::api::{Answer, Failure, Line, Message, Part, Piece, Query, Report, Script, ToolSpec, Turn};
+use crate::api::{Answer, Failure, Line, Message, Part, Piece, Query, Report, Rule, Rules, Script, ToolSpec, Turn};
 use crate::domain::{Call, Config};
 
 pub(crate) fn fits(bytes: Option<u64>, cap: u32) -> bool {
@@ -69,6 +69,20 @@ pub(crate) fn query(query: &Query) -> Option<u64> {
     }
     for message in &query.messages {
         total = total.checked_add(parts(&message.parts)?)?;
+    }
+    Some(total)
+}
+
+pub(crate) fn rules(rules: &Rules) -> Option<u64> {
+    let mut total = 0_u64;
+    for group in [&*rules.cued, &*rules.asked] {
+        total = total.checked_add(array(group.len(), size_of::<Box<[Rule]>>())?)?;
+        for rules in group {
+            total = total.checked_add(array(rules.len(), size_of::<Rule>())?)?;
+            for rule in rules {
+                total = total.checked_add(bytes(&rule.cue)?)?;
+            }
+        }
     }
     Some(total)
 }
@@ -192,7 +206,7 @@ pub(crate) fn random_answer(query: &Query, menu: &crate::api::Menu, count: u32) 
 ///
 /// Query payloads are capped before generation. A random call copies an offered
 /// or configured invalid name and one whole body from the retained caller menu,
-/// plus its generated id. The menu, scripts and reset state jointly fit `script_bytes`;
+/// plus its generated id. The menu, scripts, rules and reset state jointly fit `script_bytes`;
 /// each scripted call adds a generated id and a `Part`. Converting the temporary
 /// `List` into a boxed slice can hold both
 /// arrays at once, and the truncated answer can coexist with the full one.
