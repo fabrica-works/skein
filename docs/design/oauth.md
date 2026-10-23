@@ -473,6 +473,7 @@ never renames or reuses one on its own. An account has:
 |---|---|
 | sign in | starts an account's sign-in, optionally naming the subject it expects; the owner shows the visit |
 | redirected | a redirect the owner's web server received, for a confidential client |
+| return | where a public client's listener sends the browser on once it has taken the redirect: an account's return location, for its sign-in under way (6.5) |
 | hand in | an access-only record, for a handed-in account |
 | grant | asks for an account's access token, held until released |
 | rejected | the provider refused a lent token |
@@ -674,6 +675,30 @@ sign-in at once. The load goes on for the account.
   connection. A request for another path, or past the limits, is answered
   with a refusal and closed, the sign-in still waiting. The listener closes
   with the sign-in's terminal.
+- **The return.** The owner may give a sign-in under way a return location
+  (`return`), the address the person's browser goes on to once the listener
+  has taken the redirect: the page the person left, in an application that
+  sent its own tab to `visit`. With one, the listener answers the redirect
+  it takes `303 See Other`, its `Location` the return, with
+  `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; with none,
+  the small fixed page above. It answers every redirect it takes so,
+  whatever the redirect says: the provider's error, or a state the client
+  then refuses, ends the sign-in, which the page gone back to reads from its
+  owner, as it reads a success. The listener's answer never says how the
+  sign-in ended. A return is the owner's alone: the listener sends the
+  browser only where its owner said, never to an address of the request's
+  (its Host, its query), and a request it refuses gets no return.
+  - **Its bounds:** an absolute `http` or `https` address of at most
+    `RETURN_BYTES`, 2048 bytes, of visible ASCII (no space, no control
+    byte). One that is not, or one for an account with no sign-in under
+    way, is dropped, with no event: a return is a setting, not a request
+    with a terminal.
+  - **Its life:** it lives as long as its sign-in. A later `return` for
+    the same sign-in replaces it; the sign-in's terminal drops it, and a
+    new sign-in starts with none. It is never kept: a sign-in its owner starts
+    again after a restart has none, and its listener answers the fixed page. A confidential client's redirect reaches the
+    owner's own server, which answers it as it likes: `return` changes
+    nothing there.
 - **A redirect whose port varies** (section 1) binds a fresh listener for
   each sign-in: on port zero, or on its preferred port, and on port zero
   when binding that one fails. The port io's `Listening` reports (io.md,
@@ -733,7 +758,7 @@ and a `locked` that comes later is answered by `unlock` at once, until
 The client's own limits are section 5's. The worst case is each account's
 registration, its terms' entries counted as section 5 counts them, its
 current and candidate records, a shared record's read under its lock beside
-them, and per exchange the client's worst case, the issuer's key set among it,
+them, per sign-in its return (`RETURN_BYTES`), and per exchange the client's worst case, the issuer's key set among it,
 `skein-http`'s, TLS's and io's buffers for one connection; per listener, one
 accepted connection and its request head. The trusted roots are shared
 configuration, counted once.
@@ -745,7 +770,9 @@ configuration, counted once.
   follows each visit to the listener, over streams cut at random. Sign-in of
   both clients, refresh while held, rotation, a rejected token, a keep that
   fails, an access-only record expiring and handed in again, a `localhost`
-  redirect, wrong redirects, and the owner's close in every state, a
+  redirect, wrong redirects, a sign-in's return (a `303` to it; the fixed
+  page without one; one given for no sign-in, or after its terminal,
+  dropped; one past its bounds dropped), and the owner's close in every state, a
   sign-in waiting for a person among them, cancelled by the owner or
   still waiting; an abort after a close, and a close after an abort; one
   terminal per request, and `closed` once and last.

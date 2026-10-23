@@ -759,6 +759,21 @@ component instead (6.1).
   names (a provider's sign-in, another site). When a write fails, every
   exchange of the step is reported failed, none is sent, and there is
   no navigation (5.3).
+- **The navigation away** sends the page's own tab to the address, once,
+  in the turn whose step named it: the state machine names it from an
+  event (an answer naming a provider's sign-in), never from its state,
+  so that no build, rebuild or reload names it again. A reload starts
+  a new page, which navigates only when its own steps name an address.
+  Its targets, a rule (section 17): a path on the origin (one leading
+  `/`, not `//`, no `\`), or an `https` address. A target outside them
+  is not followed and nothing is reported: the page stays as it is, and
+  an application that may name one shows the address otherwise too, as
+  a link. **Plaintext loopback** (`http://127.0.0.1:PORT/…` or
+  `http://[::1]:PORT/…`) is a target only in a build with skein-ui-web's
+  feature `loopback-navigation`, which a test's bundle turns on where its
+  fake peer (an issuer on loopback) has no TLS; no default turns it on,
+  and a shipped bundle never does. The check is a pure function of the
+  target and the feature, tested natively (section 14).
 - **A hidden tab lets its stream go** a minute after it is hidden (a
   default, the application's parameter): fetch closes the stream and
   reports its end, as any drop; an opening while hidden waits until the
@@ -860,6 +875,8 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   - the transport's order over a fake platform: writes before exchanges,
     a failed write failing the step's exchanges and cancelling the
     navigation; the inbox's: no turn inside a turn;
+  - the navigation's targets (section 10): each kind accepted or
+    refused, plaintext loopback with and without `loopback-navigation`;
   - the bundler: the directory named by its digest, the same inputs
     giving the same bundle, references under the prefix, an own page's
     marker, and each refusal of 4.2 and 4.3 naming its file.
@@ -1183,4 +1200,5 @@ step 8) holds the rule itself; a server holds 4.4's.
 | an element override keeping the node's role and name (6.1) | A person reads the page with a screen reader as the fake person reads the tree (ui.md, 17.1): a role lost is a control a screen reader cannot name, and that the face, finding by role, cannot find. | any element, the page part adding ARIA's role where it differs; a component, for what no element gives (6.1) |
 | the parts' invariants (5.3) | A request that leaves before it is kept is lost or made twice after a reload; a turn inside a turn steps the state machine on a step half done; a patch applied to another tree than the one it is diffed from shows a page no build made. | its own order for the rest of the turn (5.2); the part replaced, the invariant taken with it and checked by skein's stories for a browser shell (14.2) |
 | nothing inline under the strict policy (4.4) | A script that runs on the page runs as the person: it can send any exchange the application can. Admitting inline script admits any script injected into the page, and styles injected inline would read the page's text out (by attribute selectors, by a font's ligatures). The parts and the bundle need nothing inline, so any server can send the strict policy, whatever the application. | its JavaScript, from the origin (3.3, step 7); its stylesheets; a component (6.1) |
+| a navigation away to an origin path or an `https` address (section 10) | The tab leaves the application for the target, with the person's trust in the page: a plaintext address on the network can be read and rewritten on its way, and a `javascript:` or `data:` one runs on the page or as it. | a link the person presses (section 6); plaintext loopback in a test's build, with `loopback-navigation` (section 10) |
 | the closed list of a bundle's types (4.4) | With `nosniff`, a file is the type the server says; the list holds only the types a page loads, each weighed under the policy, and keeps off the origin what a browser would run or render (XML, a PDF, a plugin's), which `'self'` would admit. | any file of those types, in the digest directory's `files/`, or at a root path (3.3, step 5) |

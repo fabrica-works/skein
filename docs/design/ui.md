@@ -433,6 +433,12 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
 - **An external link,** from Markdown (section 10), carries its checked
   `http` or `https` target instead (`View::external`), which a shell
   opens as its platform does, with no step.
+- **Leaving for an address** is never a view's: a view draws, and a
+  build that asks for something would ask again at the next build. An
+  application whose step sends its page away (a provider's sign-in in
+  the page's own tab) asks its shell, from the event that called for it,
+  once; in a browser, the transport's navigation away (ui-web.md,
+  section 10). The text shell prints the address and leaves nothing.
 
 ## 7. The diff and the view
 
