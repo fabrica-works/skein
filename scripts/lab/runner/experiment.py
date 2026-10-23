@@ -566,7 +566,7 @@ def validate(experiment, subject, settings, facts):
             elif len(bits) == 2 and bits[0] == "collected":
                 collection = names["collect"].get(bits[1])
                 check = groups["checks"][int(member.split('.')[1])] if phase == "checks" else {}
-                available = (phase in ('checks', 'release', 'meter') and collection is not None
+                available = (phase == 'checks' and collection is not None
                              and (collection.get("cluster", "up") == "up" or check.get("cluster", "up") == "stopped"))
             if not available:
                 out.append(Refusal(member, "unknown or unavailable template: " + name))

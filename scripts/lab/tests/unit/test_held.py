@@ -94,14 +94,18 @@ class Validation(unittest.TestCase):
             exp['release'][0][field] = value
             self.assertIn('release.0.' + field, [r.member for r in experiment.validate(exp, subject, settings, facts)])
 
-    def test_release_knows_live_check_inputs_and_excludes_stopped_collections(self):
+    def test_release_knows_seed_action_inputs_and_no_collection(self):
         exp, subject, settings, facts = validation_world()
         exp['actions'][0]['await'] = dict(process='backend', stream='stdout', prefix='fresh ', capture='word')
         exp['release'][0]['argv'] += ['{proc.backend.ready.address}', '{proc.app.dir}', '{dir.client}',
-                                     '{collected.obs}', '{action.seed.word}']
+                                     '{action.seed.word}']
         self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
-        exp['collect'][0]['cluster'] = 'stopped'
-        self.assertIn('release.0.argv.5', [r.member for r in experiment.validate(exp, subject, settings, facts)])
+        # The release runs as seed actions do (lab.md 4.8); a collection is known in checks alone (4.2).
+        for cluster in ('up', 'stopped'):
+            with self.subTest(cluster=cluster):
+                exp['collect'][0]['cluster'] = cluster
+                exp['release'][0]['argv'][6:] = ['{collected.obs}']
+                self.assertIn('release.0.argv.6', [r.member for r in experiment.validate(exp, subject, settings, facts)])
 
 
 def release_world(phase='check', live=True):

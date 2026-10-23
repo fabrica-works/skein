@@ -71,10 +71,14 @@ class Settings(unittest.TestCase):
         settings['costs']['smoke'].update(subject_spend=10, meter_seconds=1)
         exp['actions'][0]['await'] = dict(process='app', stream='stdout', prefix='seed ', capture='token')
         exp['meter'] = dict(name='spend', argv=['/usr/bin/helper', '{proc.app.ready.address}',
-                                               '{action.seed.token}', '{collected.obs}'], env={})
+                                               '{action.seed.token}'], env={})
         self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
-        exp['collect'][0]['cluster'] = 'stopped'
-        self.assertIn('meter.0.argv.3', [r.member for r in experiment.validate(exp, subject, settings, facts)])
+        # A collection is known in checks alone (lab.md 4.2); the meter reads before it.
+        for cluster in ('up', 'stopped'):
+            with self.subTest(cluster=cluster):
+                exp['collect'][0]['cluster'] = cluster
+                exp['meter']['argv'][3:] = ['{collected.obs}']
+                self.assertIn('meter.0.argv.3', [r.member for r in experiment.validate(exp, subject, settings, facts)])
 
     def test_ports_names_values_and_unknown_port(self):
         for value in (None, [], {'BAD': 3}, {'bad_name': 3}, {'web': True}, {'web': 0}, {'web': 65536}, {'web': '80'}):

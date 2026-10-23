@@ -59,7 +59,7 @@ outside the key; a run retains them through its rendered argv/env.
 ## Meter
 
 An experiment's optional `meter` is `{"name", "argv", "env"}`, with live
-checks' templates and no stdin. Its class must provide `subject_spend` and
+checks' templates but `{collected.N}` (it reads before the collections), and no stdin. Its class must provide `subject_spend` and
 `meter_seconds`. Readings run during the drive, first after `meter_seconds`,
 with at most one command active. A slow reading delays the next. After the
 driver ends, one final reading finishes before live collection; a null driver
