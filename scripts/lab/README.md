@@ -515,6 +515,28 @@ subject=$("$lab" subject --repository "$repository" --commit "$commit" \
 "$lab" run "$proof/squares" --subject "$subject" --seed 1
 ```
 
+Before each paid run, rehearse it with no model. The rehearsal is a real `lab run` of
+the same experiment and subject in a scratch lab. The real Codex 0.162.1 runs the
+key's config, with its provider pointed at a loopback fake Responses endpoint that
+plays the agent. It has no `codex_home`, so no login.
+
+- A wrapper as `driver.program` execs the real binary path with `-c` provider overrides.
+- The scratch lab's runner copy has two rehearsal-only changes:
+  - its inventory drops the one `sessionFlags` layer those overrides make;
+  - its sandbox profile reads the real binary, as a paid run's does.
+
+`lab run` can't be pointed at the fake without changing the key, because the provider is
+part of the key. The rehearsal's key differs from the paid key only in `driver.program`
+and the runner digest.
+
+The paid run goes ahead only when both scripted agents come out as expected:
+
+- **Correct agent:** the run passes with no errors.
+- **Wrong-answer agent:** the run fails with `check/answer/answer/wrong` and no errors.
+
+In each, the agent's heredoc command must print the expected value through the key's
+environment policy. The scripts are not landed tooling yet.
+
 ## Codex 0.162.1 adapter
 
 The Codex 0.162.1 adapter starts `app-server --stdio --strict-config` in the
