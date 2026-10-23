@@ -45,6 +45,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
                 .checked_mul(u64::from(limits.uri_bytes).checked_add(u64::from(limits.document.string_bytes))?)?,
         )?
         .checked_add(List::<Code>::worst_case(limits.codes)?)?
+        .checked_add(
+            u64::from(limits.codes)
+                .checked_add(1)?
+                .checked_mul(3)?
+                .checked_mul(u64::from(limits.document.string_bytes))?,
+        )?
         .checked_add(u64::from(limits.codes).checked_mul(59)?)?
         .checked_add(List::<Box<[u8]>>::worst_case(limits.rotations)?)?
         .checked_add(Queue::<Plan>::worst_case(limits.plans)?)?
@@ -104,11 +110,26 @@ pub enum Error {
     Plan,
 }
 
+/// Who signs in at the fake's authorization (oauth.md, 5).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Account {
+    pub subject: Box<[u8]>,
+    pub email: Option<Email>,
+    pub name: Option<Box<[u8]>>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Email {
+    pub address: Box<[u8]>,
+    pub verified: bool,
+}
+
 struct Code {
     value: Box<[u8]>,
     challenge: Option<Box<[u8]>>,
     redirect_uri: Box<[u8]>,
     nonce: Option<Box<[u8]>>,
+    account: Option<Account>,
     used: bool,
     expires: Time,
 }
@@ -128,6 +149,7 @@ struct Field {
 #[expect(missing_debug_implementations, reason = "issuer retains rotating credentials")]
 pub struct Issuer {
     config: Config,
+    account: Option<Account>,
     limits: Limits,
     plans: Queue<Plan>,
     codes: List<Code>,
@@ -162,8 +184,14 @@ impl Issuer {
         {
             return Err(Error::Limits);
         }
+        #[expect(clippy::manual_map, reason = "programming-model.md, 10.3 forbids closures in step code")]
+        let account = match openid::configured(&config) {
+            Some(openid) => Some(Account { subject: openid.subject.clone(), email: None, name: None }),
+            None => None,
+        };
         Ok(Issuer {
             config,
+            account,
             limits,
             plans: Queue::with_capacity(limits.plans),
             codes: List::with_capacity(limits.codes),
@@ -176,6 +204,29 @@ impl Issuer {
             authorizations: 0,
             revoked: false,
         })
+    }
+
+    /// The account the following authorizations sign in, until another is set.
+    /// `Err(Error::Limits)` for an empty subject or any part past `limits.document.string_bytes`;
+    /// `Err(Error::Plan)` without `OpenID` terms.
+    pub fn sign_in_as(&mut self, account: Account) -> Result<(), Error> {
+        if openid::configured(&self.config).is_none() {
+            return Err(Error::Plan);
+        }
+        let cap = usize::try_from(self.limits.document.string_bytes).expect("u32 fits");
+        let email_too_large = match &account.email {
+            Some(email) => email.address.len() > cap,
+            None => false,
+        };
+        let name_too_large = match &account.name {
+            Some(name) => name.len() > cap,
+            None => false,
+        };
+        if account.subject.is_empty() || account.subject.len() > cap || email_too_large || name_too_large {
+            return Err(Error::Limits);
+        }
+        self.account = Some(account);
+        Ok(())
     }
 
     pub fn queue(&mut self, plan: Plan) -> Result<(), Error> {
@@ -326,6 +377,7 @@ impl Issuer {
             challenge: copy_optional(challenge),
             redirect_uri: bytes::copy_of(redirect.expect("redirect checked")),
             nonce: copy_optional(field(&fields, b"nonce")),
+            account: self.account.clone(),
             used: false,
             expires: now.saturating_add(Duration::from_secs(120)),
         };
@@ -459,21 +511,24 @@ impl Issuer {
             && field(fields, b"grant_type") == Some(b"authorization_code".as_slice())
             && let Some(openid) = openid::configured(&self.config)
         {
+            let code = self.code(fields).ok_or(Error::Plan)?;
             value.id_token = openid::token(
                 openid,
                 &self.limits,
                 field(fields, b"client_id").expect("accepted client"),
-                self.code_nonce(fields),
+                code.account.as_ref().ok_or(Error::Plan)?,
+                code.nonce.as_deref(),
                 wall,
             )?;
         }
         Ok(())
     }
 
-    fn code_nonce(&self, fields: &List<Field>) -> Option<&[u8]> {
+    #[expect(clippy::manual_find, reason = "programming-model.md, 10.3 forbids closures in step code")]
+    fn code(&self, fields: &List<Field>) -> Option<&Code> {
         for entry in self.codes.as_slice() {
             if Some(entry.value.as_ref()) == field(fields, b"code") {
-                return entry.nonce.as_deref();
+                return Some(entry);
             }
         }
         None

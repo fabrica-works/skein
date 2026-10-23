@@ -321,7 +321,10 @@ fn exchange(issuer: &mut Issuer) -> Box<[u8]> {
     else {
         panic!("redirect")
     };
-    let body = joined(&[b"grant_type=authorization_code&client_id=client&client_secret=secret&redirect_uri=http://127.0.0.1:1234/callback&code=", &code]);
+    exchange_code(issuer, &code)
+}
+fn exchange_code(issuer: &mut Issuer, code: &[u8]) -> Box<[u8]> {
+    let body = joined(&[b"grant_type=authorization_code&client_id=client&client_secret=secret&redirect_uri=http://127.0.0.1:1234/callback&code=", code]);
     let Some(Request::Http(answer)) = step(
         issuer,
         Event::Post {
@@ -355,14 +358,14 @@ fn member(body: &[u8], name: &[u8], occurrence: usize) -> Option<Box<[u8]>> {
             if found == occurrence {
                 return match pair.get(1) {
                     Some(Token::String(value) | Token::Number(value)) => Some(value.clone()),
+                    Some(Token::True) => Some(bytes::copy_of(b"true")),
+                    Some(Token::False) => Some(bytes::copy_of(b"false")),
                     Some(
                         Token::ObjectStart
                         | Token::ObjectEnd
                         | Token::ArrayStart
                         | Token::ArrayEnd
                         | Token::Key(_)
-                        | Token::True
-                        | Token::False
                         | Token::Null,
                     )
                     | None => None,
@@ -407,8 +410,11 @@ fn the_signature_verifies_against_the_published_key() {
 fn signing_the_same_claims_twice_gives_equal_bytes() {
     let terms = openid_terms(None);
     let openid = terms.openid.as_ref().expect("OpenID");
-    let first = openid::token(openid, &limits(), b"client", Some(b"sign-in-nonce"), Wall::EPOCH).expect("token");
-    let second = openid::token(openid, &limits(), b"client", Some(b"sign-in-nonce"), Wall::EPOCH).expect("token");
+    let account = Account { subject: openid.subject.clone(), email: None, name: None };
+    let first =
+        openid::token(openid, &limits(), b"client", &account, Some(b"sign-in-nonce"), Wall::EPOCH).expect("token");
+    let second =
+        openid::token(openid, &limits(), b"client", &account, Some(b"sign-in-nonce"), Wall::EPOCH).expect("token");
     assert!(first == second);
 }
 #[test]
@@ -443,6 +449,7 @@ fn fault_document(fault: Fault, source: Source) -> Box<[u8]> {
             openid::configured(&issuer.config).expect("OpenID"),
             &limits(),
             b"client",
+            issuer.account.as_ref().expect("account"),
             Some(b"sign-in-nonce"),
             Wall::from_nanos(100_000_000_000),
         )
@@ -524,4 +531,104 @@ fn a_scripted_id_token_is_answered_unchanged() {
     issuer.queue(token_plan(Some(b"scripted.id.token"))).expect("plan");
     let body = exchange(&mut issuer);
     assert!(member(&body, b"id_token", 0).as_deref() == Some(b"scripted.id.token"));
+}
+
+fn account(subject: &[u8], verified: bool) -> Account {
+    Account {
+        subject: bytes::copy_of(subject),
+        email: Some(Email { address: bytes::copy_of(b"member@example.test"), verified }),
+        name: Some(bytes::copy_of(b"Member")),
+    }
+}
+#[test]
+fn the_default_account_has_no_optional_claims() {
+    let claims = segment(&id_token(&mut issuer(openid_terms(None))), 1);
+    for name in [b"email".as_slice(), b"email_verified", b"name"] {
+        assert_eq!(member(&claims, name, 0), None);
+    }
+}
+#[test]
+fn the_account_supplies_its_email_verification_and_name() {
+    let claims = account_claims(account(b"member", true));
+    for (name, expected) in [
+        (b"sub".as_slice(), b"member".as_slice()),
+        (b"email", b"member@example.test"),
+        (b"email_verified", b"true"),
+        (b"name", b"Member"),
+    ] {
+        assert_eq!(member(&claims, name, 0).as_deref(), Some(expected));
+    }
+    assert!(has_verification(&claims, &Token::True));
+}
+#[test]
+fn an_unverified_email_has_a_false_json_boolean() {
+    let claims = account_claims(account(b"member", false));
+    assert!(has_verification(&claims, &Token::False));
+}
+#[test]
+fn a_code_keeps_the_account_at_its_authorization() {
+    let mut issuer = issuer(openid_terms(None));
+    issuer.sign_in_as(account(b"first", true)).expect("first account");
+    let Some(Request::Redirect { code, .. }) = authorize(&mut issuer) else { panic!("redirect") };
+    issuer.sign_in_as(account(b"second", false)).expect("second account");
+    issuer.queue(token_plan(None)).expect("plan");
+    let first = segment(&member(&exchange_code(&mut issuer, &code), b"id_token", 0).expect("token"), 1);
+    let second = segment(&id_token(&mut issuer), 1);
+    assert_eq!(member(&first, b"sub", 0).as_deref(), Some(b"first".as_slice()));
+    assert_eq!(member(&first, b"email_verified", 0).as_deref(), Some(b"true".as_slice()));
+    assert_eq!(member(&second, b"sub", 0).as_deref(), Some(b"second".as_slice()));
+    assert_eq!(member(&second, b"email_verified", 0).as_deref(), Some(b"false".as_slice()));
+}
+fn sized_accounts(size: usize) -> [Account; 3] {
+    let subject = Account { subject: bytes::zeroed(size), email: None, name: None };
+    let email = Account {
+        subject: bytes::copy_of(b"subject"),
+        email: Some(Email { address: bytes::zeroed(size), verified: true }),
+        name: None,
+    };
+    let name = Account { subject: bytes::copy_of(b"subject"), email: None, name: Some(bytes::zeroed(size)) };
+    [subject, email, name]
+}
+#[test]
+fn each_account_string_accepts_its_document_bound() {
+    let cap = usize::try_from(limits().document.string_bytes).expect("u32 fits");
+    let mut issuer = issuer(openid_terms(None));
+    for account in sized_accounts(cap) {
+        assert_eq!(issuer.sign_in_as(account), Ok(()));
+    }
+}
+#[test]
+fn each_account_string_refuses_one_past_its_bound() {
+    let past = usize::try_from(limits().document.string_bytes).expect("u32 fits").checked_add(1).expect("one past");
+    let mut issuer = issuer(openid_terms(None));
+    for account in sized_accounts(past) {
+        assert_eq!(issuer.sign_in_as(account), Err(Error::Limits));
+    }
+}
+#[test]
+fn an_empty_subject_is_refused() {
+    let mut issuer = issuer(openid_terms(None));
+    assert_eq!(issuer.sign_in_as(account(b"", true)), Err(Error::Limits));
+}
+#[test]
+fn an_account_requires_openid_terms() {
+    for config in [config(), Config { terms: Some(terms(&[])), ..config() }] {
+        let mut issuer = Issuer::new(config, limits()).expect("issuer");
+        assert_eq!(issuer.sign_in_as(account(b"member", true)), Err(Error::Plan));
+    }
+}
+
+fn account_claims(account: Account) -> Box<[u8]> {
+    let mut issuer = issuer(openid_terms(None));
+    issuer.sign_in_as(account).expect("account");
+    segment(&id_token(&mut issuer), 1)
+}
+fn has_verification(claims: &[u8], expected: &Token) -> bool {
+    let json = Json::from_bytes(claims, &limits().document).expect("claims");
+    for pair in json.as_tokens().windows(2) {
+        if pair.first() == Some(&Token::Key(bytes::copy_of(b"email_verified"))) && pair.get(1) == Some(expected) {
+            return true;
+        }
+    }
+    false
 }

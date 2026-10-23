@@ -186,3 +186,31 @@ fn a_sign_in_holding_its_keys_fits_the_worst_case() {
     assert!(visit);
     meter.check(measured, bound, &"OAuth sign-in holding its keys");
 }
+
+#[test]
+fn accounts_at_every_code_slot_fit_the_worst_case() {
+    use skein_oauth_world::{fake_limits, openid_issuer};
+    let limits = fake_limits();
+    let bound = fake::worst_case(&limits).expect("bound");
+    let string_bytes = usize::try_from(limits.document.string_bytes).expect("u32 fits");
+    let meter = Meter::new();
+    meter.start();
+    let mut issuer = openid_issuer(None);
+    let mut out = Queue::with_capacity(fake::MAX_OUT);
+    for _ in 0..limits.codes {
+        issuer
+            .sign_in_as(fake::Account {
+                subject: boxed(&vec![b's'; string_bytes]),
+                email: Some(fake::Email { address: boxed(&vec![b'e'; string_bytes]), verified: true }),
+                name: Some(boxed(&vec![b'n'; string_bytes])),
+            })
+            .expect("account");
+        issuer.step(fake::Event::Authorize {
+            url: boxed(b"https://issuer.example/authorize?response_type=code&client_id=client&redirect_uri=http://127.0.0.1:1234/callback&state=0123456789abcdef&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"),
+            now: Time::ZERO,
+        }, &mut out);
+        let Some(fake::Request::Redirect { .. }) = out.pop() else { panic!("code retained") };
+    }
+    let measured = meter.end();
+    meter.check(measured, bound, &"OAuth accounts at every code slot");
+}

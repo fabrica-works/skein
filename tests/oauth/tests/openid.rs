@@ -2,7 +2,7 @@ use skein_fake_oauth as fake;
 use skein_lib::Duration;
 use skein_oauth as oauth;
 use skein_oauth_world::{
-    begin, client_limits, client_step, documents, failure, fake_step, http, openid_issuer, openid_issuer_with,
+    begin, boxed, client_limits, client_step, documents, failure, fake_step, http, openid_issuer, openid_issuer_with,
     openid_post, openid_registration, openid_visit, record, redirected, response, success, time, wall,
 };
 
@@ -152,4 +152,31 @@ fn an_issued_client_id_is_the_audience_checked() {
     let record = record(finished(&mut client, &mut issuer, registration));
     assert!(record.issued_client_id.as_deref() == Some(b"issued-client"));
     assert!(record.subject.as_deref() == Some(b"user-42"));
+}
+
+#[test]
+fn two_subjects_share_an_address_in_one_world() {
+    let mut client = oauth::Client::new(client_limits()).expect("client");
+    let mut issuer = openid_issuer(None);
+    for subject in [b"member".as_slice(), b"another-subject"] {
+        issuer
+            .sign_in_as(fake::Account {
+                subject: boxed(subject),
+                email: Some(fake::Email { address: boxed(b"shared@example.test"), verified: true }),
+                name: None,
+            })
+            .expect("account");
+        let record = record(finished(&mut client, &mut issuer, openid_registration()));
+        assert_eq!(record.subject.as_deref(), Some(subject));
+        let token = record.id_token.expect("ID token");
+        let payload = token.split(|byte| *byte == b'.').nth(1).expect("payload");
+        let payload = skein_lib::base64::decode(skein_lib::base64::Alphabet::Url, payload, documents().id_token_bytes)
+            .expect("base64url");
+        let json = oauth::Json::from_bytes(&payload, &documents()).expect("claims");
+        let expected =
+            oauth::Json::from_bytes(br#"{"email":"shared@example.test"}"#, &documents()).expect("email claim");
+        let email = expected.as_tokens().get(1..3).expect("email key and value");
+        assert!(json.as_tokens().windows(email.len()).any(|pair| pair == email));
+        let _ = client_step(&mut client, oauth::Event::Reset);
+    }
 }

@@ -1,5 +1,5 @@
 //! Signed issuer documents and faults (oauth.md, 2.2, 5 and 7).
-use crate::{Config, Error, HttpEvidence, HttpResponse, Limits, Request, key};
+use crate::{Account, Config, Error, HttpEvidence, HttpResponse, Limits, Request, key};
 use alloc::boxed::Box;
 use rustls::{
     SignatureScheme,
@@ -133,6 +133,7 @@ pub(super) fn token(
     openid: &OpenId,
     limits: &Limits,
     client: &[u8],
+    account: &Account,
     nonce: Option<&[u8]>,
     wall: Wall,
 ) -> Result<Option<Box<[u8]>>, Error> {
@@ -141,7 +142,7 @@ pub(super) fn token(
     }
     let cap = limits.document.id_token_bytes;
     let header = encoded(&header(openid, limits)?)?;
-    let payload = encoded(&claims(openid, limits, client, nonce, wall)?)?;
+    let payload = encoded(&claims(openid, limits, client, account, nonce, wall)?)?;
     let size = header.len().checked_add(payload.len()).ok_or(Error::Limits)?.checked_add(1).ok_or(Error::Limits)?;
     if size > usize::try_from(cap).expect("u32 fits") {
         return Err(Error::Limits);
@@ -169,6 +170,7 @@ pub(super) fn claims(
     openid: &OpenId,
     limits: &Limits,
     client: &[u8],
+    account: &Account,
     nonce: Option<&[u8]>,
     wall: Wall,
 ) -> Result<Box<[u8]>, Error> {
@@ -201,7 +203,7 @@ pub(super) fn claims(
         }
     }
     .ok_or(Error::Limits)?;
-    encode(&Part::Claims(openid, client, nonce, seconds), limits.document.id_token_bytes)
+    encode(&Part::Claims(openid, client, account, nonce, seconds), limits.document.id_token_bytes)
 }
 fn sign(input: &[u8]) -> Result<Box<[u8]>, Error> {
     let raw = base64::decode(Alphabet::Standard, key::PKCS8.as_bytes(), 2048).or(Err(Error::Plan))?;
@@ -221,7 +223,7 @@ fn encoded(raw: &[u8]) -> Result<Box<[u8]>, Error> {
 
 enum Part<'a> {
     Header(&'a OpenId),
-    Claims(&'a OpenId, &'a [u8], Option<&'a [u8]>, u64),
+    Claims(&'a OpenId, &'a [u8], &'a Account, Option<&'a [u8]>, u64),
     Metadata(&'a OpenId, &'a Config),
     Keys(&'a OpenId, &'a [u8]),
 }
@@ -255,7 +257,7 @@ fn write(out: &mut Encoder, part: &Part<'_>) {
                 text(out, b"kid", if openid.fault == Some(Fault::UnknownKid) { b"unknown" } else { key::KID });
             }
         }
-        Part::Claims(openid, client, nonce, seconds) => {
+        Part::Claims(openid, client, account, nonce, seconds) => {
             text(
                 out,
                 b"iss",
@@ -279,7 +281,15 @@ fn write(out: &mut Encoder, part: &Part<'_>) {
                 text(out, b"nonce", nonce);
             }
             if openid.fault != Some(Fault::NoSubject) {
-                text(out, b"sub", &openid.subject);
+                text(out, b"sub", &account.subject);
+            }
+            if let Some(email) = &account.email {
+                text(out, b"email", &email.address);
+                out.key(b"email_verified");
+                out.boolean(email.verified);
+            }
+            if let Some(name) = &account.name {
+                text(out, b"name", name);
             }
         }
         Part::Metadata(openid, config) => {

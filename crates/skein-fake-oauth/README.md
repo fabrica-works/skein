@@ -19,5 +19,7 @@ Revocation spends the refresh token when its successful answer is delivered.
 OpenID terms sign each successful authorization-code exchange's ID token with
 one public test RSA key. They publish metadata and a key set through `Get`,
 without consuming a response plan. A scripted ID token takes precedence.
+`sign_in_as(Account)` sets the subject, optional email with its verification
+flag, and optional name retained by each following authorization code.
 One fault changes a document, header or claim for the client's checks.
 Signing uses ring's RSA blinding; its RS256 bytes depend only on the claims.
