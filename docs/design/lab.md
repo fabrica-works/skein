@@ -265,6 +265,7 @@ named by its digest.
 ├── store/subjects/<digest>/        subject.json, artifacts/<name>, source/
 ├── keys/<experiment>/<key>/        key.json, evidence.jsonl, verdict.json
 │   └── runs/<run>/                 one run (5.6)
+├── rehearsals/<experiment>/<run>/  a rehearsal, never evidence (6.6)
 ├── findings/                       <id>.jsonl, index.json
 └── campaigns/                      <name>.jsonl, <name>.md
 ```
@@ -351,7 +352,8 @@ and an agent:
       {"name": "client",
        "argv": ["{artifact.app}", "client", "{dir.client}"],
        "env": {"PATH": "/usr/bin:/bin"},
-       "writes": ["{dir.client}"], "reads": []}
+       "writes": ["{dir.client}"], "reads": [],
+       "provision": {"args": ["status"], "status": 0}}
     ]
   },
   "faults": [],
@@ -726,7 +728,7 @@ it out and gives it back. It is never copied.
    immediately before it starts, once its dependencies' readiness
    captures are known (4.2, 4.3), and its trees unpacked.
 3. **Seed:** the seed actions, each with its awaited line (4.5).
-4. **Drive:** the driver, until its host ends, a bound passes (6.5) or a
+4. **Drive:** the tools' provisioning (6.6), then the driver, until its host ends, a bound passes (6.5) or a
    process stops, the meter reading meanwhile (6.5). Without a driver,
    nothing but the meter.
 5. **Collect,** then **check** (4.5), then **release** (4.8), the
@@ -898,7 +900,8 @@ and `dirs/<D>/`.
 - `driver`: its host's invocation, the inventory it was checked
   against and what was found, each item observed or
   `unobserved` (6.1), its actions and observed turns, its end, the
-  report's and the transcript's files (6.3, 6.4);
+  report's and the transcript's files (6.3, 6.4), and its tools'
+  provisioning (6.6);
 - `failures`, each `{"id", "signature", "kind", "summary", "evidence"}`;
   `undecided`, each `{"check", "reason"}` (a command left unavailable,
   5.1, as `<group>/<name>`: `actions/consume`); `errors`, each
@@ -1117,9 +1120,10 @@ What the agent's own commands may reach:
 
 ### 6.3 Tools and the transcript
 
-- **A tool** is `{"name", "argv", "env", "writes", "reads"}`: `argv` is a
-  prefix (the program and its fixed arguments, a client directory among
-  them) to which the agent's arguments are appended.
+- **A tool** is `{"name", "argv", "env", "writes", "reads", "provision"}`:
+  `argv` is a prefix (the program and its fixed arguments, a client
+  directory among them) to which the agent's arguments are appended;
+  `provision` is its provisioning call (6.6).
 - **One MCP server,** `lab tool`, which Codex starts over stdio as its
   only server, with no environment of the runner's, offers one MCP tool
   per experiment tool and no resources or prompts: a tool's input
@@ -1242,6 +1246,53 @@ evidence for the owner, not failures.
   host did not report, as when it was ended within a turn, is null:
   unknown, never 0. A campaign's totals add what is known and count what
   is not.
+
+### 6.6 Provisioning and rehearsal
+
+- **A scripted endpoint,** the runner's: a loopback server speaking the
+  host's model protocol (for Codex, the Responses stream) that plays a
+  script, never a model. A script (`lab-script/1`) holds one turn per
+  request the host sends: tool calls, each its name, namespace and JSON
+  arguments, or a final text. A turn may capture a value from the
+  request's latest tool outputs, a regular expression's first group,
+  which later turns' strings name as `{capture.NAME}`. A request past
+  the script's end, or a capture that matches nothing, is answered with
+  a final text that names it, so the run's report fails.
+- **Each tool's provisioning call.** A tool's `provision` is `{"args",
+  "status"}`: a call harmless at the drive's start (a read, the tool's
+  help) and the exit status it must end with. Once the seed has run,
+  before the drive's first turn, the runner starts a host as it starts
+  the drive's, with the same configuration but its provider, the
+  scripted endpoint, and a home of the run's own, and plays one turn
+  that calls each tool once with its `provision` arguments, then ends.
+  Each call goes through the lab's server, its view and the broker as a
+  drive's call does, and is recorded in `driver/provision/` as 6.3
+  records calls. It is no action, and no fault counts it.
+  - **It errors the run before any model turn** (5.5): `provision/<tool>/exit:<status>`,
+    `provision/<tool>/signal:<SIG>`, or `provision/<tool>/missing` for
+    a call that never reached the broker; `provision/offered/<name>` for
+    a tool the host offered the model that is neither the experiment's
+    nor an admitted built-in (6.1); and an inventory that differs, the
+    provisioning host's inventory being checked as the drive's is.
+  - **The offered tools** the host's request names are kept as evidence.
+    They are the provisioning host's, whose configuration differs from
+    the drive's by its provider alone, so the drive's built-in tools
+    stay `unobserved` (6.1).
+- **A rehearsal** is a run with no model: `lab run --rehearse SCRIPT`
+  plays the drive on the scripted endpoint too, by the script named.
+  Everything else is a paid run's: the key, the subject, the settings'
+  program and catalog, the configuration but its provider, the views,
+  the probe, the seed, the provisioning, the checks. Its host's home is
+  the run's own, so it needs no login; neither the brake nor `pause`
+  applies, since it spends nothing.
+  - **Never evidence:** a rehearsal is kept in
+    `rehearsals/<experiment>/<run>/`, its `run.json` naming the key it
+    rehearsed and, in `rehearsal`, the script's digest. It is never in a
+    key's runs or evidence, a verdict, a finding or a campaign.
+  - **Its scripts** are kept beside the experiment, never in its
+    directory, so that they change no key: one that does the task right
+    passes, and one that answers wrong fails by the experiment's check.
+    Both run before a key's paid runs, on the machine that pays.
 
 ## 7. Checks and signatures
 
@@ -1504,7 +1555,7 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
 ```
 lab subject --repository DIR --commit C [--exclude PATH]... --artifact NAME=PATH...
 lab validate EXPERIMENT --subject DIGEST
-lab run EXPERIMENT --subject DIGEST [--seed N] [--campaign NAME]
+lab run EXPERIMENT --subject DIGEST [--seed N] [--campaign NAME | --rehearse SCRIPT]
 lab judge EXPERIMENT --subject DIGEST [--campaign NAME]
 lab triage RUN
 lab finding ID file | class CLASS | take --by WHO | fix ... | close --recheck KEY
@@ -1517,7 +1568,7 @@ lab tool RUN
 - **`subject`** exports the commit's tree less its exclusions, copies
   and digests the artifacts, and prints the subject's digest.
   **`validate`** prints the key or every refusal, starting nothing.
-  **`run`** makes one run. **`judge`** runs seeds until the verdict is
+  **`run`** makes one run, or with `--rehearse` one rehearsal (6.6). **`judge`** runs seeds until the verdict is
   decided (section 8) and prints it. **`held`** lists each held file,
   kept or taken by a run, and **`held put`** moves one in (4.8).
   **`tool`** is the driver's MCP server, started by its host (6.3).
