@@ -941,8 +941,11 @@ documentation.
   than the command tool by default. The driver-model entry must also
   hold `multi_agent_version: null` (no collaboration tools),
   `experimental_supported_tools: []` (no clock and no asynchronous
-  question) and `apply_patch_tool_type: null` (no patch tool); the
-  configuration turns the question tool off. The command tool's input
+  question), `apply_patch_tool_type: null` (no patch tool) and
+  `supports_search_tool: false` (the lab's tools offered directly, not
+  deferred behind a tool search the host does not serve: a call it
+  does not serve makes no item); the configuration turns the question
+  tool off. The command tool's input
   to a running command (`write_stdin`) stays, and its use is a command
   execution.
 - **Three resource tools stay:** Codex adds `list_mcp_resources`,
