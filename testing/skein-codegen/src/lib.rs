@@ -173,3 +173,6 @@ fn has_boxed_variants(schema: &Schema) -> bool {
 mod test_helpers;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod oracle;

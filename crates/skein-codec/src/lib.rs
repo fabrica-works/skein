@@ -1,6 +1,6 @@
 //! Shared bounded reads and pieces for codecs (codec.md, sections 2 to 4).
-//! The reader owns no state beyond its cursor; this crate knows no schema or
-//! field path. Generated decoders call these helpers after choosing a limit.
+//! Generated decoders call the read helpers after choosing a limit.
+//! Schemas are read into bounded tables (codec.md, section 7).
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -19,6 +19,7 @@ use alloc::boxed::Box;
 use skein_lib::Reader;
 
 pub mod piece;
+pub mod schema;
 
 #[cfg(test)]
 mod tests;

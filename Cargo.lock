@@ -503,6 +503,9 @@ dependencies = [
 [[package]]
 name = "skein-codegen"
 version = "0.0.0"
+dependencies = [
+ "skein-codec",
+]
 
 [[package]]
 name = "skein-conformance"

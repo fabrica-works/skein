@@ -14,5 +14,8 @@ path = "src/lib.rs"
 name = "skein-codegen"
 path = "src/main.rs"
 
+[dependencies]
+skein-codec = { path = "../../crates/skein-codec" }
+
 [lints]
 workspace = true

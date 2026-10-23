@@ -1,4 +1,4 @@
-//! Tokens, grammar and line-numbered errors for codec.md, section 3.
+//! Schema tables converted to the generator tree (codec.md, section 7).
 
 use core::fmt;
 
@@ -19,201 +19,140 @@ impl fmt::Display for Error {
 
 impl core::error::Error for Error {}
 
-#[derive(Clone, Debug)]
-struct Token {
-    text: String,
-    line: usize,
+use skein_codec::schema::{self, DeclIx, Expected, FieldIx, SchemaError, Shape, Span, TypeIx, VariantIx, Wrong};
+
+fn word(source: &str, at: Span) -> &str {
+    source
+        .get(usize::try_from(at.start).expect("offset fits usize")..usize::try_from(at.end).expect("offset fits usize"))
+        .expect("a token is ASCII and belongs to the source")
 }
 
-fn lex(source: &str) -> Result<Vec<Token>, Error> {
-    let mut tokens = Vec::new();
-    for (offset, line) in source.lines().enumerate() {
-        let line_number = offset.checked_add(1).expect("schema line fits usize");
-        let mut word = String::new();
-        for character in line.chars() {
-            if character == '#' {
-                break;
-            }
-            if character.is_ascii_whitespace() || matches!(character, '{' | '}' | ':' | ',') {
-                if !word.is_empty() {
-                    tokens.push(Token { text: core::mem::take(&mut word), line: line_number });
-                }
-                if matches!(character, '{' | '}' | ':' | ',') {
-                    tokens.push(Token { text: character.to_string(), line: line_number });
-                }
-            } else if character.is_ascii_alphanumeric() || matches!(character, '_' | '-') {
-                word.push(character);
-            } else {
-                return Err(Error { line: line_number, message: format!("unexpected character {character:?}") });
-            }
+fn refusal(source: &str, error: SchemaError) -> Error {
+    let found = || word(source, error.at);
+    let message = match error.wrong {
+        Wrong::Long => "schema longer than 1048576 bytes".into(),
+        Wrong::Many => "more than 4096 declarations".into(),
+        Wrong::Character => {
+            let character = source
+                .get(usize::try_from(error.at.start).expect("offset fits usize")..)
+                .expect("character belongs to source")
+                .chars()
+                .next()
+                .expect("character at refusal");
+            format!("unexpected character {character:?}")
         }
-        if !word.is_empty() {
-            tokens.push(Token { text: word, line: line_number });
-        }
-    }
-    Ok(tokens)
+        Wrong::End => "unexpected end of schema".into(),
+        Wrong::Expected(expected) => match expected {
+            Expected::Family => format!("expected family, found {}", found()),
+            Expected::Open => format!("expected {{, found {}", found()),
+            Expected::Colon => format!("expected :, found {}", found()),
+            Expected::Record => format!("expected record, found {}", found()),
+            Expected::Type => "expected a type".into(),
+            Expected::Declaration => format!("expected record, versioned record or enum, found {}", found()),
+        },
+        Wrong::Name => format!("invalid Rust name {}", found()),
+        Wrong::Bound => format!("invalid bound {}", found()),
+        Wrong::Family => "invalid family name".into(),
+        Wrong::Version => format!("invalid family version {}", found()),
+        Wrong::Undeclared => format!("type {} used before declaration", found()),
+        Wrong::NotRecord => format!("variant {} must hold one record", found()),
+        Wrong::NoVariants => "enum has no variants".into(),
+        Wrong::ManyVariants => "enum has more than 256 variants".into(),
+        Wrong::DuplicateType => format!("duplicate type {}", found()),
+        Wrong::DuplicateField => format!("duplicate field {}", found()),
+        Wrong::DuplicateVariant => format!("duplicate variant {}", found()),
+        Wrong::Overflow => "encoded worst case overflows u64".into(),
+        Wrong::Large => format!("encoded worst case for {} exceeds u32", found()),
+    };
+    Error { line: usize::try_from(error.line).expect("line fits usize"), message }
 }
 
-struct Parser {
-    tokens: Vec<Token>,
-    offset: usize,
-    final_line: usize,
+fn spelling(schema: &schema::Schema, at: Span) -> String {
+    core::str::from_utf8(schema.spelled(at)).expect("names are ASCII").into()
 }
 
-impl Parser {
-    fn peek(&self) -> Option<&str> {
-        self.tokens.get(self.offset).map(|token| token.text.as_str())
-    }
+fn named(schema: &schema::Schema, at: DeclIx) -> String {
+    spelling(schema, schema.declaration(at).name)
+}
 
-    fn line(&self) -> usize {
-        self.tokens.get(self.offset).map_or(self.final_line, |token| token.line)
-    }
-
-    fn take(&mut self) -> Result<String, Error> {
-        let token = self
-            .tokens
-            .get(self.offset)
-            .ok_or_else(|| Error { line: self.final_line, message: "unexpected end of schema".into() })?;
-        self.offset = self.offset.checked_add(1).expect("token offset fits usize");
-        Ok(token.text.clone())
-    }
-
-    fn expect(&mut self, wanted: &str) -> Result<(), Error> {
-        let line = self.line();
-        let found = self.take()?;
-        if found == wanted { Ok(()) } else { Err(Error { line, message: format!("expected {wanted}, found {found}") }) }
-    }
-
-    fn name(&mut self) -> Result<String, Error> {
-        let line = self.line();
-        let name = self.take()?;
-        let mut characters = name.chars();
-        let first = characters.next();
-        if first.is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
-            && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
-        {
-            Ok(name)
-        } else {
-            Err(Error { line, message: format!("invalid Rust name {name}") })
-        }
-    }
-
-    fn bound(&mut self) -> Result<u32, Error> {
-        let line = self.line();
-        let value = self.take()?;
-        value.parse::<u32>().map_err(|_| Error { line, message: format!("invalid bound {value}") })
-    }
-
-    fn ty(&mut self) -> Result<Type, Error> {
-        let line = self.line();
-        let kind = self.take()?;
-        match kind.as_str() {
-            "u8" => Ok(Type::U8),
-            "u16" => Ok(Type::U16),
-            "u32" => Ok(Type::U32),
-            "u64" => Ok(Type::U64),
-            "bool" => Ok(Type::Bool),
-            "duration" => Ok(Type::Duration),
-            "fixed" => Ok(Type::Fixed(self.bound()?)),
-            "bytes" => Ok(Type::Bytes(self.bound()?)),
-            "secret" => Ok(Type::Secret(self.bound()?)),
-            "text" => Ok(Type::Text(self.bound()?)),
-            "list" => {
-                let count = self.bound()?;
-                let item = self.ty()?;
-                Ok(Type::List(count, Box::new(item)))
+fn ty(schema: &schema::Schema, first: TypeIx) -> Type {
+    let mut wrappers = Vec::new();
+    let mut at = first;
+    let mut value = loop {
+        match schema.ty(at) {
+            schema::Type::List { bound, item } => {
+                wrappers.push(Some(bound));
+                at = item;
             }
-            "option" => Ok(Type::Option(Box::new(self.ty()?))),
-            "{" | "}" | ":" | "," => Err(Error { line, message: "expected a type".into() }),
-            _ => Ok(Type::Named(kind)),
-        }
-    }
-
-    fn record(&mut self, versioned: bool) -> Result<Declaration, Error> {
-        let line = self.line();
-        let name = self.name()?;
-        self.expect("{")?;
-        let mut fields = Vec::new();
-        while self.peek() != Some("}") {
-            let field_line = self.line();
-            let field = self.name()?;
-            self.expect(":")?;
-            let ty = self.ty()?;
-            fields.push(Field { line: field_line, name: field, ty });
-            if self.peek() == Some(",") {
-                self.take()?;
+            schema::Type::Option(item) => {
+                wrappers.push(None);
+                at = item;
             }
+            schema::Type::U8 => break Type::U8,
+            schema::Type::U16 => break Type::U16,
+            schema::Type::U32 => break Type::U32,
+            schema::Type::U64 => break Type::U64,
+            schema::Type::Bool => break Type::Bool,
+            schema::Type::Duration => break Type::Duration,
+            schema::Type::Fixed(bound) => break Type::Fixed(bound),
+            schema::Type::Bytes { bound, .. } => break Type::Bytes(bound),
+            schema::Type::Secret(bound) => break Type::Secret(bound),
+            schema::Type::Text(bound) => break Type::Text(bound),
+            schema::Type::Named(at) => break Type::Named(named(schema, at)),
         }
-        self.expect("}")?;
-        Ok(Declaration::Record(Record { line, name, versioned, fields }))
+    };
+    for wrapper in wrappers.into_iter().rev() {
+        value = match wrapper {
+            Some(bound) => Type::List(bound, Box::new(value)),
+            None => Type::Option(Box::new(value)),
+        };
     }
+    value
+}
 
-    fn enumeration(&mut self) -> Result<Declaration, Error> {
-        let line = self.line();
-        let name = self.name()?;
-        self.expect("{")?;
-        let mut variants = Vec::new();
-        while self.peek() != Some("}") {
-            let variant_line = self.line();
-            let variant = self.name()?;
-            let mut boxed = false;
-            let record = if self.peek() == Some(":") {
-                self.take()?;
-                if self.peek() == Some("boxed") {
-                    self.take()?;
-                    boxed = true;
-                }
-                Some(self.name()?)
-            } else {
-                None
-            };
-            variants.push(Variant { line: variant_line, name: variant, record, boxed });
-            if self.peek() == Some(",") {
-                self.take()?;
-            }
+fn declaration(schema: &schema::Schema, at: DeclIx) -> Declaration {
+    let declaration = schema.declaration(at);
+    let name = spelling(schema, declaration.name);
+    let line = usize::try_from(declaration.line).expect("line fits usize");
+    match declaration.shape {
+        Shape::Record { versioned, first, count } => {
+            let fields = (first.index()..first.index().checked_add(count).expect("field table bounded"))
+                .map(|at| {
+                    let field = schema.field(FieldIx::new(at));
+                    Field {
+                        line: usize::try_from(field.line).expect("line fits usize"),
+                        name: spelling(schema, field.name),
+                        ty: ty(schema, field.ty),
+                    }
+                })
+                .collect();
+            Declaration::Record(Record { line, name, versioned, fields })
         }
-        self.expect("}")?;
-        Ok(Declaration::Enum(Enumeration { line, name, variants }))
+        Shape::Enum { first, count } => {
+            let variants = (first.index()..first.index().checked_add(count).expect("variant table bounded"))
+                .map(|at| {
+                    let variant = schema.variant(VariantIx::new(at));
+                    Variant {
+                        line: usize::try_from(variant.line).expect("line fits usize"),
+                        name: spelling(schema, variant.name),
+                        record: variant.record.map(|at| named(schema, at)),
+                        boxed: variant.boxed,
+                    }
+                })
+                .collect();
+            Declaration::Enum(Enumeration { line, name, variants })
+        }
     }
 }
 
 /// Parses and validates one version of a codec family.
 pub fn parse(source: &str) -> Result<Schema, Error> {
-    let tokens = lex(source)?;
-    let mut parser = Parser { tokens, offset: 0, final_line: source.lines().count().max(1) };
-    parser.expect("family")?;
-    let family = parser.take()?;
-    if family.is_empty()
-        || !family.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-    {
-        return Err(Error { line: parser.line(), message: "invalid family name".into() });
-    }
-    let version = {
-        let line = parser.line();
-        let raw = parser.take()?;
-        raw.parse::<u16>().map_err(|_| Error { line, message: format!("invalid family version {raw}") })?
+    let parsed = schema::parse(source.as_bytes()).map_err(|error| refusal(source, error))?;
+    let schema = Schema {
+        family: spelling(&parsed, parsed.family()),
+        version: parsed.version(),
+        declarations: (0..parsed.declarations()).map(|at| declaration(&parsed, DeclIx::new(at))).collect(),
     };
-    let mut declarations = Vec::new();
-    while parser.peek().is_some() {
-        let line = parser.line();
-        let kind = parser.take()?;
-        let declaration = match kind.as_str() {
-            "record" => parser.record(false)?,
-            "enum" => parser.enumeration()?,
-            "versioned" => {
-                parser.expect("record")?;
-                parser.record(true)?
-            }
-            _ => {
-                return Err(Error {
-                    line,
-                    message: format!("expected record, versioned record or enum, found {kind}"),
-                });
-            }
-        };
-        declarations.push(declaration);
-    }
-    let schema = Schema { family, version, declarations };
     check::check(&schema)?;
     Ok(schema)
 }
