@@ -37,7 +37,8 @@ holds their reasons and open questions.
 ## Building and landing
 
 - **Work on a branch in a worktree of your own,** never in a primary
-  checkout.
+  checkout. Run no git command there, not even `git fetch`: your
+  worktree's own `git fetch` updates the same remote refs.
 - **A rebased branch is pushed under a new name;** never force-push.
 - **Build and test through `heavy`:** `heavy cargo nextest run -p
   <crate>`. It queues every build on the machine, so that builds don't
