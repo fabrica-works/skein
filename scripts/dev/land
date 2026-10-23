@@ -22,7 +22,9 @@
 # too slow for its gate, runs on the landed commit in the background
 # (after-landing).
 #
-# --docs   Markdown only: check that, and skip the gate.
+# --docs   Markdown only, or the mockups under docs/design/ (a directory
+#          named mockups), which need no build or test: check that, and
+#          skip the gate.
 # --local  No remote: land on the local main under a lock (LAND_LOCK, or
 #          the repository's land.lock) instead of pushing.
 # --gate   The gate, a shell command, instead of scripts/check.sh.
@@ -183,9 +185,10 @@ Resolve them, run git rebase --continue, then land again."
     tree=$(git rev-parse 'HEAD^{tree}')
     if ((docs)); then
         others=$(git diff --no-renames --name-only "$base" HEAD |
-            grep -vE '\.md$' || true)
-        [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
-        summary="none (Markdown only)"
+            grep -vE '\.md$|^docs/design/(.*/)?mockups/' || true)
+        [[ -z $others ]] ||
+            die 2 "--docs, but these are neither Markdown nor docs/design/'s mockups: $others"
+        summary="none (Markdown and mockups only)"
         gated=$tree
     else
         [[ $gate != scripts/check.sh || -x $gate ]] ||
