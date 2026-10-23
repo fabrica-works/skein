@@ -379,6 +379,9 @@ is mechanical, and Codex reads what needs reading.
   - no agent reads another process's environment (`/proc/*/environ`,
     `ps e`), and none runs `pueue status` or `pueue log` in any form:
     `heavy`'s output and `heavy.tsv` show the queue;
+  - an agent searches only its worktree and the paths its task names,
+    never `~/.local`, `~/.config`, `/run/user` or another tool's state:
+    pueue's `state.json` holds the queued tasks' environments;
   - Codex runs with umask 077 and 0600 logs, and a background `codex
     exec` takes `</dev/null`;
   - the user's box: no agent reads its secrets, and none asks for it;
