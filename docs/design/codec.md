@@ -771,8 +771,9 @@ impl Fingerprints {
     written at their new widths. The levels are alike (a `list` for a
     `list`, an `option` for an `option`), each bound the same or
     larger, and at the end an integer the same or wider, `text` made
-    `bytes`, `bytes` and `secret` made one another, a `bytes` clause
-    (`holds` or `pieces`) added or taken away, or a named type matched;
+    `bytes` or `secret`, `bytes` and `secret` made one another, a
+    `bytes` clause (`holds` or `pieces`) added or taken away, or a
+    named type matched;
   - **`wrap`:** `U` is `T` with an `option` at one or more levels where
     `T` has none, and is otherwise a `widen` of it. An `option` of `T`
     stands for the outermost `option` of `U` it can, so the one added
