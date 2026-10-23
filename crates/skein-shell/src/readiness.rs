@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use skein_io::kernel::{Complete, Done, Error, Family, Fd, Op, OpenHow, Submit};
 use skein_lib::{Queue, Token};
 
-use crate::linux::{self, epoll::Epoll};
-use crate::{Config, OpenError, Wait, ring};
+use crate::system::epoll::Epoll;
+use crate::{Config, OpenError, Wait, calls, system};
 
 #[derive(Debug)]
 pub(crate) struct Readiness {
@@ -47,10 +47,10 @@ impl Readiness {
         if config.operations == 0 {
             return Err(OpenError::NoOperations);
         }
-        if !linux::at_floor().map_err(OpenError::Setup)? {
+        if !system::at_floor().map_err(OpenError::Setup)? {
             return Err(OpenError::BelowFloor);
         }
-        ring::process::block_sigpipe().map_err(OpenError::Setup)?;
+        system::process::block_sigpipe().map_err(OpenError::Setup)?;
         let epoll = Epoll::open(config.operations).map_err(OpenError::Setup)?;
         let capacity = usize::try_from(config.operations).expect("u32 fits usize");
         let slots = (0..config.operations).map(|_| Slot { generation: 0, record: None, result: None }).collect();
@@ -62,7 +62,7 @@ impl Readiness {
             waiters: BTreeMap::new(),
             nonblocking: BTreeSet::new(),
             epoll,
-            listing: vec![0; ring::LISTING].into_boxed_slice(),
+            listing: vec![0; calls::LISTING].into_boxed_slice(),
             resubmitted: 0,
         })
     }
@@ -121,7 +121,7 @@ impl Readiness {
                 Wait::Until(deadline) => {
                     // The deadline and timeout are integer nanoseconds: their positive
                     // difference needs no rounding, and zero means the deadline passed.
-                    let now = ring::clock_nanos(libc::CLOCK_MONOTONIC).expect("the monotonic clock is available");
+                    let now = system::clock_nanos(libc::CLOCK_MONOTONIC).expect("the monotonic clock is available");
                     Some(deadline.as_nanos().saturating_sub(now))
                 }
                 Wait::Forever => {
@@ -158,7 +158,7 @@ impl Readiness {
     fn start(&mut self, record: Submit) {
         assert!(record.kind.is_valid(), "io submits only valid records (skein_io::kernel, broken invariants)");
         assert!(!self.tokens.contains_key(&record.op), "io never reuses a token in flight (skein_io::kernel)");
-        ring::check_path_access(&record.kind);
+        calls::check_path_access(&record.kind);
         let side = side(&record.kind);
         if let Some((fd, side)) = side {
             self.assert_side_free(fd, side);
@@ -214,7 +214,7 @@ impl Readiness {
             }
             Err(errno) => {
                 let kind = &self.slot(index).record.as_ref().expect("an in-flight record").kind;
-                let error = ring::error(kind, errno, false);
+                let error = calls::error(kind, errno, false);
                 self.finish(index, Err(error));
             }
         }
@@ -275,7 +275,7 @@ impl Readiness {
             if result == Err(Error::Other(libc::EINTR)) && !matches!(kind, Op::Open { .. } | Op::Close { .. }) {
                 continue;
             }
-            if matches!(kind, Op::Open { .. }) && result == Err(Error::Other(libc::EAGAIN)) && again < ring::AGAIN {
+            if matches!(kind, Op::Open { .. }) && result == Err(Error::Other(libc::EAGAIN)) && again < calls::AGAIN {
                 again = again.saturating_add(1);
                 self.resubmitted = self.resubmitted.saturating_add(1);
             } else {
@@ -294,16 +294,20 @@ impl Readiness {
             }
             mut result => {
                 if let (Op::Socket { family }, Ok(Done::Fd(fd))) = (&*kind, &result) {
-                    let configured = linux::retry(|| linux::setsockopt(fd.raw(), libc::IPPROTO_TCP, libc::TCP_NODELAY))
-                        .and_then(|()| {
-                            if *family == Family::Ipv6 {
-                                linux::retry(|| linux::setsockopt(fd.raw(), libc::IPPROTO_IPV6, libc::IPV6_V6ONLY))
-                            } else {
-                                Ok(())
-                            }
-                        });
+                    let configured =
+                        system::retry(|| system::setsockopt(fd.raw(), libc::IPPROTO_TCP, libc::TCP_NODELAY)).and_then(
+                            |()| {
+                                if *family == Family::Ipv6 {
+                                    system::retry(|| {
+                                        system::setsockopt(fd.raw(), libc::IPPROTO_IPV6, libc::IPV6_V6ONLY)
+                                    })
+                                } else {
+                                    Ok(())
+                                }
+                            },
+                        );
                     if let Err(errno) = configured {
-                        let _closed = linux::close(*fd);
+                        let _closed = system::close(*fd);
                         result = Err(Error::Other(errno));
                     }
                 }
@@ -314,7 +318,7 @@ impl Readiness {
                     (Op::Spawn { spawn }, Ok(Done::Spawned { .. })) => {
                         for pipe in &spawn.pipes {
                             let fd = pipe.parent.expect("a successful Spawn fills each parent end");
-                            let configured = linux::nonblocking(fd);
+                            let configured = system::nonblocking(fd);
                             assert!(
                                 configured.is_ok(),
                                 "O_NONBLOCK applies to each parent pipe end Spawn just made: {configured:?}"
@@ -366,27 +370,27 @@ fn side(kind: &Op) -> Option<(Fd, Side)> {
 fn perform(kind: &mut Op, resumed: bool, nonblocking: bool, listing: &mut [u8]) -> Result<Done, Error> {
     match kind {
         Op::Open { root, path, how } => {
-            let raw = linux::files::open(*root, path, *how).map_err(|errno| ring::error(kind, errno, false))?;
+            let raw = system::files::open(*root, path, *how).map_err(|errno| calls::error(kind, errno, false))?;
             if matches!(kind, Op::Open { how: OpenHow::PathNoFollow, .. }) {
                 Ok(Done::Fd(Fd::new(raw)))
             } else {
-                ring::opened(raw)
+                system::opened(raw)
             }
         }
-        Op::Spawn { spawn } => ring::process::spawn(spawn),
-        Op::Signal { pidfd, signal, to } => ring::process::signal_child(*pidfd, *signal, *to),
-        Op::Usage => ring::process::usage().map(Done::Usage),
-        Op::Window { fd } => ring::terminal::size(*fd).map(Done::Window),
+        Op::Spawn { spawn } => system::process::spawn(spawn),
+        Op::Signal { pidfd, signal, to } => system::process::signal_child(*pidfd, *signal, *to),
+        Op::Usage => system::process::usage().map(Done::Usage),
+        Op::Window { fd } => system::terminal::size(*fd).map(Done::Window),
         Op::Wait { pidfd, reap } => {
-            let result = ring::process::poll_child(*pidfd, *reap);
+            let result = system::process::poll_child(*pidfd, *reap);
             if let Err(Error::Other(errno)) = &result {
-                return Err(ring::error(kind, *errno, false));
+                return Err(calls::error(kind, *errno, false));
             }
             result.and_then(|exit| exit.map(Done::Exit).ok_or(Error::Other(libc::EAGAIN)))
         }
         Op::ReadSignal { fd } => {
-            let (info, count) = linux::read_signal(*fd).map_err(|errno| ring::error(kind, errno, false))?;
-            ring::read_signal(&info, count)
+            let (info, count) = system::read_signal(*fd).map_err(|errno| calls::error(kind, errno, false))?;
+            system::decode_signal(&info, count)
         }
         Op::Socket { .. }
         | Op::Bind { .. }
@@ -411,63 +415,63 @@ fn perform(kind: &mut Op, resumed: bool, nonblocking: bool, listing: &mut [u8]) 
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }
         | Op::Cancel { .. } => {
-            perform_call(kind, resumed, nonblocking, listing).map_err(|errno| ring::error(kind, errno, false))
+            perform_call(kind, resumed, nonblocking, listing).map_err(|errno| calls::error(kind, errno, false))
         }
     }
 }
 
 fn perform_call(kind: &mut Op, resumed: bool, nonblocking: bool, listing: &mut [u8]) -> Result<Done, i32> {
     match kind {
-        Op::Socket { family } => linux::socket(*family).map(Done::Fd),
+        Op::Socket { family } => system::socket(*family).map(Done::Fd),
         Op::Bind { fd, addr } => {
-            linux::retry(|| linux::setsockopt(fd.raw(), libc::SOL_SOCKET, libc::SO_REUSEADDR))?;
-            linux::bind(*fd, addr)?;
-            let mut storage = ring::zeroed_storage();
+            system::retry(|| system::setsockopt(fd.raw(), libc::SOL_SOCKET, libc::SO_REUSEADDR))?;
+            system::bind(*fd, addr)?;
+            let mut storage = system::zeroed_storage();
             let mut len = 0;
-            linux::retry(|| linux::getsockname(fd.raw(), &mut storage, &mut len))?;
-            let bound = ring::decode_addr(&storage, len).ok_or(libc::EAFNOSUPPORT)?;
+            system::retry(|| system::getsockname(fd.raw(), &mut storage, &mut len))?;
+            let bound = system::decode_addr(&storage, len).ok_or(libc::EAFNOSUPPORT)?;
             Ok(Done::Bound(bound))
         }
-        Op::Listen { fd, backlog } => linux::listen(*fd, *backlog).map(|()| Done::Nothing),
+        Op::Listen { fd, backlog } => system::listen(*fd, *backlog).map(|()| Done::Nothing),
         Op::Accept { fd } => {
-            let (fd, peer) = linux::accept(*fd)?;
-            let configured = linux::retry(|| linux::setsockopt(fd.raw(), libc::IPPROTO_TCP, libc::TCP_NODELAY));
+            let (fd, peer) = system::accept(*fd)?;
+            let configured = system::retry(|| system::setsockopt(fd.raw(), libc::IPPROTO_TCP, libc::TCP_NODELAY));
             assert!(configured.is_ok(), "TCP_NODELAY applies to every accepted TCP socket: {configured:?}");
             Ok(Done::Accepted { fd, peer })
         }
         Op::Connect { fd, addr } => {
             if resumed {
-                match linux::getsockopt(*fd)? {
+                match system::getsockopt(*fd)? {
                     0 => Ok(Done::Nothing),
                     errno => Err(errno),
                 }
             } else {
-                linux::connect(*fd, addr).map(|()| Done::Nothing)
+                system::connect(*fd, addr).map(|()| Done::Nothing)
             }
         }
-        Op::Recv { fd, buf } => linux::recv(*fd, buf).map(Done::Count),
+        Op::Recv { fd, buf } => system::recv(*fd, buf).map(Done::Count),
         Op::Send { fd, bytes, from } => {
             let from = usize::try_from(*from).expect("u32 fits usize");
-            linux::send(*fd, bytes.get(from..).expect("a valid Send has bytes left")).map(Done::Count)
+            system::send(*fd, bytes.get(from..).expect("a valid Send has bytes left")).map(Done::Count)
         }
-        Op::Shutdown { fd } => linux::shutdown(*fd).map(|()| Done::Nothing),
-        Op::Close { fd } => linux::close(*fd).map(|()| Done::Nothing),
-        Op::Read { fd, buf, at } => linux::files::read(*fd, buf, *at).map(Done::Count),
-        Op::Write { fd, bytes, from, at } => linux::files::write(*fd, remaining(bytes, *from), *at).map(Done::Count),
-        Op::Append { fd, bytes, from } => linux::write(*fd, remaining(bytes, *from)).map(Done::Count),
-        Op::Truncate { fd, length } => linux::files::truncate(*fd, *length).map(|()| Done::Nothing),
-        Op::Sync { fd } => linux::files::sync(*fd).map(|()| Done::Nothing),
-        Op::Stat { fd } => linux::files::stat(*fd).map(|raw| Done::Stat(ring::stat(&raw))),
+        Op::Shutdown { fd } => system::shutdown(*fd).map(|()| Done::Nothing),
+        Op::Close { fd } => system::close(*fd).map(|()| Done::Nothing),
+        Op::Read { fd, buf, at } => system::files::read(*fd, buf, *at).map(Done::Count),
+        Op::Write { fd, bytes, from, at } => system::files::write(*fd, remaining(bytes, *from), *at).map(Done::Count),
+        Op::Append { fd, bytes, from } => system::write(*fd, remaining(bytes, *from)).map(Done::Count),
+        Op::Truncate { fd, length } => system::files::truncate(*fd, *length).map(|()| Done::Nothing),
+        Op::Sync { fd } => system::files::sync(*fd).map(|()| Done::Nothing),
+        Op::Stat { fd } => system::files::stat(*fd).map(|raw| Done::Stat(system::stat(&raw))),
         Op::Rename { from_dir, from, to_dir, to, no_replace } => {
-            linux::files::rename(*from_dir, from, *to_dir, to, *no_replace).map(|()| Done::Nothing)
+            system::files::rename(*from_dir, from, *to_dir, to, *no_replace).map(|()| Done::Nothing)
         }
-        Op::Remove { dir, name, directory } => linux::files::remove(*dir, name, *directory).map(|()| Done::Nothing),
-        Op::MakeDirectory { dir, name, mode } => linux::files::mkdir(*dir, name, *mode).map(|()| Done::Nothing),
+        Op::Remove { dir, name, directory } => system::files::remove(*dir, name, *directory).map(|()| Done::Nothing),
+        Op::MakeDirectory { dir, name, mode } => system::files::mkdir(*dir, name, *mode).map(|()| Done::Nothing),
         Op::List { fd, entries, names } => {
-            linux::retry(|| ring::list(fd.raw(), entries, names, listing)).map(Done::Count)
+            system::retry(|| system::list(fd.raw(), entries, names, listing)).map(Done::Count)
         }
-        Op::Lock { fd } => ring::lock(*fd).map(|()| Done::Nothing),
-        Op::PipeRead { fd, buf } => linux::read(*fd, buf).map(Done::Count),
+        Op::Lock { fd } => system::lock(*fd).map(|()| Done::Nothing),
+        Op::PipeRead { fd, buf } => system::read(*fd, buf).map(Done::Count),
         Op::PipeWrite { fd, bytes, from } => {
             let left = remaining(bytes, *from);
             let left = if nonblocking {
@@ -476,7 +480,7 @@ fn perform_call(kind: &mut Op, resumed: bool, nonblocking: bool, listing: &mut [
                 let maximum = libc::PIPE_BUF;
                 left.get(..left.len().min(maximum)).expect("the capped write fits the remaining bytes")
             };
-            linux::write(*fd, left).map(Done::Count)
+            system::write(*fd, left).map(Done::Count)
         }
         Op::Open { .. }
         | Op::Spawn { .. }
@@ -496,7 +500,7 @@ fn remaining(bytes: &[u8], from: u32) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::Readiness;
-    use crate::{Clock, Config, Wait, linux};
+    use crate::{Clock, Config, Wait, system};
     use skein_io::kernel::{Done, Error, Family, Fd, Op, Submit};
     use skein_lib::{Duration, Queue, Token};
 
@@ -508,9 +512,9 @@ mod tests {
     }
 
     fn listener() -> Fd {
-        let fd = linux::socket(Family::Ipv4).expect("a test socket");
-        linux::bind(fd, &"127.0.0.1:0".parse().expect("loopback address")).expect("bind loopback");
-        linux::listen(fd, 1).expect("listen on loopback");
+        let fd = system::socket(Family::Ipv4).expect("a test socket");
+        system::bind(fd, &"127.0.0.1:0".parse().expect("loopback address")).expect("bind loopback");
+        system::listen(fd, 1).expect("listen on loopback");
         fd
     }
 
@@ -615,7 +619,7 @@ mod tests {
     #[test]
     fn a_blocking_signalfd_waits_then_reports_its_signal() {
         use skein_io::kernel::{ServiceSignal, Signalled};
-        let fd = crate::ring::process::open_signals(crate::Watch::Termination).expect("block the termination signals");
+        let fd = system::process::open_signals(crate::Watch::Termination).expect("block the termination signals");
         let mut kernel = Readiness::open(Config { operations: 1 }).expect("epoll is usable");
         submit(&mut kernel, 1, Op::ReadSignal { fd });
         assert_eq!(kernel.waiters.get(&fd).expect("signalfd read interest").read, Some(0));

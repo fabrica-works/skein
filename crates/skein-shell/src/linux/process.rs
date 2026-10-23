@@ -1,4 +1,13 @@
 //! Synchronous child creation, signalling and polling for both Linux backends.
+//!
+//! # The `unsafe`, and why it is sound
+//!
+//! Spawn actions, attributes, strings and pointer arrays stay initialized
+//! and live until spawn returns; the kernel retains no borrowed memory.
+//! Temporary descriptors have one owner and are transferred once on success.
+//! Signal sets, status records, usage records and poll records are local
+//! initialized C storage, borrowed only for each synchronous call. Signal,
+//! descriptor and process-control calls otherwise take integer arguments.
 
 #![expect(
     clippy::disallowed_types,
@@ -59,7 +68,7 @@ pub(crate) fn block_sigpipe() -> Result<(), i32> {
 /// that io adopts (shell.md, section 6; io.md, section 7). The caller owns
 /// the returned descriptor until io adopts it. Call before opening the ring
 /// and before starting other threads.
-pub(super) fn open_termination_signals() -> Result<Fd, i32> {
+pub(crate) fn open_termination_signals() -> Result<Fd, i32> {
     open_signals(crate::Watch::Termination)
 }
 
@@ -336,7 +345,7 @@ pub struct HostedPipes {
 }
 
 /// Makes the same parent/child pipe pairs as spawn, without executing a program.
-pub(super) fn hosted_pipes(command: &mut Spawn) -> Result<HostedPipes, Error> {
+pub(crate) fn hosted_pipes(command: &mut Spawn) -> Result<HostedPipes, Error> {
     hosted_pipes_inner(command).map_err(map_error)
 }
 
@@ -380,7 +389,7 @@ fn signal_pipe_inner() -> Result<(OwnedFd, OwnedFd), i32> {
 }
 
 /// A harness signal uses the same record that a signalfd read returns.
-pub(super) fn write_signal(writer: Fd, signal: skein_io::kernel::ServiceSignal) -> Result<(), Error> {
+pub(crate) fn write_signal(writer: Fd, signal: skein_io::kernel::ServiceSignal) -> Result<(), Error> {
     // SAFETY: signalfd_siginfo is a plain C integer record; zero is valid.
     let mut record: libc::signalfd_siginfo = unsafe { std::mem::zeroed() };
     record.ssi_signo = u32::try_from(match signal {
@@ -396,13 +405,13 @@ pub(super) fn write_signal(writer: Fd, signal: skein_io::kernel::ServiceSignal) 
 }
 
 /// Makes a signal-record pipe for a second service in the same real loop.
-pub(super) fn signal_pipe() -> Result<(Fd, Fd), Error> {
+pub(crate) fn signal_pipe() -> Result<(Fd, Fd), Error> {
     let (reader, writer) = signal_pipe_inner().map_err(map_error)?;
     Ok((Fd::new(reader.into_raw_fd()), Fd::new(writer.into_raw_fd())))
 }
 
 /// Queues a termination signal for this thread's already-opened signalfd.
-pub(super) fn signal_current_thread(signal: skein_io::kernel::ServiceSignal) -> Result<(), Error> {
+pub(crate) fn signal_current_thread(signal: skein_io::kernel::ServiceSignal) -> Result<(), Error> {
     let number = match signal {
         skein_io::kernel::ServiceSignal::Interrupt => libc::SIGINT,
         skein_io::kernel::ServiceSignal::Terminate => libc::SIGTERM,
@@ -417,7 +426,7 @@ pub(super) fn signal_current_thread(signal: skein_io::kernel::ServiceSignal) -> 
 
 /// Starts an external binary for the end-to-end harness. A terminal owns
 /// stdin/stdout; stderr remains a separate requested pipe (examples.md, 6).
-pub(super) fn start_binary(command: &mut Spawn, terminal: bool, cgroup: Option<Fd>) -> Result<(Fd, Option<Fd>), Error> {
+pub(crate) fn start_binary(command: &mut Spawn, terminal: bool, cgroup: Option<Fd>) -> Result<(Fd, Option<Fd>), Error> {
     let terminal = if terminal { Some(open_terminal().map_err(map_error)?) } else { None };
     if terminal.is_some() && command.pipes.iter().any(|pipe| pipe.child < 2) {
         return Err(Error::InvalidArgument);
@@ -447,7 +456,7 @@ fn open_terminal() -> Result<(OwnedFd, CString), i32> {
 
 /// Failure-path cleanup for a test that abandons a binary observer. Normal
 /// exit, waits and descriptor closure still go through the shared ring.
-pub(super) fn abandon_binary(pidfd: Option<Fd>, descriptors: &[Fd]) {
+pub(crate) fn abandon_binary(pidfd: Option<Fd>, descriptors: &[Fd]) {
     if let Some(pidfd) = pidfd {
         let _signalled = signal_child(pidfd, Signal::Kill, Target::Group);
         // SAFETY: siginfo_t is an integer C record initialized for waitid.
@@ -504,12 +513,12 @@ fn cpu(value: libc::timeval) -> Result<skein_lib::Duration, Error> {
 }
 
 /// Makes orphaned descendants children of the end-to-end observer (examples.md, section 6).
-pub(super) fn make_subreaper() -> Result<(), Error> {
+pub(crate) fn make_subreaper() -> Result<(), Error> {
     set_subreaper(true)
 }
 
 /// Reads the observer's process-wide orphan adoption setting.
-pub(super) fn subreaper() -> Result<bool, Error> {
+pub(crate) fn subreaper() -> Result<bool, Error> {
     let mut enabled = 0_i32;
     // SAFETY: prctl writes one integer to the live output pointer.
     if unsafe { libc::prctl(libc::PR_GET_CHILD_SUBREAPER, ptr::from_mut(&mut enabled), 0, 0, 0) } == 0 {
@@ -520,7 +529,7 @@ pub(super) fn subreaper() -> Result<bool, Error> {
 }
 
 /// Changes only the observer's process-wide orphan adoption setting.
-pub(super) fn set_subreaper(enabled: bool) -> Result<(), Error> {
+pub(crate) fn set_subreaper(enabled: bool) -> Result<(), Error> {
     // SAFETY: prctl changes this process's subreaper setting, with no borrowed pointer.
     if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, i32::from(enabled), 0, 0, 0) } == 0 {
         Ok(())
@@ -530,7 +539,7 @@ pub(super) fn set_subreaper(enabled: bool) -> Result<(), Error> {
 }
 
 /// Opens one discovered child's stable identity; no wait on any child is used.
-pub(super) fn open_pidfd(pid: u32) -> Result<Fd, Error> {
+pub(crate) fn open_pidfd(pid: u32) -> Result<Fd, Error> {
     // SAFETY: pidfd_open accepts a numeric PID and returns a uniquely owned descriptor.
     let raw = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
     if raw < 0 {
@@ -541,7 +550,7 @@ pub(super) fn open_pidfd(pid: u32) -> Result<Fd, Error> {
 }
 
 /// Opens a cgroup directory for `CLONE_INTO_CGROUP` at binary startup.
-pub(super) fn open_cgroup(path: &std::path::Path) -> Result<Fd, Error> {
+pub(crate) fn open_cgroup(path: &std::path::Path) -> Result<Fd, Error> {
     use std::os::unix::ffi::OsStrExt;
     let name = cstring(path.as_os_str().as_bytes()).map_err(map_error)?;
     // SAFETY: name is NUL-terminated and stays live throughout open.
@@ -571,11 +580,11 @@ pub(crate) fn poll_child(pidfd: Fd, reap: bool) -> Result<Option<skein_io::kerne
     if pid == 0 {
         return Ok(None);
     }
-    super::child_exit(&info).map(Some)
+    super::sync::child_exit(&info).map(Some)
 }
 
 /// Tests exit readiness without requiring the process to be this observer's child.
-pub(super) fn pidfd_exited(pidfd: Fd) -> Result<bool, Error> {
+pub(crate) fn pidfd_exited(pidfd: Fd) -> Result<bool, Error> {
     let mut watched = libc::pollfd { fd: pidfd.raw(), events: libc::POLLIN, revents: 0 };
     // SAFETY: watched names one owned pidfd and remains writable throughout poll.
     let result = unsafe { libc::poll(ptr::from_mut(&mut watched), 1, 0) };
@@ -589,13 +598,13 @@ pub(super) fn pidfd_exited(pidfd: Fd) -> Result<bool, Error> {
 }
 
 /// Closes a test keeper's descriptor on startup or abandonment, outside normal ring settlement.
-pub(super) fn close_keeper_fd(descriptor: Fd) {
+pub(crate) fn close_keeper_fd(descriptor: Fd) {
     // SAFETY: the keeper relinquishes its exclusively owned descriptor here.
     let _closed = unsafe { libc::close(descriptor.raw()) };
 }
 
 /// Waits for a cgroup event file's change notification during tree settlement.
-pub(super) fn wait_cgroup_change(descriptor: Fd, millis: u32) -> Result<(), Error> {
+pub(crate) fn wait_cgroup_change(descriptor: Fd, millis: u32) -> Result<(), Error> {
     let mut watched = libc::pollfd { fd: descriptor.raw(), events: libc::POLLPRI | libc::POLLERR, revents: 0 };
     // SAFETY: watched names one live event descriptor and is writable throughout poll.
     let result = unsafe {

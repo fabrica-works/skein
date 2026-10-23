@@ -12,14 +12,14 @@
 //! - Renameat2, unlinkat and mkdirat borrow NUL-terminated local names during
 //!   each call, with integer flags and descriptors. No pointer is retained.
 
+use super::sync;
 use super::{count, retry, status};
-use crate::ring;
 use skein_io::kernel::{Fd, OpenHow};
 use std::{mem, ptr};
 
 pub(crate) fn open(root: Fd, path: &[u8], how: OpenHow) -> Result<i32, i32> {
-    let path = ring::c_path(path);
-    let fields = ring::opens::fields(how);
+    let path = sync::c_path(path);
+    let fields = super::opens::fields(how);
     // SAFETY: open_how is a plain integer C record, valid when zeroed.
     let mut how: libc::open_how = unsafe { mem::zeroed() };
     how.flags = fields.flags;
@@ -36,7 +36,7 @@ pub(crate) fn open(root: Fd, path: &[u8], how: OpenHow) -> Result<i32, i32> {
                 size_of::<libc::open_how>(),
             )
         };
-        if result < 0 { Err(ring::last_errno()) } else { Ok(i32::try_from(result).expect("a descriptor fits i32")) }
+        if result < 0 { Err(sync::last_errno()) } else { Ok(i32::try_from(result).expect("a descriptor fits i32")) }
     })
 }
 
@@ -78,15 +78,15 @@ pub(crate) fn stat(fd: Fd) -> Result<libc::statx, i32> {
         // SAFETY: the empty path is NUL-terminated, and raw is exclusively
         // writable for one statx until the call returns.
         status(unsafe {
-            libc::statx(fd.raw(), c"".as_ptr(), libc::AT_EMPTY_PATH, ring::STAT_MASK, ptr::from_mut(&mut raw))
+            libc::statx(fd.raw(), c"".as_ptr(), libc::AT_EMPTY_PATH, sync::STAT_MASK, ptr::from_mut(&mut raw))
         })
     })?;
     Ok(raw)
 }
 
 pub(crate) fn rename(from_dir: Fd, from: &[u8], to_dir: Fd, to: &[u8], no_replace: bool) -> Result<(), i32> {
-    let from = ring::c_path(from);
-    let to = ring::c_path(to);
+    let from = sync::c_path(from);
+    let to = sync::c_path(to);
     let flags = if no_replace { libc::RENAME_NOREPLACE } else { 0 };
     retry(|| {
         // SAFETY: both names are NUL-terminated locals borrowed only by renameat2.
@@ -97,7 +97,7 @@ pub(crate) fn rename(from_dir: Fd, from: &[u8], to_dir: Fd, to: &[u8], no_replac
 }
 
 pub(crate) fn remove(dir: Fd, name: &[u8], directory: bool) -> Result<(), i32> {
-    let name = ring::c_path(name);
+    let name = sync::c_path(name);
     let flags = if directory { libc::AT_REMOVEDIR } else { 0 };
     retry(|| {
         // SAFETY: name is NUL-terminated and remains live throughout unlinkat.
@@ -106,7 +106,7 @@ pub(crate) fn remove(dir: Fd, name: &[u8], directory: bool) -> Result<(), i32> {
 }
 
 pub(crate) fn mkdir(dir: Fd, name: &[u8], mode: u32) -> Result<(), i32> {
-    let name = ring::c_path(name);
+    let name = sync::c_path(name);
     retry(|| {
         // SAFETY: name is NUL-terminated and remains live throughout mkdirat.
         status(unsafe { libc::mkdirat(dir.raw(), name.as_ptr().cast(), mode) })

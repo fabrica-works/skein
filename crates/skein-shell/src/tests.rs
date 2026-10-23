@@ -9,7 +9,9 @@ use skein_io::kernel::{Complete, Done, Entry, Op, OpenHow, Submit};
 use skein_lib::{Queue, Token};
 use skein_scratch::Scratch;
 
-use crate::ring::{Config, Ring, Wait, close, list, open_root, status_flags};
+use crate::linux::ring::Ring;
+use crate::system::{close_unchecked as close, list, open_root, status_flags};
+use crate::{Config, Wait};
 
 #[test]
 fn startup_process_id_is_this_process() {

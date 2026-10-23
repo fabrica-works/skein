@@ -18,17 +18,18 @@
 //! [`Host`] adapts the service; [`drive`] runs it until settlement (shell.md, 12 and 13).
 //!
 //! This is ordinary Rust (programming-model.md, 10.2), and the only `unsafe`
-//! in skein that a service runs lives here, in the ring adapter and Linux calls:
+//! in skein that a service runs lives here, in `linux`, including its ring adapter:
 //! the crate's lints deny it everywhere else. (The counting allocator,
 //! test-only, has the other: testing.md, 6.)
 
+mod calls;
 mod clock;
 mod drive;
 mod group;
 mod kernel;
 mod linux;
+mod process;
 mod readiness;
-mod ring;
 mod seed;
 mod settings;
 mod startup;
@@ -38,19 +39,22 @@ mod tests;
 
 pub use clock::{Clock, Now};
 pub use drive::{Host, drive};
+pub(crate) use linux as system;
+
 pub use group::{child_id, group_live, signal_group};
-pub use kernel::{Backend, Chosen, Kernel};
-pub use ring::{
-    Config, DirectoryAccess, HostedPipes, OpenError, OutputKind, Wait, abandon_binary, close_keeper_fd,
-    directory_access, effective_user, hosted_pipes, make_root, make_subreaper, open_append, open_cgroup, open_pidfd,
-    open_root, open_signal_pipe, open_termination_signals, pidfd_exited, poll_child, prepare_output, process_id,
-    set_subreaper, signal_current_thread, signal_kept_child, start_binary, start_binary_in_cgroup, subreaper,
-    wait_cgroup_change, write_service_signal,
+pub use kernel::{Backend, Chosen, Config, Kernel, OpenError, Wait};
+pub use process::{
+    HostedPipes, abandon_binary, close_keeper_fd, hosted_pipes, make_subreaper, open_cgroup, open_pidfd,
+    open_signal_pipe, open_termination_signals, pidfd_exited, poll_child, set_subreaper, signal_current_thread,
+    signal_kept_child, start_binary, start_binary_in_cgroup, subreaper, wait_cgroup_change, write_service_signal,
 };
 pub use seed::{crypto_seed, seed};
 pub use settings::{
     Base, Fallback, Origin, Reason, Refusal, Resolved, Setting, Settings, Value, arguments, environment, help, resolve,
 };
-pub use startup::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_private_file, read_trust_roots};
+pub use startup::{
+    DirectoryAccess, OutputKind, RootBounds, Roots, RootsRefusal, Trust, Unread, directory_access, effective_user,
+    make_root, open_append, open_root, prepare_output, process_id, read_file, read_private_file, read_trust_roots,
+};
 
 pub use terminal::{Input, Kept, Keys, Modes, Watch, open_signals, raw_input, resize_terminal, terminal_modes};

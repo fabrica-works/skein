@@ -1,6 +1,12 @@
 //! Durable startup directories (shell.md, section 6).
+//!
+//! # The `unsafe`, and why it is sound
+//!
+//! Directory calls borrow local NUL-terminated names until they return.
+//! Their parent descriptors stay open across each call; fsync takes only
+//! its descriptor. Each opened descriptor is handed up or closed once.
 
-use super::{close, last_errno, open_root};
+use super::{close_unchecked as close, last_errno, open_root};
 use skein_io::kernel::{Fd, PERMISSIONS};
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;

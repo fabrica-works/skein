@@ -1,11 +1,67 @@
 //! The public kernel and its startup choice (shell.md, 7.1).
 
-use std::fmt;
+use std::{fmt, io};
 
 use skein_io::kernel::{Complete, Submit};
-use skein_lib::Queue;
+use skein_lib::{Queue, Time};
 
-use crate::{Config, OpenError, Wait, readiness, ring};
+use crate::{linux::ring, readiness};
+
+/// How large a [`crate::Kernel`] is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Config {
+    /// The most operations in flight at once, cancels included, as io's
+    /// operation slab counts them (kernel.md, 5). Both rings are
+    /// sized from it, so the completion queue cannot overflow, and
+    /// [`crate::Kernel::submit`] takes no record past it.
+    pub operations: u32,
+}
+
+/// Whether [`crate::Kernel::submit`] blocks for a completion, and until when.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Wait {
+    /// Submit and return: work is pending above.
+    No,
+    /// Block until a completion arrives or the deadline passes, a monotonic
+    /// [`Time`] read from the [`Clock`](crate::Clock): the earliest deadline
+    /// over every layer (programming-model.md, section 9).
+    Until(Time),
+    /// Block until a completion arrives: no deadline is armed. Asserts that
+    /// something is in flight or ready, since otherwise it never returns.
+    Forever,
+}
+
+/// Why [`crate::Kernel::open`] refused: the shell does not start (shell.md, 4).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OpenError {
+    /// A config of no operations, which could never submit one.
+    NoOperations,
+    /// The ring could not be set up, with the error number: io_uring is
+    /// missing, disabled (`io_uring_disabled`) or refused by a seccomp
+    /// profile (`ENOSYS`, `EPERM`), or `EINVAL`: the config is past the
+    /// ring's sizes, or the kernel is below the floor and does not know
+    /// `SINGLE_ISSUER`, `DEFER_TASKRUN` or `SUBMIT_ALL`.
+    Setup(i32),
+    /// The kernel is below the floor, 6.12: its ring lacks this operation.
+    Missing(&'static str),
+    /// The kernel's release is below the floor, 6.12 (shell.md, 4 and 7.6).
+    BelowFloor,
+}
+
+impl fmt::Display for OpenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OpenError::NoOperations => write!(f, "the kernel is configured for no operations"),
+            OpenError::Setup(errno) => {
+                write!(f, "io_uring could not be set up: {}", io::Error::from_raw_os_error(*errno))
+            }
+            OpenError::Missing(name) => write!(f, "the kernel is below 6.12: io_uring has no {name}"),
+            OpenError::BelowFloor => write!(f, "the kernel is below the floor, 6.12"),
+        }
+    }
+}
+
+impl std::error::Error for OpenError {}
 
 /// The implementation to run, forced by tests at startup.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

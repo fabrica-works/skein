@@ -38,23 +38,23 @@ pub struct Modes {
 }
 /// Sets input to key-at-a-time reading, retaining the modes for restoration.
 pub fn raw_input(input: Fd, keys: Keys) -> Result<Input, Error> {
-    crate::ring::terminal::raw_input(input, keys)
+    crate::system::terminal::raw_input(input, keys)
 }
 /// Blocks the selected signals and opens the signalfd io adopts.
 pub fn open_signals(watch: Watch) -> Result<Fd, i32> {
-    crate::ring::process::open_signals(watch)
+    crate::system::process::open_signals(watch)
 }
 impl Kept {
     /// Restores startup's modes after drive returns, before the last stderr line.
     pub fn restore(self) -> Result<(), Error> {
-        crate::ring::terminal::restore(self.fd, &self.modes)
+        crate::system::terminal::restore(self.fd, &self.modes)
     }
 }
 /// Sets a pseudo-terminal size from its master, for a scripted person.
 pub fn resize_terminal(master: Fd, size: Size) -> Result<(), Error> {
-    crate::ring::terminal::resize(master, size)
+    crate::system::terminal::resize(master, size)
 }
 /// Reads modes from the other end of a terminal, for a scripted person.
 pub fn terminal_modes(fd: Fd) -> Result<Modes, Error> {
-    crate::ring::terminal::modes(fd)
+    crate::system::terminal::modes(fd)
 }

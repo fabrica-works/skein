@@ -9,7 +9,7 @@
 
 use skein_io::kernel::{Error, Fd, Signal};
 
-use crate::ring::last_errno;
+use super::last_errno;
 
 pub(crate) fn child_id(handle: Fd) -> Result<u32, Error> {
     let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{}", handle.raw()))

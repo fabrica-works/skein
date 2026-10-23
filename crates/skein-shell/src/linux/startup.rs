@@ -1,6 +1,13 @@
 //! Startup's synchronous bounded regular-file reads (shell.md, 6.1).
 //! Every descriptor stays here and is closed before returning bytes or a
 //! refusal. No service or ring state is kept.
+//!
+//! # The `unsafe`, and why it is sound
+//!
+//! Open calls read live NUL-terminated paths and initialized `open_how`
+//! fields with their exact size. Fstat writes initialized local stat storage;
+//! read writes only within the exclusive buffer's supplied length. No call
+//! retains a pointer. Every descriptor opened here is closed before return.
 
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -13,7 +20,8 @@ use skein_lib::Secret;
 
 use crate::startup::Unread;
 
-use super::{close, kind_of, last_errno};
+use super::sync::kind_of;
+use super::{close_unchecked as close, last_errno};
 
 pub(crate) fn read_private_file(path: &Path, max: u32, user: u32) -> Result<Secret, Unread> {
     let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| Unread::Kernel(Error::InvalidArgument))?;

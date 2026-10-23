@@ -19,7 +19,7 @@ use std::ptr;
 
 use skein_io::kernel::Fd;
 
-use crate::ring::last_errno;
+use super::last_errno;
 
 #[derive(Debug)]
 pub(crate) struct Epoll {

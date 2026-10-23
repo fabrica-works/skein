@@ -1,16 +1,16 @@
 //! The opens of the kernel boundary (kernel.md, 6.1).
-use super::{FILE_MODE, OpenHow, types};
+use skein_io::kernel::OpenHow;
+
+/// The new file's mode a `Create` that asks for none is made with, and a
+/// `MakeDirectory`'s, both less the umask (`skein_io::kernel`, backend
+/// defaults).
+const FILE_MODE: u64 = 0o666;
 
 /// The Linux openat2 fields shared by both backends.
 pub(crate) struct Fields {
     pub flags: u64,
     pub mode: u64,
     pub resolve: u64,
-}
-
-pub(super) fn open(how: OpenHow) -> types::OpenHow {
-    let Fields { flags, mode, resolve } = fields(how);
-    types::OpenHow::new().flags(flags).mode(mode).resolve(resolve)
 }
 
 /// What `openat2` is told for each way io opens: close-on-exec always,

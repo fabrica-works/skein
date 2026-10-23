@@ -2,7 +2,7 @@
 
 use skein_lib::{Time, Wall};
 
-use crate::ring;
+use crate::system;
 
 /// Reads the two times a step sees in its `Env`, once per iteration.
 #[derive(Debug)]
@@ -31,10 +31,10 @@ impl Clock {
 
     #[must_use]
     pub fn now(&self) -> Now {
-        let now = ring::clock_nanos(self.monotonic).expect("the monotonic clock is past its origin");
+        let now = system::clock_nanos(self.monotonic).expect("the monotonic clock is past its origin");
         // A wall clock set before 1970 reads as the epoch: it is never a
         // deadline, and nothing about the world happened before then.
-        let wall = ring::clock_nanos(self.wall).unwrap_or(0);
+        let wall = system::clock_nanos(self.wall).unwrap_or(0);
         Now { now: Time::from_nanos(now), wall: Wall::from_nanos(wall) }
     }
 }

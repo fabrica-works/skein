@@ -1,17 +1,17 @@
-//! Linux's synchronous readiness calls (shell.md, 7.5).
+//! Linux's calls and ring adapter (shell.md, 7.5).
 //!
 //! # The `unsafe`, and why it is sound
 //!
 //! - Socket, listen, shutdown and close take only integers; no pointer is
 //!   retained. A successful socket descriptor is handed to io for Close.
 //! - Bind and connect read a local, initialized `sockaddr_storage` encoded by
-//!   the ring's address encoder, with exactly the encoded length.
+//!   the address encoder, with exactly the encoded length.
 //! - Accept writes into initialized local address storage and its length,
 //!   whose capacity is passed in; both live until the call returns.
 //! - Recv writes only into the exclusive slice's capacity. Send reads only
 //!   its borrowed slice. Neither call retains a pointer after returning.
 //! - `SO_ERROR` writes one initialized integer, with its size passed by a
-//!   local `socklen_t`. The ring's setsockopt and getsockname wrappers share
+//!   local `socklen_t`. The setsockopt and getsockname wrappers share
 //!   their address and option checks with this backend.
 //! - Uname writes a whole local utsname, a plain C structure of byte arrays.
 //! - File calls' paths, offsets and buffers are documented in `files`.
@@ -31,8 +31,25 @@ use std::{mem, ptr};
 
 use skein_io::kernel::{Addr, Family, Fd};
 
-use crate::ring::{decode_addr, domain, encode, last_errno, socklen_of, zeroed_storage};
-pub(crate) use crate::ring::{local_addr as getsockname, set_option as setsockopt};
+pub(crate) mod opens;
+pub(crate) mod process;
+pub(crate) mod ring;
+mod roots;
+mod startup;
+mod sync;
+pub(crate) mod terminal;
+
+pub use roots::make_root;
+pub(crate) use startup::{read_file, read_private_file};
+use sync::encode;
+pub(crate) use sync::{
+    clock_nanos, decode_addr, domain, last_errno, list, lock, opened, random, socklen_of, stat, status_flags,
+    zeroed_storage,
+};
+pub(crate) use sync::{
+    close as close_unchecked, local_addr as getsockname, read_signal as decode_signal, set_option as setsockopt,
+};
+pub use sync::{directory_access, effective_user, open_append, open_root, prepare_output, process_id};
 
 /// Interrupted calls have made no progress; retry without changing counts.
 pub(crate) fn retry<T>(mut call: impl FnMut() -> Result<T, i32>) -> Result<T, i32> {
@@ -187,7 +204,7 @@ fn release_at_floor(release: &[u8]) -> Result<bool, i32> {
 }
 
 pub(crate) fn nonblocking(fd: Fd) -> Result<(), i32> {
-    let flags = retry(|| crate::ring::status_flags(fd.raw()))?;
+    let flags = retry(|| status_flags(fd.raw()))?;
     retry(|| {
         // SAFETY: fcntl takes integers and fd is the parent's fresh pipe end.
         status(unsafe { libc::fcntl(fd.raw(), libc::F_SETFL, flags | libc::O_NONBLOCK) })

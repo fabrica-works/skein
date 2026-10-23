@@ -1,4 +1,11 @@
 //! Terminal syscalls shared by the Linux backends (shell.md, sections 6.3 and 7.5).
+//!
+//! # The `unsafe`, and why it is sound
+//!
+//! Terminal calls borrow initialized local modes or window sizes until
+//! return. Output storage is read only after the call reports success.
+//! Fcntl duplicates the live input descriptor; restoration consumes and
+//! closes that duplicate once. No call retains a pointer to Rust storage.
 use crate::terminal::{Input, Kept, Keys, Modes};
 use skein_io::kernel::{Error, Fd, Size};
 use std::{mem::MaybeUninit, ptr};

@@ -17,6 +17,34 @@ use skein_io::kernel;
 use skein_lib::Secret;
 use skein_lib::base64::{self, Alphabet};
 
+pub use crate::system::{
+    directory_access, effective_user, make_root, open_append, open_root, prepare_output, process_id,
+};
+
+/// How startup adopts a standard output descriptor (io.md, section 5.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputKind {
+    /// A pipe or terminal, sent through the inherited write-pipe face.
+    Pipe,
+    /// A regular file, sent through io's append-stream face.
+    Append,
+}
+
+/// The kernel's startup answer on whether the effective user may write and
+/// search a directory (shell.md, section 6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[must_use]
+pub enum DirectoryAccess {
+    /// The path names a directory the effective user may write and search.
+    Writable,
+    /// The path or a component of it is absent.
+    Absent,
+    /// The path or a parent component is not a directory.
+    NotDirectory,
+    /// The check failed with this kernel error number.
+    Denied(i32),
+}
+
 /// Why startup's regular-file read returned no bytes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Unread {
@@ -35,13 +63,13 @@ pub enum Unread {
 /// Reads a regular file whole within `max` bytes, without blocking on an
 /// entry such as a FIFO or taking a controlling terminal (shell.md, 6.1).
 pub fn read_file(path: &Path, max: u32) -> Result<Box<[u8]>, Unread> {
-    crate::ring::read_file(path, max)
+    crate::system::read_file(path, max)
 }
 
 /// Reads a secret within `max` bytes after io's private-file checks,
 /// using the expected owner supplied by startup (shell.md, 6.1).
 pub fn read_private_file(path: &Path, max: u32, user: u32) -> Result<Secret, Unread> {
-    crate::ring::read_private_file(path, max, user)
+    crate::system::read_private_file(path, max, user)
 }
 
 /// The trust source startup's configuration asks the shell to read.
