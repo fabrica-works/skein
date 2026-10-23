@@ -303,14 +303,18 @@ is mechanical, and Codex reads what needs reading.
    observed and sustainable (the week's remainder divided by the hours
    to its reset). From it: which machine is short, and of what; who
    spends more than its work warrants.
-3. **Owners:** each inbox entry and owner's notes that changed (their
+4. **Owners:** each inbox entry and owner's notes that changed (their
    state and questions), and each owner the report doesn't show alive.
-   A report or a question gets its answer (section 6).
-4. **Next:** which work in `notes/direction.md` gets an owner, and
+   A report or a question gets its answer (section 6). Each live
+   experiment or measurement: its leading number (enrollment, sample
+   growth) against the rate its plan expects. A stall past its first
+   hour gets a fix at once, never a watch: on 10-23 a spend experiment
+   enrolled 0 of 56 runs in 2.5 hours, with the zero reported after one.
+5. **Next:** which work in `notes/direction.md` gets an owner, and
    where (section 4). Act.
-5. **Record:** update `notes/`, add to `decisions.md` and `log.md`,
+6. **Record:** update `notes/`, add to `decisions.md` and `log.md`,
    and make sure the cron and the watcher run.
-6. **Push the user** only for what needs them.
+7. **Push the user** only for what needs them.
 
 ## 8. The user
 
