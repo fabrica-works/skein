@@ -1061,7 +1061,11 @@ What the agent's own commands may reach:
   the runner starts, named by a token in its arguments, must not appear
   in the probe's `/proc`. Each must be refused or absent, and a write in
   the work directory must succeed; otherwise the run ends in error
-  before any process starts, having spent nothing.
+  before any process starts, having spent nothing. The home's listing
+  counts as absent when every entry it returns is the first path
+  component, under the home, of one of the profile's own roots: the
+  sandbox mounts the directories leading to them, and nothing else of
+  the home. Any other entry fails it.
 - **The preamble says the same** for the agent's sake; the boundary does
   not rest on it.
 
