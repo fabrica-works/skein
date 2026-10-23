@@ -464,3 +464,72 @@ ordinary disposable Git landings. Simulated SSH cases run through the
 production constructor with a fixture executable; they do not prove
 real SSH connectivity or remote installation. The full repository gate
 and real temper landings are outside these fixtures.
+
+## 9. Explicit dependency repins
+
+`scripts/dev/repin` is a standalone Python 3.11 command, invoked explicitly
+from a committed skein checkout; installation and stable links do not change.
+It prepares and commits one exact tuple in a consumer's clean linked worktree:
+
+```text
+scripts/dev/repin --consumer ABS_LINKED_WORKTREE --base FULL_SHA \
+  --pin skein=FULL_SHA [--pin smith=FULL_SHA] \
+  [--generated REL_FILE ...] [--regenerate JSON_ARGV ...] \
+  --check JSON_ARGV [--check JSON_ARGV ...] [--land]
+```
+
+Each command is a nonempty JSON array of strings, passed as argv without a
+shell. Pins and base are full 40- or 64-digit hexadecimal identities. Source
+names are repository basenames with `.git` removed. Each must resolve to one
+git URL/ref identity in the base lock, including its URL query. Duplicate,
+absent and ambiguous names refuse. At least one pin must change and at least
+one focused check is required. The command prints base, tuple, phase argv,
+results and prepared commit; it does not print environments.
+
+The consumer must be on a named branch other than main, with HEAD, local main
+and origin/main at the explicit base. Staged, untracked, submodule and
+merge/rebase state refuse. No fetch or policy lookup selects a base or tuple.
+Owners and the director choose their slot and pins; there is no timing,
+batching, scheduling, persistent job state or configuration file here.
+
+Current consumers pin solely in Cargo.lock; selected `?rev=` sources refuse.
+The command starts with `git show BASE:Cargo.lock`, never another consumer's
+lock or a whole-lock regeneration, and never rewrites a manifest. For each
+selected source it passes `cargo update --precise FULL_SHA -p PACKAGE_SELECTOR` through installed
+`heavy`, selecting one unambiguous package and checking every package from
+that source afterward. A manifest constraint Cargo cannot honor refuses;
+there is no automatic manifest fix or network API probe.
+
+Parsed TOML records outside selected source identities must remain equal,
+including registry versions/checksums, other git SHAs, workspace records and
+lock metadata. All selected identities must still exist at exactly their
+requested full SHAs, with no new source identity. New nonselected dependencies
+refuse conservatively, even when a resolver would normally add them.
+Each intermediate update preserves all sources except the completed pins.
+
+Generators and checks run through installed heavy, in the consumer root.
+Only Cargo.lock and explicitly named generated regular files may change.
+The allowlist rejects absolute paths, traversal, `.git`, directories, prefixes,
+symlinks and manifest/lock aliases (all TOML and lock outputs refuse).
+Status checks include staged, untracked and deleted paths after every phase;
+branch/HEAD or local base-ref movement, unexpected staged paths or a changed
+lock tuple refuse. The full lock comparison repeats after each generator/check.
+These commands are trusted local programs, not a sandbox;
+transient writes restored between checks and concurrent malicious actors are
+outside the boundary. Keep the worktree exclusively owned during preparation.
+
+Default success commits only the lock and allowlisted files, after checking
+branch/HEAD again. Failure before that point commits nothing and preserves
+reviewable changes: no reset, clean or retry. Inspect `git diff` and status.
+`--land` then invokes installed `land` with no arguments or custom prebuild;
+the ordinary full gate is authoritative. A temporary, process-scoped pre-push
+guard requires the pushed commit's sole parent to remain BASE and its lock
+blob to equal the prepared lock. Existing hooks are retained and the original
+pre-push hook is chained. A conditional Git include scopes this temporary
+override to the consumer's Git directory; other repositories keep their hooks.
+A later-base rebase therefore refuses before push; focused checks never claim
+validation of that later base. The temporary hook directory is removed on
+normal/error exit; repository/global configuration is not changed.
+If main moves, land rebases/conflicts or the guard refuses, inspect the diff
+and start a fresh branch from updated main with an explicit new base. A land
+failure may leave its amended/rebased candidate; do not rerun it unguarded.

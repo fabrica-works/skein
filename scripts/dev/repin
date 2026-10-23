@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Prepare one explicit lock tuple (build-infrastructure.md, 9)."""
+import argparse
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import sys
+import tempfile
+import tomllib
+from urllib.parse import parse_qs, urlsplit
+
+os.umask(0o077)
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def run(root, argv, *, capture=True, env=None, data=None):
+    result = subprocess.run(argv, cwd=root, env=env, input=data,
+                            stdin=subprocess.DEVNULL if data is None else None,
+                            stdout=subprocess.PIPE if capture else None,
+                            stderr=subprocess.PIPE if capture else None)
+    require(result.returncode == 0, f'command failed ({result.returncode}): {argv[0]}')
+    return result.stdout if capture else b''
+
+
+def git(root, *args):
+    return run(root, ['git', *args]).decode().strip()
+
+
+def sha(value):
+    require(re.fullmatch(r'(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})', value),
+            'expected full 40- or 64-digit hexadecimal SHA')
+    return value.lower()
+
+
+def command(value):
+    argv = json.loads(value)
+    require(isinstance(argv, list) and argv and all(
+        isinstance(arg, str) and '\0' not in arg for arg in argv) and argv[0]
+        and not argv[0].startswith('-'), 'commands must be nonempty JSON argv arrays')
+    return argv
+
+
+def source(record):
+    value = record.get('source', '')
+    if not value.startswith('git+'):
+        return None
+    identity, mark, revision = value.rpartition('#')
+    require(mark and identity, 'git source lacks revision')
+    return identity, sha(revision)
+
+
+def sources(lock):
+    found = {}
+    for package in lock['package']:
+        item = source(package)
+        if item:
+            identity, revision = item
+            found.setdefault(identity, set()).add(revision)
+    require(all(len(values) == 1 for values in found.values()),
+            'multiple revisions for one source identity')
+    return {identity: next(iter(values)) for identity, values in found.items()}
+
+
+def validate_lock(base, result, pins):
+    expected = sources(base) | pins
+    require(sources(result) == expected, 'lock source identities or exact tuple changed')
+    def outside(lock):
+        return sorted(json.dumps(record, sort_keys=True) for record in lock['package']
+                      if not source(record) or source(record)[0] not in pins)
+    require(outside(base) == outside(result), 'unrelated package records changed')
+    require({k: v for k, v in base.items() if k != 'package'} ==
+            {k: v for k, v in result.items() if k != 'package'}, 'lock metadata changed')
+
+
+def regular(root, relative):
+    path = root / relative
+    for part in [path, *path.parents]:
+        if part == root:
+            break
+        require(not part.is_symlink(), 'symlink in allowed path')
+    require(not path.exists() or (path.is_file() and path.stat().st_nlink == 1),
+            'allowed paths must be regular files without hardlink aliases')
+
+
+def generated(root, values):
+    result = set()
+    for value in values:
+        path = PurePosixPath(value)
+        require(value and not path.is_absolute() and str(path) == value and
+                all(part not in ('.', '..') and part.lower() != '.git' for part in path.parts),
+                'generated path must be relative without traversal or .git')
+        require(path.suffix.lower() not in ('.toml', '.lock') and
+                path.name.lower() not in ('package.json', 'pyproject.toml', 'makefile'),
+                'generated manifest or lock path refused')
+        require(value not in result and not any(
+            path.is_relative_to(other) or PurePosixPath(other).is_relative_to(path)
+            for other in result), 'duplicate or prefix generated path')
+        regular(root, value)
+        result.add(value)
+    return result
+
+
+def stable(root, branch, head):
+    require(git(root, 'symbolic-ref', '--quiet', 'HEAD') == branch and
+            git(root, 'rev-parse', 'HEAD') == head, 'branch or HEAD moved')
+    for state in ('MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD',
+                  'REVERT_HEAD', 'sequencer'):
+        require(not Path(git(root, 'rev-parse', '--path-format=absolute',
+                             '--git-path', state)).exists(), 'merge/rebase state refused')
+
+
+def scope(root, branch, head, allowed, base=None):
+    stable(root, branch, head)
+    require(git(root, 'rev-parse', 'main') == (base or head) and
+            git(root, 'rev-parse', 'origin/main') == (base or head), 'base refs moved')
+    for path in allowed:
+        regular(root, path)
+    records = run(root, ['git', 'status', '--porcelain=v1', '-z',
+                         '--untracked-files=all', '--ignore-submodules=none']).split(b'\0')
+    for record in filter(None, records):
+        status, name = record[:2], os.fsdecode(record[3:])
+        require(b'R' not in status and b'C' not in status and b'U' not in status,
+                'rename/copy/unmerged paths refused')
+        require(name in allowed, f'path outside allowlist: {name}')
+
+
+PUSH_GUARD = '''#!{python}
+import subprocess, sys
+from pathlib import Path
+base, lock, original = {settings!r}
+data = sys.stdin.buffer.read()
+def git(*args):
+    return subprocess.check_output(['git', *args], stdin=subprocess.DEVNULL).decode().strip()
+for line in data.decode().splitlines():
+    local, commit, remote, old = line.split()
+    if (remote != 'refs/heads/main' or git('show', '-s', '--format=%P', commit) != base
+            or git('rev-parse', commit + ':Cargo.lock') != lock):
+        sys.exit('repin: base or lock changed during land; inspect diff and start fresh')
+if Path(original).is_file() and Path(original).stat().st_mode & 0o111:
+    sys.exit(subprocess.run([original, *sys.argv[1:]], input=data).returncode)
+'''
+
+
+def land(root, base):
+    hooks = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-path', 'hooks'))
+    lock = git(root, 'rev-parse', 'HEAD:Cargo.lock')
+    with tempfile.TemporaryDirectory(prefix='repin-hooks-') as directory:
+        target = Path(directory) / 'hooks'
+        target.mkdir()
+        if hooks.is_dir():
+            for hook in hooks.iterdir():
+                if hook.name != 'pre-push':
+                    (target / hook.name).symlink_to(hook)
+        guard = target / 'pre-push'
+        guard.write_text(PUSH_GUARD.format(python=sys.executable,
+                                          settings=(base, lock, str(hooks / 'pre-push'))))
+        guard.chmod(0o700)
+        config = Path(directory) / 'gitconfig'
+        config.write_text('[core]\n\thooksPath = ' + json.dumps(str(target)) + '\n')
+        gitdir = git(root, 'rev-parse', '--absolute-git-dir')
+        pattern = ''.join('\\' + char if char in '\\*?[' else char for char in gitdir)
+        env = dict(os.environ)
+        env.pop('LAND_PREBUILD', None)
+        count = int(env.get('GIT_CONFIG_COUNT', '0'))
+        env.update(GIT_CONFIG_COUNT=str(count + 1))
+        env[f'GIT_CONFIG_KEY_{count}'] = 'includeIf.gitdir:' + pattern + '.path'
+        env[f'GIT_CONFIG_VALUE_{count}'] = str(config)
+        require(run(root, ['git', 'config', '--path', 'core.hooksPath'], env=env).decode().strip()
+                == str(target), 'temporary push guard configuration was overridden')
+        print('repin: land ["land"]', flush=True)
+        run(root, ['land'], capture=False, env=env)
+        print('repin: land passed', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--consumer', required=True)
+    parser.add_argument('--base', required=True)
+    parser.add_argument('--pin', action='append', required=True)
+    parser.add_argument('--generated', action='extend', nargs='+', default=[])
+    parser.add_argument('--regenerate', action='extend', nargs='+', default=[])
+    parser.add_argument('--check', action='append', required=True)
+    parser.add_argument('--land', action='store_true')
+    args = parser.parse_args()
+    base = sha(args.base)
+    pins = {}
+    for item in args.pin:
+        name, separator, value = item.partition('=')
+        require(separator and re.fullmatch(r'[A-Za-z0-9_.-]+', name) and name not in pins,
+                'invalid or duplicate pin name')
+        pins[name] = sha(value)
+    commands = [('regenerate', command(value)) for value in args.regenerate]
+    commands += [('check', command(value)) for value in args.check]
+    root = Path(args.consumer)
+    require(root.is_absolute() and root.is_dir(), 'consumer must be absolute worktree path')
+    root = root.resolve()
+    require(git(root, 'rev-parse', '--show-toplevel') == str(root), 'consumer must be worktree root')
+    require(git(root, 'rev-parse', '--absolute-git-dir') !=
+            git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'),
+            'consumer must be a linked worktree')
+    branch = git(root, 'symbolic-ref', '--quiet', 'HEAD')
+    require(branch != 'refs/heads/main', 'consumer branch must not be main')
+    stable(root, branch, base)
+    require(git(root, 'rev-parse', 'main') == base and
+            git(root, 'rev-parse', 'origin/main') == base, 'base must equal main and origin/main')
+    require(not run(root, ['git', 'status', '--porcelain=v1', '--untracked-files=all',
+                          '--ignore-submodules=none']), 'consumer must be clean')
+    require(not any(line.startswith(b'160000 ') for line in
+                    run(root, ['git', 'ls-files', '--stage']).splitlines()), 'submodules refused')
+    allowed = generated(root, args.generated) | {'Cargo.lock'}
+    regular(root, 'Cargo.lock')
+    original = run(root, ['git', 'show', base + ':Cargo.lock'])
+    baseline = tomllib.loads(original.decode())
+    identities = sources(baseline)
+    selected = {}
+    for name, revision in pins.items():
+        choices = [identity for identity in identities
+                   if urlsplit(identity[4:]).path.rstrip('/').rsplit('/', 1)[-1].removesuffix('.git') == name]
+        require(len(choices) == 1, f'absent or ambiguous source: {name}')
+        require('rev' not in parse_qs(urlsplit(choices[0][4:]).query),
+                'manifest rev constraints are outside lock-only scope')
+        selected[choices[0]] = revision
+    require(any(identities[identity] != revision for identity, revision in selected.items()),
+            'tuple has no changes')
+    print('repin: base ' + base + ' tuple ' + json.dumps(pins, sort_keys=True), flush=True)
+    # Clean HEAD at base makes these bytes identical; use the base object explicitly.
+    require((root / 'Cargo.lock').read_bytes() == original, 'worktree lock differs from base bytes')
+    completed = {}
+
+    def phase(label, argv):
+        print('repin: ' + label + ' ' + json.dumps(['heavy', *argv]), flush=True)
+        result = subprocess.run(['heavy', *argv], cwd=root, stdin=subprocess.DEVNULL)
+        scope(root, branch, base, allowed)
+        validate_lock(baseline, tomllib.loads((root / 'Cargo.lock').read_text()), completed)
+        require(result.returncode == 0, f'{label} failed ({result.returncode})')
+        print('repin: ' + label + ' passed', flush=True)
+
+    for identity, revision in selected.items():
+        package = next(record for record in baseline['package']
+                       if source(record) and source(record)[0] == identity)
+        selector = identity + '#' + package['name'] + '@' + package['version']
+        completed[identity] = revision
+        phase('update', ['cargo', 'update', '--precise', revision, '-p', selector])
+    for label, argv in commands:
+        phase(label, argv)
+    scope(root, branch, base, allowed)
+    validate_lock(baseline, tomllib.loads((root / 'Cargo.lock').read_text()), selected)
+    changed = run(root, ['git', 'status', '--porcelain=v1', '-z', '--untracked-files=all'])
+    paths = [os.fsdecode(record[3:]) for record in changed.split(b'\0') if record]
+    run(root, ['git', '--literal-pathspecs', 'add', '--', *paths])
+    scope(root, branch, base, allowed)
+    run(root, ['git', 'commit', '-m', 'Repin ' + ', '.join(
+        name + '=' + revision for name, revision in pins.items())], capture=False)
+    commit = git(root, 'rev-parse', 'HEAD')
+    require(git(root, 'show', '-s', '--format=%P', commit) == base, 'commit parent changed')
+    scope(root, branch, commit, set(), base)
+    validate_lock(baseline, tomllib.loads(run(root, ['git', 'show', commit + ':Cargo.lock']).decode()), selected)
+    committed_paths = run(root, ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', '-z', commit])
+    require({os.fsdecode(path) for path in committed_paths.split(b'\0') if path} <= allowed,
+            'commit contains unexpected paths')
+    print('repin: prepared ' + commit, flush=True)
+    if args.land:
+        land(root, base)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, KeyError, TypeError, StopIteration) as error:
+        print('repin: refused: ' + str(error), file=sys.stderr)
+        print('repin: inspect git diff and status; if base changed or land rebased/conflicted, '
+              'start a fresh branch from updated main; no automatic retry/reset/clean', file=sys.stderr)
+        sys.exit(1)
