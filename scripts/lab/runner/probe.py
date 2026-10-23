@@ -6,6 +6,7 @@ import secrets
 import socket
 import subprocess
 import sys
+import tomllib
 from .views import profile_toml
 
 
@@ -27,7 +28,12 @@ def read_canary():
     with open(c['canary'], 'rb') as stream:
         stream.read(1)
 r['canary_read'] = denied(read_canary)
-r['home_list'] = denied(lambda: os.listdir(c['home']))
+def home_list():
+    try:
+        return sorted(os.listdir(c['home']))
+    except OSError as error:
+        return error.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EROFS)
+r['home_list'] = home_list()
 def write_source():
     with open(c['source_file'], 'x') as stream:
         stream.write('probe')
@@ -65,6 +71,28 @@ except OSError:
     r['work_write'] = False
 print(json.dumps(r), flush=True)
 '''
+
+
+def profile_roots(profile):
+    """The absolute paths a permission profile grants, or none when it does not parse."""
+    try:
+        filesystem = tomllib.loads(profile)['permissions']['lab']['filesystem']
+    except (tomllib.TOMLDecodeError, KeyError, TypeError):
+        return []
+    return [path for path in filesystem if path.startswith('/')] if type(filesystem) is dict else []
+
+
+def home_listed(observed, home, roots):
+    """A refused listing passes; so does one holding only the first components, under the
+    home, of the profile's own roots, which the sandbox mounts to reach them (lab.md, 6.2)."""
+    if observed is True:
+        return True
+    if type(observed) is not list or any(type(name) is not str for name in observed):
+        return False
+    home = os.path.normpath(home)
+    leading = {os.path.normpath(root)[len(home) + 1:].split('/')[0] for root in roots
+               if os.path.normpath(root).startswith(home + '/')}
+    return set(observed) <= leading
 
 
 class BoundaryError(RuntimeError):
@@ -126,6 +154,9 @@ def boundary_probe(codex_executable, run_directory, *, source, work, canary, hom
             except (subprocess.TimeoutExpired, ValueError) as error:
                 observed, detail = {}, str(error)
         results = {name: dict(ok=observed.get(name) is True, detail=detail) for name in CHECKS}
+        listing = observed.get('home_list')
+        results['home_list'] = dict(ok=home_listed(listing, str(home), profile_roots(text)),
+            detail=detail if type(listing) is not list else detail + 'listing: ' + json.dumps(listing))
         if not all(value['ok'] for value in results.values()):
             raise BoundaryError(results)
         return results

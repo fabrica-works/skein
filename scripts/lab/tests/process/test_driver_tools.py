@@ -181,8 +181,8 @@ class ProbeProcess(unittest.TestCase):
         self.codex = shutil.which('codex')
         self.assertIsNotNone(self.codex, 'native probe requires codex')
 
-    def probe(self, *, profile=None):
-        return boundary_probe(self.codex, self.root, source=str(self.source), work=str(self.work),
+    def probe(self, *, profile=None, source=None, work=None):
+        return boundary_probe(self.codex, self.root, source=str(source or self.source), work=str(work or self.work),
                               canary=str(self.canary), home=str(self.home), seconds=CAP, profile=profile)
 
     def test_real_codex_profile_passes_without_model(self):
@@ -193,7 +193,17 @@ class ProbeProcess(unittest.TestCase):
         self.assertEqual({p.name for p in (self.root / 'probe/codex').iterdir()}, {'config.toml', 'tmp'})
         self.assertEqual(stat.S_IMODE((self.root / 'probe/codex/config.toml').stat().st_mode), 0o600)
 
+    def test_roots_under_the_home_show_only_the_way_to_them(self):
+        source, work = self.home / 'lab/source', self.home / 'lab/work'
+        source.mkdir(parents=True)
+        work.mkdir()
+        (self.home / 'planted').write_text('outside every root')
+        results = self.probe(source=source, work=work)
+        self.assertTrue(all(r['ok'] for r in results.values()), results)
+        self.assertIn('listing: ["lab"]', results['home_list']['detail'])
+
     def test_weakened_home_profile_fails_before_provisioning(self):
+        (self.home / 'planted').write_text('visible only when the home is granted')
         profile = views.profile_toml(os.path.realpath(self.codex), str(self.source), str(self.work))
         profile = profile.replace('[permissions.lab.network]', json.dumps(str(self.home)) + ' = "read"\n[permissions.lab.network]')
         with self.assertRaises(BoundaryError) as caught:
