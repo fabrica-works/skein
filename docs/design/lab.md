@@ -345,7 +345,8 @@ and an agent:
 - **`cost`** is a cost class of the lab's settings (6.5).
 - **`dirs`:** the run's directories, `{dir.D}`, created empty, `0700`.
 - **Members** are required, but `after` and `files` in a process, and
-  `stdin` in a command, which are empty when absent, `cluster` in a
+  `stdin` in a command, which are empty when absent, `bootstrap` in a
+  process, none when absent, `cluster` in a
   collection or a check, which is `"up"` when absent (4.5), and `await`
   in a seed action, none when absent (4.5).
   `driver` may be null: an experiment with no agent. An unknown member
@@ -414,17 +415,25 @@ named by `files`, is a template: `{name}` is replaced by its value, and
   the run's evidence, read by the runner as they grow, except for the
   private bootstrap channel below.
 - **Private bootstrap,** optional `bootstrap`,
-  `{"stream": "stdout" | "stderr", "action": NAME}`: the whole named
+  `{"stream": "stdout", "action": NAME}`: the whole named
   stream is private input for exactly one trusted seed action. The
   action must exist, no other process may name it as its recipient,
   and it declares neither `stdin` nor `await`. No ready rule or
   action's awaited rule may read the private stream. It creates no
   capture or template value.
   - The stream carries exactly one nonempty UTF-8 line terminated by
-    LF. The runner holds it in memory and pipes it, including LF, to
-    the recipient's stdin once. A partial line at EOF, malformed line,
-    or any output after its terminating LF ends the run in error
-    `bootstrap/PROCESS`, with a fixed reason and no private bytes.
+    LF, at most 4096 bytes including LF. A line holding CR or NUL is
+    malformed. This framing bound fits an empty Linux pipe; the runner
+    never holds bytes beyond it. A partial line at EOF, malformed
+    line, overlong line or any output after its terminating LF fails
+    `bootstrap/PROCESS/REASON`, where REASON is `partial`, `malformed`,
+    `long` or `extra`. It cuts the phase as a process's stop does
+    (5.1), without private bytes or an evidence file in the failure.
+  - Before the recipient starts, the host writes the line, LF
+    included, into a new pipe while holding its read end, then closes
+    the write end and hands the read end to the recipient as stdin.
+    The recipient reads the line and then EOF. The empty pipe holds
+    the whole framed line, so the write cannot wait on its reader.
   - The process becomes ready only when both its public ready lines
     and its private line have arrived, in either order, within its
     one `ready_seconds` from spawn. No new deadline is added.
@@ -433,18 +442,23 @@ named by `files`, is a template: `{name}` is replaced by its value, and
     triager. The recipient's stdout and stderr are private too: an
     authentication client may echo its input. Its stdin record and
     its two output records are null, and none has a retained file.
+    Its command record has `bootstrap: {"process": P}` to identify
+    the source of this private input.
   - Its own process record gains `bootstrap`, with `stream`, `action`,
     `received_ms` and `delivered_ms`; the latter two are null until
-    observed. Timeline events `bootstrap_received` and
+    observed; delivery records the handoff of the prepared pipe at
+    recipient spawn and remains null if it never starts. Timeline
+    events `bootstrap_received` and
     `bootstrap_delivered` name only the process and action. The source
     process's private output record is null, with no output file.
   - The host owns the bytes outside the serializable run state. It
     drops them after delivery or on cut, error or interruption; it
     keeps draining every private stream without persisting its bytes.
-    Broken recipient stdin is an error with a fixed diagnosis.
     The recipient's nonzero exit still fails as a seed action (7.1).
-    The trusted client validates the private input; the runner does
-    not publish a sign-in link to identify its public endpoint.
+    The runner checks the line's framing, never its content. A trusted
+    client may store its resulting session in a declared run directory;
+    that product-owned credential is private scratch, never transcript
+    or log evidence.
   - Without `bootstrap`, streams, readiness, stdin and records follow
     their ordinary contracts. The private channel is a deliberate
     exception to output retention: authentication bytes must not
@@ -467,8 +481,7 @@ check has `cluster` too; it is run once, contained as a process is
 (5.2), within `command_seconds`; its stdin is the rendered `stdin`, kept
 as a file of the run's, or `/dev/null`, and its stdout and stderr are
 kept. A private bootstrap recipient (4.3) instead receives its memory-only
-pipe; the same command bound includes delivery, and none of its streams
-is persisted.
+pipe, and none of its streams is persisted.
 
 - **Seed actions,** `actions`, in their order, once every process is
   ready: the state a story starts from (an account, a key, something
@@ -546,13 +559,12 @@ beside the backend's observations collected live, extends 4.1's example:
     "env": {"PATH": "/usr/bin:/bin"}}]}
 ```
 
-A stopped command retains its ordinary `collect` or `checks` group; its
-command record also names `cluster: "stopped"`. The run's life distinguishes
-live collection/check from stopped collection/check phases. It records a
-collection's successful completion independently of its directory's
-existence. A stopped check may not start merely because an incomplete
-collection left files behind. After an interrupted or unconfirmed stop,
-every skipped stopped check is recorded in `undecided` with its reason.
+Life phases `stopped-collect` and `stopped-check` follow `stop`; their
+commands' records name `cluster: "stopped"`, which live ones omit. A stopped
+command not run is recorded with `group`, `name`, `cluster` and `skipped`,
+and in `undecided` as `<group>/<name>`. A collection is whole by its record:
+exit 0, not cut, killed or past its bound; never by its directory, which
+provision makes.
 
 ### 4.6 Faults and planted failures
 
@@ -587,6 +599,9 @@ run:
   a capture no ready line or awaited line declares; an `await` naming
   no process, its stream neither `stdout` nor `stderr`, its prefix
   holding a line's end, or its capture's name not `[a-z][a-z0-9-]*`;
+- a `bootstrap` whose stream is not `stdout`, naming no seed action or
+  a recipient another process names, or whose recipient declares
+  `stdin` or `await`; any ready or awaited rule on a private stream;
 - a `from` missing from the experiment; a `tree` naming no artifact of
   the subject, or one that is not an archive of 4.3's form; a `path`
   absolute or climbing out, or one beneath or above another `path` of
@@ -636,7 +651,10 @@ its stopped commands included (4.5). A stop that cannot confirm an exit
 is containment's failure, an error (5.5), and runs no stopped command.
 A run interrupted (`SIGINT`, `SIGTERM` to the runner) goes to phase 6
 at once and runs no stopped command, ending any already running (5.2);
-its outcome is error, `interrupted`.
+its outcome is error, `interrupted`. Any machinery error (spawn, runner
+or containment) likewise prevents stopped commands and ends an active one.
+A product or experiment failure that cuts the phase still permits them
+once every started process's exit is confirmed.
 
 ### 5.2 Containment and teardown
 
@@ -769,11 +787,18 @@ and `dirs/<D>/`.
 - `processes`: each one's rendered argv and environment, `started_ms`,
   `ready_ms` and captures; its exit (`ms`, `phase`, `status` or
   `signal`, `stopped`, `killed`); its memory (`peak_bytes`, `source`,
-  `bound_bytes`, `tree_peak_bytes`); its output's files;
+  `bound_bytes`, `tree_peak_bytes`); its output's files. A process with
+  private bootstrap has `bootstrap` with `stream`, `action`,
+  `received_ms`, `delivered_ms` (4.3); its private output is null and
+  has no file;
 - `commands`: each seed action, collection and check, as a process,
   with its status and lines (7.2); a seed action that awaits a line,
   its `awaited`, `{"ms", "captures"}` once seen, as a process's
-  captures, or null;
+  captures, or null. A bootstrap recipient has `bootstrap` with
+  `process`, null `stdin`, and null stdout/stderr outputs (4.3).
+  Stopped commands name `cluster: "stopped"`; their skipped records
+  and reasons follow 4.5. The timeline records `bootstrap_received`
+  and `bootstrap_delivered` with the process and action only;
 - `driver`: its host's invocation, the inventory it was checked against
   and what was found (6.1), its actions and observed turns, its end, the
   report's and the transcript's files (6.3, 6.4);
@@ -1318,6 +1343,13 @@ root:
     the bound passed with the action ended and with it running, a
     non-zero exit not awaited, and the capture rendered for the next
     action and unavailable when missed (4.5);
+  - private bootstrap framing and one-time consumption (4.3): every
+    split of a line, empty/invalid/CR/NUL/partial/extra output, the
+    4096-byte edge, receipt before or after public readiness, and cuts;
+    no event or parser state's representation contains its bytes;
+  - stopped phases after confirmed exits only, successful collection
+    dependencies, every interruption/error path, and command bounds;
+    private-output failures cite no absent evidence file;
   - the draws, the start order and a fault's N, replayed by a seed
     (5.4);
   - the run's life over scripted events: a stop in each phase cutting
@@ -1354,6 +1386,11 @@ root:
     tree unpacked, read-only, before its process starts; an exit in
     each phase recorded and cutting it; a panic in a process and in a tool call; memory past its
     bound; a survivor; a stop past its grace;
+  - a private-line stand-in printing in pieces, and a recipient that
+    echoes its stdin to both streams: the input matches but no private
+    byte appears in any retained file or runner/unit output; a stopped
+    copy sees a writer's terminal state, and a failed copy never enables
+    a dependent check; interruption and failed containment copy nothing;
   - no process and no cgroup left after a pass, a failure, a `SIGINT`
     and a `SIGKILL` of the runner, and the next command's sweep;
   - every action in the transcript; the inventory checked; the driver
