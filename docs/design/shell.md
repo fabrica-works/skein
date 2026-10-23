@@ -456,11 +456,21 @@ kernel with `io_uring_disabled` set, or macOS (Apple Silicon, from macOS
   that another reader took first is no failure.
 - **A descriptor the backend did not make** (an inherited standard
   stream, the signalfd startup opened) keeps its flags: changing them
-  would change them for every process that shares it. A record on it
-  waits for readiness first, then makes its one call; a write on it is
-  capped at `PIPE_BUF` bytes, which a writable pipe takes whole, and
-  completes short as the contract allows. A terminal's flow control may
-  still hold such a write, as a stalled disk holds a file's.
+  would change them for every process that shares it. A socket's
+  `Recv` and `Send` on it ask not to block, call by call
+  (`MSG_DONTWAIT`), and are attempted at once as on the backend's own.
+  Any other record on it waits for readiness first, then makes its one
+  call; a write to a pipe or a terminal is capped at `PIPE_BUF` bytes,
+  which a writable pipe takes whole, and completes short as the
+  contract allows. A terminal's flow control may still hold such a
+  write, as a stalled disk holds a file's.
+- **A known limit: an inherited listener.** An `Accept` has no per-call
+  flag, so on a blocking listener shared with another process, one that
+  the other takes the connection from between the readiness and the
+  call would hold the loop until the next. io adopts no listener it did
+  not make today: every `Accept` is on a socket the backend made
+  non-blocking. A service that one day inherits listeners (socket
+  activation) brings this back to the design.
 - **The backend's own descriptors are non-blocking:** every socket it
   makes (`SOCK_NONBLOCK`), every one it accepts, and the parent's end of
   each pipe a `Spawn` makes, which is a description of its own, so the
