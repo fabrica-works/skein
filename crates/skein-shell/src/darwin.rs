@@ -214,6 +214,12 @@ pub(crate) fn send(fd: Fd, bytes: &[u8]) -> Result<u32, i32> {
         // SAFETY: bytes remains readable for its length until send returns.
         count(unsafe { libc::send(fd.raw(), bytes.as_ptr().cast(), bytes.len(), libc::MSG_DONTWAIT) })
     })
+    .map_err(|errno| {
+        // Darwin answers a Send on a socket never connected with ENOTCONN,
+        // which Linux answers EPIPE; give it up as EPIPE so one error table
+        // serves both, as ENOTCAPABLE is given up as EXDEV for an Open.
+        if errno == libc::ENOTCONN { libc::EPIPE } else { errno }
+    })
 }
 pub(crate) fn read(fd: Fd, buf: &mut [u8]) -> Result<u32, i32> {
     retry(|| {

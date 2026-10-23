@@ -5,9 +5,9 @@
 use std::collections::BTreeSet;
 
 use skein_conformance::{
-    Cancelling, Check, Pairing, Race, Shortness, accept_past_the_descriptor_limit, address_in_use, backpressure,
-    cancel_accept, cancel_connect, cancel_connect_established_while_away, cancel_read, cancel_recv,
-    closed_before_accept, escapes, file_lifecycle, file_metadata, full_accept_queue, graceful_close, ipv6_only,
+    Cancelling, Check, Pairing, PathLimits, Race, Shortness, accept_past_the_descriptor_limit, address_in_use,
+    backpressure, cancel_accept, cancel_connect, cancel_connect_established_while_away, cancel_read, cancel_recv,
+    closed_before_accept, escapes_within, file_lifecycle, file_metadata, full_accept_queue, graceful_close, ipv6_only,
     lifecycle, list, listener_close_resets_waiting, make_directory, nested_roots, open_past_the_descriptor_limit,
     permissions, refused, remove, rename, reset_after_end_of_stream, send_after_peer_closed, unread_close_meets_recv,
     unread_close_meets_send, wrong_state,
@@ -223,7 +223,7 @@ fn a_root_beneath_a_root() {
 
 #[test]
 fn paths_that_leave_their_root_and_paths_that_stay() {
-    chaos(escapes);
+    chaos(|world| escapes_within(world, PathLimits::LINUX));
 }
 
 #[test]

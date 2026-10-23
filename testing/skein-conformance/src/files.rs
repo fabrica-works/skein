@@ -743,15 +743,44 @@ pub enum Outcome {
     Refused(Error),
 }
 
+/// How long a path may be and how many links one resolution follows: each system's (kernel.rs).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PathLimits {
+    pub path: usize,
+    pub links: u32,
+}
+
+impl PathLimits {
+    /// Linux's: `PATH_MAX` 4096 with the NUL, 40 links.
+    pub const LINUX: PathLimits = PathLimits { path: 4096, links: 40 };
+    /// Darwin's: `PATH_MAX` 1024 with the NUL, `MAXSYMLINKS` 32.
+    pub const DARWIN: PathLimits = PathLimits { path: 1024, links: 32 };
+    /// The host's, by `cfg(target_os)`.
+    #[cfg(target_os = "linux")]
+    pub const HOST: PathLimits = Self::LINUX;
+    /// The host's, by `cfg(target_os)`.
+    #[cfg(target_os = "macos")]
+    pub const HOST: PathLimits = Self::DARWIN;
+}
+
 /// Each path the escapes scenario opens, how, and what the kernel answers.
-fn escape_cases() -> Vec<(Vec<u8>, OpenHow, Outcome)> {
+fn escape_cases(limits: PathLimits) -> Vec<(Vec<u8>, OpenHow, Outcome)> {
     let refused = Outcome::Refused;
     let a = || Outcome::File(b"a".to_vec());
     let long_name = [b"sub/".as_slice(), &too_long()].concat();
     let long_path = b"sub/".repeat(1025);
     let longest_name = vec![b'l'; 255];
-    // 4095 bytes, the longest a path may be.
-    let longest_path = [b"./".repeat(2045).as_slice(), b"a.txt"].concat();
+    let pairs = limits.path.checked_sub(6).expect("room for ./ and a.txt").checked_div(2).expect("nonzero divisor");
+    let prefix = b"./".repeat(pairs);
+    let longest_path = [prefix.as_slice(), b"a.txt"].concat();
+    assert_eq!(
+        longest_path.len(),
+        limits.path.checked_sub(1).expect("room for the NUL"),
+        "the longest path leaves exactly one byte for the NUL"
+    );
+    let first_too_long = [prefix.as_slice(), b"/a.txt"].concat();
+    assert_eq!(first_too_long.len(), limits.path, "the first refused path reaches the system's limit");
+    let extra_link = limits.links.checked_add(1).expect("room for one more link");
     let slashed = [far_too_long().as_slice(), b"/"].concat();
     vec![
         (b"..".to_vec(), OpenHow::Read, refused(Error::Escape)),
@@ -774,8 +803,8 @@ fn escape_cases() -> Vec<(Vec<u8>, OpenHow, Outcome)> {
         (b"sub/../a.txt".to_vec(), OpenHow::Read, a()),
         (b"sub//../a.txt".to_vec(), OpenHow::Read, a()),
         (b"loop1".to_vec(), OpenHow::Read, refused(Error::TooManyLinks)),
-        (b"l40".to_vec(), OpenHow::Read, a()),
-        (b"l41".to_vec(), OpenHow::Read, refused(Error::TooManyLinks)),
+        (format!("l{}", limits.links).into_bytes(), OpenHow::Read, a()),
+        (format!("l{extra_link}").into_bytes(), OpenHow::Read, refused(Error::TooManyLinks)),
         (b"dangle".to_vec(), OpenHow::Read, refused(Error::NotFound)),
         (b"dangle".to_vec(), OpenHow::Create { mode: None }, refused(Error::Exists)),
         (b"in".to_vec(), OpenHow::Create { mode: None }, refused(Error::Exists)),
@@ -797,6 +826,7 @@ fn escape_cases() -> Vec<(Vec<u8>, OpenHow, Outcome)> {
         (long_path, OpenHow::Read, refused(Error::NameTooLong)),
         (longest_name, OpenHow::Create { mode: None }, Outcome::Opened),
         (longest_path, OpenHow::Read, a()),
+        (first_too_long, OpenHow::Read, refused(Error::NameTooLong)),
         (slashed, OpenHow::Create { mode: None }, refused(Error::IsADirectory)),
         // `..` steps from where a link led, not back along the path.
         (b"deep/../x".to_vec(), OpenHow::Read, Outcome::File(b"x".to_vec())),
@@ -811,16 +841,23 @@ fn escape_cases() -> Vec<(Vec<u8>, OpenHow, Outcome)> {
 }
 
 /// Paths that leave their root, and paths that stay: `..`, absolute paths,
-/// symbolic links out and in, a loop, forty links and one more, a dangling
+/// symbolic links out and in, a loop, the system's link limit and one more, a dangling
 /// link, a final `/`, names and paths too long; and a FIFO, which opens as
 /// no file.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Escapes {
     pub outcomes: Vec<(Vec<u8>, OpenHow, Outcome)>,
+    pub limits: PathLimits,
 }
 
 #[must_use]
 pub fn escapes<B: Backend>(backend: &mut B) -> Escapes {
+    escapes_within(backend, PathLimits::HOST)
+}
+
+/// Opens paths at and beyond the supplied system's path and link limits.
+#[must_use]
+pub fn escapes_within<B: Backend>(backend: &mut B, limits: PathLimits) -> Escapes {
     let tree = [
         Item::file(b"a.txt", b"a"),
         Item::directory(b"sub"),
@@ -839,10 +876,10 @@ pub fn escapes<B: Backend>(backend: &mut B) -> Escapes {
         Item::fifo(b"pipe"),
         Item::link(b"to-pipe", b"pipe"),
     ];
-    // A chain of links, `l41` to `l1` and on to `a.txt`.
+    // A chain one beyond the system's limit, through `l1` to `a.txt`.
     let mut tree = tree.to_vec();
     tree.push(Item::link(b"l1", b"a.txt"));
-    for n in 1..41_u32 {
+    for n in 1..=limits.links {
         let next = n.checked_add(1).expect("a small number");
         tree.push(Item::link(format!("l{next}").as_bytes(), format!("l{n}").as_bytes()));
     }
@@ -850,7 +887,7 @@ pub fn escapes<B: Backend>(backend: &mut B) -> Escapes {
     let process = run.process();
     let root = run.root(process, &tree);
     let mut outcomes = Vec::new();
-    for (path, how, _) in escape_cases() {
+    for (path, how, _) in escape_cases(limits) {
         let outcome = match (run.open(process, root, &path, how), how) {
             (Ok(fd), OpenHow::Read | OpenHow::ReadNoFollow | OpenHow::Write | OpenHow::WriteNoFollow) => {
                 let (read, _) = run.read_all(process, fd);
@@ -877,12 +914,12 @@ pub fn escapes<B: Backend>(backend: &mut B) -> Escapes {
     }
     run.close(process, root);
     run.finish();
-    Escapes { outcomes }
+    Escapes { outcomes, limits }
 }
 
 impl Check for Escapes {
     fn check(&self) {
-        for ((path, how, seen), (_, _, expected)) in self.outcomes.iter().zip(escape_cases()) {
+        for ((path, how, seen), (_, _, expected)) in self.outcomes.iter().zip(escape_cases(self.limits)) {
             let shown = path.escape_ascii().to_string();
             assert_eq!(
                 *seen, expected,

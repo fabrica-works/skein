@@ -104,9 +104,11 @@
 //!   the ordinary open modes. The `NoFollow` modes refuse any symbolic link
 //!   in the path with `TooManyLinks`, for writes that must stay in the named
 //!   directory. A
-//!   loop of links, more than 40 in one resolution, and a magic link
-//!   (`/proc/*/fd/*`, should a root hold one) fail with `TooManyLinks`. A name longer than 255 bytes, or a path of 4096 or
-//!   more, fails with `NameTooLong`; an empty path with `NotFound`. A `..`
+//!   loop of links, more than the system's limit in one resolution (40 on
+//!   Linux, 32 on Darwin), and a magic link (`/proc/*/fd/*`, should a root
+//!   hold one) fail with `TooManyLinks`. A name longer than 255 bytes, or a
+//!   path of the system's limit or more (4096 on Linux, 1024 on Darwin),
+//!   fails with `NameTooLong`; an empty path with `NotFound`. A `..`
 //!   that races a rename or a mount anywhere on the system, which
 //!   `RESOLVE_BENEATH` answers with `EAGAIN`, has the backend submit the
 //!   `Open` again, up to 16 times: still racing, it fails with `Other(11)`.

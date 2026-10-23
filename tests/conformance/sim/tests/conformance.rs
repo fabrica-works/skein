@@ -3,12 +3,12 @@
 //! in `fuzzy_conformance.rs`.
 
 use skein_conformance::{
-    Check, Pairing, Shortness, accept_past_the_descriptor_limit, address_in_use, backpressure, cancel_accept,
-    cancel_connect, cancel_connect_established_while_away, cancel_read, cancel_recv, closed_before_accept, escapes,
-    file_lifecycle, file_metadata, full_accept_queue, graceful_close, ipv6_only, lifecycle, list,
-    listener_close_resets_waiting, make_directory, nested_roots, open_past_the_descriptor_limit, permissions,
-    processes, refused, remove, rename, reset_after_end_of_stream, send_after_peer_closed, unread_close_meets_recv,
-    unread_close_meets_send, wrong_state,
+    Check, Pairing, PathLimits, Shortness, accept_past_the_descriptor_limit, address_in_use, backpressure,
+    cancel_accept, cancel_connect, cancel_connect_established_while_away, cancel_read, cancel_recv,
+    closed_before_accept, escapes_within, file_lifecycle, file_metadata, full_accept_queue, graceful_close, ipv6_only,
+    lifecycle, list, listener_close_resets_waiting, make_directory, nested_roots, open_past_the_descriptor_limit,
+    permissions, processes, refused, remove, rename, reset_after_end_of_stream, send_after_peer_closed,
+    unread_close_meets_recv, unread_close_meets_send, wrong_state,
 };
 use skein_conformance_sim::{
     CALM, RACES, SMOKE, Simulated, cancel_chaos, each_seed, file_cancel_chaos, loopback_chaos, racing_accept,
@@ -238,7 +238,7 @@ fn a_root_beneath_a_root() {
 
 #[test]
 fn paths_that_leave_their_root_and_paths_that_stay() {
-    calm_and_chaos(escapes);
+    calm_and_chaos(|world| escapes_within(world, PathLimits::LINUX));
 }
 
 #[test]

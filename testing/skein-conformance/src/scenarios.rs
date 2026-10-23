@@ -482,7 +482,11 @@ impl Check for WrongState {
     fn check(&self) {
         let [recv, send, accept] = &self.fresh;
         assert_eq!(recv, &Err(Error::NotConnected), "the contract: a Recv on a socket never connected");
-        assert_eq!(send, &Err(Error::BrokenPipe), "the contract: a Send on a socket never connected");
+        assert_eq!(
+            send,
+            &Err(Error::BrokenPipe),
+            "a Send on a socket never connected: EPIPE on Linux, ENOTCONN given up as EPIPE on Darwin"
+        );
         assert_eq!(accept, &Err(Error::InvalidArgument), "the contract: an Accept on a socket that does not listen");
         assert_eq!(self.bind_twice, Err(Error::InvalidArgument), "the contract: a second Bind");
         let [recv, send] = &self.listener;
