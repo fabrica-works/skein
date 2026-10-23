@@ -38,7 +38,7 @@ def outcome(failures, errors, undecided, report, *, driver_required=True):
 
 def superseded(signatures, held_to, current):
     """Every failure names a class bound now strictly above the run's value."""
-    if not signatures:
+    if not signatures or type(held_to) is not dict:
         return False
     for signature in signatures:
         parts = signature.split('/')

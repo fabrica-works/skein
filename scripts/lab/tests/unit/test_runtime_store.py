@@ -105,7 +105,7 @@ class Bounds(unittest.TestCase):
     def test_run_bounds_are_exact_named_positive_class_values(self):
         value = run_record(1, '1')
         self.assertEqual(records.run_refusals(value), [])
-        for bounds in ([], {}, {'name': 'smoke'}, {**value['bounds'], 'hits': []},
+        for bounds in ({}, {'name': 'smoke'}, {**value['bounds'], 'hits': []},
                        {**value['bounds'], 'name': 'BAD'}):
             with self.subTest(bounds=bounds):
                 self.assertTrue(records.run_refusals({**value, 'bounds': bounds}))
@@ -113,6 +113,13 @@ class Bounds(unittest.TestCase):
             for bad in (None, False, 0, -1, records.SAFE + 1):
                 bounds = {**value['bounds'], field: bad}
                 self.assertIn('run.bounds.' + field, [r.member for r in records.run_refusals({**value, 'bounds': bounds})])
+
+    def test_transitional_list_of_hits_is_accepted_and_never_superseded(self):
+        # temper's S host writes its hits as a list until it records the class (lab.md 5.6).
+        value = {**run_record(1, '1'), 'bounds': [dict(name='ready_seconds', who='engine')]}
+        self.assertEqual(records.run_refusals(value), [])
+        current = fixture()[2]['costs']['smoke']
+        self.assertFalse(judge.superseded(['bound/ready_seconds/engine'], value['bounds'], current))
 
     def test_host_superseding_reads_fail_bounds_and_preserves_nonfail_outcomes(self):
         from types import SimpleNamespace

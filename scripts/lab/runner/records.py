@@ -182,7 +182,10 @@ def run_refusals(value):
         out.append(Refusal('run.format', 'expected lab-run/1'))
     if not digest_value(obj.get('key')):
         out.append(Refusal('run.key', 'expected key digest'))
-    out.extend(cost_refusals(obj.get('bounds'), 'run.bounds', named=True))
+    # Transitional: temper's S host (lab/chat-change-smoke/host.py) still writes its bound
+    # hits as a list; removed by the temper task that records the class (lab.md 5.6).
+    if type(obj.get('bounds')) is not list:
+        out.extend(cost_refusals(obj.get('bounds'), 'run.bounds', named=True))
     for field in ('failures', 'undecided', 'errors', 'commands'):
         if type(obj.get(field)) is not list:
             out.append(Refusal('run.' + field, 'expected list'))
