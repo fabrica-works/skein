@@ -958,6 +958,11 @@ documentation.
   and errors with no turn otherwise. Any other built-in still ends the
   run in error, and so does any of the three returning content: a
   listing that is not empty, or a read that is not an error.
+- **The host's MCP approval is pre-granted** for the lab's tools
+  (`default_tools_approval_mode = "approve"`): under approval policy
+  `never`, the host otherwise refuses each call to a tool with no
+  annotations, before it reaches the runner. The runner's broker admits
+  each call (6.3).
 - **Every model call is seen:** the host makes no item for a call it
   does not serve, so the runner also reads the host's raw response
   items (`experimentalRawEvents`). Each raw call must be answered by
