@@ -43,10 +43,12 @@ testing.md, 6.)
 ## 2. In skein
 
 `skein-shell` depends on lib, io (for the records), and the only crates
-from outside: `io-uring`, on Linux alone, and `libc`. A service's `main`
-depends on it and on the service's own `iterate`. It builds for Linux and
-for `aarch64-apple-darwin`; any other target is a compile error naming
-the two (7.5, 7.6).
+from outside: `io-uring`, on Linux alone, and `libc`, on Unix alone. A
+service's `main` depends on it and on the service's own `iterate`. It
+builds for Linux and for `aarch64-apple-darwin`, and for
+`wasm32-unknown-unknown` as its portable face, `Host` and a command's
+settings with nothing that reads the system (section 14); any other
+target is a compile error naming the three (7.5, 7.6).
 
 - **`Host` and `drive` are here** (section 12), moved from `skein-world`,
   which re-exports both. A service's shell then links no testing crate,
@@ -958,11 +960,14 @@ every service's `main`.
   - `state_digest()`, a digest of what it holds, for replay (lib.md,
     5.1): `None` unless the service gives one. Only a world reads it
     (testing.md, 5); `drive` never calls it.
+  `Host` is portable: it builds for `wasm32-unknown-unknown`, where a
+  world hosts a service with everything handed to it (section 14).
 - **`drive(kernel, clock, host)`** is the loop: reap, read the clock,
   iterate, drain; then return the host's exit once it holds nothing
   (section 13), or else submit, waiting not at all while work is pending,
   until the earliest deadline, or until a completion. A service's `main`
-  is its startup, then `drive`.
+  is its startup, then `drive`. It is native, as the kernel and the
+  clock it takes are (section 14).
 - **The hook** runs once per iteration, after `iterate` and before the
   submit, while the service is a frozen snapshot. It is for drains that
   belong to the shell: reading what the service holds for its operator
@@ -1022,3 +1027,41 @@ every service's `main`.
 - **Checked** in every world, by the teardown invariant
   (testing-strategy.md, 6), and in the real loop by `drive`'s own tests
   (section 9).
+
+## 14. The portable face
+
+A service's layers take everything from their host as input: time and
+wall, the seed, descriptors, configuration's bytes, roots. Only the shell
+reads the system to hand them over. So the shell has two faces, chosen
+by the target, and a world built for a browser hosts the same `Host`
+its native worlds do.
+
+- **Portable:** `Host` (section 12), and a command's settings (6.5):
+  `Settings`, `Setting`, `Fallback`, `Base`, `Value`, `Resolved`,
+  `Origin`, `Refusal`, `Reason`, `resolve` and `help`, which take the
+  arguments and the environment as bytes and read nothing. They build
+  for `wasm32-unknown-unknown`, the portable target, and on it they are
+  the whole crate.
+- **Native, under `cfg(unix)`:** everything that reads the system or
+  waits on it: `drive`; the kernel and its backends (sections 3 and 7);
+  the clock and the seed (section 5); startup's reads, roots and outputs
+  (section 6); the process, group and signal calls; the terminal's modes
+  and input (6.3); and settings' `arguments` and `environment`, which
+  read the process's.
+- **Fenced by target, not by feature.** The target is the fact: a
+  feature would unify across the graph, and every native build would
+  have to opt in. A native item is fenced at the coarsest grain that
+  holds it: a module in its `mod` line, an export in its `pub use`, an
+  item in a portable module (`drive`, `arguments`, `environment`) on its
+  own. `libc` is a `cfg(unix)` dependency.
+- **No third system module.** The portable target has no system calls to
+  select, so `system` stays Linux's and Darwin's (7.5); Unix other than
+  Linux and macOS, and every target but these three, stay a compile
+  error.
+- **No consumer changes.** A world's closure names only `Host` of the
+  shell (the fakes, the services' worlds, an application's one-process
+  world); a service's `main` names the rest, and builds only natively.
+- **Checked** in skein's gate: clippy over the shell and the world
+  harness for `wasm32-unknown-unknown`, warnings denied, so a native
+  item reached from the portable face fails the build, and a fence that
+  leaves dead code warns (testing.md, 10).
