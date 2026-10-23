@@ -329,6 +329,11 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
 def runtime_command(lab, lock_fd, args):
     from .transport import launch
     seed_problems = []
+    rehearsal = None
+    if args.command == 'run' and args.rehearse is not None:
+        from . import script
+        data, _ = store.read_regular(args.rehearse)
+        rehearsal = dict(script=store.file_digest(data), value=script.parse(data))
     if args.command == 'run' and args.seed is not None:
         try:
             canonical.u64(args.seed)
@@ -354,11 +359,12 @@ def runtime_command(lab, lock_fd, args):
             seed = _new_seed(previous)
         if not judge.seed_admitted(previous, seed):
             raise Refused('seed', 'a fourth seed is forbidden')
-        admitted, refusal = brake.admit(lab, exp, _runtime_cost(lab, canonical.loads(lab.read(key_path + '/key.json'))), str(_runner_root()))
+        admitted, refusal = (None, None) if rehearsal is not None else brake.admit(
+            lab, exp, _runtime_cost(lab, canonical.loads(lab.read(key_path + '/key.json'))), str(_runner_root()))
         if refusal is not None:
             print('brake: ' + refusal, file=sys.stderr)
             return 2
-        record, status = launch(lab, lock_fd, key_path, seed, None, brake_event=admitted)
+        record, status = launch(lab, lock_fd, key_path, seed, None, brake_event=admitted, rehearsal=rehearsal)
         print(record['run'])
         for error in record['errors']:
             print(error['what'] + ': ' + error['detail'], file=sys.stderr)
@@ -455,9 +461,13 @@ def main(argv=None, *, lab_root=None, finding_time=None):
         runtime = commands.add_parser(name, help='run an experiment' if name == 'run' else 'judge exactly three seeds')
         runtime.add_argument('experiment')
         runtime.add_argument('--subject', required=True)
-        runtime.add_argument('--campaign')
         if name == 'run':
             runtime.add_argument('--seed')
+            selection = runtime.add_mutually_exclusive_group()
+            selection.add_argument('--campaign')
+            selection.add_argument('--rehearse', metavar='SCRIPT')
+        else:
+            runtime.add_argument('--campaign')
     args = parser.parse_args(argv)
     if sys.version_info < (3, 11):
         parser.error("Python 3.11 or later is required")
@@ -472,7 +482,8 @@ def main(argv=None, *, lab_root=None, finding_time=None):
             now = finding_time
             if args.command == 'finding' and now is None:
                 now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-            finding_store.sync(lab, now)
+            if not (args.command == 'run' and args.rehearse is not None):
+                finding_store.sync(lab, now)
             if args.command == 'held':
                 if args.held_action == 'put':
                     held.put(lab, args.name, args.file)

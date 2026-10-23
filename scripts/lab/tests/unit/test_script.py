@@ -113,3 +113,26 @@ class ProvisionLife(unittest.TestCase):
                 self.assertEqual(effects, [dict(op='stop_driver')])
                 self.assertTrue(state.data['errors'][0]['what'].startswith('provision/'))
                 self.assertIsNone(state.data['driver']['started_ms'])
+
+
+    def test_unadmitted_provisioning_item_is_a_host_error(self):
+        from runner import life
+        state, _ = self.state()
+        state, effects = life.step(state, dict(kind='provision_event', ms=1,
+            message=dict(method='item/started', params=dict(item=dict(type='webSearch', id='unexpected')))))
+        self.assertEqual(state.data['errors'][0]['what'], 'provision/host')
+        self.assertIn('unadmitted item kind', state.data['errors'][0]['detail'])
+        self.assertEqual(effects, [dict(op='stop_driver')])
+        self.assertEqual(state.data['driver']['observed']['actions'], [])
+
+
+class SquaresScripts(unittest.TestCase):
+    def test_both_rehearsal_scripts_parse_and_remain_outside_the_experiment(self):
+        root = Path(__file__).resolve().parents[1] / 'proof'
+        for mode in ('correct', 'wrong'):
+            value = script.parse((root / 'squares-rehearsal' / (mode + '.json')).read_bytes())
+            self.assertEqual(len(value['turns']), 5)
+            self.assertEqual(value['turns'][0]['output'][0]['arguments'], dict(args=['task'], stdin=None))
+            self.assertIn("python3 - <<'EOF'", value['turns'][1]['output'][0]['arguments']['cmd'])
+            self.assertEqual(codex.report(value['turns'][-1]['output'][0]['text'])['done'], mode == 'correct')
+            self.assertFalse((root / 'squares' / (mode + '.json')).exists())

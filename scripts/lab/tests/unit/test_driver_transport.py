@@ -60,6 +60,7 @@ class Broker(unittest.TestCase):
                               base='run', ms=lambda: 1, cost=dict(command_seconds=3), timeline=lambda *a, **k: None)
         run.feed = lambda kind, **fields: self.feed(run, kind, fields)
         run.file_record = lambda path: dict(path=path, bytes=3, sha256='sha256:' + 'a' * 64)
+        run.spec = {}
         instance = driver.Driver(run)
         connection = dict(pending=[], active=set(), out=b'')
         return instance, connection, entries
@@ -144,3 +145,25 @@ class Broker(unittest.TestCase):
             instance, connection, _ = self.world()
             with self.subTest(value=value), self.assertRaises(RuntimeError):
                 instance.broker(connection, value)
+
+
+class ProvisionSummary(unittest.TestCase):
+    def test_broker_signal_stays_distinct_from_an_exit_status(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temporary:
+            observed = codex.initial()
+            observed['turns'] = [dict(completed_ms=1)]
+            run = SimpleNamespace(base='run', spec={}, ms=lambda: 2,
+                exp=dict(driver=dict(tools=[dict(name='tool', provision=dict(args=['help'], status=0))])),
+                lab=SimpleNamespace(root=Path(temporary)),
+                state=SimpleNamespace(data=dict(tool_provision=dict(observed=observed, inventory={}))))
+            session = driver.Driver(run, provisioning=True)
+            session.started_ms, session.host_end = 0, dict(status=0)
+            ref = dict(path='driver/provision/calls/1.stdout', bytes=0, sha256='sha256:' + '0' * 64)
+            session.calls = {1: dict(tool='tool', args=['help'], stdin=False,
+                end=dict(status=None, signal='SIGTERM', stdout=ref, stderr=ref))}
+            record, errors = session.finish_provision()
+            self.assertEqual(record['calls'][0]['signal'], 'SIGTERM')
+            self.assertNotIn('status', record['calls'][0])
+            self.assertEqual([e['what'] for e in errors], ['provision/tool/signal:SIGTERM'])

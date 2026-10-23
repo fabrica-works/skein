@@ -183,7 +183,7 @@ class ProvisionValidation(unittest.TestCase):
         self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
         tool = exp['driver']['tools'][0]
         for provision in (None, {}, dict(args=[], status=True), dict(args=[], status=256),
-                          dict(args=[], status=-1), dict(args=[1], status=0),
+                          dict(args=[], status=-1), dict(args=[1], status=0), dict(args=['bad\0argument'], status=0),
                           dict(args='literal', status=0), dict(args=[], status=0, extra=1)):
             with self.subTest(provision=provision):
                 tool['provision'] = provision

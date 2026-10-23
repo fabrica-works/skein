@@ -35,8 +35,13 @@ def main(script_path, out_dir):
             write(output / 'requests' / f'{number}.http.json',
                   (json.dumps(dict(method=self.command, path=self.path, status=200 if valid else 404)) + '\n').encode())
             if not valid:
-                write(output / 'responses' / f'{number}.sse', b'')
-                self.send_error(404)
+                data = b'' if self.command == 'HEAD' else b'not found\n'
+                write(output / 'responses' / f'{number}.sse', data)
+                self.send_response(404)
+                self.send_header('Content-Type', 'text/plain')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             items, captured = script.respond(value, turn, json.loads(body), captured)
             data = script.stream(items, 'resp_' + str(turn), USAGE)

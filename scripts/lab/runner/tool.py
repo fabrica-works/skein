@@ -167,6 +167,7 @@ def main(root, run):
     # The runner owns the writer lock. This reader neither sweeps nor reconciles it.
     with store.open_lab(root) as lab:
         runs = list(lab.root.glob('keys/*/*/runs/' + run + '/driver'))
+        runs.extend(lab.root.glob('rehearsals/*/' + run + '/driver'))
         found = []
         for directory in runs:
             # The drive manifest is published only after provisioning has ended.

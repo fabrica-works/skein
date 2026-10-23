@@ -21,6 +21,8 @@ def read(lab, key_path):
         problems = run_refusals(record)
         if problems:
             raise Refused(problems[0].member, problems[0].why)
+        if 'rehearsal' in record:
+            raise Refused('evidence', 'a rehearsal is never evidence')
         if record['key'] != key_path.rsplit('/', 1)[-1] or line_for(record) != item:
             raise Refused('evidence', 'run record and evidence differ')
         runs.add(item['run'])
@@ -36,6 +38,8 @@ def line_for(record):
 
 
 def publish(lab, key_path, record):
+    if 'rehearsal' in record:
+        raise Refused('run.rehearsal', 'a rehearsal is never evidence')
     problems = run_refusals(record)
     if problems:
         raise Refused(problems[0].member, problems[0].why)
@@ -61,6 +65,15 @@ def publish(lab, key_path, record):
 
 def require_recovered(lab):
     """Inspect run metadata only; retain unfinished runs for owner recovery."""
+    for directory in sorted(lab.root.glob('rehearsals/*/*')):
+        path = directory.relative_to(lab.root).as_posix()
+        fd = lab.directory(path)
+        try:
+            files = os.listdir(fd)
+        finally:
+            os.close(fd)
+        if 'live.json' in files or 'run.json' not in files:
+            raise Refused('recovery', path + ': unfinished rehearsal retained; owner recovery required')
     try:
         root = lab.directory('keys')
     except FileNotFoundError:

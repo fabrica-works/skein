@@ -59,6 +59,8 @@ class Driver:
     def __init__(self, run, *, provisioning=False):
         self.run = run
         self.provisioning = provisioning
+        self.rehearsal = not provisioning and 'rehearsal' in run.spec
+        self.endpoint_base = None
         self.base = run.base + ('/driver/provision' if provisioning else '/driver')
         self.identity = 'provision-host' if provisioning else 'driver'
         self.endpoint = None
@@ -95,16 +97,20 @@ class Driver:
 
     def start_endpoint(self):
         run, lab = self.run, self.run.lab
-        self.endpoint = 'provision-endpoint'
+        self.endpoint = 'provision-endpoint' if self.provisioning else 'rehearsal-endpoint'
+        self.endpoint_base = self.base if self.provisioning else self.base + '/rehearsal'
         self.started_ms = run.ms()
         for path in ('home', 'calls'):
-            os.close(lab.directory(self.base + '/' + path, create=True))
-        lab.write_once(self.base + '/script.json', canonical.record_bytes(script.provisioning(run.exp['driver']['tools'])))
-        root = lab.root / self.base
+            os.close(lab.directory(self.endpoint_base + '/' + path, create=True))
+        value = script.provisioning(run.exp['driver']['tools']) if self.provisioning else run.spec['rehearsal']['value']
+        lab.write_once(self.endpoint_base + '/script.json', canonical.record_bytes(value))
+        root = lab.root / self.endpoint_base
         argv = [os.path.realpath(sys.executable), '-I', '-B', '-S', str(Path(__file__).with_name('launch.py')),
                 str(lab.root), 'endpoint', run.spec['run'], str(root / 'script.json'), str(root)]
         run.spawn_driver(argv, dict(PATH=os.defpath, LANG='C.UTF-8'), None, str(root),
-                         identity=self.endpoint, base=self.base, group='endpoint')
+                         identity=self.endpoint, base=self.endpoint_base, group='endpoint')
+        if self.rehearsal:
+            run.feed('driver_spawned')
 
     def endpoint_line(self, stream, line):
         if stream != 'stdout':
@@ -114,7 +120,7 @@ class Driver:
         self.address = line.decode().removeprefix('listening ')
         if not self.state['ending']:
             data = self.run.lab.read(self.run.base + '/driver/config.toml').decode()
-            self.run.lab.write_once(self.base + '/config.toml', codex.with_endpoint(data, self.address).encode())
+            self.run.lab.write_once(self.endpoint_base + '/config.toml', codex.with_endpoint(data, self.address).encode())
             self.start_host()
 
     def stop_endpoint(self):
@@ -131,7 +137,7 @@ class Driver:
         for path in ('work', 'home', 'calls'):
             os.close(lab.directory(self.base + '/' + path, create=True))
         settings = canonical.loads(lab.read('settings.json'))
-        home = Path(settings.get('codex_home', str(lab.root / 'codex')))
+        home = lab.root / self.base / 'rehearsal/home' if self.rehearsal else Path(settings.get('codex_home', str(lab.root / 'codex')))
         config = run.key['lab']['driver']['config']
         names = {**known, 'driver.work': str(root / 'work'), 'codex.home': str(home),
                  'lab.root': str(lab.root)}
@@ -160,7 +166,7 @@ class Driver:
         lab.write_once(self.base + '/config.toml', toml.encode('utf-8'))
 
     def start(self):
-        if self.provisioning:
+        if self.provisioning or self.rehearsal:
             self.start_endpoint()
         else:
             self.start_host()
@@ -170,9 +176,9 @@ class Driver:
         known = run.state.data['known']
         root = lab.root / run.base / 'driver'
         settings = canonical.loads(lab.read('settings.json'))
-        home = lab.root / self.base / 'home' if self.provisioning else Path(settings.get('codex_home', str(lab.root / 'codex')))
+        home = lab.root / self.endpoint_base / 'home' if self.endpoint_base is not None else Path(settings.get('codex_home', str(lab.root / 'codex')))
         config = run.key['lab']['driver']['config']
-        _write_config(home, lab.read(self.base + '/config.toml'))
+        _write_config(home, lab.read((self.endpoint_base or self.base) + '/config.toml'))
         tools = []
         for definition in run.exp['driver']['tools']:
             item = life_render(run, definition)
@@ -211,7 +217,7 @@ class Driver:
             run.spawn_driver(argv, env, read, str(root / 'work'), identity=self.identity, base=self.base)
         finally:
             os.close(read)
-        if not self.provisioning:
+        if not self.provisioning and not self.rehearsal:
             run.feed('driver_spawned')
 
     def received(self, message):
@@ -317,7 +323,7 @@ class Driver:
                         arguments=dict(args=start['args'], stdin='' if start['stdin'] else None))
             self.feed('driver_call', item=item)
             number = self.state['call_number']
-            self.run.timeline('driver_call', n=number, tool=start['tool'])
+            self.run.timeline('provision_call' if self.provisioning else 'driver_call', n=number, tool=start['tool'])
             if self.state['ending']:
                 _send(connection, dict(refuse='driver bound passed'))
                 return

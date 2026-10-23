@@ -393,3 +393,28 @@ class ProvisionRecords(unittest.TestCase):
         self.assertEqual(records.run_refusals(changed), [])
         call['status'] = 0
         self.assertTrue(records.run_refusals(changed))
+
+
+class RehearsalRecords(unittest.TestCase):
+    def test_rehearsal_script_digest_and_campaign_are_validated(self):
+        record = run_record(1, '1')
+        self.assertNotIn('rehearsal', record)
+        self.assertEqual(records.run_refusals(record), [])
+        record['rehearsal'] = dict(script=D)
+        self.assertEqual(records.run_refusals(record), [])
+        for malformed in (None, {}, dict(script='bad'), dict(script=D, extra=1)):
+            with self.subTest(malformed=malformed):
+                self.assertTrue(records.run_refusals(dict(record, rehearsal=malformed)))
+        self.assertTrue(records.run_refusals(dict(record, campaign='invented')))
+
+    def test_a_rehearsal_cannot_be_published_as_evidence(self):
+        record = dict(run_record(1, '1'), rehearsal=dict(script=D))
+        with self.assertRaisesRegex(Refused, 'never evidence'):
+            evidence.publish(None, 'keys/sample/' + D, record)
+
+    def test_unfinished_rehearsal_requires_recovery_under_the_same_lock(self):
+        with tempfile.TemporaryDirectory() as temporary, store.open_lab(Path(temporary) / 'lab') as lab:
+            base = 'rehearsals/sample/20261020T123456000Z-000001'
+            lab.write_once(base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit='invented')))
+            with self.assertRaisesRegex(Refused, 'unfinished rehearsal'):
+                evidence.require_recovered(lab)

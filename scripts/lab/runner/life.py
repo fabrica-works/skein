@@ -452,8 +452,12 @@ def step(state, event):
                     _end_driver(d, effects)
             else:
                 raise Refused(event['what'], event['detail'])
-        except Refused as error:
-            d['errors'].append(dict(what=error.refusal.member, detail=error.refusal.why))
+        except (Refused, KeyError, TypeError, ValueError) as error:
+            if isinstance(error, Refused) and error.refusal.member.startswith('provision/'):
+                what, detail = error.refusal.member, error.refusal.why
+            else:
+                what, detail = 'provision/host', str(error)
+            d['errors'].append(dict(what=what, detail=detail))
             _end_driver(d, effects)
     elif kind == 'driver_spawned':
         d['driver']['started_ms'] = ms

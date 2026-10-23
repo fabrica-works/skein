@@ -426,6 +426,7 @@ class HeldRecords(unittest.TestCase):
         exp, _subject, settings, _facts = validation_world()
         run = Run.__new__(Run)
         run.exp, run.cost = exp, settings['costs']['smoke']
+        run.spec = {}
         before = run.longest_ms()
         run.exp['release'].append(dict(name='settle', argv=['/settle'], env={}))
         self.assertEqual(run.longest_ms() - before,

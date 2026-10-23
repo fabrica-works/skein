@@ -494,8 +494,8 @@ def validate(experiment, subject, settings, facts):
                     pm = m + '.provision'
                     provision = shape(p.get('provision'), ('args', 'status'), (), pm, out)
                     args = provision.get('args')
-                    if type(args) is not list or any(type(arg) is not str for arg in args):
-                        out.append(Refusal(pm + '.args', 'expected literal strings'))
+                    if type(args) is not list or any(type(arg) is not str or '\0' in arg for arg in args):
+                        out.append(Refusal(pm + '.args', 'expected literal strings without NUL'))
                     status = provision.get('status')
                     if type(status) is not int or not 0 <= status <= 255:
                         out.append(Refusal(pm + '.status', 'expected exit status 0..255'))

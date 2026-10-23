@@ -27,7 +27,7 @@ def _write(fd, data):
 class Run:
     def __init__(self, lab, spec, host_factory=Host):
         self.lab, self.spec, self.host_factory = lab, spec, host_factory
-        self.base = spec['key_path'] + '/runs/' + spec['run']
+        self.base = spec.get('base', spec['key_path'] + '/runs/' + spec['run'])
         self.key = canonical.loads(lab.read(spec['key_path'] + '/key.json'))
         exp_base = 'store/experiments/' + self.key['experiment']
         self.exp = canonical.loads(lab.read(exp_base + '/experiment.json'))
@@ -552,6 +552,8 @@ class Run:
             self.complete_meter(item)
         self.host.remove(identity)
         if group == 'driver' and not self.driver.provisioning:
+            self.driver.host_end = record['exit']
+            self.driver.stop_endpoint()
             self.feed('driver_closed', result=record['exit'], stopped=item['cancelled'])
             self.driver_record, self.driver_usage = self.driver.finish()
             self.driver_record['end'] = record['exit']
@@ -563,8 +565,11 @@ class Run:
         self.timeline('tree_empty', name=name, group=group)
         if group == 'endpoint':
             self.driver.endpoint_end = record['exit']
-            if self.driver.identity in self.host.children:
-                self.feed('provision_error', what='provision/host', detail='endpoint ended before its host')
+            if self.driver.identity in self.host.children or record['exit'].get('status') != 0:
+                if self.driver.provisioning:
+                    self.feed('provision_error', what='provision/host', detail='endpoint failed or ended before its host')
+                else:
+                    self.feed('error', what='driver/host', detail='endpoint failed or ended before its host')
         if (group in ('driver', 'endpoint') and self.driver.provisioning
                 and self.driver.identity not in self.host.children and self.driver.endpoint not in self.host.children):
             self.end_tools_provision(self.driver)
@@ -658,7 +663,15 @@ class Run:
                                  unit=self.spec['unit'], manager=self.spec.get('manager_version'),
                                  memory_bytes=os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')))
         self.timeline('outcome', outcome=outcome)
-        evidence.publish(self.lab, self.spec['key_path'], record)
+        if 'rehearsal' in self.spec:
+            from .records import run_refusals
+            record['rehearsal'] = dict(script=self.spec['rehearsal']['script'])
+            problems = run_refusals(record)
+            if problems:
+                raise Refused(problems[0].member, problems[0].why)
+            self.lab.write_once(self.base + '/run.json', canonical.record_bytes(record))
+        else:
+            evidence.publish(self.lab, self.spec['key_path'], record)
         if self.host is None or not self.host.children:
             self.lab.remove_live(self.base + '/live.json')
         return record
@@ -667,6 +680,7 @@ class Run:
         return (self.cost['command_seconds']
                 + (self.cost['command_seconds'] + self.cost['driver_seconds'] + 3 * self.cost['stop_seconds'] if self.exp['driver'] is not None else 0)
                 + (self.cost['command_seconds'] + self.cost['stop_seconds'] if self.exp.get('meter') is not None else 0)
+                + (self.cost['stop_seconds'] if 'rehearsal' in self.spec and self.exp['driver'] is not None else 0)
                 + len(self.exp['processes']) * (self.cost['ready_seconds'] + 2 * self.cost['stop_seconds'])
                 + sum(len(self.exp.get(g, [])) for g in ('actions', 'collect', 'checks', 'release'))
                 * (self.cost['command_seconds'] + self.cost['stop_seconds'])) * 1000
@@ -677,6 +691,8 @@ class Run:
             os.mkdir(name, 0o700, dir_fd=parent)
         finally:
             os.close(parent)
+        if 'rehearsal' in self.spec:
+            self.lab.write_once(self.base + '/key.json', canonical.record_bytes(self.key))
         # The marker precedes all native provisioning, including controller failures.
         self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit=self.spec['unit'])))
         wake_r, wake_w = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)

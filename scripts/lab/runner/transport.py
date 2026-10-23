@@ -152,7 +152,7 @@ def worker(endpoint, token):
             os.close(lock_fd)
 
 
-def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None):
+def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsal=None):
     """Start one unit and keep the same flock alive in both outer and worker."""
     key = canonical.loads(lab.read(key_path + '/key.json'))
     from .cli import _runtime_cost
@@ -168,7 +168,7 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None):
         namespace_probe(bwrap, os.path.realpath(sys.executable), cost['command_seconds'])
     except (OSError, subprocess.SubprocessError, CapabilityError) as error:
         raise Refused('containment', str(error)) from error
-    previous = evidence.read(lab, key_path)
+    previous = [] if rehearsal is not None else evidence.read(lab, key_path)
     now = datetime.now(timezone.utc)
     run_id = now.strftime('%Y%m%dT%H%M%S') + f'{now.microsecond // 1000:03d}Z-' + secrets.token_hex(3)
     unit = 'lab-' + run_id + '.service'
@@ -179,6 +179,10 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None):
                 run=run_id, unit=unit, seed=seed, campaign=campaign,
                 attempt=1 + sum(e['seed'] == seed for e in previous), systemctl=systemctl,
                 manager_version=manager_version, bounds=cost, brake=brake_event)
+    spec['base'] = (f"rehearsals/{key_path.split('/')[1]}/{run_id}" if rehearsal is not None
+                    else key_path + '/runs/' + run_id)
+    if rehearsal is not None:
+        spec['rehearsal'] = rehearsal
     token = secrets.token_hex(16)
     endpoint = str(lab.root / ('.transport-' + secrets.token_hex(6)))
     runner_root = str(Path(__file__).resolve().parent.parent)
@@ -251,7 +255,7 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None):
         if not accepted:
             diagnostic = lab.read(transport_dir + '/stderr').decode('utf-8', 'replace').strip()
             raise Refused('containment', diagnostic or f'unit bootstrap exited {status}')
-        base = key_path + '/runs/' + run_id
+        base = spec['base']
         try:
             events = lab.read(base + '/events.jsonl')
         except FileNotFoundError:

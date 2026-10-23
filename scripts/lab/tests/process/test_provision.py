@@ -63,12 +63,12 @@ class Provision(unittest.TestCase):
         self.assertEqual(record['driver']['provision']['inventory']['instruction_files']['state'], 'mismatch')
         self.assertFalse(self.program.with_suffix('.turn').exists())
 
-    def test_signal_prevents_drive(self):
+    def test_view_reports_a_signalled_tool_as_its_observed_exit_status(self):
         self.exp['driver']['tools'][0].update(argv=['/usr/bin/python3.13', '-I', '-B', '-S', '-c',
             'import os, signal; os.kill(os.getpid(), signal.SIGTERM)'])
         record = self.story({}, 4)
-        self.assertIn('provision/echo/signal:SIGTERM', [e['what'] for e in record['errors']])
-        self.assertEqual(record['driver']['provision']['calls'][0]['signal'], 'SIGTERM')
+        self.assertIn('provision/echo/exit:143', [e['what'] for e in record['errors']])
+        self.assertEqual(record['driver']['provision']['calls'][0]['status'], 143)
         self.assertFalse(self.program.with_suffix('.turn').exists())
 
     def test_timeout_and_host_error_prevent_drive(self):
@@ -82,4 +82,10 @@ class Provision(unittest.TestCase):
         record = self.story(dict(provision=dict(rpc_error='config/read')), 4)
         self.assertIn('provision/host', [e['what'] for e in record['errors']])
         self.assertIn('provision/echo/missing', [e['what'] for e in record['errors']])
+        self.assertFalse(self.program.with_suffix('.turn').exists())
+
+    def test_provisioning_applies_the_raw_event_audit(self):
+        record = self.story(dict(provision=dict(no_raw=True)), 4)
+        self.assertIn('provision/host', [e['what'] for e in record['errors']])
+        self.assertTrue(any('raw response' in e['detail'] for e in record['errors']))
         self.assertFalse(self.program.with_suffix('.turn').exists())

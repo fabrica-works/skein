@@ -515,27 +515,57 @@ subject=$("$lab" subject --repository "$repository" --commit "$commit" \
 "$lab" run "$proof/squares" --subject "$subject" --seed 1
 ```
 
-Before each paid run, rehearse it with no model. The rehearsal is a real `lab run` of
-the same experiment and subject in a scratch lab. The real Codex 0.162.1 runs the
-key's config, with its provider pointed at a loopback fake Responses endpoint that
-plays the agent. It has no `codex_home`, so no login.
+Before a paid run, rehearse with the same settings, program, catalog, subject
+and key. The runner substitutes its loopback Responses endpoint for the
+provider and gives each host a private home inside the rehearsal; it never
+opens the settings' `codex_home`.
 
-- A wrapper as `driver.program` execs the real binary path with `-c` provider overrides.
-- The scratch lab's runner copy has two rehearsal-only changes:
-  - its inventory drops the one `sessionFlags` layer those overrides make;
-  - its sandbox profile reads the real binary, as a paid run's does.
+```sh
+"$lab" run "$proof/squares" --subject "$subject" --seed 1 \
+  --rehearse "$proof/squares-rehearsal/correct.json"
+"$lab" run "$proof/squares" --subject "$subject" --seed 1 \
+  --rehearse "$proof/squares-rehearsal/wrong.json"
+```
 
-`lab run` can't be pointed at the fake without changing the key, because the provider is
-part of the key. The rehearsal's key differs from the paid key only in `driver.program`
-and the runner digest.
+Correct passes with exit 0. Wrong fails `check/answer/answer/wrong` with exit 1.
+Both scripts run the corrected function through a `python3 -` heredoc and
+capture its printed result; missing Python prevents that capture and fails
+the rehearsal. The scripts live beside the experiment, outside its identity.
 
-The paid run goes ahead only when both scripted agents come out as expected:
+`--rehearse SCRIPT` is available on `run` alone and excludes `--campaign`.
+The script is parsed before a run is made. Rehearsals hold the lab's writer
+lock, bypass pause and the brake, and retain the same provisioning, probe,
+seed, collections, checks, outcomes and exit statuses as a run. They live in
+`rehearsals/EXPERIMENT/RUN/` with a copy of `key.json`. Their `run.json` names
+the key and adds `rehearsal: {"script": "sha256:..."}`. They publish no
+key run, evidence line, verdict, finding or campaign row. An unfinished
+rehearsal retains its live marker and requires owner recovery.
 
-- **Correct agent:** the run passes with no errors.
-- **Wrong-answer agent:** the run fails with `check/answer/answer/wrong` and no errors.
+The drive endpoint retains its script, config and private home under
+`driver/rehearsal/`. Both it and the provisioning endpoint retain each raw
+request in `requests/N.json`, HTTP method/path/status in `requests/N.http.json`,
+and SSE answer in `responses/N.sse`, all private. Each endpoint has its own
+contained tree, terminated when its host ends. Driver calls and accounting
+stay in the usual `driver/` files. Provisioning remains separate.
 
-In each, the agent's heredoc command must print the expected value through the key's
-environment policy. The scripts are not landed tooling yet.
+A script is canonical JSON with one final newline, format `lab-script/1`:
+
+```json
+{"format":"lab-script/1","turns":[{"output":[{"arguments":{"args":["task"],"stdin":null},"call":"ledger","namespace":"mcp__lab"}]},{"capture":{"numbers":"numbers: ((?:[0-9]+ )*[0-9]+)"},"output":[{"text":"Captured {capture.numbers}"}]}]}
+```
+
+Each turn supplies `output`, a list of calls (`call`, `namespace`, `arguments`)
+or text (`text`), and optional `capture`, an object mapping names to regexes.
+Calls use the host's tool names, with `namespace: null` for built-ins. Tool
+names and namespaces match `[A-Za-z0-9_.-]+`; capture names match
+`[a-z][a-z0-9-]*`. Unknown members are refused. Every regex must compile and
+have a group. Captures search only tool outputs following the latest assistant
+item and take the first match's first group. `{capture.NAME}` is replaced in
+output strings, including nested arguments. A missing capture or exhausted
+script returns a final `script: ...` text that cannot pass report validation.
+The final text should be a JSON report with `done`, `retried`, `unseen` and
+`surprises`. Endpoint usage is fixed per request: 100 input, 0 cached,
+10 output tokens; rehearsals do not exercise token bounds.
 
 ## Codex 0.162.1 adapter
 
@@ -610,7 +640,9 @@ Late usage received during shutdown is retained. Host payloads outside the lab's
 canonical JSON subset are preserved as JSON text under `json` in their evidence.
 
 `lab tool RUN` is the driver's stdio MCP server (lab.md, 6.3). It reads
-`keys/*/*/runs/RUN/driver/tools.json` without taking the runner's writer lock.
+the active manifest under `keys/*/*/runs/RUN/driver/` or
+`rehearsals/*/RUN/driver/` without taking the runner's writer lock. Before the
+drive manifest exists, the provisioning manifest is selected.
 The runner supplies rendered tools, work/source paths and its broker socket,
 exactly the `lab-driver-tools/1` meeting-point record. The server offers
 only those tools; each call waits for `go` or `refuse` before starting. Its
