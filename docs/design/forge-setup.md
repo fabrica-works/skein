@@ -510,7 +510,7 @@ lookup carry none.
 
 ### 5.1 The manifest
 
-`Manifest { forge, target }` makes the page that sends the person's
+`Manifest { forge, target }` makes the form that sends the person's
 browser to GitHub to make the App. `target` is `Personal` or `Org(login)`.
 
 - **A pure function** of the given values: the word and a random part,
@@ -525,13 +525,15 @@ browser to GitHub to make the App. `target` is `Personal` or `Org(login)`.
   with `setup_on_update` true; `hook_attributes`, the URL
   `https://<name>.invalid/` and active (5.5); and `default_permissions`
   and `default_events`, the wanted ones (5.6).
-- **The page:** a form that posts the manifest, as a field, to
-  `<web>/settings/apps/new?state=<state>`, or for an org
-  `<web>/organizations/<login>/settings/apps/new?state=<state>`,
-  at most `page_bytes`. `Done(Manifest { state, page })` carries it
-  and the state it was made for; the owner serves the page at its own
-  address for that state, and keeps it no longer than the state lives
-  (5.7).
+- **The form:** its target, `<web>/settings/apps/new?state=<state>`,
+  or for an org `<web>/organizations/<login>/settings/apps/new?state=<state>`,
+  and the manifest's JSON, which the form posts as its `manifest` field,
+  each at most `page_bytes`. `Done(Manifest { state, target, manifest })`
+  carries them and the state they were made for. The page is the
+  owner's: it renders a page whose form posts the manifest to the
+  target (its words, its script and its policy are the owner's, never
+  the kit's), serves it at its own address for that state, and keeps it
+  no longer than the state lives (5.7).
 
 The person may rename the App on GitHub's page: the slug the conversion
 answers is the App's, whatever the manifest said.

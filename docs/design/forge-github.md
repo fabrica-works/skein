@@ -622,12 +622,12 @@ Pure functions and decoders; forge-setup.md's plans run them.
   contents, pull requests, issues and merge queues write; checks,
   statuses, actions, administration and metadata read; the fourteen
   events).
-- **The form:** its target, `<web>/settings/apps/new?state=<s>` for a
+- **The form's target:** `<web>/settings/apps/new?state=<s>` for a
   person or `<web>/organizations/<org>/settings/apps/new?state=<s>` for
   an organization, `<web>` being `https://github.com` or the fake's
-  origin; and its page, an HTML document whose one form posts the
-  manifest in its `manifest` field to the target and submits itself, the
-  JSON escaped as an attribute's value.
+  origin. The page whose form posts the manifest there, in its
+  `manifest` field, is the owner's (forge-setup.md, 5.1): the dialect
+  makes no HTML.
 - **The install page:** `<web>/apps/<slug>/installations/new?state=<s>`.
 - **The conversion:** `POST /app-manifests/<code>/conversions`, with no
   credential, `201`: `id`, `slug`, `owner.login`, `owner.id`, `pem` and
