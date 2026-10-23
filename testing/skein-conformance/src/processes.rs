@@ -125,7 +125,8 @@ pub fn processes<B: Backend>(backend: &mut B, executable: &[u8]) -> Processes {
     );
     run.close(process, *input);
     let waiting = run.start(process, Op::Wait { pidfd, reap: false });
-    assert!(run.within(process, waiting, STOPPED_WAIT).is_none(), "a stopped child cannot exit on input EOF");
+    let stopped = run.within(process, waiting, STOPPED_WAIT);
+    assert!(stopped.is_none(), "a stopped child cannot exit on input EOF: {stopped:?}");
     assert_eq!(
         run.call(process, Op::Signal { pidfd, signal: Signal::Continue, to }).result,
         Ok(Done::Nothing),

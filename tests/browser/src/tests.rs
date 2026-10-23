@@ -550,7 +550,7 @@ mod attribute;
 mod look;
 
 #[test]
-fn select_all_sends_control_a_without_text_and_ignores_shift() {
+fn select_all_sends_control_a_and_the_select_all_command_without_text_and_ignoring_shift() {
     for shift in [false, true] {
         let mut world = World::new();
         world.start();
@@ -560,7 +560,7 @@ fn select_all_sends_control_a_without_text_and_ignores_shift() {
         assert_eq!(
             key_commands(&world),
             [
-                r#"Input.dispatchKeyEvent {"type":"keyDown","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"text":"","modifiers":2}"#,
+                r#"Input.dispatchKeyEvent {"type":"keyDown","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"text":"","modifiers":2,"commands":["selectAll"]}"#,
                 r#"Input.dispatchKeyEvent {"type":"keyUp","key":"a","code":"KeyA","windowsVirtualKeyCode":65,"text":"","modifiers":2}"#,
             ]
         );

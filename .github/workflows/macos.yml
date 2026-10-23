@@ -193,7 +193,9 @@ jobs:
           test -x "$chrome"
           echo "SKEIN_TEST_CHROMIUM=$chrome" >>"$GITHUB_ENV"
 
-      # The browser tier's fonts, as Debian's fonts-dejavu-core gives them on Linux.
+      # The browser tier's fonts, as Debian's fonts-dejavu-core gives them on
+      # Linux: in the user's fonts, where Chromium on macOS finds them through
+      # CoreText, as a platform font rather than a page's.
       - name: DejaVu fonts
         id: fonts
         run: |
@@ -202,6 +204,8 @@ jobs:
           echo "$DEJAVU_SHA256  $RUNNER_TEMP/dejavu.tar.bz2" | shasum -a 256 -c -
           tar -xjf "$RUNNER_TEMP/dejavu.tar.bz2" -C "$RUNNER_TEMP"
           test -f "$RUNNER_TEMP/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
+          mkdir -p "$HOME/Library/Fonts"
+          cp "$RUNNER_TEMP/dejavu-fonts-ttf-2.37/ttf/"*.ttf "$HOME/Library/Fonts/"
           echo "SKEIN_TEST_FONTS=$RUNNER_TEMP/dejavu-fonts-ttf-2.37/ttf" >>"$GITHUB_ENV"
 
       # The registry by the lock; the target by the lock and the toolchain,

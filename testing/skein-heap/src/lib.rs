@@ -37,6 +37,17 @@
 //! so the heap may fall below where a call began: a [`Span`] measures the
 //! growth around one call, signed, at its peak and in all.
 //!
+//! # The runtime's own
+//!
+//! A thread's first thread-local with a destructor makes std record that
+//! destructor: on macOS in a list on the heap (std's
+//! `sys/thread_local/destructors/list.rs`, 64 bytes for its first four),
+//! allocated through this allocator and held until the thread ends; on Linux
+//! through glibc's `__cxa_thread_atexit_impl`, outside it. That record is the
+//! runtime's, not a step's: a meter and a span register one destructor of
+//! their own before they read their base, on every system, so that the list
+//! exists before anything is measured.
+//!
 //! # The `unsafe`
 //!
 //! A global allocator is an `unsafe impl`: beside the ring adapter, the one
@@ -111,6 +122,18 @@ enum Phase {
 // Const-initialised and without a destructor: reaching them never allocates
 // and never fails, so the allocator can use them. Nothing allocates while it
 // borrows the highs.
+thread_local! {
+    /// Reached before a base is read, never on the allocator's paths: its
+    /// destructor makes the thread's destructor record (see "The runtime's
+    /// own").
+    static RUNTIME: Cell<Option<Box<()>>> = const { Cell::new(None) };
+}
+
+/// Makes the thread's destructor record before a base is read.
+fn warm_runtime() {
+    RUNTIME.with(|runtime| runtime.set(None));
+}
+
 thread_local! {
     static LIVE: Cell<i64> = const { Cell::new(0) };
     static PEAK: Cell<i64> = const { Cell::new(0) };
@@ -349,6 +372,7 @@ impl Meter {
     /// the measured's.
     #[must_use]
     pub fn new() -> Meter {
+        warm_runtime();
         Meter { base: LIVE.get(), before: MADE.get() }
     }
 
@@ -438,6 +462,7 @@ impl Span {
     #[must_use]
     pub fn start() -> Span {
         assert!(PHASE.get() != Phase::Stepping, "a span is measured outside a meter's step");
+        warm_runtime();
         let live = LIVE.get();
         PEAK.set(live);
         Span { start: live }

@@ -634,8 +634,11 @@ other module is safe Rust, the same on both systems.
   close-on-exec, without blocking or a controlling terminal, as on Linux.
   `PathNoFollow`, which Linux opens `O_PATH | O_NOFOLLOW`, is
   `O_SYMLINK | O_EVTONLY` with `O_NOFOLLOW_ANY` and `O_RESOLVE_BENEATH`:
-  the entry itself, a link as a link, with no permission to read it,
-  for `Stat` and `Close` alone, held to the same conformance.
+  the entry itself, a link as a link, for `Stat` and `Close` alone.
+  Linux needs no permission to read the entry; Darwin needs it readable:
+  `O_EVTONLY` still authorizes `READ_DATA` (XNU `bsd/vfs/vfs_syscalls.c`,
+  lines 4894-4900; `bsd/vfs/vfs_subr.c`, lines 8434-8438). Each system's
+  answer is held to conformance.
   Darwin answers an escape with `ENOTCAPABLE`, which `darwin` gives up
   as Linux's `EXDEV`, so that one error table serves both (`Escape`).
 - **Files:** `pread`, `pwrite`, `write`, `ftruncate`, `fstat` (decoded by
@@ -695,7 +698,10 @@ other module is safe Rust, the same on both systems.
   an `EVFILT_SIGNAL` for each: the descriptor `ReadSignal` names, readable
   while one is pending. A `ReadSignal` takes one event without waiting and
   decodes its signal; deliveries of one signal before a read are one, as
-  signalfd's are for a standard signal.
+  signalfd's are for a standard signal. Darwin reports only a signal sent
+  to the process, never one sent to a thread (XNU `kern_sig.c`,
+  `psignal_internal`), so `signal_current_thread` signals the process,
+  and every signal kqueue in it hears that signal.
 - **The rest:** `getentropy` for the seeds; `clock_gettime` with
   `CLOCK_MONOTONIC` and `CLOCK_REALTIME`; `getrusage`, whose resident
   size Darwin gives in bytes; `TIOCGWINSZ` and the terminal's modes as on
@@ -733,6 +739,24 @@ other module is safe Rust, the same on both systems.
 - **Processes are groups, as they are with the ring:** a descendant that
   leaves its group escapes the close's kill. A cgroup or a contained
   tree (kernel.md, 6.6) is refused on macOS as unsupported.
+- **A descriptor closed outside io leaves its waiters waiting.** The
+  ring holds an in-flight operation's file, so the operation completes
+  however its descriptor is closed; a readiness waiter holds only the
+  number, and a close removes it from kqueue without an event. io closes
+  a descriptor only once nothing is in flight on it (io.md, Settling;
+  kernel.md, 7); only an abandoned
+  observer's failure-path destructor (`abandon_binary`) closes outside
+  it, and its reads then wait until the kernel is dropped.
+- **A `PathNoFollow` open needs the entry readable on macOS.** Linux's
+  `O_PATH` asks nothing of the entry; Darwin's nearest, `O_EVTONLY`,
+  still checks read access (XNU `vfs_syscalls.c`, `vfs_subr.c`), so an
+  entry the user cannot read refuses with `Permission`. skein-io meets
+  this when it names a refusal: after a refused private open it opens the
+  entry `PathNoFollow` to say what refused (`file_layer/private.rs`, the
+  refusal on opening and `denied_load`), and on macOS that probe is
+  itself refused, so the caller gets a plain `Permission` where Linux
+  names the unsafe entry (`Refused` with what was found). A later fix: Darwin's handle holds the parent and the
+  name, and `Stat` goes through `fstatat(AT_SYMLINK_NOFOLLOW)`.
 
 ## 8. Deferred optimisations
 

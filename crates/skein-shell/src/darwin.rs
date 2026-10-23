@@ -215,9 +215,10 @@ pub(crate) fn send(fd: Fd, bytes: &[u8]) -> Result<u32, i32> {
         count(unsafe { libc::send(fd.raw(), bytes.as_ptr().cast(), bytes.len(), libc::MSG_DONTWAIT) })
     })
     .map_err(|errno| {
-        // Darwin answers a Send on a socket never connected with ENOTCONN,
-        // which Linux answers EPIPE; give it up as EPIPE so one error table
-        // serves both, as ENOTCAPABLE is given up as EXDEV for an Open.
+        // XNU bsd/kern/uipc_socket.c:1900-1926: a disconnected stream
+        // answers EPIPE at SS_CANTSENDMORE before checking so_error or
+        // connection state. ENOTCONN here is a socket never connected,
+        // which Linux answers EPIPE; give it up as EPIPE for one error table.
         if errno == libc::ENOTCONN { libc::EPIPE } else { errno }
     })
 }

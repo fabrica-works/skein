@@ -11,32 +11,76 @@ pub(crate) enum Params<'a> {
     Empty,
     Frame(&'a [u8]),
     CaretSheet(&'a [u8]),
-    Dialog { accept: bool },
+    Dialog {
+        accept: bool,
+    },
     Document,
     Root,
-    Selector { node: u64, selector: &'a [u8] },
+    Selector {
+        node: u64,
+        selector: &'a [u8],
+    },
     Node(u64),
     Children(u64),
     Object(&'a [u8]),
     Context(&'a [u8]),
-    Target { url: &'a [u8], context: &'a [u8] },
+    Target {
+        url: &'a [u8],
+        context: &'a [u8],
+    },
     TargetId(&'a [u8]),
     AttachTarget(&'a [u8]),
     Url(&'a [u8]),
     Backend(u64),
-    Query { object: &'a [u8], role: &'a [u8], name: Option<&'a [u8]> },
+    Query {
+        object: &'a [u8],
+        role: &'a [u8],
+        name: Option<&'a [u8]>,
+    },
     Quads(u64),
-    Point { x: i64, y: i64 },
-    Mouse { kind: &'static [u8], x: i64, y: i64, pressed: bool },
+    Point {
+        x: i64,
+        y: i64,
+    },
+    Mouse {
+        kind: &'static [u8],
+        x: i64,
+        y: i64,
+        pressed: bool,
+    },
     Text(&'a [u8]),
     Composition(&'a [u8]),
-    Key { kind: &'static [u8], key: &'a [u8], code: &'a [u8], windows: u64, text: &'a [u8], modifiers: u64 },
-    Viewport { width: u64, height: u64, mobile: bool },
-    Media { scheme: Scheme, motion: Motion },
+    Key {
+        kind: &'static [u8],
+        key: &'a [u8],
+        code: &'a [u8],
+        windows: u64,
+        text: &'a [u8],
+        modifiers: u64,
+        /// The editing command the key's press runs: Chromium on macOS runs none
+        /// for a synthesized shortcut (its key bindings are the system's), so a
+        /// select-all names `selectAll`, on every system.
+        command: Option<&'static [u8]>,
+    },
+    Viewport {
+        width: u64,
+        height: u64,
+        mobile: bool,
+    },
+    Media {
+        scheme: Scheme,
+        motion: Motion,
+    },
     Push(u64),
-    Shot { clip: Rect, scale: u8 },
+    Shot {
+        clip: Rect,
+        scale: u8,
+    },
     HistoryEntry(u64),
-    Describe { backend: u64, depth: i64 },
+    Describe {
+        backend: u64,
+        depth: i64,
+    },
 }
 
 impl Params<'_> {
@@ -182,7 +226,7 @@ impl Params<'_> {
                 json.key(b"selectionEnd");
                 json.unsigned(u64::try_from(text.len()).expect("text length fits u64"));
             }
-            Params::Key { kind, key, code, windows, text, modifiers } => {
+            Params::Key { kind, key, code, windows, text, modifiers, command } => {
                 json.key(b"type");
                 json.string(kind);
                 json.key(b"key");
@@ -196,6 +240,12 @@ impl Params<'_> {
                 if *modifiers != 0 {
                     json.key(b"modifiers");
                     json.unsigned(*modifiers);
+                }
+                if let Some(command) = command {
+                    json.key(b"commands");
+                    json.array_start();
+                    json.string(command);
+                    json.array_end();
                 }
             }
             Params::Viewport { width, height, mobile } => {

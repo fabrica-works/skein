@@ -763,6 +763,7 @@ impl Browser {
                 } else {
                     0
                 },
+                command: (key == Key::SelectAll && down).then_some(b"selectAll".as_slice()),
             },
             step,
         );
@@ -802,7 +803,7 @@ impl Browser {
             env,
             op,
             b"Input.dispatchKeyEvent",
-            &Params::Key { kind, key: text, code, windows, text, modifiers: 0 },
+            &Params::Key { kind, key: text, code, windows, text, modifiers: 0, command: None },
             Step::Character { offset: next, down },
         );
     }

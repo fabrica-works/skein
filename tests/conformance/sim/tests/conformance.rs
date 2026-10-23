@@ -223,7 +223,7 @@ fn removes_of_files_directories_and_links() {
 
 #[test]
 fn new_directories_and_one_removed_while_open() {
-    calm_and_chaos(make_directory);
+    calm_and_chaos(|world| make_directory(world, PathLimits::LINUX));
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn paths_that_leave_their_root_and_paths_that_stay() {
 
 #[test]
 fn what_the_owner_may_not_do() {
-    calm_and_chaos(permissions);
+    calm_and_chaos(|world| permissions(world, PathLimits::LINUX));
 }
 
 /// Simulator only: the ring's descriptor limit is the process's, which a
@@ -298,7 +298,7 @@ fn stat_keeps_the_owner_and_counts_hard_links_through_removal() {
 
 #[test]
 fn path_only_metadata_needs_no_permission_on_its_entry() {
-    each_seed(Config::calm(), CALM, |world| skein_conformance::path_metadata(world, true));
+    each_seed(Config::calm(), CALM, |world| skein_conformance::path_metadata(world, true, PathLimits::LINUX));
 }
 
 #[test]
@@ -318,5 +318,5 @@ fn a_directory_lock_is_busy_through_a_second_open_until_the_first_closes() {
 
 #[test]
 fn a_no_replace_rename_refuses_a_taken_target_in_linux_order() {
-    calm_and_chaos(skein_conformance::no_replace);
+    calm_and_chaos(|world| skein_conformance::no_replace(world, PathLimits::LINUX));
 }

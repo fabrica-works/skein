@@ -63,7 +63,8 @@ pub fn open_signal_pipe() -> Result<(Fd, Fd), Error> {
 }
 
 /// Sends to this thread's termination signal source (io.md, section 7).
-/// Call only after `open_termination_signals` on the same thread.
+/// Call only after `open_termination_signals` on the same thread. On macOS
+/// it signals the process, which every signal kqueue in it hears (shell.md, 7.5).
 pub fn signal_current_thread(signal: ServiceSignal) -> Result<(), Error> {
     system::process::signal_current_thread(signal)
 }

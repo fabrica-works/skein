@@ -48,11 +48,15 @@ impl Referee<Binary> for Judge {
     }
 }
 
+/// The containments a supervised case runs under: the walk (`Containment::Walk`)
+/// is Linux's, its subreaper and pidfds (shell.md, 9); macOS has the group alone.
+const WALKS: &[bool] = if cfg!(target_os = "linux") { &[true, false] } else { &[false] };
+
 #[test]
 fn a_tree_records_stop_and_continue_without_cleanup() {
     // One shell holds the tree alive until the referee terminates it.
     const STDERR_LIMIT: usize = 1024;
-    for force_walk in [true, false] {
+    for &force_walk in WALKS {
         let command = Command {
             program: "/bin/sh".into(),
             arguments: vec!["-c".into(), "printf 'ready\\n' >&2; while :; do :; done".into()],

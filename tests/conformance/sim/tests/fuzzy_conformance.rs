@@ -208,7 +208,7 @@ fn removes_of_files_directories_and_links() {
 
 #[test]
 fn new_directories_and_one_removed_while_open() {
-    chaos(make_directory);
+    chaos(|world| make_directory(world, PathLimits::LINUX));
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn paths_that_leave_their_root_and_paths_that_stay() {
 
 #[test]
 fn what_the_owner_may_not_do() {
-    chaos(permissions);
+    chaos(|world| permissions(world, PathLimits::LINUX));
 }
 
 /// Simulator only: the ring's descriptor limit is the process's.
@@ -304,5 +304,5 @@ fn a_directory_lock_under_chaos_keeps_the_contract() {
 
 #[test]
 fn a_no_replace_rename_refuses_a_taken_target_in_linux_order() {
-    chaos(skein_conformance::no_replace);
+    chaos(|world| skein_conformance::no_replace(world, PathLimits::LINUX));
 }

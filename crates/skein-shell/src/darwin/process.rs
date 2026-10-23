@@ -466,10 +466,14 @@ pub(crate) fn signal_current_thread(signal: skein_io::kernel::ServiceSignal) -> 
         skein_io::kernel::ServiceSignal::Interrupt => libc::SIGINT,
         skein_io::kernel::ServiceSignal::Terminate => libc::SIGTERM,
     };
-    // SAFETY: pthread_self returns this live thread's identity.
-    let thread = unsafe { libc::pthread_self() };
-    // SAFETY: caller has already installed its signal kqueue and dispositions.
-    action(unsafe { libc::pthread_kill(thread, number) }).map_err(map_error)
+    // The signal goes to the process: XNU reports a signal to EVFILT_SIGNAL
+    // only when it is sent to the process, never one sent to a thread
+    // (bsd/kern/kern_sig.c, psignal_internal: `PSIG_THREAD` skips
+    // `proc_knote`). Ignored, it then reaches no thread.
+    let process = libc::pid_t::try_from(std::process::id()).expect("a process id fits pid_t");
+    // SAFETY: kill names this process, whose caller has already installed
+    // its signal kqueue and dispositions.
+    action(unsafe { libc::kill(process, number) }).map_err(map_error)
 }
 
 pub(crate) fn close_keeper_fd(descriptor: Fd) {

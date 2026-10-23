@@ -12,12 +12,20 @@ use skein_io::kernel::Family;
 
 #[test]
 fn a_connection_lives_and_ends_over_ipv4() {
-    on(BACKEND, |ring| lifecycle(ring, Family::Ipv4));
+    let seen = lifecycle(&mut Real::new(BACKEND), Family::Ipv4);
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
 fn a_connection_lives_and_ends_over_ipv6() {
-    on(BACKEND, |ring| lifecycle(ring, Family::Ipv6));
+    let seen = lifecycle(&mut Real::new(BACKEND), Family::Ipv6);
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
@@ -27,7 +35,11 @@ fn a_peer_closes_gracefully() {
 
 #[test]
 fn a_send_after_the_peer_closed() {
-    on(BACKEND, send_after_peer_closed);
+    let seen = send_after_peer_closed(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
@@ -37,7 +49,11 @@ fn a_connect_where_nothing_listens() {
 
 #[test]
 fn where_an_address_is_in_use() {
-    on(BACKEND, address_in_use);
+    let seen = address_in_use(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
@@ -57,22 +73,38 @@ fn a_full_accept_queue() {
 
 #[test]
 fn a_close_with_bytes_unread_meets_a_recv() {
-    on(BACKEND, unread_close_meets_recv);
+    let seen = unread_close_meets_recv(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
 fn a_close_with_bytes_unread_meets_a_send() {
-    on(BACKEND, unread_close_meets_send);
+    let seen = unread_close_meets_send(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
 fn a_reset_after_the_end_of_stream() {
-    on(BACKEND, reset_after_end_of_stream);
+    let seen = reset_after_end_of_stream(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]
 fn a_client_closed_before_its_connection_is_accepted() {
-    on(BACKEND, closed_before_accept);
+    let seen = closed_before_accept(&mut Real::new(BACKEND));
+    #[cfg(target_os = "linux")]
+    seen.check();
+    #[cfg(target_os = "macos")]
+    seen.check_darwin();
 }
 
 #[test]

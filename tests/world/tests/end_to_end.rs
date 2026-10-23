@@ -151,6 +151,11 @@ fn observations(outcome: &real::Outcome<Process>) -> (&Binary, &Script) {
 
 // The directory is compared as the system resolves it: macOS's /tmp is a link
 // to /private/tmp, and the child's shell names its directory without links.
+
+/// The containments a supervised case runs under: the walk (`Containment::Walk`)
+/// is Linux's, its subreaper and pidfds (shell.md, 9); macOS has the group alone.
+const WALKS: &[bool] = if cfg!(target_os = "linux") { &[true, false] } else { &[false] };
+
 #[test]
 fn binary_pipes_preserve_arguments_environment_directory_stderr_and_exit() {
     let outcome = run(
@@ -447,6 +452,14 @@ fn a_dropped_observer_ends_its_tree() {
         assert_eq!(skein_shell::process_live(pid), Ok(false), "the abandoned descendant was reaped");
         for fd in descriptors {
             assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
+        }
+        // The ring holds each in-flight read's file, so the killed tree ends
+        // them. The readiness backend's waiter holds only the descriptor's
+        // number, which the drop closed outside io, and a closed descriptor
+        // leaves kqueue and epoll silently: those reads wait until the kernel
+        // is dropped (shell.md, 7.7).
+        if !cfg!(target_os = "linux") {
+            continue;
         }
         let mut completions = Queue::with_capacity(8);
         while kernel.in_flight() > 0 {
@@ -902,7 +915,7 @@ fn capture_run(command: Command, limit: usize, trigger: SupervisedTrigger, force
 fn supervised_stderr_overflow_keeps_a_bounded_prefix_and_drains_a_natural_tree() {
     use skein_world::end_to_end::Cleanup;
 
-    for force_walk in [true, false] {
+    for &force_walk in WALKS {
         let outcome = capture_run(
             command("printf 'prefix:' >&2; head -c 262144 /dev/zero >&2; exit 17"),
             8,
@@ -919,12 +932,18 @@ fn supervised_stderr_overflow_keeps_a_bounded_prefix_and_drains_a_natural_tree()
     }
 }
 
+// Under the walk on Linux, the group on macOS (`WALKS`).
 #[test]
 fn supervised_stderr_limits_distinguish_exact_capture_empty_capture_and_overflow() {
     for (bytes, limit, prefix, overflow) in
         [("", 0, "", false), ("12345678", 8, "12345678", false), ("123456789", 8, "12345678", true), ("x", 0, "", true)]
     {
-        let outcome = capture_run(command(&format!("printf '{bytes}' >&2")), limit, SupervisedTrigger::Never, true);
+        let outcome = capture_run(
+            command(&format!("printf '{bytes}' >&2")),
+            limit,
+            SupervisedTrigger::Never,
+            cfg!(target_os = "linux"),
+        );
         let child = tree_child(&outcome);
         assert_eq!(child.stderr(), prefix.as_bytes());
         assert_eq!(child.stderr_overflowed(), overflow);

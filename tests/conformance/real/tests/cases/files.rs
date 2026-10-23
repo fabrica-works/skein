@@ -2,8 +2,8 @@ use super::BACKEND;
 use crate::on;
 use skein_conformance::Check;
 use skein_conformance::{
-    Pairing, Shortness, cancel_read, escapes, file_lifecycle, file_metadata, list, make_directory, nested_roots,
-    permissions, remove, rename,
+    Pairing, PathLimits, Shortness, cancel_read, escapes, file_lifecycle, file_metadata, list, make_directory,
+    nested_roots, permissions, remove, rename,
 };
 use skein_conformance_real::Real;
 
@@ -29,7 +29,7 @@ fn removes_of_files_directories_and_links() {
 
 #[test]
 fn new_directories_and_one_removed_while_open() {
-    on(BACKEND, make_directory);
+    on(BACKEND, |backend| make_directory(backend, PathLimits::HOST));
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn paths_that_leave_their_root_and_paths_that_stay() {
 #[test]
 fn what_the_owner_may_not_do() {
     assert!(Real::permissions_checked(), "run as root, whom no mode stops: run as a user");
-    on(BACKEND, permissions);
+    on(BACKEND, |backend| permissions(backend, PathLimits::HOST));
 }
 
 /// A file's `Read` goes to the ring's worker, even on tmpfs, so its `Cancel`
@@ -112,7 +112,7 @@ fn path_only_metadata_needs_no_permission_on_its_entry() {
             "effective privileges bypass mode 000: skipping only the Read-denial assertions; path-only Stat and Close are checked"
         );
     }
-    skein_conformance::path_metadata(&mut Real::new(BACKEND), denial_expected).check();
+    skein_conformance::path_metadata(&mut Real::new(BACKEND), denial_expected, PathLimits::HOST).check();
 }
 
 #[test]
@@ -127,5 +127,5 @@ fn a_directory_lock_is_busy_through_a_second_open_until_the_first_closes() {
 
 #[test]
 fn a_no_replace_rename_refuses_a_taken_target_in_linux_order() {
-    on(BACKEND, skein_conformance::no_replace);
+    on(BACKEND, |backend| skein_conformance::no_replace(backend, PathLimits::HOST));
 }

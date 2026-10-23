@@ -330,23 +330,33 @@ impl Check for Renames {
     }
 }
 
-/// A no-replace commit, its losing creator, and Linux's lookup and refusal order.
+fn path_mode<B: Backend>(run: &mut Run<'_, B>, process: B::Process, root: Fd, path: &[u8]) -> Result<u32, Error> {
+    let fd = run.open(process, root, path, OpenHow::PathNoFollow)?;
+    let mode = run.stat(process, fd).map(|stat| stat.mode);
+    run.close(process, fd);
+    mode
+}
+
+/// A no-replace commit, its losing creator, and the system's lookup and refusal order.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NoReplace {
+    pub limits: PathLimits,
     pub commits: [Result<Done, Error>; 2],
     pub contents: [Result<Vec<u8>, Error>; 3],
     pub refusals: Vec<(Result<Done, Error>, Error)>,
     pub unreadable_mode: Result<u32, Error>,
+    pub readable_mode: Result<u32, Error>,
     pub dangling: Result<(), Error>,
 }
 
 #[must_use]
-pub fn no_replace<B: Backend>(backend: &mut B) -> NoReplace {
+pub fn no_replace<B: Backend>(backend: &mut B, limits: PathLimits) -> NoReplace {
     let tree = [
         Item::file(b"first", b"winner"),
         Item::file(b"second", b"loser"),
         Item::hard_link(b"alias", b"second"),
         Item::file(b"unreadable", b"kept").mode(0),
+        Item::file(b"readable", b"kept").mode(0o600),
         Item::link(b"dangling", b"missing"),
         Item::directory(b"dir"),
         Item::file(b"dir/child", b"child"),
@@ -367,6 +377,9 @@ pub fn no_replace<B: Backend>(backend: &mut B) -> NoReplace {
     ];
     let long = too_long();
     let mut refusals = Vec::new();
+    // XNU bsd_vfs_vfs_syscalls.c:9538-9564 leaves same-vnode EXCL renames
+    // on case-insensitive volumes to the filesystem. Keep these exact rows:
+    // the APFS runner must show that identical names and hard links refuse.
     for (from_dir, from, to_dir, to, error) in [
         (root, b"target".as_slice(), root, b"target".as_slice(), Error::Exists),
         (root, b"second", root, b"alias", Error::Exists),
@@ -381,7 +394,7 @@ pub fn no_replace<B: Backend>(backend: &mut B) -> NoReplace {
         (root, b"second", no_write, b"missing", Error::Permission),
         (no_write, b"target", root, b"second", Error::Exists),
         (no_write, b"target", root, b"missing", Error::Permission),
-        (root, b"missing", no_search, b"target", Error::Permission),
+        (root, b"missing", no_search, b"target", limits.missing_source_error()),
         (no_search, b"target", root, b"target", Error::Permission),
         (root, b"dir", dir, b"child", Error::Exists),
         (dir, b"child", root, b"dir", Error::Exists),
@@ -394,16 +407,14 @@ pub fn no_replace<B: Backend>(backend: &mut B) -> NoReplace {
         run.contents(process, root, b"second"),
         run.contents(process, root, b"first"),
     ];
-    let unreadable =
-        run.open(process, root, b"unreadable", OpenHow::PathNoFollow).expect("path-only open needs no read permission");
-    let unreadable_mode = run.stat(process, unreadable).map(|stat| stat.mode);
-    run.close(process, unreadable);
+    let unreadable_mode = path_mode(&mut run, process, root, b"unreadable");
+    let readable_mode = path_mode(&mut run, process, root, b"readable");
     let dangling = opens(&mut run, process, root, b"dangling", OpenHow::PathNoFollow);
     for fd in [dir, no_write, no_search, root] {
         run.close(process, fd);
     }
     run.finish();
-    NoReplace { commits, contents, refusals, unreadable_mode, dangling }
+    NoReplace { limits, commits, contents, refusals, unreadable_mode, readable_mode, dangling }
 }
 
 impl Check for NoReplace {
@@ -415,9 +426,16 @@ impl Check for NoReplace {
             "winner and losing source preserved"
         );
         for (index, (seen, error)) in self.refusals.iter().enumerate() {
-            assert_eq!(*seen, Err(*error), "Linux no-replace refusal order, case {index}");
+            assert_eq!(*seen, Err(*error), "no-replace refusal order, case {index}");
         }
-        assert_eq!(self.unreadable_mode, Ok(0), "unreadable entry kept");
+        // XNU bsd_vfs_vfs_syscalls.c:4894-4900 and bsd_vfs_vfs_subr.c:8434-8438:
+        // O_EVTONLY still authorizes READ_DATA on Darwin.
+        if self.limits.models_linux() {
+            assert_eq!(self.unreadable_mode, Ok(0), "Linux path-only open needs no read permission");
+        } else {
+            assert_eq!(self.unreadable_mode, Err(Error::Permission), "Darwin path-only open needs read permission");
+        }
+        assert_eq!(self.readable_mode, Ok(0o600), "a readable entry opens path-only for Stat and Close");
         assert_eq!(self.dangling, Ok(()), "dangling entry kept");
     }
 }
@@ -511,16 +529,17 @@ impl Check for Removes {
 /// and a `List` of it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct MakeDirectories {
+    pub limits: PathLimits,
     pub made: [Result<Done, Error>; 2],
     pub made_listed: Result<Vec<(Vec<u8>, Kind)>, Error>,
     pub over_a_file: Result<Done, Error>,
     pub in_a_file: Result<Done, Error>,
     pub too_long: Result<Done, Error>,
-    /// The directory removed while open; then a `MakeDirectory` in it, an
-    /// `Open` to create beneath it, a `List` of it, a `Rename` out of it
-    /// and a `Remove` in it.
+    /// The directory removed while open.
     pub removed: Result<Done, Error>,
-    pub in_removed: [Result<Done, Error>; 5],
+    /// A `MakeDirectory`, `Create`, `Rename` out and `Remove` in the removed directory.
+    pub in_removed: [Result<Done, Error>; 4],
+    pub removed_listed: Result<Vec<(Vec<u8>, Kind)>, Error>,
     /// Beneath the directory removed: an `Open` of a name too long, which it
     /// does not hold however long; an `Open` to create a path ending in
     /// `/`, refused for the `/` first.
@@ -529,7 +548,7 @@ pub struct MakeDirectories {
 }
 
 #[must_use]
-pub fn make_directory<B: Backend>(backend: &mut B) -> MakeDirectories {
+pub fn make_directory<B: Backend>(backend: &mut B, limits: PathLimits) -> MakeDirectories {
     let tree = [Item::file(b"a.txt", b"a"), Item::directory(b"gone")];
     let mut run = Run::new(backend);
     let process = run.process();
@@ -552,14 +571,10 @@ pub fn make_directory<B: Backend>(backend: &mut B) -> MakeDirectories {
         }
         Err(error) => Err(error),
     };
-    let listed = match run.list(process, gone, 4, NAMES) {
-        Ok(listed) => unexpected("a List of a directory removed fails", &listed),
-        Err(error) => Err(error),
-    };
+    let removed_listed = run.list(process, gone, 4, NAMES);
     let in_removed = [
         run.make_directory(process, gone, b"x"),
         create,
-        listed,
         run.rename(process, (gone, b"x"), (root, b"y")),
         run.remove(process, gone, b"x", false),
     ];
@@ -569,6 +584,7 @@ pub fn make_directory<B: Backend>(backend: &mut B) -> MakeDirectories {
     run.close(process, root);
     run.finish();
     MakeDirectories {
+        limits,
         made,
         made_listed,
         over_a_file,
@@ -576,6 +592,7 @@ pub fn make_directory<B: Backend>(backend: &mut B) -> MakeDirectories {
         too_long,
         removed,
         in_removed,
+        removed_listed,
         removed_long,
         removed_slash,
     }
@@ -592,10 +609,22 @@ impl Check for MakeDirectories {
         for answer in &self.in_removed {
             assert_eq!(*answer, Err(Error::NotFound), "the contract: a directory removed while open is empty for good");
         }
+        rule(
+            self.removed_listed.as_ref().map_or(true, Vec::is_empty),
+            "a List of a removed directory names no entry",
+            &self.removed_listed,
+        );
+        if self.limits.models_linux() {
+            assert_eq!(self.removed_listed, Err(Error::NotFound), "Linux List of a removed directory fails");
+        } else {
+            // XNU bsd_vfs_vfs_syscalls.c:10957-10960 delegates to VNOP_READDIR.
+            // The empty list is APFS's, observed on the macOS runner (run 39997549771).
+            assert_eq!(self.removed_listed, Ok(Vec::new()), "APFS's List of a removed directory, observed");
+        }
         let empty = "the contract: a directory removed holds no name, however long";
         assert_eq!(self.removed_long, Err(Error::NotFound), "{empty}");
         let slash = "the contract: Create of a path ending in `/` is refused for it first";
-        assert_eq!(self.removed_slash, Err(Error::IsADirectory), "{slash}");
+        assert_eq!(self.removed_slash, Err(self.limits.create_slash_error()), "{slash}");
     }
 }
 
@@ -743,7 +772,8 @@ pub enum Outcome {
     Refused(Error),
 }
 
-/// How long a path may be and how many links one resolution follows: each system's (kernel.rs).
+/// The filesystem rules a scenario checks, with each system's path and link limits (kernel.rs).
+/// The simulator always uses LINUX, including when its host is Darwin.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PathLimits {
     pub path: usize,
@@ -751,6 +781,27 @@ pub struct PathLimits {
 }
 
 impl PathLimits {
+    #[cfg(target_os = "linux")]
+    fn models_linux(self) -> bool {
+        assert_eq!(self, Self::LINUX, "Linux scenarios and the simulator model Linux");
+        true
+    }
+
+    #[cfg(target_os = "macos")]
+    fn models_linux(self) -> bool {
+        self == Self::LINUX
+    }
+
+    fn create_slash_error(self) -> Error {
+        // XNU bsd_vfs_vfs_lookup.c:1766-1767 refuses creation with a final slash as ENOENT.
+        if self.models_linux() { Error::IsADirectory } else { Error::NotFound }
+    }
+
+    fn missing_source_error(self) -> Error {
+        // XNU bsd_vfs_vfs_syscalls.c:9486-9504 looks up the source before the target directory.
+        if self.models_linux() { Error::Permission } else { Error::NotFound }
+    }
+
     /// Linux's: `PATH_MAX` 4096 with the NUL, 40 links.
     pub const LINUX: PathLimits = PathLimits { path: 4096, links: 40 };
     /// Darwin's: `PATH_MAX` 1024 with the NUL, `MAXSYMLINKS` 32.
@@ -810,7 +861,7 @@ fn escape_cases(limits: PathLimits) -> Vec<(Vec<u8>, OpenHow, Outcome)> {
         (b"in".to_vec(), OpenHow::Create { mode: None }, refused(Error::Exists)),
         (b"sub".to_vec(), OpenHow::Create { mode: None }, refused(Error::Exists)),
         (b".".to_vec(), OpenHow::Create { mode: None }, refused(Error::Exists)),
-        (b"new/".to_vec(), OpenHow::Create { mode: None }, refused(Error::IsADirectory)),
+        (b"new/".to_vec(), OpenHow::Create { mode: None }, refused(limits.create_slash_error())),
         (b"sub/new".to_vec(), OpenHow::Create { mode: None }, Outcome::Opened),
         (b".".to_vec(), OpenHow::Directory, Outcome::Opened),
         (b"sub/..".to_vec(), OpenHow::Directory, Outcome::Opened),
@@ -827,7 +878,7 @@ fn escape_cases(limits: PathLimits) -> Vec<(Vec<u8>, OpenHow, Outcome)> {
         (longest_name, OpenHow::Create { mode: None }, Outcome::Opened),
         (longest_path, OpenHow::Read, a()),
         (first_too_long, OpenHow::Read, refused(Error::NameTooLong)),
-        (slashed, OpenHow::Create { mode: None }, refused(Error::IsADirectory)),
+        (slashed, OpenHow::Create { mode: None }, refused(limits.create_slash_error())),
         // `..` steps from where a link led, not back along the path.
         (b"deep/../x".to_vec(), OpenHow::Read, Outcome::File(b"x".to_vec())),
         (b"deep/../../a.txt".to_vec(), OpenHow::Read, a()),
@@ -848,6 +899,7 @@ fn escape_cases(limits: PathLimits) -> Vec<(Vec<u8>, OpenHow, Outcome)> {
 pub struct Escapes {
     pub outcomes: Vec<(Vec<u8>, OpenHow, Outcome)>,
     pub limits: PathLimits,
+    pub after_slashed_create: Result<(), Error>,
 }
 
 #[must_use]
@@ -912,13 +964,19 @@ pub fn escapes_within<B: Backend>(backend: &mut B, limits: PathLimits) -> Escape
         };
         outcomes.push((path, how, outcome));
     }
+    let after_slashed_create = opens(&mut run, process, root, b"new", OpenHow::PathNoFollow);
     run.close(process, root);
     run.finish();
-    Escapes { outcomes, limits }
+    Escapes { outcomes, limits, after_slashed_create }
 }
 
 impl Check for Escapes {
     fn check(&self) {
+        assert_eq!(
+            self.after_slashed_create,
+            Err(Error::NotFound),
+            "a refused Create with a final slash makes nothing"
+        );
         for ((path, how, seen), (_, _, expected)) in self.outcomes.iter().zip(escape_cases(self.limits)) {
             let shown = path.escape_ascii().to_string();
             assert_eq!(
@@ -933,6 +991,7 @@ impl Check for Escapes {
 /// mode `0o555`, search one of mode `0o600`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Permissions {
+    pub limits: PathLimits,
     pub unreadable: Result<(), Error>,
     /// In the directory that may not be written: an `Open` to create, a
     /// `Remove`, a `MakeDirectory`, a `Rename` out of it.
@@ -942,9 +1001,9 @@ pub struct Permissions {
     /// one it holds.
     pub unwritable_but_looked_up: [Result<Done, Error>; 2],
     /// A `Rename` of a source that does not exist into the directory that may
-    /// not be searched: both directories are walked to before the source is
-    /// looked up.
+    /// not be searched: each system's lookup order decides the error.
     pub missing_into_unsearchable: Result<Done, Error>,
+    pub missing_source_after: Result<(), Error>,
     /// What may still be done there: read a file, list it.
     pub readable: Result<Vec<u8>, Error>,
     pub listed: Result<Vec<(Vec<u8>, Kind)>, Error>,
@@ -957,7 +1016,7 @@ pub struct Permissions {
 }
 
 #[must_use]
-pub fn permissions<B: Backend>(backend: &mut B) -> Permissions {
+pub fn permissions<B: Backend>(backend: &mut B, limits: PathLimits) -> Permissions {
     let tree = [
         Item::file(b"locked", b"secret").mode(0o000),
         Item::directory(b"ro").mode(0o555),
@@ -986,16 +1045,19 @@ pub fn permissions<B: Backend>(backend: &mut B) -> Permissions {
     let closed = run.open(process, root, b"closed", OpenHow::Directory).expect("a directory that may be read");
     let beneath = opens(&mut run, process, closed, b"inside", OpenHow::Read);
     let missing_into_unsearchable = run.rename(process, (root, b"missing"), (closed, b"x"));
+    let missing_source_after = opens(&mut run, process, root, b"missing", OpenHow::PathNoFollow);
     let listable = run.list_all(process, closed, 4).map(|(all, _)| all);
     let stat = run.stat(process, closed).map(|stat| stat.kind);
     run.close(process, closed);
     run.close(process, root);
     run.finish();
     Permissions {
+        limits,
         unreadable,
         unwritable,
         unwritable_but_looked_up,
         missing_into_unsearchable,
+        missing_source_after,
         readable,
         listed,
         unsearchable: [across, beneath],
@@ -1014,8 +1076,16 @@ impl Check for Permissions {
         let looked_up = [Err(Error::NotFound), Err(Error::Exists)];
         let first = "the contract: a name is looked up before its directory is written";
         assert_eq!(self.unwritable_but_looked_up, looked_up, "{first}");
-        let walked = "the contract: Rename walks to both directories before it looks its source up";
-        assert_eq!(self.missing_into_unsearchable, Err(Error::Permission), "{walked}");
+        assert!(
+            self.missing_into_unsearchable.is_err(),
+            "Rename refuses a missing source into an unsearchable directory"
+        );
+        assert_eq!(
+            self.missing_into_unsearchable,
+            Err(self.limits.missing_source_error()),
+            "Linux walks both directories first; Darwin looks the source up first"
+        );
+        assert_eq!(self.missing_source_after, Err(Error::NotFound), "the refused Rename keeps its source absent");
         assert_eq!(self.readable, file(b"keep"), "a directory not writable is still searched");
         assert_eq!(self.listed, Ok(vec![(b"keep".to_vec(), Kind::File)]), "and listed");
         for answer in &self.unsearchable {
@@ -1300,22 +1370,26 @@ impl Check for FileMetadata {
     }
 }
 
-/// Path-only metadata from unreadable entries, a final link, and a special file (kernel.md, 6.1).
+/// Path-only metadata from readable and unreadable entries, a final link, and a special file (kernel.md, 6.1).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PathMetadata {
+    pub limits: PathLimits,
     pub denied: [Result<Fd, Error>; 2],
     pub denial_expected: bool,
+    pub path_only_unreadable: [Result<(), Error>; 2],
     pub root_owner: u32,
     pub stats: [Stat; 4],
     pub parent_link: Result<Fd, Error>,
 }
 
-/// A path-only descriptor needs parent search permission and no permission on its entry.
+/// A path-only descriptor needs parent search permission; Darwin also needs the entry readable.
 #[must_use]
-pub fn path_metadata<B: Backend>(backend: &mut B, denial_expected: bool) -> PathMetadata {
+pub fn path_metadata<B: Backend>(backend: &mut B, denial_expected: bool, limits: PathLimits) -> PathMetadata {
     let tree = [
         Item::file(b"file", b"x").mode(0),
         Item::directory(b"dir").mode(0),
+        Item::file(b"readable-file", b"x").mode(0o600),
+        Item::directory(b"readable-dir").mode(0o700),
         Item::link(b"link", b"file"),
         Item::fifo(b"fifo"),
         Item::directory(b"parent"),
@@ -1333,7 +1407,14 @@ pub fn path_metadata<B: Backend>(backend: &mut B, denial_expected: bool) -> Path
         }
         result
     });
-    let stats = [b"file".as_slice(), b"dir".as_slice(), b"link".as_slice(), b"fifo".as_slice()].map(|path| {
+    let path_only_unreadable =
+        [b"file".as_slice(), b"dir".as_slice()].map(|path| opens(&mut run, process, root, path, OpenHow::PathNoFollow));
+    let paths = if limits.models_linux() {
+        [b"file".as_slice(), b"dir".as_slice(), b"link".as_slice(), b"fifo".as_slice()]
+    } else {
+        [b"readable-file".as_slice(), b"readable-dir".as_slice(), b"link".as_slice(), b"fifo".as_slice()]
+    };
+    let stats = paths.map(|path| {
         let fd = run.open(process, root, path, OpenHow::PathNoFollow).expect("path-only metadata is readable");
         let stat = run.stat(process, fd).expect("stat a path-only descriptor");
         run.close(process, fd);
@@ -1342,7 +1423,7 @@ pub fn path_metadata<B: Backend>(backend: &mut B, denial_expected: bool) -> Path
     let parent_link = run.open(process, root, b"parent-link/child", OpenHow::PathNoFollow);
     run.close(process, root);
     run.finish();
-    PathMetadata { denied, denial_expected, root_owner, stats, parent_link }
+    PathMetadata { limits, denied, denial_expected, path_only_unreadable, root_owner, stats, parent_link }
 }
 
 impl Check for PathMetadata {
@@ -1354,8 +1435,24 @@ impl Check for PathMetadata {
             assert_eq!(stat.kind, kind, "path-only Stat reports the entry itself");
             assert_eq!(stat.owner, self.root_owner, "laid entries belong to the scenario user");
         }
-        assert_eq!(self.stats[0].mode, 0, "the unreadable file keeps mode 000");
-        assert_eq!(self.stats[1].mode, 0, "the unreadable directory keeps mode 000");
+        if self.limits.models_linux() {
+            assert_eq!(self.path_only_unreadable, [Ok(()); 2], "Linux path-only opens need no entry read permission");
+            assert_eq!(self.stats[0].mode, 0, "the unreadable file keeps mode 000");
+            assert_eq!(self.stats[1].mode, 0, "the unreadable directory keeps mode 000");
+        } else {
+            // XNU bsd_vfs_vfs_syscalls.c:4894-4900; bsd_vfs_vfs_subr.c:8434-8438.
+            if self.denial_expected {
+                assert_eq!(
+                    self.path_only_unreadable,
+                    [Err(Error::Permission); 2],
+                    "Darwin O_EVTONLY authorizes read access"
+                );
+            } else {
+                assert_eq!(self.path_only_unreadable, [Ok(()); 2], "privileged Darwin opens bypass mode 000");
+            }
+            assert_eq!(self.stats[0].mode, 0o600, "the readable file keeps its mode");
+            assert_eq!(self.stats[1].mode, 0o700, "the readable directory keeps its mode");
+        }
         assert_eq!(self.stats[0].size, 1, "stat needs no content read");
         assert_eq!(self.stats[2].size, 4, "stat reports the link's target length");
         assert_eq!(self.parent_link, Err(Error::TooManyLinks), "parent links are never followed");

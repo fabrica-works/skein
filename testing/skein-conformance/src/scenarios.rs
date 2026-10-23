@@ -172,8 +172,8 @@ pub fn lifecycle<B: Backend>(backend: &mut B, family: Family) -> Lifecycle {
     }
 }
 
-impl Check for Lifecycle {
-    fn check(&self) {
+impl Lifecycle {
+    fn check_common(&self) {
         let resolved = self.bound.ip() == self.asked.ip() && self.bound.port() != 0;
         rule(resolved, "Bind answers with the address bound, port 0 resolved", &self.bound);
         let from_loopback = self.peer.ip() == self.asked.ip() && self.peer.port() != 0;
@@ -181,7 +181,6 @@ impl Check for Lifecycle {
         assert!(self.forward_intact, "the contract: the bytes sent arrive, in order");
         assert_eq!(self.shutdown, NOTHING, "the contract: Shutdown ends this side's sending");
         assert_eq!(self.end_at_server, END, "the contract: a Recv of zero bytes means the stream ended");
-        assert_eq!(self.shutdown_again, NOTHING, "the contract: a second Shutdown is Ok while the connection lasts");
         assert_eq!(
             self.send_after_shutdown,
             Err(Error::BrokenPipe),
@@ -194,6 +193,23 @@ impl Check for Lifecycle {
             let closed = settles(shutdowns, shut, Err(Error::NotConnected));
             rule(closed, "a second Shutdown is NotConnected once the connection is closed", shutdowns);
         }
+    }
+
+    /// Darwin rejects a repeated write shutdown even while receiving works.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        // XNU bsd/kern/uipc_socket.c:4359-4362: SS_CANTSENDMORE is ENOTCONN.
+        assert_eq!(self.shutdown_again, Err(Error::NotConnected), "Darwin: the write side is already shut down");
+    }
+}
+
+// Check models Linux on every host, as the simulator does. Real Darwin
+// cases call check_darwin, sharing every system-independent assertion.
+impl Check for Lifecycle {
+    fn check(&self) {
+        self.check_common();
+        assert_eq!(self.shutdown_again, NOTHING, "Linux: a second Shutdown is Ok while the connection lasts");
     }
 }
 
@@ -242,6 +258,7 @@ pub struct PeerClosed {
     /// Every `Send`, until one failed.
     pub sends: Vec<Result<Done, Error>>,
     pub recv: Result<Vec<u8>, Error>,
+    pub recv_after: Result<Vec<u8>, Error>,
     /// Every `Shutdown`, until one failed.
     pub shutdowns: Vec<Result<Done, Error>>,
 }
@@ -257,32 +274,53 @@ pub fn send_after_peer_closed<B: Backend>(backend: &mut B) -> PeerClosed {
     let end = run.recv(server, s, 64);
     let sends = run.send_until_refused(server, s);
     let recv = run.recv(server, s, 64);
+    let recv_after = run.recv(server, s, 64);
     let shutdowns = run.shutdown_until_refused(server, s);
     run.close(server, s);
     run.finish();
-    PeerClosed { end, sends, recv, shutdowns }
+    PeerClosed { end, sends, recv, recv_after, shutdowns }
+}
+
+impl PeerClosed {
+    fn check_common(&self) {
+        assert_eq!(self.end, END, "the contract: a Recv of zero bytes means the stream ended");
+        peer_gone(&self.sends, &self.recv_after, &self.shutdowns);
+    }
+
+    /// Darwin leaves the peer's reset pending after a failed send.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        assert_eq!(self.recv, Err(Error::Reset), "Darwin: Recv consumes the reset left by Send");
+    }
 }
 
 impl Check for PeerClosed {
     fn check(&self) {
-        assert_eq!(self.end, END, "the contract: a Recv of zero bytes means the stream ended");
-        peer_gone(&self.sends, &self.recv, &self.shutdowns);
+        self.check_common();
+        assert_eq!(self.recv, END, "Linux: then a Recv gives Ok(Count(0))");
     }
 }
 
 /// The rule for a connection whose peer closed with nothing unread: a
 /// `Send` may succeed, its bytes lost, until the peer's reset arrives, then
-/// fails with `BrokenPipe`, never `Reset`; a `Recv` then gives the end and
-/// a `Shutdown` fails with `NotConnected`.
-fn peer_gone(sends: &[Result<Done, Error>], recv: &Result<Vec<u8>, Error>, shutdowns: &[Result<Done, Error>]) {
+/// fails with `BrokenPipe`; the receives drain any reset to the end and a
+/// `Shutdown` fails with `NotConnected`.
+// XNU bsd/kern/uipc_socket.c:1900-1917 returns EPIPE before clearing so_error;
+// :3407-3418 consumes that error on Recv before checking SS_CANTRCVMORE.
+fn peer_gone(sends: &[Result<Done, Error>], recv_after: &Result<Vec<u8>, Error>, shutdowns: &[Result<Done, Error>]) {
     let broken = settles(sends, sent, Err(Error::BrokenPipe));
     rule(broken, "a Send after the peer closed may succeed until its reset arrives, then fails BrokenPipe", &sends);
-    assert_eq!(*recv, END, "the contract: then a Recv gives Ok(Count(0))");
+    assert_eq!(*recv_after, END, "the contract: after any reset is consumed, Recv gives Ok(Count(0))");
     let closed = settles(shutdowns, shut, Err(Error::NotConnected));
     rule(closed, "then a Shutdown fails with NotConnected", &shutdowns);
 }
 
-/// A connect where a socket is bound but nothing listens.
+/// A connect to a port where nothing is bound: port 1, which only a
+/// privileged process may take, so that no test's socket is ever there. A
+/// port bound without listening is the system's: Linux resets the SYN, and
+/// XNU drops it (`tcp_input.c`, a `TCPS_CLOSED` socket), so that the connect
+/// waits out its timeout.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Refused {
     pub connect: Result<Done, Error>,
@@ -292,12 +330,9 @@ pub struct Refused {
 pub fn refused<B: Backend>(backend: &mut B) -> Refused {
     let mut run = Run::new(backend);
     let process = run.process();
-    let holder = run.socket(process, Family::Ipv4);
-    let addr = run.bind(process, holder, at(Family::Ipv4, 0)).expect("port 0 binds");
     let client = run.socket(process, Family::Ipv4);
-    let connect = run.connect(process, client, addr);
+    let connect = run.connect(process, client, at(Family::Ipv4, 1));
     run.close(process, client);
-    run.close(process, holder);
     run.finish();
     Refused { connect }
 }
@@ -308,15 +343,15 @@ impl Check for Refused {
     }
 }
 
-/// Where `AddressInUse` comes from (`SO_REUSEADDR`, a backend default): a
-/// `Bind` against a listener, a second `Listen` on one address, and none
-/// against a connection.
+/// Where `AddressInUse` comes from with `SO_REUSEADDR`, a backend default:
+/// an identical listener address conflicts, an accepted connection does
+/// not, and wildcard overlap and duplicate bound addresses are the system's.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AddressInUse {
     /// A `Bind` of a listener's address, and of the unspecified address on
     /// its port, which overlaps it.
     pub bind_on_listener: [Result<Addr, Error>; 2],
-    /// Two sockets bound to one address, then each listening.
+    /// Two sockets attempting to bind one address, then each listening.
     pub shared_binds: [Result<Addr, Error>; 2],
     pub shared_listens: [Result<Done, Error>; 2],
     /// A `Bind` and a `Listen` on the address of a closed listener whose
@@ -362,11 +397,44 @@ pub fn address_in_use<B: Backend>(backend: &mut B) -> AddressInUse {
     AddressInUse { bind_on_listener, shared_binds, shared_listens, rebind, relisten, foreign }
 }
 
+impl AddressInUse {
+    fn check_common(&self) {
+        assert_eq!(self.bind_on_listener[0], Err(Error::AddressInUse), "the contract: a listener's exact address");
+        assert!(self.shared_binds[0].is_ok(), "the contract: an unused address binds");
+        assert_eq!(self.shared_listens[0], NOTHING, "the contract: an unused address listens");
+        assert!(self.rebind.is_ok(), "the contract: an accepted connection does not hold its listener's address");
+        assert_eq!(self.relisten, NOTHING, "the contract: only a listener holds an address against a Listen");
+        assert_eq!(self.foreign, Err(Error::AddressNotAvailable), "the contract: an address that is not this host's");
+    }
+
+    /// BSD's `SO_REUSEADDR` distinguishes wildcard and specific addresses.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        // XNU bsd/netinet/in_pcb.c:850-851,1047-1071,2341-2367:
+        // SO_REUSEADDR disables wildcard lookup, but an identical bound
+        // address conflicts even before listening (SO_REUSEPORT is off).
+        let port = self.shared_binds[0].expect("the first bind succeeded").port();
+        assert_ne!(port, 0, "Bind resolves port 0");
+        let wildcard = self.bind_on_listener[1].expect("Darwin: wildcard bind beside a specific listener");
+        assert!(wildcard.ip().is_unspecified(), "Darwin: the wildcard address stays unspecified");
+        // The rebind uses the listening socket's address and port.
+        assert_eq!(
+            wildcard.port(),
+            self.rebind.expect("the rebind succeeded").port(),
+            "Darwin: the wildcard bind shares the specific listener's port"
+        );
+        assert_eq!(self.shared_binds[1], Err(Error::AddressInUse), "Darwin: the identical bind conflicts");
+        // XNU bsd/netinet/tcp_usrreq.c:389-398 binds an unbound listener
+        // to a fresh port after the second explicit Bind failed.
+        assert_eq!(self.shared_listens, [NOTHING, NOTHING], "Darwin: Listen implicitly binds the unbound socket");
+    }
+}
+
 impl Check for AddressInUse {
     fn check(&self) {
-        for bind in self.bind_on_listener {
-            assert_eq!(bind, Err(Error::AddressInUse), "the contract: a Bind against a listening socket");
-        }
+        self.check_common();
+        assert_eq!(self.bind_on_listener[1], Err(Error::AddressInUse), "Linux: a wildcard Bind overlaps a listener");
         let [first, second] = self.shared_binds;
         rule(first.is_ok() && first == second, "two sockets bound to one address both bind", &self.shared_binds);
         assert_eq!(
@@ -374,9 +442,6 @@ impl Check for AddressInUse {
             [NOTHING, Err(Error::AddressInUse)],
             "the contract: two sockets bound to one address, the second Listen fails"
         );
-        assert!(self.rebind.is_ok(), "the contract: AddressInUse comes from Bind only against a listening socket");
-        assert_eq!(self.relisten, NOTHING, "the contract: only a listener holds an address against a Listen");
-        assert_eq!(self.foreign, Err(Error::AddressNotAvailable), "the contract: an address that is not this host's");
     }
 }
 
@@ -387,7 +452,12 @@ pub struct Ipv6Only {
     /// address.
     pub mapped_bind: Result<Addr, Error>,
     pub mapped_connect: Result<Done, Error>,
-    /// An IPv4 connect to a port where only an IPv6 socket listens.
+    /// An IPv4 connect to a port where only an IPv6 socket listens, and an
+    /// IPv4 one is bound, cancelled if no answer comes within 300 ms. Every
+    /// backend's: it is never connected, as families never mix. The
+    /// system's: Linux refuses it at once, as a bound socket that does not
+    /// listen resets the SYN, and XNU drops the SYN (`tcp_input.c`, a
+    /// `TCPS_CLOSED` socket), so that the cancel ends it.
     pub across: Result<Done, Error>,
     /// An IPv4 socket listening on that port too.
     pub beside: Result<Done, Error>,
@@ -407,7 +477,12 @@ pub fn ipv6_only<B: Backend>(backend: &mut B) -> Ipv6Only {
     let port = run.bind(process, holder, at(Family::Ipv4, 0)).expect("port 0 binds").port();
     let (listener, _) = run.listener(process, at(Family::Ipv6, port), 16);
     let v4 = run.socket(process, Family::Ipv4);
-    let across = run.connect(process, v4, at(Family::Ipv4, port));
+    let connect = run.start(process, Op::Connect { fd: v4, addr: at(Family::Ipv4, port) });
+    let across = match run.within(process, connect, BRIEFLY) {
+        Some(complete) => complete,
+        None => run.cancel(process, connect).1,
+    }
+    .result;
     run.close(process, v4);
     let beside = run.listen(process, holder, 16);
 
@@ -428,7 +503,13 @@ impl Check for Ipv6Only {
             Err(Error::Unreachable),
             "the contract: an IPv6 socket reaches no IPv4 address"
         );
-        assert_eq!(self.across, Err(Error::Refused), "the contract: families never mix");
+        rule(
+            matches!(self.across, Err(Error::Refused | Error::Cancelled)),
+            "the contract: families never mix: an IPv4 connect never reaches the IPv6 listener",
+            self,
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(self.across, Err(Error::Refused), "Linux resets a SYN to a bound socket that does not listen");
         assert_eq!(self.beside, NOTHING, "the contract: families never mix, nor clash");
     }
 }
@@ -560,17 +641,19 @@ impl Check for FullQueue {
     }
 }
 
-/// A `Close` with received bytes unread: the peer's next operation fails
-/// with `Reset`, and the connection is then dead.
+/// A `Close` with received bytes unread resets the peer. Linux reports it
+/// to the next operation; Darwin reports it to `Recv` after `Send` fails `EPIPE`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct UnreadClose {
     /// The bytes the peer had received before the reset, read after it.
     pub bytes_intact: bool,
-    /// The operations until one met the reset: a `Recv` after those bytes,
+    /// The operations until one failed: a `Recv` after those bytes,
     /// or `Send`s, which may succeed until the reset arrives.
     pub reset: Vec<Result<Done, Error>>,
     /// After it: a `Recv`, a `Send` and a `Shutdown`.
     pub after: [Result<Done, Error>; 3],
+    pub end: Result<Vec<u8>, Error>,
+    pub send_first: bool,
 }
 
 /// The peer reads the bytes it had, then meets the reset with a `Recv`.
@@ -608,14 +691,40 @@ fn unread_close<B: Backend>(backend: &mut B, send_first: bool) -> UnreadClose {
         run.send(client, c, b"x"),
         run.shutdown(client, c),
     ];
+    let end = run.recv(client, c, 64);
     run.close(client, c);
     run.finish();
-    UnreadClose { bytes_intact, reset, after }
+    UnreadClose { bytes_intact, reset, after, end, send_first }
+}
+
+impl UnreadClose {
+    fn check_common(&self) {
+        assert!(self.bytes_intact, "the contract: the bytes already received stay readable");
+        assert_eq!(self.end, END, "the contract: a reset is consumed once, then Recv gives the end");
+        assert_eq!(self.after[1], Err(Error::BrokenPipe), "the contract: Send after a reset fails BrokenPipe");
+        assert_eq!(self.after[2], Err(Error::NotConnected), "the contract: Shutdown after a reset fails NotConnected");
+    }
+
+    /// Darwin's send checks the closed write side before the pending reset.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        // XNU bsd/netinet/tcp_usrreq.c:3152-3154 resets an unread close;
+        // bsd/netinet/tcp_input.c:4500-4512 stores ECONNRESET and closes;
+        // bsd/kern/uipc_socket.c:1900-1917 returns EPIPE before so_error.
+        let (last, recv) = if self.send_first {
+            (Err(Error::BrokenPipe), Err(Error::Reset))
+        } else {
+            (Err(Error::Reset), Ok(Done::Count(0)))
+        };
+        rule(settles(&self.reset, sent, last), "Darwin: an unread close resets the peer", &self.reset);
+        assert_eq!(self.after[0], recv, "Darwin: Recv consumes the reset after buffered bytes, then gives 0");
+    }
 }
 
 impl Check for UnreadClose {
     fn check(&self) {
-        assert!(self.bytes_intact, "the contract: the bytes already received stay readable");
+        self.check_common();
         let reset = settles(&self.reset, sent, Err(Error::Reset));
         rule(reset, "a Close with received data unread resets the peer: its next operation fails", &self.reset);
         assert_eq!(
@@ -627,7 +736,7 @@ impl Check for UnreadClose {
 }
 
 /// A reset reaching an end that already received the peer's end of
-/// stream: no reset is reported.
+/// stream: Linux suppresses the reset, Darwin reports it once.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ResetAfterEnd {
     pub end: Result<Vec<u8>, Error>,
@@ -660,13 +769,34 @@ pub fn reset_after_end_of_stream<B: Backend>(backend: &mut B) -> ResetAfterEnd {
     ResetAfterEnd { end, recvs, sends, shutdowns }
 }
 
-impl Check for ResetAfterEnd {
-    fn check(&self) {
+impl ResetAfterEnd {
+    fn check_common(&self) {
         assert_eq!(self.end, END, "the contract: a Recv of zero bytes means the stream ended");
-        let rule_ = "the contract: an end that already received the peer's end of stream hears of no reset";
-        assert_eq!(self.recvs, [Ok(Done::Count(0)), Ok(Done::Count(0))], "{rule_}");
+        assert_eq!(self.recvs[1], Ok(Done::Count(0)), "the contract: Recv drains any reset to the end");
+        let rule_ = "the contract: after the stream ends, Send and Shutdown eventually fail";
         rule(settles(&self.sends, sent, Err(Error::BrokenPipe)), rule_, &self.sends);
         rule(settles(&self.shutdowns, shut, Err(Error::NotConnected)), rule_, &self.shutdowns);
+    }
+
+    /// A reset in `CLOSE_WAIT` is still an error on Darwin.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        // XNU bsd/netinet/tcp_input.c:4501-4504 sets ECONNRESET in
+        // CLOSE_WAIT too; bsd/kern/uipc_socket.c:3407-3418 consumes
+        // so_error before SS_CANTRCVMORE, even after a receive returned 0.
+        assert_eq!(self.recvs, [Err(Error::Reset), Ok(Done::Count(0))], "Darwin: a reset after EOF is reported once");
+    }
+}
+
+impl Check for ResetAfterEnd {
+    fn check(&self) {
+        self.check_common();
+        assert_eq!(
+            self.recvs,
+            [Ok(Done::Count(0)), Ok(Done::Count(0))],
+            "Linux: an end that already received the peer's end of stream hears of no reset"
+        );
     }
 }
 
@@ -676,10 +806,11 @@ pub struct ClosedBeforeAccept {
     pub accepted: bool,
     pub bytes_intact: bool,
     pub end: Result<Vec<u8>, Error>,
-    /// Every `Send`, then every `Shutdown`, each until one failed, and a
-    /// `Recv` between them.
+    /// Every `Send`, then every `Shutdown`, each until one failed, and two
+    /// `Recv`s between them.
     pub sends: Vec<Result<Done, Error>>,
     pub recv: Result<Vec<u8>, Error>,
+    pub recv_after: Result<Vec<u8>, Error>,
     pub shutdowns: Vec<Result<Done, Error>>,
 }
 
@@ -698,19 +829,34 @@ pub fn closed_before_accept<B: Backend>(backend: &mut B) -> ClosedBeforeAccept {
     let end = run.recv(server, s, 64);
     let sends = run.send_until_refused(server, s);
     let recv = run.recv(server, s, 64);
+    let recv_after = run.recv(server, s, 64);
     let shutdowns = run.shutdown_until_refused(server, s);
     run.close(server, s);
     run.close(server, listener);
     run.finish();
-    ClosedBeforeAccept { accepted, bytes_intact, end, sends, recv, shutdowns }
+    ClosedBeforeAccept { accepted, bytes_intact, end, sends, recv, recv_after, shutdowns }
+}
+
+impl ClosedBeforeAccept {
+    fn check_common(&self) {
+        assert!(self.accepted, "the contract: a connection closed while it waits is still accepted");
+        assert!(self.bytes_intact, "the contract: the bytes sent before the Close arrive");
+        assert_eq!(self.end, END, "the contract: then the stream ends");
+        peer_gone(&self.sends, &self.recv_after, &self.shutdowns);
+    }
+
+    /// Darwin retains the reset for `Recv` after `Send` returned `BrokenPipe`.
+    #[cfg(target_os = "macos")]
+    pub fn check_darwin(&self) {
+        self.check_common();
+        assert_eq!(self.recv, Err(Error::Reset), "Darwin: Recv consumes the reset left by Send");
+    }
 }
 
 impl Check for ClosedBeforeAccept {
     fn check(&self) {
-        assert!(self.accepted, "the contract: a connection closed while it waits is still accepted");
-        assert!(self.bytes_intact, "the contract: the bytes sent before the Close arrive");
-        assert_eq!(self.end, END, "the contract: then the stream ends");
-        peer_gone(&self.sends, &self.recv, &self.shutdowns);
+        self.check_common();
+        assert_eq!(self.recv, END, "Linux: then a Recv gives Ok(Count(0))");
     }
 }
 
@@ -970,11 +1116,17 @@ pub fn cancel_accept_racing_a_connect<B: Backend>(backend: &mut B, race: Race) -
         assert_eq!(run.connect(client, fd, addr), NOTHING, "a connect to a listener");
         cancel
     } else {
-        assert_eq!(run.connect(client, fd, addr), NOTHING, "a connect to a listener");
+        // XNU bsd/kern/uipc_syscalls.c:1031-1033 can return EINPROGRESS
+        // on loopback. Waiting for Connect drives every process (Backend::pass),
+        // including the Accept that ArrivedAway must leave undecided.
+        let connect = run.start(client, Op::Connect { fd, addr });
+        run.sleep(BRIEFLY);
         if race == Race::ArrivedEntered {
             run.enter(server);
         }
-        run.start(server, Op::Cancel { target: accept })
+        let cancel = run.start(server, Op::Cancel { target: accept });
+        assert_eq!(run.wait(client, connect).result, NOTHING, "a connect to a listener");
+        cancel
     };
     let (cancels, target) = run.settle_cancel(server, accept, cancel);
     let accepted = match target.result {

@@ -145,10 +145,27 @@ pub(crate) fn rename(from_dir: Fd, from: &[u8], to_dir: Fd, to: &[u8], no_replac
 }
 pub(crate) fn remove(dir: Fd, name: &[u8], directory: bool) -> Result<(), i32> {
     let name = c_path(name)?;
-    retry(|| {
+    let result = retry(|| {
         // SAFETY: name is terminated and lives across unlinkat.
         status(unsafe { libc::unlinkat(dir.raw(), name.as_ptr(), if directory { libc::AT_REMOVEDIR } else { 0 }) })
-    })
+    });
+    if result == Err(libc::EPERM) && !directory {
+        // XNU bsd_vfs_vfs_subr.c:8292-8294 answers EPERM for unlink of a
+        // directory. Inspect the entry itself on the same parent, so a link
+        // to a directory never turns another EPERM into EISDIR.
+        // SAFETY: stat is initialized C output storage, valid at zero.
+        let mut raw: libc::stat = unsafe { mem::zeroed() };
+        let found = retry(|| {
+            // SAFETY: name and exclusive raw storage live throughout fstatat.
+            status(unsafe {
+                libc::fstatat(dir.raw(), name.as_ptr(), ptr::from_mut(&mut raw), libc::AT_SYMLINK_NOFOLLOW)
+            })
+        });
+        if found.is_ok() && kind_of(raw.st_mode) == Kind::Directory {
+            return Err(libc::EISDIR);
+        }
+    }
+    result
 }
 pub(crate) fn mkdir(dir: Fd, name: &[u8], mode: u32) -> Result<(), i32> {
     let name = c_path(name)?;
@@ -424,4 +441,32 @@ fn make_directory_root(parent: Fd, path: &Path, mode: u32) -> Result<Fd, i32> {
     let fd =
         unsafe { libc::openat(parent.raw(), path_c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) };
     if fd < 0 { Err(last_errno()) } else { Ok(Fd::new(fd)) }
+}
+#[cfg(test)]
+mod tests {
+    use super::{close, open_root, path_name, remove, retry, status};
+    use skein_scratch::Scratch;
+
+    // A directory's unlink answers EPERM on Darwin, as does a refusal that is
+    // not a directory's: an immutable file's (chflags), and so a sticky
+    // directory's other users' entries, which one user cannot make.
+    #[test]
+    fn only_a_directory_turns_an_unlinks_eperm_into_eisdir() {
+        let scratch = Scratch::new("darwin-remove");
+        std::fs::create_dir(scratch.path().join("dir")).expect("make the directory");
+        std::fs::write(scratch.path().join("fixed"), b"x").expect("make the file");
+        let fixed = path_name(&scratch.path().join("fixed")).expect("a path");
+        let change = |flags: u32| {
+            // SAFETY: fixed is terminated and lives across chflags.
+            retry(|| status(unsafe { libc::chflags(fixed.as_ptr(), flags) })).expect("chflags the file");
+        };
+        change(libc::UF_IMMUTABLE);
+        let parent = open_root(scratch.path()).expect("open the scratch directory");
+        assert_eq!(remove(parent, b"dir", false), Err(libc::EISDIR), "a directory's unlink is EISDIR");
+        assert_eq!(remove(parent, b"fixed", false), Err(libc::EPERM), "an immutable file stays EPERM");
+        change(0);
+        assert_eq!(remove(parent, b"fixed", false), Ok(()), "the file goes once it may");
+        assert_eq!(remove(parent, b"dir", true), Ok(()), "the directory goes as a directory");
+        assert_eq!(close(parent), Ok(()), "close the scratch directory");
+    }
 }
