@@ -604,8 +604,26 @@ def after_landing(lab):
     git(lab.clones['a'], 'add', '.')
     git(lab.clones['a'], 'commit', '-qm', 'after tier')
     client = lab.start_land()
+    lab.reached('prebuild-a-1')
+    host_lock = lab.clones['a'] / '.git/land-turn.lock'
+    with host_lock.open('r') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            raise AssertionError('land released its host turn before finishing')
     lab.finish(client)
     lab.reached('after-after-landing-1')
+    with host_lock.open('r') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with (lab.path / 'tmp/after-landing/temper.lock').open('r') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            raise AssertionError('active after-tier released its lane lock')
     assert any(e['event'] == 'release' for e in lab.turn_events())
     probe = holder(lab.path / 'tmp', '7' * 32)
     grant(probe)  # The background tier is still active; it retained no connection.
@@ -621,6 +639,8 @@ def after_landing(lab):
                 return False
         wait_for(cleanup_ended, 'after-landing helper cleanup')
     return {'layer': 'actual-land', 'after_tier_active_after_release': True,
+            'parent_kept_host_turn': True, 'host_turn_not_inherited_by_after_tier': True,
+            'after_lane_held_while_active': True,
             'transport_not_inherited_by_after_tier': True, 'after_tier_completed': True}
 
 

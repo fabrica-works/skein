@@ -442,6 +442,11 @@ heavy. Normal completion and handled signals close and reap the client's
 transport. A killed client loses its pipes; a remote holder also has its
 independent input-liveness bound.
 
+When land spawns its after-landing helper, the child closes inherited
+host-turn FD6 and unused push/follow FD9; the parent keeps its host lock
+until landing ends. The helper's own FD7 serializes its after-tier lane
+through target cleanup without retaining the landing's host turn.
+
 Request, grant, confirmed release and fail-open appear on caller stderr
 and in private `DEV_TMP/landing-turn/events.jsonl` (0600, umask 077).
 The caller confirms release only after its owned transport exits zero.

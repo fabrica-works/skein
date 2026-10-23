@@ -505,7 +505,7 @@ done
 # A repository's tier too slow for its gate runs after its landing, in the
 # background (after-landing; owners.md, 4.5).
 if ((!docs && !local)) && [[ -x scripts/after-landing.sh ]]; then
-    setsid "$kit/after-landing" "$common" "$commit" "$branch" </dev/null >/dev/null 2>&1 &
+    setsid "$kit/after-landing" "$common" "$commit" "$branch" 6>&- 9>&- </dev/null >/dev/null 2>&1 &
     echo "land: queued scripts/after-landing.sh on $commit; a failure goes to $tmp/director/inbox/after-landing.md" >&2
 fi
 
