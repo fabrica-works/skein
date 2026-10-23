@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise local advisory turns; no production transport or repository gate."""
+"""Exercise advisory turns with isolated local pipes and simulated SSH; no real gate."""
 import argparse
 import fcntl
 import hashlib
@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import runpy
 import select
+import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -101,6 +103,167 @@ def protocol(root):
     return {'layer': 'protocol', 'queued_eof': True, 'granted_eof': True,
             'killed_holder': True, 'repository_specific': True, 'invalid_identity': True,
             'start_eof_malformed_oversize_fail_open': True, 'child_status': 17}
+
+
+def turn_module():
+    spec = importlib.util.spec_from_file_location('turn', KIT / 'land-turn.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def construction(root):
+    root.mkdir()
+    module = turn_module()
+    who = module.identity('a' * 32, 'temper', 'fixture')
+    path = '/home/free/.local/share/skein-kits/recovery-v1-' + 'b' * 40 + '/land-turn.py'
+    environment = {'LAND_TURN_HOLDER': path}
+    with patch.dict(os.environ, environment, clear=True):
+        argv, heartbeat = module.transport_command(root, who)
+        assert heartbeat
+        assert argv[:-1] == ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+            '-o', 'ConnectTimeout=5', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=2',
+            '-o', 'UpdateHostKeys=no', '-o', 'LogLevel=QUIET', 'free@2.29.124.199']
+        expected = ['python3', '-I', '-B', path, 'connection-holder', 'a' * 32, 'temper', 'fixture', 'ssh']
+        assert shlex.split(argv[-1]) == expected
+        with patch.dict(os.environ, LAND_TURN_MODE='local'):
+            with patch.object(module.socket, 'gethostname', return_value=module.COORDINATOR):
+                local, heartbeat = module.transport_command(root, who)
+                assert local == expected[:-1] + ['local'] and not heartbeat
+    rejected = [({}, 'invalid-holder-path'), ({'LAND_TURN_HOLDER': 'relative'}, 'invalid-holder-path'),
+        ({'LAND_TURN_HOLDER': path + ';id'}, 'invalid-holder-path'),
+        ({'LAND_TURN_HOLDER': path.replace('/land-turn', '/../land-turn')}, 'invalid-holder-path'),
+        ({'LAND_TURN_HOLDER': path + '\n'}, 'invalid-holder-path'),
+        ({**environment, 'LAND_TURN_MODE': 'arbitrary'}, 'invalid-transport-mode'),
+        ({**environment, 'LAND_TURN_MODE': 'local'}, 'invalid-transport-mode'),
+        ({'LAND_TURN_FIXTURE_DIR': str(root / 'coordinator')}, 'invalid-fixture'),
+        ({'LAND_TURN_FIXTURE_DIR': str(root), 'HEAVY_RECOVERY_FIXTURE': '1'}, 'invalid-fixture')]
+    for index, (env, reason) in enumerate(rejected):
+        tmp = root / str(index)
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(module.socket, 'gethostname', return_value='other-machine'):
+                assert module.client(tmp, 'temper', ['sh', '-c', 'exit 17']) == 17
+        assert [e['event'] for e in events(tmp)] == ['request', 'fail-open']
+        assert events(tmp)[-1]['reason'] == reason
+    return {'layer': 'command-construction', 'strict_ssh_argv': True, 'local_hostname_bound': True,
+            'configuration_fail_open_cases': len(rejected), 'child_status': 17, 'real_ssh': False}
+
+
+def heartbeat_holder(root, token):
+    code = ('import runpy,sys; from pathlib import Path; '
+        f'm=runpy.run_path({str(KIT / "land-turn.py")!r}); '
+        f'm["holder"](Path({str(root / "coordinator")!r}), '
+        f'm["identity"]({token!r}, "temper", "fixture"), Path({str(root)!r}), heartbeat=True)')
+    out = (root / (token + '.stderr')).open('w')
+    process = subprocess.Popen([sys.executable, '-I', '-B', '-c', code], stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=out, close_fds=True)
+    out.close()
+    return process
+
+
+def heartbeat_lifetime(root):
+    root.mkdir()
+    elapsed = []
+    for queued in (False, True):
+        blocker = holder(root, '8' * 32) if queued else None
+        process = None
+        try:
+            if blocker:
+                grant(blocker)
+            process = heartbeat_holder(root, ('b' if queued else 'a') * 32)
+            if not queued:
+                grant(process)
+                # A healthy connection lasts beyond the 10s liveness bound.
+                for _ in range(3):
+                    process.stdin.write(b'\0')
+                    process.stdin.flush()
+                    assert not select.select([process.stdout], [], [], 5)[0]
+                    assert process.poll() is None
+            process.stdin.write(b'\0')
+            process.stdin.flush()
+            start = time.monotonic()
+            # Leave stdin OPEN: model a blackholed SSH session on the server.
+            assert process.wait(timeout=12) == 0
+            duration = time.monotonic() - start
+            assert 9.8 <= duration <= 11, duration
+            elapsed.append(duration)
+            assert not process.stdout.read()
+            process.stdin.close()
+            process.stdout.close()
+        finally:
+            if process and process.poll() is None:
+                process.kill()
+                process.wait()
+                process.stdin.close()
+                process.stdout.close()
+            if blocker:
+                disconnect(blocker)
+    probe = holder(root, 'c' * 32)
+    grant(probe)
+    disconnect(probe)
+    return {'layer': 'local-pipe-heartbeat', 'stdin_held_open': True, 'expiry_s': elapsed,
+            'healthy_beyond_10s': True, 'queued_and_granted_release': True, 'real_ssh': False}
+
+
+def installed_validation(root):
+    root.mkdir()
+    outcomes = {}
+    required = ['heavy', 'land', 'setup', 'heavy-recovery.py', 'gate-policy.sh', 'kit.sh',
+                'after-landing', 'kache-setup', 'stable-release.py', 'land-capture.py',
+                'recovery_message.py', 'land-turn.py']
+    for fault, expected in [('valid', 0), ('mutable', 2), ('tampered', 2), ('missing', 2)]:
+        home = root / fault
+        commit = 'd' * 40
+        release = home / '.local/share/skein-kits' / ('recovery-v1-' + commit)
+        release.mkdir(parents=True)
+        manifest = {}
+        for name in required:
+            asset = release / name
+            shutil.copyfile(KIT / name, asset)
+            manifest[name] = hashlib.sha256(asset.read_bytes()).hexdigest()
+            asset.chmod(0o400)
+        marker = release / 'release.json'
+        marker.write_text(json.dumps(dict(schema='skein-recovery-release-v1', commit=commit, files=manifest)))
+        marker.chmod(0o400)
+        asset = release / 'land-turn.py'
+        if fault in ('mutable', 'tampered', 'missing'):
+            asset.chmod(0o600)
+            if fault == 'tampered':
+                asset.write_text(asset.read_text() + '# fixture tamper\n')
+                asset.chmod(0o400)
+            elif fault == 'missing':
+                asset.unlink()
+        release.chmod(0o500)
+        state = home / 'state'
+        # Only the test redirects the installation root and coordinator state.
+        code = ('import importlib.util,re,sys; from pathlib import Path; from unittest.mock import patch; '
+            f's=importlib.util.spec_from_file_location("turn", {str(KIT / "land-turn.py")!r}); '
+            'm=importlib.util.module_from_spec(s); s.loader.exec_module(m); '
+            f'm.__file__={str(asset)!r}; m.HOLDER=re.escape(m.__file__); m.STATE=Path({str(state)!r}); '
+            'm.COORDINATOR=m.socket.gethostname(); '
+            f'sys.argv=[m.__file__, "connection-holder", {"e" * 32!r}, "temper", "fixture", "local"]; '
+            f'p=patch.object(Path,"home",return_value=Path({str(home)!r})); p.start(); sys.exit(m.main())')
+        process = subprocess.Popen([sys.executable, '-I', '-B', '-c', code],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            assert select.select([process.stdout], [], [], 10)[0], 'verification did not settle'
+            reply = process.stdout.readline()
+            if fault == 'valid':
+                assert json.loads(reply)['token'] == 'e' * 32
+            process.stdin.close()
+            assert process.wait(timeout=10) == expected, fault
+            (home / 'stderr.txt').write_text(process.stderr.read())
+            assert state.exists() == (fault == 'valid')
+            outcomes[fault] = process.returncode
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stdin.close()
+            process.stdout.close()
+            process.stderr.close()
+    return {'layer': 'disposable-installed-verifier', 'redirected_home_and_state': True,
+            'outcomes': outcomes, 'global_install': False}
 
 
 class TurnLab(Lab):
@@ -248,7 +411,7 @@ def unavailable(lab, local=False):
     lab.finish(client)
     assert not (lab.path / 'tmp/coordinator').is_dir()
     assert [e['event'] for e in lab.turn_events()] == ['request', 'fail-open']
-    reason = 'transport-eof' if local else 'transport-unapproved'
+    reason = 'transport-eof' if local else 'invalid-holder-path'
     assert lab.turn_events()[-1]['reason'] == reason
     return {'layer': 'actual-land', 'coordinator_unavailable': local,
             'reason': reason, 'exit': client.returncode}
@@ -371,6 +534,64 @@ def terminated(lab):
         disconnect(blocker)
 
 
+def missing_local_helper(lab):
+    env = dict(lab.env, LAND_TURN_MODE='local',
+        LAND_TURN_HOLDER='/home/free/.local/share/skein-kits/recovery-v1-' + '0' * 40 + '/land-turn.py')
+    assert not Path(env['LAND_TURN_HOLDER']).exists()
+    del env['LAND_TURN_FIXTURE_DIR']
+    client = lab.start_land(environment=env)
+    lab.finish(client)
+    assert [e['event'] for e in lab.turn_events()] == ['request', 'fail-open']
+    assert lab.turn_events()[-1]['reason'] == 'transport-eof'
+    return {'layer': 'actual-land-production-local-command', 'missing_installed_helper': True,
+            'ordinary_land_completed': True, 'real_ssh': False}
+
+
+def long_gate(lab):
+    client = lab.start_land()
+    lab.allow('prebuild-a-1')
+    lab.reached('gate-a-1')
+    time.sleep(11)
+    assert client.poll() is None
+    assert [e['event'] for e in lab.turn_events()] == ['request', 'grant']
+    lab.allow('gate-a-1')
+    lab.done(client)
+    wait_for(lambda: any(e['event'] == 'release' for e in lab.turn_events()), 'healthy holder release')
+    assert not any(e['event'] == 'fail-open' for e in lab.turn_events())
+    return {'healthy_gate_beyond_liveness_bound': True, 'no_task_timeout': True}
+
+
+def simulated_ssh(lab, test, failure=None):
+    path = '/home/free/.local/share/skein-kits/recovery-v1-' + 'b' * 40 + '/land-turn.py'
+    shim = lab.path / 'fixture-bin/ssh'
+    shim.write_text('#!/usr/bin/env python3\nimport json,runpy,shlex,sys\nfrom pathlib import Path\n'
+        + f'Path({str(lab.path / "ssh-argv.json")!r}).write_text(json.dumps(sys.argv[1:]))\n'
+        + ('sys.exit(255)\n' if failure else
+           f'args=shlex.split(sys.argv[-1]); m=runpy.run_path({str(KIT / "land-turn.py")!r})\n'
+           f'm["holder"](Path({str(lab.path / "tmp/coordinator")!r}), '
+           f'm["identity"](*args[5:8]), Path({str(lab.path / "tmp")!r}), heartbeat=True)\n'))
+    shim.chmod(0o700)
+    del lab.env['LAND_TURN_FIXTURE_DIR']
+    lab.env.update(LAND_TURN_HOLDER=path, LAND_TURN_MODE='ssh')
+    original_transport = lab.transport
+
+    def started_transport(client):
+        wait_for((lab.path / 'ssh-argv.json').exists, 'simulated SSH startup')
+        return original_transport(client)
+
+    lab.transport = started_transport
+    if failure:
+        client = lab.start_land()
+        lab.finish(client)
+        assert [e['event'] for e in lab.turn_events()] == ['request', 'fail-open']
+        assert lab.turn_events()[-1]['reason'] in ('transport-eof', 'transport-or-protocol-failure')
+        result = {'ordinary_land_completed': True, 'injected_failure': failure}
+    else:
+        result = test(lab)
+    assert (lab.path / 'ssh-argv.json').exists()
+    return dict(result, layer='actual-land-simulated-ssh', real_ssh=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, required=True)
@@ -381,13 +602,29 @@ def main():
     results = []
     cases = [('serialization', serialization), ('stale', stale), ('unavailable', unavailable),
              ('local-unavailable', lambda lab: unavailable(lab, True)),
-             ('failed-gate', failure), ('after-landing', after_landing), ('terminated-client', terminated)]
+             ('failed-gate', failure), ('after-landing', after_landing), ('terminated-client', terminated),
+             ('missing-local-helper', missing_local_helper)]
     cases += [('inert-' + mode, lambda lab, mode=mode: inert(lab, mode)) for mode in ('off', 'docs', 'local', 'other')]
     cases += [(('killed-client' if killed else 'lost-holder') + ('-queued' if queued else '-granted'),
                lambda lab, queued=queued, killed=killed: lost(lab, queued, killed))
               for killed in (False, True) for queued in (True, False)]
-    if not opts.case or 'protocol' in opts.case:
-        results.append(dict(case='protocol', status='pass', **protocol(root / 'protocol')))
+    cases += [('ssh-' + name, lambda lab, test=test: simulated_ssh(lab, test))
+              for name, test in [('serialization', serialization), ('stale', stale),
+                                 ('after-landing', after_landing), ('failed-gate', failure),
+                                 ('long-gate', long_gate)]]
+    cases += [('ssh-' + name, lambda lab, name=name: simulated_ssh(lab, None, name))
+              for name in ('strict-trust-failure', 'auth-failure', 'unavailable', 'missing-helper')]
+    cases += [('ssh-lost-' + ('queued' if queued else 'granted'),
+               lambda lab, queued=queued: simulated_ssh(lab, lambda lab: lost(lab, queued)))
+              for queued in (True, False)]
+    cases += [('ssh-killed-client-' + ('queued' if queued else 'granted'),
+               lambda lab, queued=queued: simulated_ssh(lab, lambda lab: lost(lab, queued, True)))
+              for queued in (True, False)]
+    for name, test in [('protocol', protocol), ('construction', construction),
+                       ('heartbeat-lifetime', heartbeat_lifetime), ('installed-validation', installed_validation)]:
+        if not opts.case or name in opts.case:
+            results.append(dict(case=name, status='pass', **test(root / name)))
+            (root / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
     for name, test in cases:
         if opts.case and name not in opts.case:
             continue
@@ -406,7 +643,7 @@ def main():
         (root / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
         print(json.dumps(result), flush=True)
     (root / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
-    print('PASS selected local cases; evidence ' + str(root), flush=True)
+    print('PASS selected advisory cases; evidence ' + str(root), flush=True)
 
 
 if __name__ == '__main__':

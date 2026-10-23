@@ -6,8 +6,10 @@ import math
 import os
 from pathlib import Path
 import re
+import runpy
 import secrets
 import select
+import shlex
 import signal
 import socket
 import stat
@@ -16,6 +18,9 @@ import sys
 import time
 
 os.umask(0o077)
+STATE = Path('/home/free/.local/state/skein-landing-turn')
+HOLDER = r'/home/free/\.local/share/skein-kits/recovery-v1-[0-9a-f]{40,64}/land-turn\.py'
+COORDINATOR = 'debian-16gb-hel1-3'  # hetzner3
 
 
 def identity(token, repo, holder):
@@ -54,11 +59,25 @@ def event(tmp, who, name, start, granted=None, reason=None):
         print('land-turn: private journal unavailable', file=sys.stderr, flush=True)
 
 
-def disconnected(delay):
-    return bool(select.select([sys.stdin], [], [], delay)[0])
+def holder(directory, who, tmp, heartbeat=False):
+    last_input = time.monotonic()
+    reason = 'connection-eof'
 
+    def disconnected(delay):
+        nonlocal last_input, reason
+        if heartbeat:
+            remaining = max(0, 10 - (time.monotonic() - last_input))
+            delay = remaining if delay is None else min(delay, remaining)
+        if select.select([sys.stdin], [], [], delay)[0]:
+            chunk = os.read(sys.stdin.fileno(), 64)
+            if not heartbeat or not chunk or chunk.strip(b'\0'):
+                return True
+            last_input = time.monotonic()
+        expired = heartbeat and time.monotonic() - last_input >= 10
+        if expired:
+            reason = 'connection-liveness'
+        return expired
 
-def holder(directory, who, tmp):
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     # The lock file is retained: unlinking it could split the flock identity.
     with os.fdopen(private_file(directory / (who['repository'] + '.lock'), os.O_RDWR), 'r+') as lock:
@@ -69,8 +88,10 @@ def holder(directory, who, tmp):
                 break
             except BlockingIOError:
                 if disconnected(.05):
+                    event(tmp, who, 'release', start, reason=reason)
                     return
         else:
+            event(tmp, who, 'release', start, reason=reason)
             return
         current = directory / (who['repository'] + '.current.json')
         granted = time.monotonic()
@@ -79,11 +100,11 @@ def holder(directory, who, tmp):
             with os.fdopen(private_file(current, os.O_WRONLY | os.O_TRUNC), 'w') as out:
                 json.dump(grant, out)
             print(json.dumps(grant), flush=True)
-            # Any connection input ends this holder; EOF needs no heartbeat.
-            disconnected(None)
+            while not disconnected(None):
+                pass
         finally:
             current.unlink(missing_ok=True)
-            event(tmp, who, 'release', start, granted)
+            event(tmp, who, 'release', start, granted, reason)
 
 
 def close_transport(transport):
@@ -96,6 +117,31 @@ def close_transport(transport):
     except subprocess.TimeoutExpired:
         transport.kill()
         transport.wait()
+
+
+def transport_command(tmp, who):
+    fixture = os.environ.get('LAND_TURN_FIXTURE_DIR')
+    if fixture is not None:
+        if (os.environ.get('HEAVY_RECOVERY_FIXTURE') != '1' or
+                not Path(fixture).resolve().is_relative_to(tmp.resolve()) or
+                Path(fixture).resolve() == tmp.resolve()):
+            raise ValueError('invalid-fixture')
+        return ([sys.executable, '-I', '-B', str(Path(__file__).resolve()), 'holder', fixture,
+                 who['token'], who['repository'], who['holder'], str(tmp)], False)
+    path = os.environ.get('LAND_TURN_HOLDER', '')
+    if not re.fullmatch(HOLDER, path):
+        raise ValueError('invalid-holder-path')
+    mode = os.environ.get('LAND_TURN_MODE', 'ssh')
+    if mode not in ('ssh', 'local') or (mode == 'local' and socket.gethostname() != COORDINATOR):
+        raise ValueError('invalid-transport-mode')
+    command = ['python3', '-I', '-B', path, 'connection-holder',
+               who['token'], who['repository'], who['holder'], mode]
+    if mode == 'local':
+        return command, False
+    return (['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+             '-o', 'ConnectTimeout=5', '-o', 'ServerAliveInterval=5',
+             '-o', 'ServerAliveCountMax=2', '-o', 'UpdateHostKeys=no',
+             '-o', 'LogLevel=QUIET', 'free@2.29.124.199', shlex.join(command)], True)
 
 
 def client(tmp, repo, command):
@@ -119,22 +165,31 @@ def client(tmp, repo, command):
         signal.signal(signum, interrupted)
     event(tmp, who, 'request', start)
     try:
-        fixture = os.environ.get('LAND_TURN_FIXTURE_DIR')
         try:
-            if fixture is None:
-                fail('transport-unapproved')
-            elif (os.environ.get('HEAVY_RECOVERY_FIXTURE') != '1' or
-                  not Path(fixture).resolve().is_relative_to(tmp.resolve()) or
-                  Path(fixture).resolve() == tmp.resolve()):
-                fail('invalid-fixture')
-            else:
+            try:
+                argv, heartbeat = transport_command(tmp, who)
+            except ValueError as error:
+                fail(str(error) if str(error) in ('invalid-fixture', 'invalid-holder-path',
+                                                'invalid-transport-mode') else 'invalid-configuration')
+            if not failed:
                 transport = subprocess.Popen(
-                    [sys.executable, '-I', '-B', str(Path(__file__).resolve()), 'holder', fixture,
-                     who['token'], who['repository'], who['holder'], str(tmp)],
+                    argv,
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    close_fds=True)
+                    stderr=subprocess.DEVNULL, close_fds=True)
+                os.set_blocking(transport.stdin.fileno(), False)
+                next_heartbeat = time.monotonic()
+
+                def pulse():
+                    nonlocal next_heartbeat
+                    if heartbeat and time.monotonic() >= next_heartbeat:
+                        os.write(transport.stdin.fileno(), b'\0')
+                        next_heartbeat = time.monotonic() + 5
+
                 pending = bytearray()
                 while granted is None and not failed:
+                    pulse()
+                    if not select.select([transport.stdout], [], [], .05)[0]:
+                        continue
                     chunk = os.read(transport.stdout.fileno(), 513)
                     if not chunk:
                         fail('transport-eof')
@@ -159,6 +214,13 @@ def client(tmp, repo, command):
         # No transport descriptor reaches land, heavy or the after-landing tier.
         child = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL, close_fds=True)
         while child.poll() is None:
+            if transport is not None:
+                try:
+                    pulse()
+                except OSError:
+                    fail('transport-write-failure')
+                    close_transport(transport)
+                    transport = None
             if transport is not None and select.select([transport.stdout], [], [], .05)[0]:
                 chunk = os.read(transport.stdout.fileno(), 513)
                 fail('transport-eof' if not chunk else 'protocol-invalid')
@@ -172,6 +234,16 @@ def client(tmp, repo, command):
 
 
 def main():
+    if sys.argv[1] == 'connection-holder' and len(sys.argv) == 6:
+        path = Path(__file__).absolute()
+        if not re.fullmatch(HOLDER, str(path)) or path.resolve() != path:
+            raise ValueError('invalid-holder-path')
+        mode = sys.argv[5]
+        if mode not in ('ssh', 'local') or (mode == 'local' and socket.gethostname() != COORDINATOR):
+            raise ValueError('invalid-transport-mode')
+        runpy.run_path(str(path.with_name('stable-release.py')))
+        holder(STATE, identity(*sys.argv[2:5]), STATE, heartbeat=mode == 'ssh')
+        return 0
     if sys.argv[1] == 'holder' and len(sys.argv) == 7:
         holder(Path(sys.argv[2]), identity(*sys.argv[3:6]), Path(sys.argv[6]))
         return 0

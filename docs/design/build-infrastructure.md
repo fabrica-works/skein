@@ -361,7 +361,7 @@ while broken. The capture write uses guarded `/dev/full` to obtain kernel
 ENOSPC without consuming disk space; both prebuild and gate paths refuse
 landing after that capture failure.
 
-## 8. Advisory landing turn (local acceptance)
+## 8. Advisory landing turn
 
 The recovery kit has an opt-in advisory turn before land's host repository
 lock and build-lane prebuild. Only remote code landings whose repository
@@ -372,43 +372,83 @@ in. The original arguments are retained across the guarded child entry.
 The gate, receipt validation, retry and fast-forward push remain land's
 protection; the advisory turn does not authorize a push.
 
-Production coordinator selection and transport are unapproved. Production
-opt-in records `request` and `fail-open` with reason
-`transport-unapproved`, then runs ordinary land. No SSH path, listener,
-credential, origin lease ref or fleet opt-in is installed. Transport must
-be separately approved before production use, after the director's fleet
-installation. This local stage makes no claim about real landing savings.
+Director 612 approves hetzner3 as the coordinator. There is one process
+per connection, a retained repository-specific flock, and no listener,
+queue, fairness promise, origin lease ref or failover. The bounded
+current-holder record is diagnostic: stale bytes after a killed holder
+never establish ownership. The coordinator's lock and journals use
+`/home/free/.local/state/skein-landing-turn` across release updates.
+Never unlink or replace a live lock file or select a different state
+path while callers exist: that would split the flock identity.
 
-The local acceptance transport requires `HEAVY_RECOVERY_FIXTURE=1` and
-`LAND_TURN_FIXTURE_DIR`, a directory strictly beneath the isolated
-`DEV_TMP`. It launches only the kit's local `land-turn.py holder`; it
-accepts no command string or remote shell configuration. The holder
-validates the random request token, repository and holder name before
-using them. A retained repository-specific flock file provides exclusion;
-there is no durable queue, fairness promise, task timeout or lease.
-A bounded current-holder record is published while holding that lock.
-It is diagnostic only: a killed holder can leave stale metadata, which
-never authorizes ownership and is replaced by the next lock holder.
+The operator must set `LAND_TURN_HOLDER` to the exact coordinator asset
+`/home/free/.local/share/skein-kits/recovery-v1-COMMIT/land-turn.py`, with
+COMMIT a full lowercase 40–64 digit hexadecimal commit identity. This
+path is independent of the caller's release. Relative paths, mutable
+checkout paths, shell syntax and invalid modes fail open with a fixed
+reason. The holder verifies its read-only installed kit and manifest
+with that release's `stable-release.py` before creating state or granting.
+Missing helpers, invalid releases and failed connections also fail open;
+there is no automatic copy, install or fallback to mutable source.
 
-The holder watches its connection pipe while waiting and after grant.
-EOF releases it promptly, including when a queued client disappears.
-Grant spans ordinary land and its retries. Land and its descendants,
-including after-landing, inherit no transport descriptors. Connection
-loss or malformed protocol records one fail-open reason and proceeds with
-ordinary land, or lets an already running land continue. It never kills
-admitted heavy work on connection loss. Normal exit and handled signals
-close the transport and reap the local holder; SIGKILL of the client
-closes its pipe through the kernel, allowing the holder to exit.
+`LAND_TURN_MODE` defaults to `ssh`. The client builds an argv for `ssh -T`
+to the fixed `free@2.29.124.199`, with `BatchMode=yes`,
+`StrictHostKeyChecking=yes`, `ConnectTimeout=5`, `ServerAliveInterval=5`
+and `ServerAliveCountMax=2`. `UpdateHostKeys=no` prevents opportunistic
+trust updates; `LogLevel=QUIET` and discarded transport stderr keep SSH
+and remote interpreter diagnostics out of the narrow turn records. The
+remote command is shell-quoted from validated argv and starts
+`python3 -I -B` with the exact installed asset. No key, trust or SSH
+configuration is changed. Trust/auth/connect/start failures surface on
+the caller as fixed fail-open reasons without raw remote output.
 
-Request, grant, release and fail-open records appear immediately on stderr
-and in private `DEV_TMP/landing-turn/events.jsonl` (0600, umask 077).
-Records contain only timestamp, event, fixed reason, token, repository,
-holder, elapsed wait and optional runtime. The holder records release on
-disconnect, including client death; a killed holder cannot record its
-release, and the client records its connection failure. Journal failure
-is visible and does not prevent ordinary land. No environment, command,
-output or credential is logged by the turn. No task or gate age limit is
-introduced. `test-land-turn --evidence NEW_DIRECTORY` exercises local
-protocol faults and disposable Git landings through the recovery fixture;
-its results distinguish those layers. Production transport and the full
-repository gate are outside that fixture.
+Director-owned per-host configuration, after landing and section 7's
+fleet installation: hetzner, hetzner2 and hel8 use `LAND_TURN_MODE=ssh`;
+hetzner3 uses `LAND_TURN_MODE=local`, allowed only on hostname
+`debian-16gb-hel1-3`. Every host sets the explicit coordinator
+`LAND_TURN_HOLDER`. A wrong local hostname fails open. Hetzner4 uses
+strict SSH too and fails open until the director verifies its trust and
+auth; no setup is attempted by the client. Older releases without the
+helper must first receive a new committed kit through section 7's
+explicit quiet copy/verify/link/reconcile/admit sequence. Install and
+verify the coordinator's selected release first, then caller releases;
+retain old releases and the shared coordinator lock state. Verify the
+selected holder release on the coordinator before recording its path
+on callers. Set `LAND_TURN=1` for temper only after the complete fleet
+install and the director's explicit activation word. No activation or
+fleet saving is established by disposable acceptance. The first benefit
+window is the 24 hours after activation; M4 repin is separate.
+
+The SSH client sends a single zero byte immediately and every five
+seconds while queued or granted. The holder consumes these bytes and
+releases after ten seconds without input, even if a blackholed TCP
+session leaves remote stdin open. EOF releases immediately. These are
+connection-liveness bounds, independent of task/gate age; healthy
+connections may remain indefinitely. Local holders use pipe EOF without
+heartbeats. Grant spans ordinary land and all retries. Land, heavy and
+after-landing inherit no transport descriptors. A lost connection or
+invalid protocol produces one visible fail-open, then ordinary land
+starts or its admitted work continues. Connection loss never cancels
+heavy. Normal completion and handled signals close and reap the client's
+transport. A killed client loses its pipes; a remote holder also has its
+independent input-liveness bound.
+
+Request, grant and fail-open appear immediately on caller stderr and in
+private `DEV_TMP/landing-turn/events.jsonl` (0600, umask 077). Release is
+emitted on the holder's stderr and stored on the coordinator at
+`/home/free/.local/state/skein-landing-turn/landing-turn/events.jsonl`;
+transport stderr is discarded at the client. Join these journals by
+token. Queued EOF/liveness expiry also records release without runtime.
+A killed holder cannot record release; the caller's fail-open provides
+its terminal failure evidence. Records contain only token, repository,
+holder, timestamp, event, fixed reason, elapsed wait and optional runtime.
+Journal failure is visible and does not prevent ordinary land.
+
+`HEAVY_RECOVERY_FIXTURE=1` with `LAND_TURN_FIXTURE_DIR` strictly below
+isolated `DEV_TMP` selects only the local acceptance holder.
+`test-land-turn --evidence NEW_DIRECTORY` exercises protocol faults,
+production command construction, real-value heartbeat expiry and
+ordinary disposable Git landings. Simulated SSH cases run through the
+production constructor with a fixture executable; they do not prove
+real SSH connectivity or remote installation. The full repository gate
+and real temper landings are outside these fixtures.
