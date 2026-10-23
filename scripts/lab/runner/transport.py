@@ -11,7 +11,7 @@ import socket
 import subprocess
 import sys
 import time
-from . import canonical, evidence, store
+from . import canonical, evidence, experiment, store
 from .host import CapabilityError, await_removed, manager, manager_environment, namespace_probe
 from .records import Refused
 
@@ -128,6 +128,8 @@ def worker(endpoint, token):
                 _subject(lab, key['subject'])
                 try:
                     known = _runtime_known(lab, key)
+                    settings = canonical.loads(lab.read('settings.json'))
+                    known.update(experiment.port_values(settings.get('ports', {})))
                 except Refused as error:
                     detail = str(error).encode('utf-8')
                     connection.sendall(b'R' + len(detail).to_bytes(8, 'big') + detail)
@@ -150,7 +152,7 @@ def worker(endpoint, token):
             os.close(lock_fd)
 
 
-def launch(lab, lock_fd, key_path, seed, campaign):
+def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None):
     """Start one unit and keep the same flock alive in both outer and worker."""
     key = canonical.loads(lab.read(key_path + '/key.json'))
     from .cli import _runtime_cost
@@ -176,7 +178,7 @@ def launch(lab, lock_fd, key_path, seed, campaign):
     spec = dict(root=str(lab.root), key_path=key_path, key=key_path.rsplit('/', 1)[-1],
                 run=run_id, unit=unit, seed=seed, campaign=campaign,
                 attempt=1 + sum(e['seed'] == seed for e in previous), systemctl=systemctl,
-                manager_version=manager_version, bounds=cost)
+                manager_version=manager_version, bounds=cost, brake=brake_event)
     token = secrets.token_hex(16)
     endpoint = str(lab.root / ('.transport-' + secrets.token_hex(6)))
     runner_root = str(Path(__file__).resolve().parent.parent)

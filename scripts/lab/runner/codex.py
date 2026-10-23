@@ -1,7 +1,7 @@
 """Codex 0.162.1 decisions over supplied configuration and events (lab.md, 6)."""
 import json
 from . import canonical, judge, views
-from .records import Refused
+from .records import Refused, SAFE
 
 
 DISABLED = ('apps', 'plugins', 'remote_plugin', 'recommended_plugins', 'hooks',
@@ -142,7 +142,7 @@ def report(text: str) -> dict:
 
 def initial() -> dict:
     return dict(actions=[], turns=[], report=None, report_error=None, final_message=None,
-                tokens=dict(input=None, cached=None, output=None), overshoot=None)
+                tokens=dict(input=None, cached=None, output=None), overshoot=None, windows=None)
 
 
 def _call_key(item):
@@ -219,6 +219,56 @@ def fold(state: dict, message: dict, ms: int) -> dict:
                 state['report'] = report(state['final_message'])
             except Refused as error:
                 state['report_error'] = str(error)
+    elif method == 'account/rateLimits/updated':
+        state['windows'] = windows(params['rateLimits'])
     elif method == 'error':
         raise Refused('driver/host', str(params.get('error', params)))
     return state
+
+
+def windows(snapshot):
+    """Normalize the host's last two window slots, with unknown fields kept null."""
+    if type(snapshot) is not dict:
+        raise Refused('driver/windows', 'expected a rate-limit snapshot')
+    result = []
+    for slot in ('primary', 'secondary'):
+        window = snapshot.get(slot)
+        if window is None:
+            continue
+        if type(window) is not dict:
+            raise Refused('driver/windows', 'expected a rate-limit window')
+        row = {}
+        for name, field in (('minutes', 'windowDurationMins'), ('used_percent', 'usedPercent'), ('resets_at', 'resetsAt')):
+            value = window.get(field)
+            if value is not None and (type(value) is not int or not 0 <= value <= SAFE):
+                raise Refused('driver/windows', 'invalid ' + field)
+            row[name] = value
+        result.append(row)
+    return sorted(result, key=lambda row: (row['minutes'] is None, row['minutes'] or 0))
+
+
+def brake_fold(response, five_hour, week):
+    """Admit only an account snapshot containing both windows below their shares."""
+    if 'error' in response:
+        error = response['error']
+        return 1, 'refused: rateLimits: ' + str(error.get('message', error) if type(error) is dict else error)
+    result = response.get('result')
+    snapshot = result.get('rateLimits') if type(result) is dict else None
+    if type(snapshot) is not dict:
+        return 1, 'refused: rateLimits missing'
+    if snapshot.get('rateLimitReachedType') is not None:
+        return 1, 'refused: ' + str(snapshot['rateLimitReachedType'])
+    try:
+        rows = windows(snapshot)
+    except (Refused, AttributeError):
+        return 1, 'refused: rateLimits malformed'
+    found = []
+    for minutes, name, share in ((300, 'five-hour', five_hour), (10080, 'week', week)):
+        row = next((r for r in rows if r['minutes'] == minutes), None)
+        if row is None or row['used_percent'] is None:
+            return 1, 'refused: ' + name + ' window missing'
+        text = name + ' ' + str(row['used_percent']) + '%/' + str(share) + '%'
+        if row['used_percent'] >= share:
+            return 1, 'refused: ' + text
+        found.append(text)
+    return 0, 'go: ' + ', '.join(found)

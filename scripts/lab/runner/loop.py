@@ -4,12 +4,12 @@ import os
 import platform
 import signal
 import time
-from . import bootstrap, canonical, checks, driver, evidence, judge, life, store, transport
+from . import bootstrap, canonical, checks, driver, evidence, held, judge, life, meter, store, transport
 from .host import CapabilityError, Host
 from .records import Refused
 
 
-FINISH_EFFECTS = ('cancel_command', 'stop_driver', 'unavailable', 'bound', 'driver_use', 'bootstrap_received', 'bootstrap_delivered')
+FINISH_EFFECTS = ('cancel_command', 'stop_driver', 'unavailable', 'bound', 'driver_use', 'bootstrap_received', 'bootstrap_delivered', 'give_held', 'meter_failure')
 
 
 def utc():
@@ -38,6 +38,7 @@ class Run:
         self.driver = None
         self.driver_record, self.driver_usage = None, None
         self.records, self.command_records = {}, []
+        self.held_records = []
         self.effects = []
         self.finishing = False
         self.publishing = False
@@ -55,6 +56,7 @@ class Run:
         known.update({'dir.' + n: absolute(self.base + '/dirs/' + n) for n in self.exp['dirs']})
         known.update({'proc.' + p['name'] + '.dir': absolute(self.base + '/scratch/' + p['name']) for p in self.exp['processes']})
         known.update({'collected.' + c['name']: absolute(self.base + '/collected/' + c['name']) for c in self.exp['collect']})
+        known.update({'held.' + n: absolute(self.base + '/held/' + n) for n in self.exp.get('held', [])})
         self.state = life.initial(self.exp, spec['seed'], self.cost, known, self.texts)
 
     def ms(self):
@@ -82,9 +84,12 @@ class Run:
         paths += ['dirs/' + n for n in self.exp['dirs']]
         paths += ['collected/' + c['name'] for c in self.exp['collect']]
         paths += ['commands', 'proc']
+        if self.exp.get('meter') is not None:
+            paths.append('meter')
         for path in paths:
             os.close(self.lab.directory(self.base + '/' + path, create=True))
         self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit=self.spec['unit'])))
+        self.take_held()
         if self.exp['driver'] is not None:
             self.driver = driver.Driver(self)
             self.driver.prepare()
@@ -95,18 +100,50 @@ class Run:
         self.timeline('containment', cgroup=str(self.host.root), controllers=['memory', 'pids'])
         self.feed('provisioned')
 
+    def take_held(self):
+        for name in self.exp.get('held', []):
+            held.take(self.lab, self.base, name, self.spec['run'], self.started)
+            ms = self.ms()
+            self.held_records.append(dict(name=name, taken_ms=ms, given_ms=None))
+            self.timeline('held_taken', ms=ms, name=name)
+
+    def give_held(self):
+        for record in self.held_records:
+            if record['given_ms'] is not None:
+                continue
+            name = record['name']
+            try:
+                given = held.give_back(self.lab, self.base, name)
+            except (OSError, Refused):
+                given = False
+            if given:
+                ms = self.ms()
+                record['given_ms'] = ms
+                self.timeline('held_given', ms=ms, name=name)
+            else:
+                self.failures.append(checks.failure('release/held:' + name, 'release', 'held file not given back'))
+
     def spawn(self, effect):
         name, group = effect['name'], effect['group']
         phase = self.state.data['phase']
+        if group == 'meter':
+            active = self.state.data['meter']
+            if phase != 'drive' or not active['active'] or active['n'] != effect['n']:
+                return
         expected = ('stopped-' + ('collect' if group == 'collect' else 'check') if effect.get('cluster') == 'stopped'
-                    else dict(processes='start', actions='seed', collect='collect', checks='check')[group])
-        if phase != expected or self.state.data['current'] != name:
+                    else dict(processes='start', actions='seed', collect='collect', checks='check', release='release', meter='drive')[group])
+        if phase != expected or group != 'meter' and self.state.data['current'] != name:
             return
         identity = ('proc-' if group == 'processes' else group + '-') + name
         prefix = 'proc/' + name + '/' if group == 'processes' else 'commands/' + group + '-' + name + '.'
+        if group == 'meter':
+            identity = 'meter-' + str(effect['n'])
+            prefix = 'meter/' + str(effect['n']) + '.'
         record = dict(name=name, group=group, argv=effect['argv'], env=effect['env'], started_ms=self.ms(),
                       ready_ms=None, captures={}, exit=None,
                       memory=dict(peak_bytes=None, source=None, bound_bytes=None, tree_peak_bytes=None), output={})
+        if group == 'meter':
+            record['n'] = effect['n']
         if group == 'processes':
             self.records[name] = record
             definition = next(p for p in self.exp['processes'] if p['name'] == name)
@@ -119,7 +156,7 @@ class Run:
                 record['cluster'] = 'stopped'
             if 'bootstrap' in effect:
                 record.update(bootstrap=effect['bootstrap'], stdin=None, output=dict(stdout=None, stderr=None))
-            if effect.get('cluster') != 'stopped':
+            if group != 'meter' and effect.get('cluster') != 'stopped':
                 self.command_records.append(record)
             if group == 'actions' and 'await' in self.exp['actions'][self.state.data['index']]:
                 record['awaited'] = None
@@ -229,10 +266,11 @@ class Run:
             self.timeline('survivors', name=item['name'], pids=counts['pids'])
             self.host.kill_tree(identity)
 
-    def cancel_command(self, name):
+    def cancel_command(self, name, group=None, timed_out=False):
         for identity, item in self.items.items():
-            if item['group'] != 'processes' and item['name'] == name:
+            if item['group'] != 'processes' and item['name'] == name and (group is None or item['group'] == group):
                 item['cancelled'] = True
+                item['timed_out'] = item['timed_out'] or timed_out
                 if item['cleanup'] is None:
                     self.host.kill_tree(identity)
                     item['kill_deadline'] = self.ms() + self.cost['stop_seconds'] * 1000
@@ -243,6 +281,8 @@ class Run:
             self.feed('validated')
         elif op == 'provision':
             self.provision()
+        elif op == 'give_held':
+            self.give_held()
         elif op == 'phase':
             self.timeline('phase', phase=request['phase'])
         elif op == 'spawn':
@@ -287,7 +327,9 @@ class Run:
         elif op == 'reap_tree':
             self.begin_cleanup('proc-' + request['name'])
         elif op == 'cancel_command':
-            self.cancel_command(request['name'])
+            self.cancel_command(request['name'], request.get('group'), request.get('timed_out', False))
+        elif op == 'meter_failure':
+            self.failures.append(checks.failure(request['signature'], 'meter', 'consecutive meter readings failed'))
         elif op == 'bound':
             if request['name'] == 'command_seconds' and 'who' in request:
                 for item in self.items.values():
@@ -447,7 +489,8 @@ class Run:
     def complete(self, identity):
         item = self.items[identity]
         name, group, record = item['name'], item['group'], item['record']
-        self.failures.extend(item['panic'])
+        if group != 'meter':
+            self.failures.extend(item['panic'])
         error_start = len(self.errors)
         if group != 'processes':
             result = record['exit']
@@ -471,6 +514,8 @@ class Run:
                 if 'awaited' in record and (result.get('status') != 0 or item['cancelled'] or result['killed'] or timed_out):
                     record['awaited'] = None
                 self.failures.extend(checks.action(name, record))
+            if group == 'release':
+                self.failures.extend(checks.release(name, record))
             if group == 'collect':
                 try:
                     files = store.snapshot(self.lab.root / self.base / 'collected' / name)
@@ -484,6 +529,8 @@ class Run:
                             self.failures.extend(checks.panics(name, by_path[path].decode('utf-8', 'replace'), ['collected/' + name + '/' + path]))
                 except (OSError, ValueError) as error:
                     self.errors.append(dict(what='collection/' + name, detail=str(error)))
+        if group == 'meter':
+            self.complete_meter(item)
         self.host.remove(identity)
         if group == 'driver':
             self.feed('driver_closed', result=record['exit'], stopped=item['cancelled'])
@@ -494,10 +541,24 @@ class Run:
         self.timeline('tree_empty', name=name, group=group)
         if group == 'processes':
             self.feed('tree_empty', name=name)
-        elif group != 'driver':
+        elif group not in ('driver', 'meter'):
             self.feed('command_done', name=name, record=record)
         if group == 'collect' and len(self.errors) != error_start:
             self.feed('error', what='command/' + name, detail='command evidence could not be completed')
+
+    def complete_meter(self, item):
+        record = item['record']
+        output = record['output']['stdout']['path']
+        spend = meter.reading(self.lab.read(self.base + '/' + output))
+        active = self.state.data['meter']
+        timed_out = (item['timed_out'] or active['timed_out']
+                     or active['deadline'] is not None and self.ms() >= active['deadline'])
+        result = record['exit']
+        good = result.get('status') == 0 and not timed_out
+        spend = spend if good else None
+        self.timeline('meter', n=record['n'], timed_out=timed_out, spend=spend,
+                      **{k: result[k] for k in ('status', 'signal') if k in result})
+        self.feed('meter_done', n=record['n'], record=dict(exit=result, timed_out=timed_out, spend=spend))
 
     def freeze_collections(self):
         if self.host is not None and self.host.children:
@@ -551,9 +612,11 @@ class Run:
         record = dict(format='lab-run/1', run=self.spec['run'], key=self.spec['key'], experiment=self.exp['name'],
                       seed=self.spec['seed'], attempt=self.spec['attempt'], campaign=self.spec['campaign'],
                       started=self.started, ended=utc(), outcome=outcome, schedule=self.state.data['schedule'],
-                      processes=self.records, commands=self.command_records, driver=self.driver_record,
+                      processes=self.records, commands=self.command_records, driver=self.driver_record, held=self.held_records,
                       failures=self.failures, undecided=self.undecided, errors=self.errors, bounds=self.cost,
-                      usage=dict(elapsed_ms=self.ms(), longest_ms=self.longest_ms(), driver=self.driver_usage, triage=[]),
+                      usage=dict(elapsed_ms=self.ms(), longest_ms=self.longest_ms(), driver=self.driver_usage, triage=[],
+                                 subject_spend=self.state.data['meter']['spend'] if self.state.data['meter'] is not None else None,
+                                 windows=observed['observed']['windows'] if observed is not None else None),
                       about=dict(hostname=platform.node(), kernel=platform.release(), processors=os.cpu_count(),
                                  unit=self.spec['unit'], manager=self.spec.get('manager_version'),
                                  memory_bytes=os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')))
@@ -566,8 +629,9 @@ class Run:
     def longest_ms(self):
         return (self.cost['command_seconds']
                 + (self.cost['driver_seconds'] + self.cost['stop_seconds'] if self.exp['driver'] is not None else 0)
+                + (self.cost['command_seconds'] + self.cost['stop_seconds'] if self.exp.get('meter') is not None else 0)
                 + len(self.exp['processes']) * (self.cost['ready_seconds'] + 2 * self.cost['stop_seconds'])
-                + sum(len(self.exp[g]) for g in ('actions', 'collect', 'checks'))
+                + sum(len(self.exp.get(g, [])) for g in ('actions', 'collect', 'checks', 'release'))
                 * (self.cost['command_seconds'] + self.cost['stop_seconds'])) * 1000
 
     def run(self, admitted=None):
@@ -585,6 +649,8 @@ class Run:
         for sig in handlers:
             signal.signal(sig, interrupted)
         old_wakeup = signal.set_wakeup_fd(wake_w)
+        if self.spec.get('brake') is not None:
+            self.timeline('brake', line=self.spec['brake']['line'], duration_ms=self.spec['brake']['ms'])
         self.feed('begin')
         try:
             if admitted is not None:
@@ -592,10 +658,13 @@ class Run:
             while True:
                 try:
                     if self.interrupt is not None and self.state.data['interrupted'] is None:
-                        self.effects[:] = [r for r in self.effects if r['op'] in FINISH_EFFECTS]
+                        if self.state.data['phase'] not in ('release', 'stop'):
+                            self.effects[:] = [r for r in self.effects if r['op'] in FINISH_EFFECTS]
                         self.timeline('interrupted', signal=signal.Signals(self.interrupt).name)
                         self.feed('interrupt', signal=self.interrupt, detail=signal.Signals(self.interrupt).name)
                     self.observe()
+                    if self.state.data['meter'] is not None:
+                        self.feed('meter_due')
                     if self.driver is not None:
                         self.driver.poll()
                     if self.effects:
@@ -613,6 +682,10 @@ class Run:
                                  if x[field] is not None]
                     if deadline is not None:
                         deadlines.append(deadline)
+                    active_meter = self.state.data['meter']
+                    if active_meter is not None and self.state.data['phase'] == 'drive':
+                        fields = ('deadline',) if active_meter['active'] else ('due',)
+                        deadlines.extend(active_meter[field] for field in fields if active_meter[field] is not None)
                     if self.driver is not None:
                         deadlines.extend(self.driver.command_deadlines.values())
                     if self.driver is not None and self.driver.stop_deadline is not None:

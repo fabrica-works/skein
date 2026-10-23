@@ -106,20 +106,13 @@ class Bounds(unittest.TestCase):
         value = run_record(1, '1')
         self.assertEqual(records.run_refusals(value), [])
         for bounds in ({}, {'name': 'smoke'}, {**value['bounds'], 'hits': []},
-                       {**value['bounds'], 'name': 'BAD'}):
+                       {**value['bounds'], 'name': 'BAD'}, [dict(name='ready_seconds', who='engine')]):
             with self.subTest(bounds=bounds):
                 self.assertTrue(records.run_refusals({**value, 'bounds': bounds}))
         for field in records.COST_FIELDS:
             for bad in (None, False, 0, -1, records.SAFE + 1):
                 bounds = {**value['bounds'], field: bad}
                 self.assertIn('run.bounds.' + field, [r.member for r in records.run_refusals({**value, 'bounds': bounds})])
-
-    def test_transitional_list_of_hits_is_accepted_and_never_superseded(self):
-        # temper's S host writes its hits as a list until it records the class (lab.md 5.6).
-        value = {**run_record(1, '1'), 'bounds': [dict(name='ready_seconds', who='engine')]}
-        self.assertEqual(records.run_refusals(value), [])
-        current = fixture()[2]['costs']['smoke']
-        self.assertFalse(judge.superseded(['bound/ready_seconds/engine'], value['bounds'], current))
 
     def test_host_superseding_reads_fail_bounds_and_preserves_nonfail_outcomes(self):
         from types import SimpleNamespace
@@ -301,7 +294,7 @@ class Evidence(unittest.TestCase):
         from types import SimpleNamespace
         from runner import transport
         args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
-        def launch(_lab, _fd, key_path, seed, _campaign):
+        def launch(_lab, _fd, key_path, seed, _campaign, *, brake_event=None):
             number = len(evidence.read(self.lab, key_path)) + 1
             record = run_record(number, seed)
             evidence.publish(self.lab, key_path, record)
@@ -321,7 +314,7 @@ class Evidence(unittest.TestCase):
         from types import SimpleNamespace
         from runner import transport
         args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
-        def launch(_lab, _fd, key_path, seed, _campaign):
+        def launch(_lab, _fd, key_path, seed, _campaign, *, brake_event=None):
             record = run_record(1, seed, 'error')
             evidence.publish(self.lab, key_path, record)
             return record, 4

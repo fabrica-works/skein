@@ -91,6 +91,16 @@ def action(name, record):
     return [failure(f'action/{name}/{suffix}', 'action', 'seed action did not exit zero', paths)]
 
 
+def release(name, record):
+    end = record['exit']
+    if end['stopped'] or 'spawn_error' in record or end.get('status') == 0:
+        return []
+    suffix = 'exit:' + str(end['status']) if 'status' in end else 'signal:' + end['signal']
+    stderr = record['output']['stderr']
+    paths = [stderr['path']] if stderr is not None else []
+    return [failure(f'release/{name}/{suffix}', 'release', 'release command did not exit zero', paths)]
+
+
 def planted(required, failures, outcome):
     if outcome not in ('pass', 'fail'):
         return []

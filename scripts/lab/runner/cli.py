@@ -11,7 +11,7 @@ import secrets
 import subprocess
 import stat
 import sys
-from . import canonical, codex, evidence, experiment, finding_store, judge, store
+from . import brake, canonical, codex, evidence, experiment, finding_store, held, judge, store
 from .records import CLASSES, Refusal, Refused, cost_refusals, digest_value, relative, subject_refusals
 
 
@@ -192,6 +192,7 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
              "runner": str(_runner_root())}
     known.update({"artifact." + name: str(subject_path / "artifacts" / name)
                   for name in subject.get("artifacts", {})})
+    known.update(experiment.port_values(settings.get('ports', {}) if type(settings.get('ports', {})) is dict else {}))
     texts = {}
     executables = {}
     for file in files:
@@ -272,7 +273,7 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
              "source_available": subject_available and subject.get("source") is not None,
              "artifacts_available": list(subject.get("artifacts", {})), "experiment_files": texts,
              "executables": executables, "known": known, "driver_host": driver_available,
-             "browser": browser_facts}
+             "browser": browser_facts, 'held': held.availability(lab, exp.get('held', []))}
     facts['artifact_bytes'] = {}
     for i, process in enumerate(exp.get('processes', []) if type(exp.get('processes')) is list else []):
         if type(process) is not dict or type(process.get('files', [])) is not list:
@@ -332,7 +333,11 @@ def runtime_command(lab, lock_fd, args):
             seed = _new_seed(previous)
         if not judge.seed_admitted(previous, seed):
             raise Refused('seed', 'a fourth seed is forbidden')
-        record, status = launch(lab, lock_fd, key_path, seed, None)
+        admitted, refusal = brake.admit(lab, exp, _runtime_cost(lab, canonical.loads(lab.read(key_path + '/key.json'))), str(_runner_root()))
+        if refusal is not None:
+            print('brake: ' + refusal, file=sys.stderr)
+            return 2
+        record, status = launch(lab, lock_fd, key_path, seed, None, brake_event=admitted)
         print(record['run'])
         for error in record['errors']:
             print(error['what'] + ': ' + error['detail'], file=sys.stderr)
@@ -350,7 +355,17 @@ def runtime_command(lab, lock_fd, args):
             print('seed ' + decision['seed'] + ' needs an explicit additive run', file=sys.stderr)
             print(derived['verdict'])
             return 3
-        record, status = launch(lab, lock_fd, key_path, _new_seed(previous), None)
+        for name, status in held.availability(lab, exp.get('held', [])).items():
+            if status != 'kept':
+                print('held.' + name + ': ' + status, file=sys.stderr)
+                print(derived['verdict'])
+                return 2
+        admitted, refusal = brake.admit(lab, exp, _runtime_cost(lab, key), str(_runner_root()))
+        if refusal is not None:
+            print(derived['verdict'])
+            print('brake: ' + refusal, file=sys.stderr)
+            return 2
+        record, status = launch(lab, lock_fd, key_path, _new_seed(previous), None, brake_event=admitted)
         previous = evidence.read(lab, key_path)
         if record['outcome'] not in ('pass', 'fail') or status >= 128:
             print('not enough evidence')
@@ -392,6 +407,11 @@ def main(argv=None, *, lab_root=None, finding_time=None):
     validate = commands.add_parser("validate", help="validate all experiment fields and print the key's digest")
     validate.add_argument("experiment")
     validate.add_argument("--subject", required=True)
+    held_command = commands.add_parser('held', help='list held files or move one into the lab')
+    held_actions = held_command.add_subparsers(dest='held_action')
+    put = held_actions.add_parser('put')
+    put.add_argument('name')
+    put.add_argument('file')
     finding = commands.add_parser('finding', help='act on retained finding evidence')
     finding.add_argument('id')
     actions = finding.add_subparsers(dest='action', required=True)
@@ -432,6 +452,14 @@ def main(argv=None, *, lab_root=None, finding_time=None):
             if args.command == 'finding' and now is None:
                 now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
             finding_store.sync(lab, now)
+            if args.command == 'held':
+                if args.held_action == 'put':
+                    held.put(lab, args.name, args.file)
+                    print(args.name + ' kept')
+                else:
+                    for line in held.listing(lab):
+                        print(line)
+                return 0
             if args.command == 'finding':
                 fix = None
                 if args.action == 'fix':

@@ -1,6 +1,6 @@
 """Outcome precedence and additive evidence (lab.md, 5.5 and 8)."""
 from .canonical import u64
-from .records import COST_FIELDS, Refused, positive
+from .records import COST_FIELDS, METER_COST_FIELDS, Refused, positive
 
 
 def _report_state(report):
@@ -42,7 +42,7 @@ def superseded(signatures, held_to, current):
         return False
     for signature in signatures:
         parts = signature.split('/')
-        if (len(parts) not in (2, 3) or parts[0] != 'bound' or parts[1] not in COST_FIELDS
+        if (len(parts) not in (2, 3) or parts[0] != 'bound' or parts[1] not in COST_FIELDS + METER_COST_FIELDS
                 or len(parts) == 3 and not parts[2]):
             return False
         name = parts[1]

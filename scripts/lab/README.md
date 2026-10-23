@@ -30,9 +30,11 @@ directories 0500. Existing content is verified before reuse.
 
 Create `settings.json` in the lab before validation, as **canonical JSON with
 one final newline**. Its `lab-settings/1` record has `costs`, `driver`, and
-`triager`, with optional `about`, `browser`, `programs` and `codex_home`. `costs` maps experiment cost
-names to objects with exactly these positive integer fields: `ready_seconds`, `command_seconds`,
+`triager`, with optional `about`, `browser`, `programs`, `ports`, `brake` and `codex_home`. `costs` maps experiment cost
+names to objects with these required positive safe integer fields: `ready_seconds`, `command_seconds`,
 `stop_seconds`, `driver_seconds`, `driver_actions`, `driver_input_tokens`.
+`subject_spend` and `meter_seconds` are optional positive safe integers, required
+when the experiment has a meter.
 There are no default cost values. For experiments with `driver: null`, settings
 `driver` and `triager` can both be null; no driver host or report is needed.
 For agent experiments, settings `driver` is `{program, model, effort}`; `program`
@@ -48,6 +50,65 @@ allowed, including executable paths. Only used programs are read and keyed,
 with their versions beside them in `lab.programs`; each is checked again
 before provisioning. An unused program's missing file or stale digest
 refuses nothing.
+
+Optional `ports` maps names matching `[a-z][a-z0-9-]*` to integers 1..65535.
+`{port.N}` renders that machine's kept port in arguments, environment values
+and other templates. Unknown names refuse validation. Port values are addresses,
+outside the key; a run retains them through its rendered argv/env.
+
+## Meter
+
+An experiment's optional `meter` is `{"name", "argv", "env"}`, with live
+checks' templates and no stdin. Its class must provide `subject_spend` and
+`meter_seconds`. Readings run during the drive, first after `meter_seconds`,
+with at most one command active. A slow reading delays the next. After the
+driver ends, one final reading finishes before live collection; a null driver
+has only that reading. Every command has its own contained tree and the
+class's `command_seconds` bound. Outputs are `meter/N.stdout` and `N.stderr`;
+each completed reading adds a `meter` timeline event.
+
+The last stdout line must be `0` or decimal digits without a leading zero.
+Spend greater than `subject_spend` stops the driver and fails
+`bound/subject_spend`. One failed reading is tolerated; two consecutive ones
+end the drive with `meter/exit:STATUS`, `meter/signal:SIG`, `meter/reading`, or
+`bound/command_seconds/NAME` (kind `meter`). `usage.subject_spend` is the last
+good reading, or null. `longest_ms` includes the final reading as one command.
+
+## Brake and pause
+
+For an experiment with a driver or meter, `run` and each run of `judge` check
+admission after validation, under the lab's lock, before creating a run id.
+Any entry named `pause` at the lab root, including a dangling link, refuses
+with `brake: pause` and exit 2. A null run ignores pause and the brake.
+
+Optional settings `brake` is `{"argv", "env"}`: nonempty string arguments,
+an absolute executable after rendering, and a complete environment. `{runner}`
+is its only template. It runs with null stdin and its own process group,
+killed past `command_seconds`; stdout and stderr are kept in memory, each
+capped at 64 KiB. Exit 0 admits and starts the run's timeline with `brake`,
+its last nonempty stdout line and timing. Other ends refuse with `brake: LINE`
+(or `brake: exit STATUS`), exit 2, making no run. `judge` rewrites and prints
+the verdict so far before returning that refusal. Without a settings brake,
+only pause applies.
+
+`{runner}/brake/codex --codex PATH --home DIR --five-hour 50 --week 75`
+provides the Codex brake (`--timeout SECONDS`, default 30). It starts
+`PATH app-server --stdio --strict-config` with exactly `CODEX_HOME=DIR`, a
+private empty temporary `HOME`, `PATH=/usr/bin:/bin` and `LANG=C.UTF-8`.
+It sends experimental `initialize`, `initialized`, then one
+`account/rateLimits/read {}`; it closes stdin and awaits exit within the
+timeout. It creates no thread or turn and reads no account file itself.
+Its effects are in `runner/brake_codex.py`; `codex.brake_fold` makes the pure
+decision. Windows are identified by duration, 300 and 10080 minutes,
+regardless of primary/secondary order. Both must be present and strictly below
+their shares, with no reached type or RPC error. Its final line is
+`go: five-hour U%/S%, week U%/S%` or `refused: WHY`. The lock keeps it from
+overlapping the driver that uses the same account home.
+
+`usage.windows` is the driver's last `account/rateLimits/updated` snapshot,
+normalized to `[{"minutes", "used_percent", "resets_at"}]`, sorted by minutes,
+with unknown fields null. Without a notification it is null. These notifications
+are observations, never actions or audited items.
 
 The key's `lab.cost` is exactly `{"name": NAME}`. Each run reads that class's
 current values from settings; tuning a value keeps the key, changing its
@@ -175,7 +236,7 @@ reason; independent checks still run. Commands are never retried.
 An unexpected process exit cuts the phase: later processes and seed actions do
 not start, an active command is cut, and collection and checks continue against
 what remains. An unavailable capture leaves that command explicitly unjudged.
-SIGINT or SIGTERM goes directly to stop. Interruption and machinery errors
+SIGINT or SIGTERM runs the bounded release, then stops. Interruption and machinery errors
 cancel an active stopped command and skip every pending stopped command.
 A product stop still permits stopped commands after confirmed cleanup. Teardown sends TERM to each first
 process in reverse start order, then uses the cost class's stop bound and
@@ -216,7 +277,7 @@ report is required without a driver. There are no default time or resource
 limits: every deadline comes from the experiment's named class.
 
 `run.json` is canonical `lab-run/1`, written once. Its `bounds` is the class's
-`name` and all six values the run was held to. Its `events.jsonl` is
+`name` and the class values the run was held to, including optional meter bounds. Its `events.jsonl` is
 append-only `lab-event/1`; each line has `event` and monotonic `ms` plus that
 event's observations. The live marker is `lab-live/1` with `unit`.
 `evidence.jsonl` contains canonical `lab-evidence/1` lines verified against the
@@ -247,6 +308,41 @@ missing error record and additive evidence from the events, or reconcile
 publication already present, then clear its live marker before more writes.
 Existing immutable records must stay intact. No missing record is interpreted as a pass, and no
 missing usage is interpreted as zero.
+
+## Held files and release
+
+`lab held put NAME FILE` moves an owned regular file with one link into the
+private `held/` store and sets `0600`. A name already kept is refused. Across
+filesystems the owner handoff copies, fsyncs, then removes the source.
+`lab held` lists names sorted as `NAME kept` or `NAME taken RUN TAKEN`.
+Both commands take the lab's lock.
+
+Optional experiment members `held: [NAME, ...]` and `release: [COMMAND, ...]`
+default to empty. Release commands have `name`, `argv`, `env`, and optional
+`stdin`, without `await`. `{held.NAME}` is available only in seed and release
+argv. Validation inspects metadata alone and refuses a missing held file,
+naming its taking run when known. Provision writes `lab-held/1` metadata to
+`held/NAME.taken`, then renames the file into the run's private `held/`.
+The runner never reads the held file during a run.
+
+After live checks, including after a cut, release commands run in order with
+`command_seconds` bounds. A failed command still permits the next. An
+interruption runs the release before stopping; another interrupt leaves its
+bound in force. Machinery errors or no remaining live process skip commands
+with explicit unavailable reasons. Nonzero exits and signals fail with
+`release/NAME/exit:STATUS` or `release/NAME/signal:SIG`.
+
+Before stop, each owned regular file with one link and mode exactly `0600`
+at `{held.NAME}` is renamed back and its `.taken` removed. A missing or
+invalid file fails `release/held:NAME`, keeps the name taken and retains
+scratch. Give-back never repairs permissions. `lab held put` settles a
+taken name on the owner's word that its source is the one copy. Crashes
+leave held files taken for owner recovery; there is no sweep.
+
+Every new `run.json` has `held: [{name, taken_ms, given_ms}]`, empty when none;
+`given_ms` remains null when give-back fails. Timeline events `held_taken`
+and `held_given` carry the name and time alone. Release command records use
+`group: "release"`, and `usage.longest_ms` includes their bounds.
 
 Native process stories, outside the gate, use private port-zero canaries and
 actual transient units, cgroups and spawns:

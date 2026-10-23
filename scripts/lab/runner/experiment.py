@@ -79,7 +79,9 @@ def template_uses(experiment, files):
     """
     if type(experiment) is not dict:
         return
-    groups = [(field, experiment.get(field), field) for field in ("processes", "actions", "collect", "checks")]
+    groups = [(field, experiment.get(field), field) for field in ("processes", "actions", "collect", "checks", "release")]
+    if experiment.get("meter") is not None:
+        groups.append(("meter", [experiment["meter"]], "meter"))
     driver = experiment.get("driver")
     if type(driver) is dict:
         groups.append(("driver.tools", driver.get("tools"), "tools"))
@@ -152,6 +154,51 @@ def programs_settings_refusals(value):
     return out
 
 
+def port_values(ports):
+    return {'port.' + name: str(port) for name, port in ports.items()
+            if type(name) is str and NAME.fullmatch(name) and type(port) is int and 1 <= port <= 65535}
+
+
+def ports_settings_refusals(value):
+    if type(value) is not dict:
+        return [Refusal('settings.ports', 'expected an object')]
+    out = []
+    for name, port in value.items():
+        member = 'settings.ports.' + str(name)
+        if type(name) is not str or not NAME.fullmatch(name):
+            out.append(Refusal(member, 'invalid name'))
+        if type(port) is not int or not 1 <= port <= 65535:
+            out.append(Refusal(member, 'expected integer 1..65535'))
+    return out
+
+
+def brake_settings_refusals(value, runner):
+    out = []
+    obj = shape(value, ('argv', 'env'), (), 'settings.brake', out)
+    argv = obj.get('argv')
+    if type(argv) is not list or not argv:
+        out.append(Refusal('settings.brake.argv', 'expected non-empty argv'))
+        argv = []
+    env = obj.get('env')
+    if type(env) is not dict:
+        out.append(Refusal('settings.brake.env', 'expected complete environment object'))
+        env = {}
+    for name in env:
+        if type(name) is not str or not name or '=' in name or '\0' in name:
+            out.append(Refusal('settings.brake.env', 'invalid environment name'))
+    for member, text in [(f'settings.brake.argv.{i}', v) for i, v in enumerate(argv)] + [
+            ('settings.brake.env.' + str(k), v) for k, v in env.items()]:
+        try:
+            if member.startswith('settings.brake.argv.') and (type(text) is not str or not text):
+                raise Refused(member, 'expected non-empty string')
+            rendered = render(text, {'runner': runner})
+            if member == 'settings.brake.argv.0' and not rendered.startswith('/'):
+                raise Refused(member, 'expected an absolute executable path')
+        except Refused as error:
+            out.append(Refusal(member, error.refusal.why))
+    return out
+
+
 def browser_settings_refusals(value):
     out = []
     obj = shape(value, ('program', 'chromium', 'fonts'), (), 'settings.browser', out)
@@ -171,7 +218,7 @@ def browser_settings_refusals(value):
 def validate(experiment, subject, settings, facts):
     out = []
     exp = shape(experiment, ("format", "name", "cost", "dirs", "processes", "actions", "driver",
-                             "faults", "planted", "collect", "checks"), ("about",), "experiment", out)
+                             "faults", "planted", "collect", "checks"), ("about", "held", "release", "meter"), "experiment", out)
     if exp.get("format") != "lab-experiment/1":
         out.append(Refusal("experiment.format", "expected lab-experiment/1"))
     if type(exp.get("name")) is not str or not NAME.fullmatch(exp["name"]):
@@ -180,7 +227,7 @@ def validate(experiment, subject, settings, facts):
     subject = subject if type(subject) is dict else {}
     artifacts = subject.get("artifacts")
     artifacts = artifacts if type(artifacts) is dict else {}
-    settings = shape(settings, ("format", "costs", "driver", "triager"), ("about", "browser", "programs", "codex_home"), "settings", out)
+    settings = shape(settings, ("format", "costs", "driver", "triager"), ("about", "browser", "programs", "codex_home", "brake", "ports"), "settings", out)
     if settings.get("format") != "lab-settings/1":
         out.append(Refusal("settings.format", "expected lab-settings/1"))
     if 'codex_home' in settings and (type(settings['codex_home']) is not str
@@ -210,6 +257,12 @@ def validate(experiment, subject, settings, facts):
     available_artifacts = available_artifacts if type(available_artifacts) in (list, tuple, set) else ()
     known = facts.get("known")
     known = known if type(known) is dict else {}
+    if 'brake' in settings:
+        out.extend(brake_settings_refusals(settings['brake'], known.get('runner', '/runner')))
+    ports = settings.get('ports', {})
+    out.extend(ports_settings_refusals(ports))
+    ports = ports if type(ports) is dict else {}
+    known = {**known, **port_values(ports)}
     named = settings.get('programs', {})
     out.extend(programs_settings_refusals(named))
     named = named if type(named) is dict else {}
@@ -246,6 +299,19 @@ def validate(experiment, subject, settings, facts):
                 out.append(Refusal('settings.browser.program', 'expected an executable regular file with known identity'))
 
     directories = _list(exp.get("dirs"), "dirs", out)
+    held = set()
+    held_facts = facts.get('held', {})
+    held_facts = held_facts if type(held_facts) is dict else {}
+    for i, name in enumerate(_list(exp.get('held', []), 'held', out)):
+        if type(name) is not str or not NAME.fullmatch(name):
+            out.append(Refusal(f'held.{i}', 'invalid name'))
+        elif name in held:
+            out.append(Refusal(f'held.{i}', 'duplicate name'))
+        else:
+            held.add(name)
+            status = held_facts.get(name, 'not held')
+            if status != 'kept':
+                out.append(Refusal('held.' + name, status))
     dirs = set()
     for i, name in enumerate(directories):
         if type(name) is not str or not NAME.fullmatch(name):
@@ -256,9 +322,15 @@ def validate(experiment, subject, settings, facts):
             dirs.add(name)
     groups = {}
     names = {}
-    for field in ("processes", "actions", "collect", "checks"):
-        groups[field] = _list(exp.get(field), field, out)
+    for field in ("processes", "actions", "collect", "checks", "release"):
+        groups[field] = _list(exp.get(field, [] if field == 'release' else None), field, out)
         names[field] = _named(groups[field], field, out)
+    if exp.get('meter') is not None:
+        groups['meter'] = [exp['meter']]
+        _named(groups['meter'], 'meter', out)
+        for field in ('subject_spend', 'meter_seconds'):
+            if type(cost) is not dict or not positive(cost.get(field)):
+                out.append(Refusal('meter', 'cost class requires ' + field))
     processes = names["processes"]
     after = {}
     captures = {}
@@ -389,7 +461,8 @@ def validate(experiment, subject, settings, facts):
             m = f"driver.tools.{i}" if group == "tools" else f"{group}.{i}"
             if group != "processes":
                 extra = ("scan",) if group == "collect" else (("reads", "writes") if group == "tools" else ())
-                optional = () if group == "tools" else (("stdin", "await") if group == 'actions' else ("stdin", "cluster"))
+                optional = (() if group in ("tools", "meter") else (('stdin',) if group == 'release'
+                            else (("stdin", "await") if group == 'actions' else ("stdin", "cluster"))))
                 p = shape(item, ("name", "argv", "env") + extra, optional, m, out)
                 if group == 'actions' and 'await' in p:
                     am = m + '.await'
@@ -458,6 +531,12 @@ def validate(experiment, subject, settings, facts):
                     out.append(Refusal(member, 'program ' + bits[1] + ' not named by the settings'))
                     valid = False
                     continue
+            elif len(bits) == 2 and bits[0] == 'port':
+                available = bits[1] in ports and NAME.fullmatch(bits[1]) is not None
+                if not available:
+                    out.append(Refusal(member, 'port ' + bits[1] + ' not named by the settings'))
+                    valid = False
+                    continue
             elif name == "source":
                 available = subject.get("source") is not None and facts.get("source_available") is True
             elif len(bits) == 2 and bits[0] == "artifact":
@@ -469,6 +548,8 @@ def validate(experiment, subject, settings, facts):
                 available = NAME.fullmatch(bits[1]) is not None
             elif len(bits) == 2 and bits[0] == "dir":
                 available = bits[1] in dirs
+            elif len(bits) == 2 and bits[0] == 'held':
+                available = bits[1] in held and phase in ('actions', 'release') and '.argv.' in member
             elif len(bits) == 3 and bits[0] == "proc" and bits[2] == "dir":
                 available = bits[1] in processes
             elif len(bits) == 4 and bits[0] == "proc" and bits[2] == "ready":
@@ -478,14 +559,14 @@ def validate(experiment, subject, settings, facts):
             elif len(bits) == 3 and bits[0] == 'action':
                 declaration = action_captures.get(bits[1])
                 available = (declaration is not None and bits[2] == declaration[1]
-                             and (phase in ('collect', 'checks')
+                             and (phase in ('collect', 'checks', 'release', 'meter')
                                   or phase == 'actions' and int(member.split('.')[1]) > declaration[0]))
             elif name == "collect.dir":
                 available = phase == "collect"
             elif len(bits) == 2 and bits[0] == "collected":
                 collection = names["collect"].get(bits[1])
                 check = groups["checks"][int(member.split('.')[1])] if phase == "checks" else {}
-                available = (phase == "checks" and collection is not None
+                available = (phase in ('checks', 'release', 'meter') and collection is not None
                              and (collection.get("cluster", "up") == "up" or check.get("cluster", "up") == "stopped"))
             if not available:
                 out.append(Refusal(member, "unknown or unavailable template: " + name))

@@ -1,7 +1,7 @@
 """The run's life: supplied events in, ordered effects out (lab.md, 5)."""
 from dataclasses import dataclass
 import json
-from . import canonical, codex, draws, experiment
+from . import canonical, codex, draws, experiment, meter
 from .records import Refused
 
 
@@ -11,12 +11,13 @@ class State:
 
 
 COMMAND_GROUP = {'seed': 'actions', 'collect': 'collect', 'check': 'checks',
+                 'release': 'release',
                  'stopped-collect': 'collect', 'stopped-check': 'checks'}
 
 
 def _items(d, phase):
-    items = d['exp'][COMMAND_GROUP[phase]]
-    if phase == 'seed':
+    items = d['exp'].get(COMMAND_GROUP[phase], [])
+    if phase in ('seed', 'release'):
         return items
     cluster = 'stopped' if phase.startswith('stopped-') else 'up'
     return [item for item in items if item.get('cluster', 'up') == cluster]
@@ -54,8 +55,8 @@ def initial(exp, seed, cost, known, texts):
     return State(dict(exp=exp, seed=seed, cost=cost, known=known, texts=texts,
                       phase='validate', order=[], ready=[], closed=[], processes={}, commands=[],
                       current=None, index=0, deadline=None, awaiting=None, stop_queue=[], cut=False,
-                      started_commands=[], collections={}, driver=None,
-                      interrupted=None, errors=[], bounds=[], schedule=dict(draws={}, start_order=[], faults=[])))
+                      started_commands=[], collections={}, driver=None, meter=None,
+                      interrupted=None, machinery=False, errors=[], bounds=[], schedule=dict(draws={}, start_order=[], faults=[])))
 
 
 def _phase(d, phase, effects):
@@ -107,6 +108,26 @@ def _command_advance(d, effects, ms):
     _advance(d, effects, ms)
 
 
+def _release_unavailable(d):
+    if d['machinery']:
+        return 'release unavailable after machinery error'
+    if not any(p['exit'] is None for p in d['processes'].values()):
+        return 'release unavailable: no started process is alive'
+    return None
+
+
+def _release(d, effects, ms):
+    _phase(d, 'release', effects)
+    _advance(d, effects, ms)
+
+
+def _released(d, effects, ms):
+    if d['exp'].get('held', []):
+        effects.append(dict(op='give_held'))
+    _phase(d, 'stop', effects)
+    _stop(d, effects, ms)
+
+
 def _advance(d, effects, ms):
     phase = d['phase']
     exp = d['exp']
@@ -134,6 +155,12 @@ def _advance(d, effects, ms):
         if d['index'] < len(items):
             item = items[d['index']]
             name = item['name']
+            reason = _release_unavailable(d) if phase == 'release' else None
+            if reason is not None:
+                _unavailable(d, effects, group, item, reason)
+                d['index'] += 1
+                _advance(d, effects, ms)
+                return
             extra = {'collect.dir': d['known']['collected.' + name]} if group == 'collect' else None
             if phase == 'stopped-check' and any(not d['collections'].get(n, False) for n in _collection_inputs(item)):
                 _unavailable(d, effects, group, item, 'collection input did not complete successfully')
@@ -156,16 +183,24 @@ def _advance(d, effects, ms):
                     extra['bootstrap'] = dict(process=source)
             effects.append(dict(op='spawn', group=group, name=name, **extra, **rendered))
             return
-        following = {'seed': 'drive', 'collect': 'check', 'check': 'stop',
+        if phase == 'release':
+            _released(d, effects, ms)
+            return
+        if phase == 'check':
+            _release(d, effects, ms)
+            return
+        following = {'seed': 'drive', 'collect': 'check',
                      'stopped-collect': 'stopped-check', 'stopped-check': 'judge'}[phase]
         _phase(d, following, effects)
         if following == 'drive':
+            _meter_begin(d, ms)
             if exp['driver'] is not None and not d['cut']:
                 d['driver'] = dict(observed=codex.initial(), inventory=None, started_ms=None,
                                    ended_ms=None, ending=False)
                 effects.append(dict(op='start_driver'))
                 return
-            _phase(d, 'collect', effects)
+            _drive_ended(d, effects, ms)
+            return
         if following == 'judge':
             effects.append(dict(op='judge'))
         elif following == 'stop':
@@ -211,10 +246,82 @@ def _cut(d, effects, ms):
         if d['phase'] == 'seed' and d['current'] is not None:
             effects.append(dict(op='cancel_command', name=d['current']))
             d['current'] = None
-        _phase(d, 'collect', effects)
-        _advance(d, effects, ms)
+        if d['phase'] == 'drive':
+            _drive_ended(d, effects, ms)
+        else:
+            _phase(d, 'collect', effects)
+            _advance(d, effects, ms)
     elif d['phase'] in ('collect', 'check') and d['current'] is not None:
         effects.append(dict(op='cancel_command', name=d['current']))
+
+
+def _meter_begin(d, ms):
+    if d['exp'].get('meter') is not None:
+        d['meter'] = dict(n=0, active=False, due=ms + d['cost']['meter_seconds'] * 1000,
+                          deadline=None, drive_done=False, final=False, timed_out=False,
+                          spend=None, failures=0, halted=False)
+
+
+def _meter_spawn(d, effects, ms, *, final=False):
+    state = d['meter']
+    state.update(n=state['n'] + 1, active=True,
+                 due=None if final else ms + d['cost']['meter_seconds'] * 1000, deadline=None,
+                 final=final, timed_out=False)
+    item = d['exp']['meter']
+    effects.append(dict(op='spawn', group='meter', name=item['name'], n=state['n'], **_render(d, item)))
+
+
+def _drive_ended(d, effects, ms):
+    state = d['meter']
+    d['deadline'] = None
+    if state is not None:
+        state.update(drive_done=True, due=None)
+        if not state['active']:
+            _meter_spawn(d, effects, ms, final=True)
+        return
+    _phase(d, 'collect', effects)
+    _advance(d, effects, ms)
+
+
+def _meter_due(d, effects, ms):
+    state = d['meter']
+    if state is None or d['phase'] != 'drive':
+        return
+    if state['active']:
+        if state['deadline'] is not None and ms >= state['deadline']:
+            state.update(deadline=None, timed_out=True)
+            effects.append(dict(op='cancel_command', group='meter', name=d['exp']['meter']['name'], timed_out=True))
+    elif not state['halted'] and not state['drive_done'] and state['due'] is not None and ms >= state['due']:
+        _meter_spawn(d, effects, ms)
+
+
+def _meter_done(d, event, effects, ms):
+    state = d['meter']
+    if state is None or not state['active'] or event['n'] != state['n']:
+        return
+    record = dict(event['record'])
+    record['timed_out'] = (record.get('timed_out', False) or state['timed_out']
+                           or state['deadline'] is not None and ms >= state['deadline'])
+    state, signature = meter.fold(state, record, d['cost']['subject_spend'], d['exp']['meter']['name'])
+    d['meter'] = state
+    state.update(active=False, deadline=None)
+    if signature is not None:
+        state['due'] = None
+        if signature == 'bound/subject_spend':
+            d['bounds'].append(dict(name='subject_spend', ms=ms))
+            effects.append(dict(op='bound', name='subject_spend'))
+        else:
+            effects.append(dict(op='meter_failure', signature=signature))
+        _end_driver(d, effects)
+    if d['phase'] != 'drive':
+        return
+    if state['final']:
+        _phase(d, 'collect', effects)
+        _advance(d, effects, ms)
+    elif state['drive_done']:
+        _meter_spawn(d, effects, ms, final=True)
+    elif not state['halted'] and state['due'] is not None and ms >= state['due']:
+        _meter_spawn(d, effects, ms)
 
 
 def _end_driver(d, effects):
@@ -291,6 +398,10 @@ def step(state, event):
     elif kind == 'provisioned':
         _phase(d, 'start', effects)
         _advance(d, effects, ms)
+    elif kind == 'meter_due':
+        _meter_due(d, effects, ms)
+    elif kind == 'meter_done':
+        _meter_done(d, event, effects, ms)
     elif kind == 'driver_spawned':
         d['driver']['started_ms'] = ms
         d['deadline'] = ms + d['cost']['driver_seconds'] * 1000
@@ -309,11 +420,12 @@ def step(state, event):
                 or event['result'].get('status') != 0 and not event.get('stopped')):
             d['errors'].append(dict(what='driver/host', detail='host ended without completing its drive'))
         if d['phase'] == 'drive':
-            _phase(d, 'collect', effects)
-            _advance(d, effects, ms)
+            _drive_ended(d, effects, ms)
     elif kind == 'spawned':
         name, group = event['name'], event['group']
-        if group == 'processes':
+        if group == 'meter':
+            d['meter']['deadline'] = ms + d['cost']['command_seconds'] * 1000
+        elif group == 'processes':
             d['order'].append(name)
             d['schedule']['start_order'].append(name)
             d['processes'][name] = dict(started_ms=ms, ready_ms=None, seen=[], captures={}, stopping=False, exit=None)
@@ -398,7 +510,7 @@ def step(state, event):
         if (d['current'] == event['name'] and d['phase'] in COMMAND_GROUP
                 and event['record']['group'] == COMMAND_GROUP[d['phase']]):
             record = event['record']
-            if d['phase'].startswith('stopped-') and d['deadline'] is not None and ms >= d['deadline']:
+            if (d['phase'].startswith('stopped-') or d['phase'] == 'release') and d['deadline'] is not None and ms >= d['deadline']:
                 d['bounds'].append(dict(name='command_seconds', who=d['current'], ms=ms))
                 effects.append(dict(op='bound', name='command_seconds', who=d['current']))
                 d['deadline'] = None
@@ -434,7 +546,7 @@ def step(state, event):
     elif kind == 'tick' and d['deadline'] is not None and ms >= d['deadline']:
         name = d['current']
         bound = dict(start='ready_seconds', seed='command_seconds', collect='command_seconds',
-                     check='command_seconds', **{'stopped-collect': 'command_seconds',
+                     check='command_seconds', release='command_seconds', **{'stopped-collect': 'command_seconds',
                                                'stopped-check': 'command_seconds'}, stop='stop_seconds')[d['phase']]
         d['bounds'].append(dict(name=bound, who=name, ms=ms))
         effects.append(dict(op='bound', name=bound, who=name))
@@ -446,14 +558,29 @@ def step(state, event):
         else:
             effects.append(dict(op='kill_tree' if d['phase'] == 'stop' else 'cancel_command', name=name))
     elif kind in ('interrupt', 'error'):
+        if d['meter'] is not None:
+            d['meter']['due'] = None
+            if d['meter']['active']:
+                effects.append(dict(op='cancel_command', group='meter', name=d['exp']['meter']['name']))
         _end_driver(d, effects)
         if kind == 'interrupt':
             d['interrupted'] = event['signal']
+        else:
+            d['machinery'] = True
         d['errors'].append(dict(what='interrupted' if kind == 'interrupt' else event['what'], detail=event.get('detail', kind)))
+        if kind == 'interrupt' and d['phase'] == 'release':
+            return State(d), effects
         if d['phase'] in COMMAND_GROUP and d['current'] is not None:
             effects.append(dict(op='cancel_command', name=d['current']))
         _skip_stopped(d, effects)
-        if d['phase'] != 'stop':
+        if d['phase'] not in ('stop', 'stopped-collect', 'stopped-check', 'judge', 'closed'):
+            if d['phase'] == 'release':
+                # A spawn or runner failure leaves this command unavailable too.
+                d.update(current=None, deadline=None, awaiting=None)
+                _advance(d, effects, ms)
+            else:
+                _release(d, effects, ms)
+        elif d['phase'] != 'stop':
             _phase(d, 'stop', effects)
             _stop(d, effects, ms)
     return State(d), effects

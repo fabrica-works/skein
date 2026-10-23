@@ -1,6 +1,7 @@
 """Filesystem effects for private, immutable inputs (lab.md, 2.4 and 3)."""
 from contextlib import contextmanager
 import fcntl
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -188,6 +189,106 @@ class Lab:
             return _read_at(fd, name, private=True)[0]
         finally:
             os.close(fd)
+
+    def metadata(self, path):
+        """Inspect a name without opening or following the file."""
+        try:
+            fd, name = self._parent(path)
+        except FileNotFoundError:
+            return None
+        try:
+            try:
+                return os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return None
+        finally:
+            os.close(fd)
+
+    def move(self, source, destination):
+        """Rename under the writer lock, never replace an existing name."""
+        src, name = self._parent(source)
+        try:
+            dst, target = self._parent(destination, create=True)
+            try:
+                try:
+                    os.stat(target, dir_fd=dst, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise Refused(destination, 'destination already exists')
+                os.rename(name, target, src_dir_fd=src, dst_dir_fd=dst)
+                os.fsync(src)
+                os.fsync(dst)
+            finally:
+                os.close(dst)
+        finally:
+            os.close(src)
+
+    def remove(self, path):
+        fd, name = self._parent(path)
+        try:
+            os.unlink(name, dir_fd=fd)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    def move_in(self, source, destination):
+        """Owner handoff: rename, or copy-fsync-unlink across filesystems."""
+        source = os.path.abspath(source)
+        src = checked_directory(os.path.dirname(source))
+        opened = None
+        try:
+            name = os.path.basename(source)
+            info = os.stat(name, dir_fd=src, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+                raise Refused('held.file', 'expected an owned regular file with one link, not a symlink')
+            # An owner handoff also accepts a source with no read permission.
+            os.chmod(name, 0o600, dir_fd=src, follow_symlinks=False)
+            opened = os.open(name, FILE_FLAGS, dir_fd=src)
+            current = os.fstat(opened)
+            if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+                raise Refused('held.file', 'file changed during handoff')
+            dst, target = self._parent(destination, create=True)
+            try:
+                if self.metadata(destination) is not None:
+                    raise Refused(destination, 'already kept')
+                try:
+                    os.rename(name, target, src_dir_fd=src, dst_dir_fd=dst)
+                except OSError as error:
+                    if error.errno != errno.EXDEV:
+                        raise
+                    temporary = '.held-' + secrets.token_hex(16)
+                    output = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                     0o600, dir_fd=dst)
+                    try:
+                        with os.fdopen(output, 'wb') as stream:
+                            while True:
+                                data = os.read(opened, 65536)
+                                if not data:
+                                    break
+                                stream.write(data)
+                            stream.flush()
+                            os.fchmod(stream.fileno(), 0o600)
+                            os.fsync(stream.fileno())
+                        os.rename(temporary, target, src_dir_fd=dst, dst_dir_fd=dst)
+                        os.fsync(dst)
+                        os.unlink(name, dir_fd=src)
+                    finally:
+                        try:
+                            os.unlink(temporary, dir_fd=dst)
+                        except FileNotFoundError:
+                            pass
+                else:
+                    os.fchmod(opened, 0o600)
+                    os.fsync(opened)
+                os.fsync(src)
+                os.fsync(dst)
+            finally:
+                os.close(dst)
+        finally:
+            if opened is not None:
+                os.close(opened)
+            os.close(src)
 
     def write_once(self, path, data, *, executable=False):
         """Publish complete bytes via an exclusive hard link; verify a collision."""

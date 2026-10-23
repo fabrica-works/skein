@@ -23,8 +23,14 @@ if sys.argv[1:3] == ['sandbox', '-P']:
     raise SystemExit(0)
 assert sys.argv[1:] == ['app-server', '--stdio', '--strict-config']
 signal.signal(signal.SIGTERM, lambda _sig, _frame: None)
+if script.get('rate_read'):
+    assert set(os.environ) == {'CODEX_HOME', 'HOME', 'PATH', 'LANG'}
+    assert os.environ['PATH'] == '/usr/bin:/bin' and os.environ['LANG'] == 'C.UTF-8'
+    assert not list(Path(os.environ['HOME']).iterdir())
+    assert Path(os.environ['HOME']).stat().st_mode & 0o777 == 0o700
+    Path(__file__).with_suffix('.brake-home').write_text(os.environ['HOME'])
 config_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
-config = tomllib.loads(config_path.read_text())
+config = {} if script.get('rate_read') else tomllib.loads(config_path.read_text())
 work = os.getcwd()
 thread, turn = 'script-thread', 'script-turn'
 
@@ -103,6 +109,8 @@ def call_item(entry, number):
 
 
 def play():
+    for snapshot in script.get('windows', []):
+        event('account/rateLimits/updated', rateLimits=snapshot)
     pending = []
     for number, entry in enumerate(script.get('items', [])):
         if entry.get('early'):
@@ -171,6 +179,10 @@ if script.get('endpoint'):
 for line in sys.stdin:
     request = json.loads(line)
     method, params = request.get('method'), request.get('params', {})
+    if script.get('rate_read'):
+        assert method in ('initialize', 'initialized', 'account/rateLimits/read'), method
+        with Path(__file__).with_suffix('.requests').open('a') as log:
+            log.write(json.dumps(request) + '\n')
     if 'id' not in request:
         assert method == 'initialized'
         continue
@@ -180,6 +192,13 @@ for line in sys.stdin:
     if method == 'initialize':
         assert params['capabilities']['experimentalApi']
         result = dict(userAgent='scripted/0.162.1')
+    elif method == 'account/rateLimits/read':
+        if script.get('rate_exit'):
+            raise SystemExit(3)
+        if script.get('rate_hang'):
+            select.select([], [], [])
+        assert script.get('rate_read') and params == {}
+        result = dict(rateLimits=script['rate_read'])
     elif method == 'thread/start':
         assert params == dict(cwd=work, permissions='lab', ephemeral=True, approvalPolicy='never', config={})
         tools = Tools()

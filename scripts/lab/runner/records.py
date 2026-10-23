@@ -7,9 +7,10 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 SAFE = (1 << 53) - 1
 COST_FIELDS = ("ready_seconds", "command_seconds", "stop_seconds", "driver_seconds",
                "driver_actions", "driver_input_tokens")
+METER_COST_FIELDS = ("subject_spend", "meter_seconds")
 FORMATS = {"lab-experiment/1", "lab-tree/1", "lab-subject/1", "lab-key/1",
            "lab-settings/1", "lab-run/1", "lab-evidence/1", "lab-verdict/1",
-           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1"}
+           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1", "lab-held/1"}
 
 
 @dataclass(frozen=True)
@@ -137,10 +138,10 @@ def lab_refusals(value):
 
 def cost_refusals(value, member, *, named=False):
     out = []
-    cost = shape(value, (('name',) if named else ()) + COST_FIELDS, (), member, out)
+    cost = shape(value, (('name',) if named else ()) + COST_FIELDS, METER_COST_FIELDS, member, out)
     if named and (type(cost.get('name')) is not str or not NAME.fullmatch(cost['name'])):
         out.append(Refusal(member + '.name', 'expected a cost class name'))
-    for field in COST_FIELDS:
+    for field in COST_FIELDS + tuple(f for f in METER_COST_FIELDS if f in cost):
         if not positive(cost.get(field)):
             out.append(Refusal(member + '.' + field, 'expected a positive safe integer'))
     return out
@@ -177,15 +178,37 @@ def run_refusals(value):
     fields = ('run', 'key', 'experiment', 'seed', 'attempt', 'campaign', 'started', 'ended', 'outcome',
               'schedule', 'processes', 'commands', 'driver', 'failures', 'undecided', 'errors', 'bounds', 'usage')
     out = []
-    obj = shape(value, ('format',) + fields, ('about',), 'run', out)
+    obj = shape(value, ('format',) + fields, ('about', 'held'), 'run', out)
     if obj.get('format') != 'lab-run/1':
         out.append(Refusal('run.format', 'expected lab-run/1'))
     if not digest_value(obj.get('key')):
         out.append(Refusal('run.key', 'expected key digest'))
-    # Transitional: temper's S host (lab/chat-change-smoke/host.py) still writes its bound
-    # hits as a list; removed by the temper task that records the class (lab.md 5.6).
-    if type(obj.get('bounds')) is not list:
-        out.extend(cost_refusals(obj.get('bounds'), 'run.bounds', named=True))
+    if 'held' in obj:
+        held = obj['held']
+        if type(held) is not list:
+            out.append(Refusal('run.held', 'expected a list'))
+        else:
+            names = set()
+            for i, item in enumerate(held):
+                m = f'run.held.{i}'
+                h = shape(item, ('name', 'taken_ms', 'given_ms'), (), m, out)
+                name = h.get('name')
+                if type(name) is not str or not NAME.fullmatch(name):
+                    out.append(Refusal(m + '.name', 'invalid name'))
+                elif name in names:
+                    out.append(Refusal(m + '.name', 'duplicate name'))
+                else:
+                    names.add(name)
+                for field in ('taken_ms', 'given_ms'):
+                    ms = h.get(field)
+                    if field == 'given_ms' and ms is None:
+                        continue
+                    if type(ms) is not int or not 0 <= ms <= SAFE:
+                        out.append(Refusal(m + '.' + field, 'expected nonnegative safe milliseconds'))
+                taken, given = h.get('taken_ms'), h.get('given_ms')
+                if type(taken) is int and type(given) is int and given < taken:
+                    out.append(Refusal(m + '.given_ms', 'given before taken'))
+    out.extend(cost_refusals(obj.get('bounds'), 'run.bounds', named=True))
     for field in ('failures', 'undecided', 'errors', 'commands'):
         if type(obj.get(field)) is not list:
             out.append(Refusal('run.' + field, 'expected list'))
