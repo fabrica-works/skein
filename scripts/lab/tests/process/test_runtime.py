@@ -216,6 +216,206 @@ class Runtime(unittest.TestCase):
         self.assertEqual(list((root / 'collected/state').iterdir()), [])
         self.assert_empty(record)
 
+    def test_live_check_machinery_error_skips_stopped_copy(self):
+        self.experiment(check='malformed')
+        self.stopped_experiment()
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 4, stderr)
+        record = self.records()[2][0]
+        stopped = [c for c in record['commands'] if c.get('cluster') == 'stopped']
+        self.assertEqual(len(stopped), 3)
+        self.assertTrue(all('skipped' in c for c in stopped))
+        root = self.lab_root / 'keys/native' / record['key'] / 'runs' / record['run']
+        self.assertEqual(list((root / 'collected/state').iterdir()), [])
+        self.assert_empty(record)
+
+    def test_exec_ack_error_skips_stopped_copy(self):
+        self.experiment()
+        program = self.directory / 'bad-executable'
+        program.write_text('not an executable format\n')
+        program.chmod(0o700)
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['processes'][0]['argv'] = ['{experiment}/bad-executable']
+        path.write_bytes(canonical.record_bytes(exp))
+        self.stopped_experiment()
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 4, stderr)
+        record = self.records()[2][0]
+        self.assertTrue(any(e['what'] == 'spawn/server' for e in record['errors']))
+        stopped = [c for c in record['commands'] if c.get('cluster') == 'stopped']
+        self.assertEqual(len(stopped), 3)
+        self.assertTrue(all('skipped' in c for c in stopped))
+        self.assert_empty(record)
+
+    def listener(self, name):
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(self.root / name))
+        listener.listen(1)
+        listener.settimeout(COST['ready_seconds'])
+        self.addCleanup(listener.close)
+        return listener
+
+    def notification(self, listener, process):
+        ready, _, _ = select.select([listener, process.stdout, process.stderr], [], [], COST['ready_seconds'])
+        self.assertTrue(listener in ready, 'stand-in must notify before the runner exits')
+        connection, _ = listener.accept()
+        self.addCleanup(connection.close)
+        connection.settimeout(COST['ready_seconds'])
+        data = b''
+        while not data.endswith(b'\n'):
+            chunk = connection.recv(4096)
+            self.assertTrue(bool(chunk), 'stand-in must complete its public notification')
+            data += chunk
+        return connection, json.loads(data)
+
+    def observe_public_piece(self, path, marker=b'piece\n'):
+        # Inotify wakes on retained public stderr. Two acknowledged markers
+        # force another stdout read before the source releases the second piece.
+        import ctypes
+        import time
+        libc = ctypes.CDLL(None, use_errno=True)
+        fd = libc.inotify_init1(os.O_CLOEXEC | os.O_NONBLOCK)
+        self.assertGreaterEqual(fd, 0, 'inotify is required for native stream observations')
+        try:
+            watch = libc.inotify_add_watch(fd, ctypes.c_char_p(os.fsencode(path)), 0x2 | 0x8)
+            self.assertGreaterEqual(watch, 0, 'public evidence stream must be watchable')
+            deadline = time.monotonic() + COST['ready_seconds']
+            while marker not in path.read_bytes():
+                ready, _, _ = select.select([fd], [], [], max(0, deadline - time.monotonic()))
+                self.assertTrue(bool(ready), 'runner must observe the public piece within ready_seconds')
+                os.read(fd, 65536)
+        finally:
+            os.close(fd)
+
+    def bootstrap_story(self, source_mode='normal', recipient_mode='success', interrupt=False):
+        source_listener = self.listener('source-notify')
+        recipient_listener = self.listener('recipient-notify') if recipient_mode == 'hold' else None
+        self.experiment()
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        server = exp['processes'][0]
+        server['argv'] = self.command('private-source', str(self.root / 'source-notify'), '{run.id}', source_mode)
+        server['bootstrap'] = dict(stream='stdout', action='seed')
+        for rule in server['ready']:
+            rule['stream'] = 'stderr'
+        exp['actions'] = [dict(name='seed', argv=self.command('private-echo', recipient_mode, '{dir.client}/received',
+                                                            str(self.root / 'recipient-notify'), '{run.id}'), env={})]
+        path.write_bytes(canonical.record_bytes(exp))
+        self.stopped_experiment()
+        process = self.cli('run', seed='1', wait=False)
+        source, note = self.notification(source_listener, process)
+        for pid in (note['main'], note['first']):
+            self.canaries.append(os.pidfd_open(pid))
+        keys = list((self.lab_root / 'keys/native').iterdir())
+        self.assertEqual(len(keys), 1)
+        root = keys[0] / 'runs' / note['run']
+        self.observe_public_piece(root / 'proc/server/stderr')
+        source.sendall(b'P')
+        self.observe_public_piece(root / 'proc/server/stderr', b'piece-two\n')
+        source.sendall(b'G')
+        if recipient_listener is not None:
+            _recipient, recipient_note = self.notification(recipient_listener, process)
+            self.canaries.append(os.pidfd_open(recipient_note['first']))
+            if interrupt:
+                process.send_signal(signal.SIGINT)
+            else:
+                source.sendall(b'H')
+        stdout, stderr = process.communicate(timeout=COST['command_seconds'])
+        # Only booleans and public paths enter assertions, even on a leak.
+        canary = b'canary-' + note['run'].encode('ascii') + b'-private'
+        first_piece = (canary + b'\n')[:-10]
+        for private in (canary, first_piece):
+            self.assertTrue(private not in stdout and private not in stderr, 'runner output must contain no private bytes')
+            for retained in self.lab_root.rglob('*'):
+                if retained.is_file():
+                    self.assertTrue(private not in retained.read_bytes(), 'private bytes retained at ' + str(retained.relative_to(self.lab_root)))
+        record = self.records()[2][0]
+        channel = record['processes']['server']['bootstrap']
+        self.assertEqual(channel['stream'], 'stdout')
+        self.assertEqual(channel['action'], 'seed')
+        self.assertIsNone(record['processes']['server']['output']['stdout'])
+        self.assertFalse((root / 'proc/server/stdout').exists())
+        events = [canonical.loads(line + b'\n') for line in (root / 'events.jsonl').read_bytes().splitlines()]
+        for event in events:
+            if event['event'] in ('bootstrap_received', 'bootstrap_delivered'):
+                self.assertEqual(set(event), {'format', 'event', 'ms', 'process', 'action'})
+                self.assertEqual(event['process'], 'server')
+                self.assertEqual(event['action'], 'seed')
+                field = 'received_ms' if event['event'] == 'bootstrap_received' else 'delivered_ms'
+                self.assertEqual(channel[field], event['ms'])
+        commands = [c for c in record['commands'] if c['group'] == 'actions']
+        if source_mode in ('partial', 'extra'):
+            self.assertEqual(commands, [])
+            self.assertIsNone(channel['received_ms'])
+            self.assertIsNone(channel['delivered_ms'])
+        else:
+            self.assertIsNotNone(channel['received_ms'])
+            self.assertIsNotNone(channel['delivered_ms'])
+            self.assertGreaterEqual(channel['delivered_ms'], channel['received_ms'])
+            self.assertEqual(len(commands), 1)
+            self.assertEqual(commands[0]['bootstrap'], dict(process='server'))
+            self.assertIsNone(commands[0]['stdin'])
+            self.assertEqual(commands[0]['output'], dict(stdout=None, stderr=None))
+            for stream in ('stdin', 'stdout', 'stderr'):
+                self.assertFalse((root / ('commands/actions-seed.' + stream)).exists())
+            if recipient_mode != 'closed':
+                self.assertEqual((root / 'dirs/client/received').read_text(), 'exact\n')
+        self.assertFalse(any(f['kind'] == 'panic' for f in record['failures']))
+        self.assert_empty(record)
+        return process.returncode, record
+
+    def test_split_private_input_echoed_on_both_streams_is_never_retained(self):
+        status, record = self.bootstrap_story()
+        self.assertEqual(status, 0)
+        self.assertEqual(record['outcome'], 'pass')
+
+    def test_private_recipient_nonzero_keeps_action_signature_without_evidence(self):
+        status, record = self.bootstrap_story(recipient_mode='nonzero')
+        self.assertEqual(status, 1)
+        failure = next(f for f in record['failures'] if f['signature'] == 'action/seed/exit:7')
+        self.assertEqual(failure['evidence'], [])
+
+    def test_private_recipient_abort_keeps_signal_signature_without_evidence(self):
+        status, record = self.bootstrap_story(recipient_mode='abort')
+        self.assertEqual(status, 1)
+        failure = next(f for f in record['failures'] if f['signature'] == 'action/seed/signal:SIGABRT')
+        self.assertEqual(failure['evidence'], [])
+
+    def test_private_recipient_closing_stdin_is_an_action_failure(self):
+        status, record = self.bootstrap_story(recipient_mode='closed')
+        self.assertEqual(status, 1)
+        self.assertTrue(any(f['signature'] == 'action/seed/exit:7' for f in record['failures']))
+        self.assertEqual(record['errors'], [])
+
+    def test_extra_private_bytes_cut_the_echoing_recipient_and_still_copy_stopped(self):
+        status, record = self.bootstrap_story(source_mode='cut', recipient_mode='hold')
+        self.assertEqual(status, 1)
+        failure = next(f for f in record['failures'] if f['signature'] == 'bootstrap/server/extra')
+        self.assertEqual(failure['kind'], 'bootstrap')
+        self.assertEqual(failure['evidence'], [])
+        recipient = next(c for c in record['commands'] if c['group'] == 'actions')
+        self.assertTrue(recipient['exit']['stopped'])
+        self.assertTrue(any(c['group'] == 'checks' and c.get('cluster') == 'stopped' and 'exit' in c
+                            for c in record['commands']))
+
+    def test_partial_private_input_cuts_before_recipient_spawn(self):
+        status, record = self.bootstrap_story(source_mode='partial')
+        self.assertEqual(status, 1)
+        self.assertTrue(any(f['signature'] == 'bootstrap/server/partial' for f in record['failures']))
+
+    def test_line_and_extra_private_bytes_never_deliver_the_line(self):
+        status, record = self.bootstrap_story(source_mode='extra')
+        self.assertEqual(status, 1)
+        self.assertTrue(any(f['signature'] == 'bootstrap/server/extra' for f in record['failures']))
+
+    def test_interrupt_drops_private_input_and_cancels_recipient_without_copying(self):
+        status, record = self.bootstrap_story(recipient_mode='hold', interrupt=True)
+        self.assertEqual(status, 130)
+        stopped = [c for c in record['commands'] if c.get('cluster') == 'stopped']
+        self.assertTrue(all('skipped' in c for c in stopped))
+        self.assertTrue(any(e['what'] == 'interrupted' for e in record['errors']))
+
     def test_ready_lines_late_dependent_file_and_pass_evidence(self):
         self.experiment(dependent=True)
         status, _run, stderr = self.cli('run', seed='18446744073709551615')

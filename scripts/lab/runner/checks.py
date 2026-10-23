@@ -64,7 +64,9 @@ def process(name, record, panic_failures):
     end = record.get('exit')
     if end is not None and not end['stopped'] and not panic_failures:
         reason = 'exit:' + str(end['status']) if 'status' in end else 'signal:' + end['signal']
-        failures.append(failure(f'stop/{name}/{reason}', 'stop', 'process ended before stop', [f'proc/{name}/stderr']))
+        stderr = record.get('output', {}).get('stderr')
+        paths = [stderr['path']] if stderr is not None else []
+        failures.append(failure(f'stop/{name}/{reason}', 'stop', 'process ended before stop', paths))
     memory = record['memory']
     if memory['bound_bytes'] is not None:
         if memory['peak_bytes'] is None:
@@ -84,8 +86,9 @@ def action(name, record):
     if end['stopped'] or 'spawn_error' in record or end.get('status') == 0:
         return []
     suffix = 'exit:' + str(end['status']) if 'status' in end else 'signal:' + end['signal']
-    return [failure(f'action/{name}/{suffix}', 'action', 'seed action did not exit zero',
-                    [record['output']['stderr']['path']])]
+    stderr = record['output']['stderr']
+    paths = [stderr['path']] if stderr is not None else []
+    return [failure(f'action/{name}/{suffix}', 'action', 'seed action did not exit zero', paths)]
 
 
 def planted(required, failures, outcome):

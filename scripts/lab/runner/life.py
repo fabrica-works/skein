@@ -78,6 +78,29 @@ def _render(d, item, extra=None):
                        for f in item.get('files', [])])
 
 
+def _ready(d, name, effects, ms):
+    if d['phase'] != 'start' or d['current'] != name or name in d['ready']:
+        return
+    record = d['processes'][name]
+    item = next(p for p in d['exp']['processes'] if p['name'] == name)
+    if 'bootstrap' in record and d['deadline'] is not None and ms >= d['deadline']:
+        d['bounds'].append(dict(name='ready_seconds', who=name, ms=ms))
+        effects.append(dict(op='bound', name='ready_seconds', who=name))
+        d['deadline'] = None
+        _cut(d, effects, ms)
+        return
+    if (len(record['seen']) != len(item['ready'])
+            or 'bootstrap' in record and record['bootstrap']['received_ms'] is None):
+        return
+    record['ready_ms'] = ms
+    for capture, value in record['captures'].items():
+        d['known'][f'proc.{name}.ready.{capture}'] = value
+    d['ready'].append(name)
+    effects.append(dict(op='ready', name=name, captures=record['captures']))
+    d['deadline'] = None
+    _advance(d, effects, ms)
+
+
 def _command_advance(d, effects, ms):
     d['index'] += 1
     d.update(current=None, deadline=None, awaiting=None)
@@ -127,6 +150,10 @@ def _advance(d, effects, ms):
                 return
             d['current'] = name
             extra = {'cluster': 'stopped'} if phase.startswith('stopped-') else {}
+            if group == 'actions':
+                source = next((p['name'] for p in exp['processes'] if p.get('bootstrap', {}).get('action') == name), None)
+                if source is not None:
+                    extra['bootstrap'] = dict(process=source)
             effects.append(dict(op='spawn', group=group, name=name, **extra, **rendered))
             return
         following = {'seed': 'drive', 'collect': 'check', 'check': 'stop',
@@ -201,6 +228,9 @@ def step(state, event):
             d['order'].append(name)
             d['schedule']['start_order'].append(name)
             d['processes'][name] = dict(started_ms=ms, ready_ms=None, seen=[], captures={}, stopping=False, exit=None)
+            item = next(p for p in d['exp']['processes'] if p['name'] == name)
+            if 'bootstrap' in item:
+                d['processes'][name]['bootstrap'] = dict(**item['bootstrap'], received_ms=None, delivered_ms=None)
             d['deadline'] = ms + d['cost']['ready_seconds'] * 1000
         else:
             d['started_commands'].append(dict(group=group, name=name))
@@ -220,14 +250,7 @@ def step(state, event):
                     if rule['capture'] is not None:
                         capture = event['text'][len(rule['prefix']):]
                         record['captures'][rule['capture']] = capture
-            if len(record['seen']) == len(item['ready']):
-                record['ready_ms'] = ms
-                for capture, value in record['captures'].items():
-                    d['known'][f'proc.{name}.ready.{capture}'] = value
-                d['ready'].append(name)
-                effects.append(dict(op='ready', name=name, captures=record['captures']))
-                d['deadline'] = None
-                _advance(d, effects, ms)
+            _ready(d, name, effects, ms)
         elif d['phase'] == 'seed' and d['awaiting'] is not None:
             pending = d['awaiting']
             rule = pending['rule']
@@ -243,6 +266,18 @@ def step(state, event):
                 if pending['done']:
                     d['commands'][-1]['awaited'] = pending['seen']
                     _command_advance(d, effects, ms)
+    elif kind in ('bootstrap_received', 'bootstrap_delivered'):
+        name = event['name']
+        record = d['processes'][name]
+        channel = record.get('bootstrap')
+        field = 'received_ms' if kind == 'bootstrap_received' else 'delivered_ms'
+        if channel is not None and channel[field] is None:
+            channel[field] = ms
+            effects.append(dict(op=kind, process=name, action=channel['action'], ms=ms))
+            if kind == 'bootstrap_received':
+                _ready(d, name, effects, ms)
+    elif kind == 'bootstrap_failed':
+        _cut(d, effects, ms)
     elif kind == 'signalled':
         d['processes'][event['name']]['stopping'] = True
         d['deadline'] = ms + d['cost']['stop_seconds'] * 1000
@@ -279,7 +314,7 @@ def step(state, event):
             if record['group'] == 'collect':
                 end = record.get('exit') or {}
                 d['collections'][event['name']] = (end.get('status') == 0 and not end.get('stopped')
-                    and not end.get('killed') and d['deadline'] is not None
+                    and not end.get('killed') and d['deadline'] is not None and ms < d['deadline']
                     and not record.get('timed_out') and not record.get('cancelled'))
             pending = d['awaiting']
             if pending is not None:

@@ -217,10 +217,30 @@ def validate(experiment, subject, settings, facts):
     processes = names["processes"]
     after = {}
     captures = {}
+    private_sources = set()
+    recipients = set()
     for i, item in enumerate(groups["processes"]):
         m = f"processes.{i}"
-        p = shape(item, ("name", "argv", "env", "ready", "memory_bytes"), ("after", "files"), m, out)
+        p = shape(item, ("name", "argv", "env", "ready", "memory_bytes"), ("after", "files", "bootstrap"), m, out)
         name = p.get("name")
+        if 'bootstrap' in p:
+            bm = m + '.bootstrap'
+            channel = shape(p['bootstrap'], ('stream', 'action'), (), bm, out)
+            if channel.get('stream') != 'stdout':
+                out.append(Refusal(bm + '.stream', 'expected stdout'))
+            if type(name) is str:
+                private_sources.add(name)
+            action = channel.get('action')
+            if type(action) is not str or action not in names['actions']:
+                out.append(Refusal(bm + '.action', 'unknown seed action'))
+            else:
+                if action in recipients:
+                    out.append(Refusal(bm + '.action', 'bootstrap recipient must be unique'))
+                recipients.add(action)
+                recipient = names['actions'][action]
+                for field in ('stdin', 'await'):
+                    if field in recipient:
+                        out.append(Refusal(bm + '.action', 'bootstrap recipient must not declare ' + field))
         deps = _list(p.get("after", []), m + ".after", out)
         safe_deps = set()
         for j, dep in enumerate(deps):
@@ -244,6 +264,8 @@ def validate(experiment, subject, settings, facts):
             r = shape(entry, ("stream", "prefix", "capture"), (), rm, out)
             if r.get("stream") not in ("stdout", "stderr"):
                 out.append(Refusal(rm + ".stream", "expected stdout or stderr"))
+            if 'bootstrap' in p and r.get('stream') == 'stdout':
+                out.append(Refusal(rm + '.stream', 'ready rule must not read private bootstrap stdout'))
             prefix = r.get("prefix")
             if type(prefix) is not str or any(c in prefix for c in "\r\n\0"):
                 out.append(Refusal(rm + ".prefix", "expected literal line prefix"))
@@ -338,6 +360,9 @@ def validate(experiment, subject, settings, facts):
                         out.append(Refusal(am + '.process', 'unknown process'))
                     if rule.get('stream') not in ('stdout', 'stderr'):
                         out.append(Refusal(am + '.stream', 'expected stdout or stderr'))
+                    if (type(rule.get('process')) is str and rule['process'] in private_sources
+                            and rule.get('stream') == 'stdout'):
+                        out.append(Refusal(am + '.stream', 'await must not read private bootstrap stdout'))
                     prefix = rule.get('prefix')
                     if type(prefix) is not str or any(c in prefix for c in '\r\n\0'):
                         out.append(Refusal(am + '.prefix', 'expected literal line prefix'))

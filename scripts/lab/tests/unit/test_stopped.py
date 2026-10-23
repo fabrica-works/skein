@@ -123,6 +123,31 @@ class Stopped(unittest.TestCase):
             self.assertFalse(state.data['collections']['copy'])
             self.assertEqual(state.data['commands'][-1]['skipped'], skip['reason'])
 
+    def test_dependencies_in_environment_and_stdin_use_terminal_success(self):
+        for field in ('env', 'stdin'):
+            state, _ = stopping()
+            check = state.data['exp']['checks'][1]
+            check['argv'] = ['/check']
+            if field == 'env':
+                check['env'] = {'INPUT': '{collected.copy}'}
+            else:
+                check['stdin'] = '{collected.copy}\n'
+            state, _ = closed(state)
+            state, effects = done(state, 'collect', 'copy', status=7)
+            self.assertEqual(effects[-1]['name'], 'independent')
+            self.assertTrue(any(e['op'] == 'unavailable' and e['name'] == 'state' for e in effects))
+
+    def test_live_collection_completed_at_bound_is_not_whole_for_stopped_check(self):
+        state, _ = boot()
+        deadline = 2 + state.data['cost']['command_seconds'] * 1000
+        state, _ = done(state, 'collect', 'obs', ms=deadline)
+        self.assertFalse(state.data['collections']['obs'])
+        state, _ = done(state, 'checks', 'end')
+        state, _ = closed(state)
+        state, effects = done(state, 'collect', 'copy')
+        self.assertEqual(effects[-1]['name'], 'independent')
+        self.assertTrue(any(e['op'] == 'unavailable' and e['name'] == 'state' for e in effects))
+
     def test_missing_copy_capture_and_failed_live_input_do_not_retry(self):
         state, _ = stopping()
         state.data['exp']['collect'][1]['argv'].append('{proc.backend.ready.missing}')

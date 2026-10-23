@@ -69,6 +69,8 @@ class TerminalErrors(unittest.TestCase):
                     self.assertEqual(record['outcome'], 'error')
                     self.assertLessEqual(run.host.calls, 3)
                     self.assertIn('active', run.host.children)
+                    if phase in ('collect', 'check', 'stopped-collect', 'stopped-check'):
+                        self.assertTrue(run.items['active']['cancelled'])
                     self.assertTrue((lab.root / run.base / 'live.json').is_file())
                     self.assertTrue(any(e['what'] == 'containment/active' for e in record['errors']))
                     pending = [c for c in record['commands'] if c['name'] == 'pending']

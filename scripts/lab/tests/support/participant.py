@@ -65,8 +65,73 @@ def server(args):
                 connection.sendall(b'private-canary')
 
 
+def private_line(run_id):
+    return b'canary-' + run_id.encode('ascii') + b'-private\n'
+
+
+def private_source(args):
+    notify, run_id, mode, *terminal = args
+    def stop(_sig, _frame):
+        if terminal:
+            Path(terminal[0]).write_text('terminal\n')
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stop)
+    line = private_line(run_id)
+    split = len(line) - 10
+    os.write(1, line[:split])
+    print('pid ' + str(os.getpid()), file=sys.stderr, flush=True)
+    print('ready public', file=sys.stderr, flush=True)
+    print('piece', file=sys.stderr, flush=True)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.connect(notify)
+        connection.sendall(json.dumps(dict(main=os.getppid(), first=os.getpid(), descendants=[], run=run_id)).encode() + b'\n')
+        if connection.recv(1) != b'P':
+            return 19
+        print('piece-two', file=sys.stderr, flush=True)
+        if connection.recv(1) != b'G':
+            return 19
+        if mode == 'partial':
+            os.close(1)
+        else:
+            os.write(1, line[split:] + (b'extra' if mode == 'extra' else b''))
+        if mode == 'cut' and connection.recv(1) == b'H':
+            os.write(1, b'extra')
+        while True:
+            signal.pause()
+
+
+def private_echo(args):
+    mode, marker, notify, run_id = args
+    if mode == 'closed':
+        os.close(0)
+        return 7
+    data = sys.stdin.buffer.read()
+    if data != private_line(run_id):
+        return 23
+    Path(marker).write_text('exact\n')
+    os.write(1, data)
+    os.write(2, data)
+    print("thread 'main' panicked at private.rs:7:2:", file=sys.stderr, flush=True)
+    print(data.decode(), file=sys.stderr, flush=True)
+    if mode == 'hold':
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.connect(notify)
+            connection.sendall(json.dumps(dict(first=os.getpid())).encode() + b'\n')
+            connection.recv(1)
+    if mode == 'abort':
+        import resource
+        # The abort stand-in produces no core file containing its private input.
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        os.abort()
+    return 7 if mode == 'nonzero' else 0
+
+
 def main():
     mode, *args = sys.argv[1:]
+    if mode == 'private-source':
+        return private_source(args)
+    if mode == 'private-echo':
+        return private_echo(args)
     if mode == 'server':
         return server(args)
     if mode == 'dependent':

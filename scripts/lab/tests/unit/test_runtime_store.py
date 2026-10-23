@@ -38,6 +38,7 @@ class Timeline(unittest.TestCase):
         command = dict(name='refresh', group='actions', exit=None, awaited=None)
         ordinary = dict(name='other', group='actions', exit=None)
         run.command_records = [command, ordinary]
+        run.items = {}
         run.effect(dict(op='awaited', name='refresh', ms=17, captures={'word': 'invented-word'}))
         self.assertEqual(command['awaited'], dict(ms=17, captures={'word': 'invented-word'}))
         self.assertEqual(written[0], dict(format='lab-event/1', event='awaited', ms=17,
@@ -100,6 +101,41 @@ class Evidence(unittest.TestCase):
             awaiting['awaited'] = value
             with self.subTest(value=value):
                 self.assertIn('run.commands.1.awaited.' + member, [r.member for r in records.run_refusals(record)])
+
+    def test_bootstrap_records_roundtrip_and_refuse_private_file_references(self):
+        record = run_record(1, '1')
+        source = dict(bootstrap=dict(stream='stdout', action='sign-in', received_ms=None, delivered_ms=None),
+                      output=dict(stdout=None, stderr=dict(path='proc/server/stderr')))
+        recipient = dict(group='actions', name='sign-in', bootstrap=dict(process='server'),
+                         stdin=None, output=dict(stdout=None, stderr=None))
+        record['processes'] = dict(server=source, ordinary=dict(output={}))
+        record['commands'] = [recipient, dict(group='actions', name='ordinary')]
+        self.assertEqual(records.run_refusals(record), [])
+        source['bootstrap'].update(received_ms=17, delivered_ms=19)
+        self.publish(record)
+        saved = canonical.loads(self.lab.read(self.key_path + '/runs/' + record['run'] + '/run.json'))
+        self.assertEqual(saved['processes'], record['processes'])
+        self.assertEqual(saved['commands'], record['commands'])
+        self.assertNotIn('bootstrap', saved['processes']['ordinary'])
+        self.assertNotIn('bootstrap', saved['commands'][1])
+        for field in ('received_ms', 'delivered_ms'):
+            for value in (-1, True, [], '17'):
+                source['bootstrap'][field] = value
+                self.assertIn('run.processes.server.bootstrap.' + field,
+                              [r.member for r in records.run_refusals(record)])
+            source['bootstrap'][field] = 17
+        for field, value in (('stream', 'stderr'), ('action', []), ('unknown', True)):
+            source['bootstrap'][field] = value
+            self.assertIn('run.processes.server.bootstrap.' + field,
+                          [r.member for r in records.run_refusals(record)])
+        source['output']['stdout'] = dict(path='forbidden')
+        recipient.update(group='collect', stdin=dict(path='forbidden'))
+        recipient['bootstrap'] = dict(process=[], unknown=True)
+        recipient['output'] = dict(stdout=dict(path='forbidden'), stderr=dict(path='forbidden'))
+        members = {r.member for r in records.run_refusals(record)}
+        self.assertTrue({'run.processes.server.output.stdout', 'run.commands.0.bootstrap',
+                         'run.commands.0.bootstrap.process', 'run.commands.0.bootstrap.unknown',
+                         'run.commands.0.stdin', 'run.commands.0.output.stdout', 'run.commands.0.output.stderr'} <= members)
 
     def test_stopped_command_records_roundtrip_without_default_keys(self):
         record = run_record(1, '1')

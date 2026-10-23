@@ -4,8 +4,11 @@ import os
 import platform
 import signal
 import time
-from . import canonical, checks, evidence, judge, life, store
+from . import bootstrap, canonical, checks, evidence, judge, life, store
 from .host import CapabilityError, Host
+
+
+FINISH_EFFECTS = ('cancel_command', 'unavailable', 'bound', 'bootstrap_received', 'bootstrap_delivered')
 
 
 def utc():
@@ -38,6 +41,7 @@ class Run:
         self.failures, self.undecided, self.errors = [], [], []
         self.interrupt = None
         self.items = {}
+        self.bootstrap_states = {p['name']: bootstrap.State() for p in self.exp['processes'] if 'bootstrap' in p}
         self.texts = {f['path']: f['data'].decode('utf-8', 'strict') for f in store.snapshot(lab.root / exp_base)
                       if any(f['path'] == x.get('from') for p in self.exp['processes'] for x in p.get('files', []))}
         subject = canonical.loads(lab.read('store/subjects/' + self.key['subject'] + '/subject.json'))
@@ -57,10 +61,15 @@ class Run:
         self.lab.append_line(self.base + '/events.jsonl', dict(format='lab-event/1', event=event,
                              ms=self.ms() if ms is None else ms, **fields))
 
-    def feed(self, kind, **fields):
-        event = dict(kind=kind, ms=self.ms(), **fields)
+    def drop_bootstrap(self):
+        self.bootstrap_states = {name: bootstrap.drop(state) for name, state in self.bootstrap_states.items()}
+
+    def feed(self, kind, *, ms=None, **fields):
+        event = dict(kind=kind, ms=self.ms() if ms is None else ms, **fields)
         self.state, effects = life.step(self.state, event)
-        if kind == 'exit':
+        if kind in ('interrupt', 'error') or any(e['op'] == 'cut' for e in effects):
+            self.drop_bootstrap()
+        if kind in ('exit', 'bootstrap_failed'):
             self.effects[0:0] = effects
         else:
             self.effects.extend(effects)
@@ -96,10 +105,16 @@ class Run:
             self.records[name] = record
             definition = next(p for p in self.exp['processes'] if p['name'] == name)
             record['memory']['bound_bytes'] = definition['memory_bytes']
+            if 'bootstrap' in definition:
+                record['bootstrap'] = dict(**definition['bootstrap'], received_ms=None, delivered_ms=None)
+                record['output']['stdout'] = None
         else:
             if effect.get('cluster') == 'stopped':
                 record['cluster'] = 'stopped'
-            self.command_records.append(record)
+            if 'bootstrap' in effect:
+                record.update(bootstrap=effect['bootstrap'], stdin=None, output=dict(stdout=None, stderr=None))
+            if effect.get('cluster') != 'stopped':
+                self.command_records.append(record)
             if group == 'actions' and 'await' in self.exp['actions'][self.state.data['index']]:
                 record['awaited'] = None
         cwd = self.state.data['known'].get('proc.' + name + '.dir', str(self.lab.root / self.base)) if group == 'processes' else str(self.lab.root / self.base)
@@ -117,25 +132,54 @@ class Run:
             if 'tree' in file:
                 data = self.lab.read('store/subjects/' + self.key['subject'] + '/artifacts/' + file['tree'])
                 self.lab.unpack_tree(self.base + '/scratch/' + name + '/' + file['path'], data)
-        stdin_fd = os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)
+        stdin_fd = None
         outputs = {}
+        source = effect.get('bootstrap', {}).get('process')
+        line = None
         try:
-            if effect['stdin'] is not None:
-                path = prefix + 'stdin'
-                self.lab.write_once(self.base + '/' + path, effect['stdin'].encode('utf-8', 'strict'))
-                os.close(stdin_fd)
-                stdin_fd = os.open(self.lab.root / self.base / path, store.FILE_FLAGS)
-                record['stdin'] = self.file_record(path)
+            if source is not None:
+                self.bootstrap_states[source], line = bootstrap.take(self.bootstrap_states[source])
+                if line is None:
+                    raise RuntimeError('private bootstrap input unavailable')
+                stdin_fd, writer = os.pipe2(os.O_CLOEXEC)
+                try:
+                    # The framed line fits one empty Linux pipe while its read end is held.
+                    if os.write(writer, line) != len(line):
+                        raise OSError('private bootstrap pipe write incomplete')
+                finally:
+                    line = None
+                    os.close(writer)
+            else:
+                stdin_fd = os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)
+                if effect['stdin'] is not None:
+                    path = prefix + 'stdin'
+                    self.lab.write_once(self.base + '/' + path, effect['stdin'].encode('utf-8', 'strict'))
+                    os.close(stdin_fd)
+                    stdin_fd = None
+                    stdin_fd = os.open(self.lab.root / self.base / path, store.FILE_FLAGS)
+                    record['stdin'] = self.file_record(path)
             for stream in ('stdout', 'stderr'):
-                path = prefix + stream
-                outputs[stream] = dict(path=path, fd=self.lab.create_file(self.base + '/' + path), buffer=b'')
+                if source is not None or group == 'processes' and 'bootstrap' in record and stream == 'stdout':
+                    outputs[stream] = None
+                    record['output'][stream] = None
+                else:
+                    path = prefix + stream
+                    outputs[stream] = dict(path=path, fd=self.lab.create_file(self.base + '/' + path), buffer=b'')
             owned = self.host.spawn(identity, effect['argv'], effect['env'], stdin_fd, cwd=cwd)
+            if effect.get('cluster') == 'stopped':
+                self.command_records.append(record)
+            if source is not None:
+                self.feed('bootstrap_delivered', name=source)
         except BaseException:
+            self.drop_bootstrap()
             for output in outputs.values():
-                os.close(output['fd'])
+                if output is not None:
+                    os.close(output['fd'])
             raise
         finally:
-            os.close(stdin_fd)
+            line = None
+            if stdin_fd is not None:
+                os.close(stdin_fd)
         self.items[identity] = dict(name=name, group=group, record=record, outputs=outputs,
                                     cleanup=None, kill_deadline=None, timed_out=False, cancelled=False,
                                     panic=[], panic_message=None)
@@ -163,11 +207,11 @@ class Run:
 
     def cancel_command(self, name):
         for identity, item in self.items.items():
-            if item['group'] != 'processes' and item['name'] == name and item['cleanup'] is None:
+            if item['group'] != 'processes' and item['name'] == name:
                 item['cancelled'] = True
-                item['timed_out'] = any(b['name'] == 'command_seconds' and b['who'] == name for b in self.state.data['bounds'])
-                self.host.kill_tree(identity)
-                item['kill_deadline'] = self.ms() + self.cost['stop_seconds'] * 1000
+                if item['cleanup'] is None:
+                    self.host.kill_tree(identity)
+                    item['kill_deadline'] = self.ms() + self.cost['stop_seconds'] * 1000
 
     def effect(self, request):
         op = request['op']
@@ -179,6 +223,10 @@ class Run:
             self.timeline('phase', phase=request['phase'])
         elif op == 'spawn':
             self.spawn(request)
+        elif op in ('bootstrap_received', 'bootstrap_delivered'):
+            field = 'received_ms' if op == 'bootstrap_received' else 'delivered_ms'
+            self.records[request['process']]['bootstrap'][field] = request['ms']
+            self.timeline(op, ms=request['ms'], process=request['process'], action=request['action'])
         elif op == 'ready':
             record = self.records[request['name']]
             record.update(ready_ms=self.ms(), captures=request['captures'])
@@ -205,6 +253,9 @@ class Run:
             self.cancel_command(request['name'])
         elif op == 'bound':
             if request['name'] == 'command_seconds':
+                for item in self.items.values():
+                    if item['group'] != 'processes' and item['name'] == request['who']:
+                        item['timed_out'] = True
                 for record in self.command_records:
                     if record['group'] == 'actions' and record['name'] == request['who'] and 'awaited' in record:
                         record['awaited'] = None
@@ -224,6 +275,19 @@ class Run:
         elif op == 'judge':
             self.finishing = True
 
+    def private_output(self, item, data):
+        if item['group'] != 'processes':
+            return
+        name = item['name']
+        state, event = bootstrap.feed(self.bootstrap_states[name], data)
+        self.bootstrap_states[name] = state
+        if event == 'received':
+            self.feed('bootstrap_received', name=name)
+        elif event is not None:
+            self.failures.append(checks.failure('bootstrap/' + name + '/' + event, 'bootstrap',
+                                                 'private bootstrap framing failed'))
+            self.feed('bootstrap_failed', name=name)
+
     def read_output(self, identity, stream):
         item = self.items[identity]
         child = self.host.children[identity]
@@ -234,6 +298,12 @@ class Run:
         try:
             data = os.read(fd, 65536)
         except BlockingIOError:
+            return
+        if output is None:
+            self.private_output(item, data)
+            if not data:
+                os.close(fd)
+                del child['streams'][stream]
             return
         if data:
             _write(output['fd'], data)
@@ -332,6 +402,7 @@ class Run:
             result = record['exit']
             if group == 'collect' or record.get('cluster') == 'stopped':
                 result['killed'] = result['killed'] or self.host.children[identity]['killed']
+                result['stopped'] = result['stopped'] or item['cancelled']
             if group == 'checks' and not item['cancelled']:
                 failures, unknown, errors = checks.command(name, result.get('status'),
                     self.lab.read(self.base + '/' + record['output']['stdout']['path']), timed_out=item['timed_out'])
@@ -402,6 +473,7 @@ class Run:
                 self.errors.append(dict(what='collection/' + command['name'], detail=str(error)))
 
     def finish(self):
+        self.drop_bootstrap()
         self.publishing = True
         self.freeze_collections()
         for name, record in self.records.items():
@@ -458,7 +530,7 @@ class Run:
             while True:
                 try:
                     if self.interrupt is not None and self.state.data['interrupted'] is None:
-                        self.effects[:] = [r for r in self.effects if r['op'] in ('cancel_command', 'unavailable')]
+                        self.effects[:] = [r for r in self.effects if r['op'] in FINISH_EFFECTS]
                         self.timeline('interrupted', signal=signal.Signals(self.interrupt).name)
                         self.feed('interrupt', signal=self.interrupt, detail=signal.Signals(self.interrupt).name)
                     self.observe()
@@ -489,7 +561,7 @@ class Run:
                     if self.publishing:
                         raise
                     self.timeline('machinery_error', detail=str(error))
-                    self.effects[:] = [r for r in self.effects if r['op'] in ('cancel_command', 'unavailable')]
+                    self.effects[:] = [r for r in self.effects if r['op'] in FINISH_EFFECTS]
                     phase = self.state.data['phase']
                     what = 'containment/provision' if isinstance(error, CapabilityError) and phase == 'provision' else 'runner'
                     self.feed('error', what=what, detail=str(error))
@@ -497,7 +569,7 @@ class Run:
                         # A broken host cannot promise more cleanup. systemd owns the unit fallback.
                         pending, self.effects = self.effects, []
                         for request in pending:
-                            if request['op'] in ('cancel_command', 'unavailable'):
+                            if request['op'] in FINISH_EFFECTS:
                                 try:
                                     self.effect(request)
                                 except Exception as cleanup_error:
@@ -508,6 +580,7 @@ class Run:
                                                            reason='check cut by machinery error'))
                         return self.finish()
         finally:
+            self.drop_bootstrap()
             signal.set_wakeup_fd(old_wakeup)
             for sig, handler in handlers.items():
                 signal.signal(sig, handler)

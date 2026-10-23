@@ -260,6 +260,20 @@ class RunnerChecks(unittest.TestCase):
         self.assertEqual(missing[0]['signature'], 'planted-missing/expected')
         self.assertEqual(checks.planted(['expected'], [{'signature': 'expected'}], 'fail'), [])
 
+    def test_private_null_outputs_preserve_action_and_stop_signatures_without_evidence(self):
+        for end, suffix in ((dict(status=7, stopped=False), 'exit:7'),
+                            (dict(signal='SIGABRT', stopped=False), 'signal:SIGABRT')):
+            record = dict(exit=end, output=dict(stdout=None, stderr=None),
+                          memory=dict(peak_bytes=1, bound_bytes=None))
+            action = checks.action('seed', record)
+            self.assertEqual(action, [checks.failure('action/seed/' + suffix, 'action', 'seed action did not exit zero')])
+            failures, unknown = checks.process('server', record, [])
+            self.assertEqual(failures, [checks.failure('stop/server/' + suffix, 'stop', 'process ended before stop')])
+            self.assertEqual(unknown, [])
+            record['output']['stderr'] = dict(path='retained/public.stderr')
+            self.assertEqual(checks.process('server', record, [])[0][0]['evidence'], ['retained/public.stderr'])
+            self.assertEqual(checks.action('seed', record)[0]['evidence'], ['retained/public.stderr'])
+
     def test_tree_peak_never_supplies_the_own_process_peak(self):
         record = dict(exit=dict(status=0, stopped=True), memory=dict(peak_bytes=100, bound_bytes=100, tree_peak_bytes=1000000))
         self.assertEqual(checks.process('worker', record, []), ([], []))

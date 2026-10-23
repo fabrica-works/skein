@@ -177,7 +177,37 @@ def run_refusals(value):
             out.append(Refusal('run.' + field, 'expected list'))
     if type(obj.get('processes')) is not dict:
         out.append(Refusal('run.processes', 'expected named processes'))
+    processes = obj.get('processes')
+    for name, record in processes.items() if type(processes) is dict else ():
+        if type(record) is not dict or 'bootstrap' not in record:
+            continue
+        m = f'run.processes.{name}.bootstrap'
+        channel = shape(record['bootstrap'], ('stream', 'action', 'received_ms', 'delivered_ms'), (), m, out)
+        if channel.get('stream') != 'stdout':
+            out.append(Refusal(m + '.stream', 'expected stdout'))
+        if type(channel.get('action')) is not str or not NAME.fullmatch(channel['action']):
+            out.append(Refusal(m + '.action', 'expected seed action name'))
+        for field in ('received_ms', 'delivered_ms'):
+            ms = channel.get(field)
+            if ms is not None and (type(ms) is not int or not 0 <= ms <= SAFE):
+                out.append(Refusal(m + '.' + field, 'expected nonnegative safe milliseconds or null'))
+        output = record.get('output')
+        if type(output) is not dict or 'stdout' not in output or output['stdout'] is not None:
+            out.append(Refusal(f'run.processes.{name}.output.stdout', 'private bootstrap output must be null'))
     for i, command in enumerate(obj.get('commands', []) if type(obj.get('commands')) is list else []):
+        if type(command) is dict and 'bootstrap' in command:
+            m = f'run.commands.{i}'
+            channel = shape(command['bootstrap'], ('process',), (), m + '.bootstrap', out)
+            if command.get('group') != 'actions':
+                out.append(Refusal(m + '.bootstrap', 'only seed actions receive bootstrap input'))
+            if type(channel.get('process')) is not str or not NAME.fullmatch(channel['process']):
+                out.append(Refusal(m + '.bootstrap.process', 'expected source process name'))
+            if 'stdin' not in command or command['stdin'] is not None:
+                out.append(Refusal(m + '.stdin', 'private bootstrap stdin must be null'))
+            output = shape(command.get('output'), ('stdout', 'stderr'), (), m + '.output', out)
+            for stream in ('stdout', 'stderr'):
+                if output.get(stream) is not None:
+                    out.append(Refusal(m + '.output.' + stream, 'private bootstrap output must be null'))
         if type(command) is dict and 'cluster' in command:
             if command.get('group') not in ('collect', 'checks') or command['cluster'] != 'stopped':
                 out.append(Refusal(f'run.commands.{i}.cluster', 'only stopped collections and checks name cluster'))

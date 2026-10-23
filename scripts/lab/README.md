@@ -86,6 +86,31 @@ unavailable. Such an action alone gains `awaited` in its command record: null
 until seen, then `{"ms", "captures": {C: VALUE}}`; the timeline records an
 `awaited` event with `name` and `captures`, as it records ready captures.
 
+A process may opt into `bootstrap: {"stream": "stdout", "action": NAME}`.
+Its stdout then belongs only to that seed action. The action must be unique
+and declare neither `stdin` (even empty) nor `await`; no ready or awaited rule
+may read the private stdout. Readiness needs both the public ready lines and
+one nonempty UTF-8 LF line within the same `ready_seconds` from spawn. The
+line is at most 4096 bytes including LF, without CR or NUL. Partial, malformed,
+overlong or extra output fails `bootstrap/P/REASON` with no evidence path.
+
+The host keeps private bytes outside lifecycle snapshots. Immediately before
+the recipient starts, it writes the complete framed line once into an empty
+pipe while holding its read end, closes the writer and passes the reader as
+stdin. The recipient reads the line then EOF. No private stream is retained,
+hashed, captured or scanned for panic text: source stdout is null in its
+output record, and the recipient's stdin and both outputs are null. Its
+command record gains `bootstrap: {"process": P}`. Its nonzero exit still
+produces the ordinary action failure, with an empty evidence list.
+
+The source record gains `bootstrap` with `stream`, `action`, `received_ms`
+and `delivered_ms`; timestamps stay null until observed. The two bootstrap
+timeline events name only `process` and `action`, with the observed `ms`.
+Private bytes are dropped on handoff, cut, error or interruption, and private
+streams keep draining. A trusted recipient's product session may live in a
+declared scratch directory. Experiments without this opt-in keep their
+ordinary streams, stdin, captures and records.
+
 Validation reads machine facts without starting experiment processes: cgroup
 v2, a user manager socket, enabled user namespaces, `systemd-run`, `bwrap`, and
 the disk floor from `tmp/machine.env` (`PLAN_MIN_DISK_GB`, otherwise the
@@ -120,7 +145,7 @@ It selects the next ready dependency set using canonical u64 draws, renders a
 process's files immediately before its start, and publishes captures only when
 all that predecessor's ready lines have arrived. Arguments are literal and each
 environment is complete. Complete stdout/stderr lines drive readiness; no socket
-probe or sleep decides readiness. Process and command output is
+probe or sleep decides readiness. Public process and command output is
 streamed into the run's retained files.
 
 Collections and checks accept `cluster: "up" | "stopped"`, defaulting to
@@ -222,11 +247,15 @@ The mockup runs in its own bubblewrap namespace. `look/check structure|style|wor
 accepts repeated `--capture DIR` arguments: each scene must occur in exactly
 one record, and structure checks a live scene's focus finder as `focus/page`.
 
-Missing or denied systemd/bubblewrap capabilities produce an explicit
-process-tier skip/refusal. They prove nothing about native containment. Unit
-stories use supplied times without sleeping; the AST boundary includes `life`
-and `checks`, plus `findings`. The unit tier runs in `scripts/check.sh`; the process tier runs
-before the exhaustive suite in `scripts/after-landing.sh`.
+The runtime stories fail when systemd/bubblewrap capabilities are missing or
+denied. Unit stories use supplied times without sleeping; the AST boundary
+includes `life`, `bootstrap`, `checks` and `findings`. The unit tier runs in
+`scripts/check.sh`. The owner runs the native tier on demand after landing;
+unit success alone does not establish native containment or private retention.
+The bootstrap stories observe a public stream between private pieces and scan
+all retained files and runner output after success, nonzero exit, abort, cut
+and interruption. The terminal host-error story bounds supplied host calls and
+requires the recovery marker to remain when cleanup cannot be confirmed.
 
 Findings follow lab.md, sections 9 and 10.2:
 
