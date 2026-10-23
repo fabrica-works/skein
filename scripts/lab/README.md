@@ -102,7 +102,10 @@ Its effects are in `runner/brake_codex.py`; `codex.brake_fold` makes the pure
 decision. Windows are identified by duration, 300 and 10080 minutes,
 regardless of primary/secondary order. Both must be present and strictly below
 their shares, with no reached type or RPC error. Its final line is
-`go: five-hour U%/S%, week U%/S%` or `refused: WHY`. The lock keeps it from
+`go: five-hour U%/S%, week U%/S%` or `refused: WHY`. A refusal over an answer
+names what it read, `(seen: ...)`: the snapshot's `limitId` and `planType`,
+and each slot's minutes, used percent and `resetsAt` as given, rate-limit data
+alone (never the account's id). The lock keeps it from
 overlapping the driver that uses the same account home.
 
 `usage.windows` is the driver's last `account/rateLimits/updated` snapshot,

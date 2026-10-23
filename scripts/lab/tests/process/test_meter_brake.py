@@ -114,7 +114,8 @@ class MeterBrake(unittest.TestCase):
         self.inputs(dict(rate_read=data))
         before = list((self.lab_root / 'keys/native').glob('*/runs/*'))
         code, stdout, stderr = self.cli('run', seed='2')
-        self.assertEqual((code, stdout, stderr.strip()), (2, '', 'brake: refused: week 80%/75%'))
+        self.assertEqual((code, stdout, stderr.strip()), (2, '', 'brake: refused: week 80%/75%'
+                          ' (seen: primary 10080 min 80% resets ?, secondary 300 min 12% resets ?)'))
         self.assertEqual(list((self.lab_root / 'keys/native').glob('*/runs/*')), before)
         self.assertEqual([json.loads(line)['method'] for line in requests.read_text().splitlines()],
                          ['initialize', 'initialized', 'account/rateLimits/read'] * 2)

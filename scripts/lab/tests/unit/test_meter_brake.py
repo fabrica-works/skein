@@ -263,16 +263,31 @@ class Windows(unittest.TestCase):
             self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(swapped=swapped))), 50, 75),
                              (0, 'go: five-hour 12%/50%, week 3%/75%'))
         for five, week, line in ((50, 3, 'five-hour 50%/50%'), (12, 75, 'week 75%/75%'), (12, 80, 'week 80%/75%')):
+            seen = f' (seen: primary 300 min {five}% resets 100, secondary 10080 min {week}% resets ?)'
             self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(five, week))), 50, 75),
-                             (1, 'refused: ' + line))
+                             (1, 'refused: ' + line + seen))
 
     def test_brake_missing_reached_error_and_malformed(self):
-        for response, line in ((dict(result=dict(rateLimits=dict(primary=None, secondary=None))), 'five-hour window missing'),
-                               (dict(result=dict(rateLimits=dict(primary=snapshot()['primary']))), 'week window missing'),
-                               (dict(result=dict(rateLimits=dict(rateLimitReachedType='rate_limit_reached'))), 'rate_limit_reached'),
+        none = ' (seen: primary none, secondary none)'
+        for response, line in ((dict(result=dict(rateLimits=dict(primary=None, secondary=None))), 'five-hour window missing' + none),
+                               (dict(result=dict(rateLimits=dict(primary=snapshot()['primary']))),
+                                'week window missing (seen: primary 300 min 12% resets 100, secondary none)'),
+                               (dict(result=dict(rateLimits=dict(rateLimitReachedType='rate_limit_reached'))), 'rate_limit_reached' + none),
                                (dict(error=dict(message='no account')), 'rateLimits: no account'),
                                (dict(result={}), 'rateLimits missing'),
-                               (dict(result=dict(rateLimits=dict(primary=[]))), 'rateLimits malformed')):
+                               (dict(result=dict(rateLimits=dict(primary=[]))), 'rateLimits malformed' + none),
+                               # A fractional percent and a null duration show as read; the plan and limit
+                               # ids are named, the account id and anything not an id never.
+                               (dict(result=dict(accountId='acct-1', rateLimits=dict(
+                                   limitId='codex', planType='plus', accountId='acct-2', limitName='Codex limit',
+                                   primary=dict(windowDurationMins=None, usedPercent=None, resetsAt=None),
+                                   secondary=dict(windowDurationMins=10080, usedPercent=3.5, resetsAt=7)))),
+                                'rateLimits malformed (seen: limitId codex, planType plus, '
+                                'primary ? min ?% resets ?, secondary 10080 min 3.5% resets 7)'),
+                               (dict(result=dict(rateLimits=dict(
+                                   primary=dict(windowDurationMins=None, usedPercent=None, resetsAt=None),
+                                   secondary=dict(windowDurationMins=10080, usedPercent=3, resetsAt=7)))),
+                                'five-hour window missing (seen: primary ? min ?% resets ?, secondary 10080 min 3% resets 7)')):
             with self.subTest(response=response):
                 self.assertEqual(codex.brake_fold(response, 50, 75), (1, 'refused: ' + line))
 

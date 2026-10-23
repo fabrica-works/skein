@@ -247,6 +247,25 @@ def windows(snapshot):
     return sorted(result, key=lambda row: (row['minutes'] is None, row['minutes'] or 0))
 
 
+def brake_seen(snapshot):
+    """The account's windows as read, rate-limit data alone, for a refusal's line."""
+    def number(value):
+        return str(value) if type(value) in (int, float) else '?'
+    parts = []
+    for field in ('limitId', 'planType'):
+        value = snapshot.get(field)
+        if type(value) is str and value and len(value) <= 64 and all(c.isalnum() or c in '_.-' for c in value):
+            parts.append(field + ' ' + value)
+    for slot in ('primary', 'secondary'):
+        window = snapshot.get(slot)
+        if type(window) is not dict:
+            parts.append(slot + ' none')
+            continue
+        parts.append(slot + ' ' + number(window.get('windowDurationMins')) + ' min '
+                     + number(window.get('usedPercent')) + '% resets ' + number(window.get('resetsAt')))
+    return ' (seen: ' + ', '.join(parts) + ')'
+
+
 def brake_fold(response, five_hour, week):
     """Admit only an account snapshot containing both windows below their shares."""
     if 'error' in response:
@@ -256,19 +275,20 @@ def brake_fold(response, five_hour, week):
     snapshot = result.get('rateLimits') if type(result) is dict else None
     if type(snapshot) is not dict:
         return 1, 'refused: rateLimits missing'
+    seen = brake_seen(snapshot)
     if snapshot.get('rateLimitReachedType') is not None:
-        return 1, 'refused: ' + str(snapshot['rateLimitReachedType'])
+        return 1, 'refused: ' + str(snapshot['rateLimitReachedType']) + seen
     try:
         rows = windows(snapshot)
     except (Refused, AttributeError):
-        return 1, 'refused: rateLimits malformed'
+        return 1, 'refused: rateLimits malformed' + seen
     found = []
     for minutes, name, share in ((300, 'five-hour', five_hour), (10080, 'week', week)):
         row = next((r for r in rows if r['minutes'] == minutes), None)
         if row is None or row['used_percent'] is None:
-            return 1, 'refused: ' + name + ' window missing'
+            return 1, 'refused: ' + name + ' window missing' + seen
         text = name + ' ' + str(row['used_percent']) + '%/' + str(share) + '%'
         if row['used_percent'] >= share:
-            return 1, 'refused: ' + text
+            return 1, 'refused: ' + text + seen
         found.append(text)
     return 0, 'go: ' + ', '.join(found)
