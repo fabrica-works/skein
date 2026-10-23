@@ -12,9 +12,11 @@ DISABLED = ('apps', 'plugins', 'remote_plugin', 'recommended_plugins', 'hooks',
             'tool_suggest', 'shell_snapshot', 'api_key_model_discovery', 'workspace_dependencies')
 NON_ACTIONS = ('userMessage', 'agentMessage', 'reasoning', 'plan', 'contextCompaction')
 # tool_mode: code mode; multi_agent_version: collaboration tools; experimental_supported_tools:
-# clock and asynchronous questions; apply_patch_tool_type: apply_patch.
+# clock and asynchronous questions; apply_patch_tool_type: apply_patch; supports_search_tool:
+# MCP tools deferred behind a tool search the host does not serve.
 CATALOG_FIELDS = (('tool_mode', None), ('multi_agent_version', None),
-                  ('experimental_supported_tools', []), ('apply_patch_tool_type', None))
+                  ('experimental_supported_tools', []), ('apply_patch_tool_type', None),
+                  ('supports_search_tool', False))
 # Codex adds these whenever an MCP server is configured; each maps to its listing's field,
 # or None for a read. The inventory holds lab's resources and templates empty (lab.md 6.1).
 RESOURCE_TOOLS = {'list_mcp_resources': 'resources', 'list_mcp_resource_templates': 'resourceTemplates',
@@ -83,7 +85,7 @@ def catalog_refusals(data: bytes, model: str) -> list:
     # Each field adds built-in tools outside the audit's admitted actions (lab.md 6.1).
     return [Refusal(member, f'the driver model\'s {field} must be {json.dumps(value)}')
             for field, value in CATALOG_FIELDS
-            if field not in entries[0] or entries[0][field] != value]
+            if field not in entries[0] or entries[0][field] != value or type(entries[0][field]) is not type(value)]
 
 
 def expected_inventory(tools: list[str], config_path: str) -> dict:

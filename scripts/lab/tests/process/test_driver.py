@@ -127,7 +127,8 @@ class Driver(unittest.TestCase):
     def catalog(self, tool_mode):
         path = self.root / 'catalog.json'
         path.write_text(json.dumps(dict(models=[dict(slug='scripted', tool_mode=tool_mode, multi_agent_version=None,
-                                                       experimental_supported_tools=[], apply_patch_tool_type=None)])))
+                                                       experimental_supported_tools=[], apply_patch_tool_type=None,
+                                                       supports_search_tool=False)])))
         self.settings['driver']['catalog'] = dict(path=str(path), sha256=store.file_digest(path.read_bytes()))
         return path
 

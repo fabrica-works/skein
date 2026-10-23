@@ -70,7 +70,7 @@ class Codex(unittest.TestCase):
             data = value if type(value) is bytes else json.dumps(value).encode()
             return [r.why for r in codex.catalog_refusals(data, model)]
         entry = dict(slug='m', tool_mode=None, multi_agent_version=None, experimental_supported_tools=[],
-                     apply_patch_tool_type=None, context_window=1)
+                     apply_patch_tool_type=None, supports_search_tool=False, context_window=1)
         self.assertEqual(refused(dict(models=[entry, dict(slug='other', tool_mode='code_mode_only')])), [])
         self.assertEqual(refused(b'{'), ['catalog is not JSON'])
         self.assertEqual(refused(b'\xff'), ['catalog is not JSON'])
@@ -79,12 +79,13 @@ class Codex(unittest.TestCase):
         self.assertEqual(refused(dict(models=[entry, entry])), ["catalog must hold the driver model 'm' once"])
         for field, offering in (('tool_mode', 'code_mode_only'), ('multi_agent_version', 'v2'),
                                 ('experimental_supported_tools', ['clock']), ('apply_patch_tool_type', 'freeform'),
-                                ('experimental_supported_tools', None), ('apply_patch_tool_type', False)):
+                                ('experimental_supported_tools', None), ('apply_patch_tool_type', False),
+                                ('supports_search_tool', True), ('supports_search_tool', 0), ('supports_search_tool', None)):
             for changed in ({**entry, field: offering}, {k: v for k, v in entry.items() if k != field}):
                 with self.subTest(field=field, changed=changed):
-                    wanted = 'null' if field != 'experimental_supported_tools' else '[]'
+                    wanted = {'experimental_supported_tools': '[]', 'supports_search_tool': 'false'}.get(field, 'null')
                     self.assertEqual(refused(dict(models=[changed])), [f"the driver model's {field} must be {wanted}"])
-        self.assertEqual(len(refused(dict(models=[dict(slug='m')]))), 4)
+        self.assertEqual(len(refused(dict(models=[dict(slug='m')]))), 5)
 
     def test_catalog_settings_are_absolute_and_digested(self):
         exp, subject, settings, facts, _ = fixture()
