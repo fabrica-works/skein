@@ -373,8 +373,8 @@ against real endpoints, with a key or a plan's token from the environment.
 `measure` runs a suite with no budget, to time each test. `macos` is the
 focused suite on the macos-26 runner alone (`.github/workflows/macos.yml`),
 under a budget of its own set from measured figures by the user's decision
-(director 803), provisionally 180 seconds until the runner's suite is
-measured; Linux's stays as above.
+(director 803): 64 seconds, one and a half times the 42.4 seconds macOS
+run 40019066645 took; Linux's stays as above.
 
 Replay: a seed replays to the same trace of submissions and completions,
 and a JSON world, an HTTP world, an io world and an echo world to the

@@ -21,13 +21,13 @@ priority = 10
 # The focused suite on the macos-26 runner alone, set by the user's decision
 # through director 803: a budget of its own, from measured figures; Linux's
 # stays 30 seconds. It inherits the default profile's filter and overrides.
-# Provisional, for measuring only: about twice the 83 s projected from macOS
-# run 40003540284, with the slow period scaled by its rate against Linux's
-# (24 against 98 tests a second a core). The measured figure replaces both.
+# Measured in macOS run 40019066645: 6020 tests in a 42.386 s wall, times
+# 1.5, rounded up; the slow period is 6 s scaled by that run's time a test
+# against Linux's (126.2 s over 6020 tests against 66.1 s over 6123, 1.94).
 [profile.macos]
 inherits = "default"
-global-timeout = "180s"
-slow-timeout = { period = "25s" }
+global-timeout = "64s"
+slow-timeout = { period = "12s" }
 
 [profile.fuzzy]
 default-filter = "binary(/^fuzzy_/)"

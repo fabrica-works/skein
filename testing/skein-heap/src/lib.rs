@@ -39,28 +39,24 @@
 //!
 //! # The runtime's own
 //!
-//! A thread's thread-locals with a destructor make std record each
-//! destructor: on macOS in a list on the heap (std's
-//! `sys/thread_local/destructors/list.rs`, 64 bytes for its first four,
-//! doubling as it grows), allocated through this allocator and held until the
-//! thread ends; on Linux through glibc's `__cxa_thread_atexit_impl`, outside
-//! it. That list is the runtime's, not a step's, yet a thread-local reached
-//! for the first time inside a step (std's own, as a channel's waiting
-//! context) would grow it there. So a meter and a span register 33
-//! destructors of their own before they read their base, on every system:
-//! the list then holds 64, room for 31 more less those std registered first,
-//! before anything is measured. The count leans on std's growth policy:
-//! `tests/heap`'s `runtime` test reaches 16 new thread-locals with a
-//! destructor inside a span and inside a step, more than any world reaches,
-//! and fails when that policy leaves them less room.
+//! Two of std's allocations are the runtime's, not a step's, and a meter and
+//! a span make each before they read their base, on every system:
 //!
-//! std's locks are the runtime's too: on macOS a `Mutex` is a pthread one,
-//! its `pthread_mutex_t` (64 bytes) boxed on the heap at its first lock, so
-//! the first write to the standard error, a process's `eprintln!` in a step,
-//! would hold 64 bytes that its drop never frees (macOS run 40010966195). A
-//! meter and a span lock it once first, on every system; on Linux the lock
-//! is a futex and allocates nothing. `tests/heap`'s `runtime` test writes to
-//! it for the first time inside a step.
+//! - Its thread-local destructor record: on macOS a thread's thread-locals
+//!   with a destructor are recorded in `DTORS`, a `Vec` on the global
+//!   allocator (std's `sys/thread_local/destructors/list.rs`, with its FIXME
+//!   to use the system allocator), allocated through this allocator at the
+//!   first one (64 bytes for the first four) and held until the thread ends;
+//!   on Linux through glibc's `__cxa_thread_atexit_impl`, outside it. A meter
+//!   and a span reach one of their own first. The list's growth past its
+//!   first record inside a step is not guarded.
+//! - The standard error's lock: on macOS a `Mutex` is a pthread one, its
+//!   `pthread_mutex_t` (64 bytes) boxed at its first lock, so a process's
+//!   first `eprintln!` in a step would hold 64 bytes that its drop never
+//!   frees (macOS run 40010966195). On Linux the lock is a futex and
+//!   allocates nothing.
+//!
+//! `tests/heap`'s `runtime` test holds each.
 //!
 //! # The `unsafe`
 //!
@@ -133,29 +129,19 @@ enum Phase {
     },
 }
 
-/// Makes thread-locals with a destructor, and the function that reaches each
-/// once a thread (see "The runtime's own").
-macro_rules! runtime_records {
-    ($($record:ident)*) => {
-        thread_local! {
-            static WARM: Cell<bool> = const { Cell::new(false) };
-            $(static $record: Cell<Option<Box<()>>> = const { Cell::new(None) };)*
-        }
-
-        /// Fills the thread's destructor record, and makes std's standard
-        /// error lock, before a base is read.
-        fn warm_runtime() {
-            if !WARM.replace(true) {
-                $($record.with(|record| record.set(None));)*
-                drop(std::io::stderr().lock());
-            }
-        }
-    };
+thread_local! {
+    /// Reached before a base is read, never on the allocator's paths: its
+    /// destructor makes the thread's destructor record (see "The runtime's
+    /// own").
+    static RUNTIME: Cell<Option<Box<()>>> = const { Cell::new(None) };
 }
 
-// Reached before a base is read, never on the allocator's paths: 33, so that
-// std's list doubles to 64 (see "The runtime's own").
-runtime_records!(R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29 R30 R31 R32);
+/// Makes the thread's destructor record and std's standard error lock
+/// before a base is read (see "The runtime's own").
+fn warm_runtime() {
+    RUNTIME.with(|runtime| runtime.set(None));
+    drop(std::io::stderr().lock());
+}
 
 // Const-initialised and without a destructor: reaching them never allocates
 // and never fails, so the allocator can use them. Nothing allocates while it

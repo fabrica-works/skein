@@ -6,46 +6,33 @@ use skein_heap::{Counting, Meter, Span};
 #[global_allocator]
 static HEAP: Counting = Counting;
 
-/// Makes thread-locals with a destructor, and a function that reaches each
-/// for the first time on its thread.
-macro_rules! records {
-    ($reach:ident: $($record:ident)*) => {
-        std::thread_local! {
-            $(static $record: Cell<Option<Box<u8>>> = const { Cell::new(None) };)*
-        }
-
-        fn $reach() {
-            $($record.with(|record| record.set(None));)*
-        }
-    };
+std::thread_local! {
+    static FIRST: Cell<Option<Box<u8>>> = const { Cell::new(None) };
+    static SECOND: Cell<Option<Box<u8>>> = const { Cell::new(None) };
 }
 
-// Sixteen each, more than any world reaches for the first time in a step.
-records!(reach_in_a_span: S0 S1 S2 S3 S4 S5 S6 S7 S8 S9 S10 S11 S12 S13 S14 S15);
-records!(reach_in_a_step: T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15);
-
 #[test]
-fn a_threads_destructor_record_is_neither_a_spans_nor_a_steps() {
+fn a_threads_first_destructor_record_is_neither_a_spans_nor_a_steps() {
     let span = Span::start();
-    reach_in_a_span();
+    FIRST.with(|first| first.set(None));
     let grown = span.end();
-    assert_eq!(
-        (grown.peak, grown.net),
-        (0, 0),
-        "a span over 16 new thread-locals with a destructor: std's list grew past the room skein-heap's 33 leave"
-    );
+    assert_eq!((grown.peak, grown.net), (0, 0), "a span over the thread's first thread-local with a destructor");
     let meter = Meter::new();
     meter.start();
-    reach_in_a_step();
+    SECOND.with(|second| second.set(None));
     let step = meter.end();
-    assert_eq!((step.peak(), step.held()), (0, 0), "a step over 16 more");
+    assert_eq!((step.peak(), step.held()), (0, 0), "a step over another");
 }
 
 #[test]
-fn the_first_write_to_standard_error_is_not_a_steps() {
+fn the_first_write_to_standard_error_is_neither_a_spans_nor_a_steps() {
+    let span = Span::start();
+    eprintln!("a span's first line to the standard error");
+    let grown = span.end();
+    assert_eq!((grown.peak, grown.net), (0, 0), "a span over the first write to the standard error");
     let meter = Meter::new();
     meter.start();
-    eprintln!("a step's first line to the standard error");
+    eprintln!("a step's line to the standard error");
     let step = meter.end();
-    assert_eq!((step.peak(), step.held()), (0, 0), "a step over the first write to the standard error");
+    assert_eq!((step.peak(), step.held()), (0, 0), "a step over another");
 }
