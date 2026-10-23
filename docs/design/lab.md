@@ -958,6 +958,14 @@ documentation.
   and errors with no turn otherwise. Any other built-in still ends the
   run in error, and so does any of the three returning content: a
   listing that is not empty, or a read that is not an error.
+- **Every model call is seen:** the host makes no item for a call it
+  does not serve, so the runner also reads the host's raw response
+  items (`experimentalRawEvents`). Each raw call must be answered by
+  an item with its call id, or be a `write_stdin` to a running command
+  of the run (itself a counted action); any other call, or another raw
+  call kind, is recorded as a counted `unhandled` action and ends the
+  run in error. Actions with no raw call at all end it too, so a host
+  that stops sending raw items fails closed.
 - **Three records of configuration:** the settings select the program,
   model and effort. The runner's version adapter derives the host's
   configuration and expected inventory from those settings and the
