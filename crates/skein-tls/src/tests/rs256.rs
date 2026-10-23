@@ -1,4 +1,4 @@
-//! RFC 7515, Appendix A.2's key and signature.
+//! RFC 7515, Appendix A.2's public test key, never a secret, and signature.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -57,7 +57,7 @@ fn private_key() -> Box<[u8]> {
 
 #[test]
 fn rs256_signs_rfc_7515_appendix_a2() {
-    let der = private_key();
+    let der = test_key(false);
     assert!(der.len() <= RS256_KEY_BYTES, "RFC key fits the bound");
     assert_eq!(der.len(), 1191, "RFC key DER length");
     let signature = sign_rs256(&der, INPUT).expect("RFC key signs");
@@ -82,7 +82,7 @@ fn rs256_key_bytes_is_the_largest_2048_bit_key() {
 
 #[test]
 fn rs256_signs_with_a_2048_bit_pkcs1_key_alone() {
-    let der = private_key();
+    let der = test_key(false);
     let truncated = Vec::from(&der[..der.len().checked_sub(1).expect("RFC key is nonempty")]);
     let mut trailing = Vec::from(der.as_ref());
     trailing.push(0);
@@ -103,4 +103,73 @@ fn rs256_signs_with_a_2048_bit_pkcs1_key_alone() {
     ] {
         assert_eq!(sign_rs256(&key, INPUT), None, "{label}");
     }
+}
+
+// RFC 7515 Appendix A.2: a public test key, never a secret.
+fn test_key(pkcs8: bool) -> Box<[u8]> {
+    let private = private_key();
+    if !pkcs8 {
+        return private;
+    }
+    let mut bytes = Vec::from([
+        0x30, 0x82, 0x04, 0xbd, 0x02, 0x01, 0x00, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
+        0x01, 0x01, 0x05, 0x00, 0x04, 0x82, 0x04, 0xa7,
+    ]);
+    bytes.extend_from_slice(&private);
+    bytes.into_boxed_slice()
+}
+
+#[test]
+fn pkcs8_signing_and_public_components_match_the_rfc7515_vector() {
+    use crate::{rs256_public, sign_rs256_pkcs8};
+    let key = test_key(true);
+    let public = rs256_public(&key).expect("RFC PKCS#8 key");
+    assert_eq!(public.modulus, raw(N), "RFC modulus without sign byte");
+    assert_eq!(public.exponent, raw(E), "RFC exponent");
+    let signature = sign_rs256_pkcs8(&key, INPUT).expect("PKCS#8 signature");
+    assert_eq!(signature, raw(SIGNATURE), "published signature");
+    assert!(verify_rs256(&public.modulus, &public.exponent, INPUT, &signature), "signature verifies");
+    assert_eq!(sign_rs256_pkcs8(&key, INPUT), Some(signature), "deterministic signature");
+}
+
+#[test]
+fn pkcs8_refuses_bad_keys_other_forms_and_a_1024_bit_key() {
+    use crate::{rs256_public, sign_rs256_pkcs8};
+    let mut bad = test_key(true);
+    *bad.last_mut().expect("key byte") ^= 1;
+    let key = test_key(true);
+    let key1024 = fixture("rsa-1024.der");
+    let length = key1024.len();
+    let mut small = Vec::from([0x30, 0x82]);
+    small.extend_from_slice(
+        &u16::try_from(length.checked_add(22).expect("PKCS#8 wrapper")).expect("length").to_be_bytes(),
+    );
+    small.extend_from_slice(&[
+        0x02, 0x01, 0, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0, 0x04,
+        0x82,
+    ]);
+    small.extend_from_slice(&u16::try_from(length).expect("length").to_be_bytes());
+    small.extend_from_slice(&key1024);
+    let oversized = Vec::from([0; crate::RS256_PKCS8_KEY_BYTES.checked_add(1).expect("past bound")]);
+    for (label, bytes) in [
+        ("empty", Vec::new()),
+        ("corrupt", Vec::from(bad.as_ref())),
+        ("truncated", Vec::from(&key[..key.len().checked_sub(1).expect("key")])),
+        ("PKCS#1", Vec::from(test_key(false).as_ref())),
+        ("1024-bit", small),
+        ("oversized", oversized),
+    ] {
+        assert!(rs256_public(&bytes).is_none(), "public refuses {label}");
+        assert!(sign_rs256_pkcs8(&bytes, INPUT).is_none(), "signing refuses {label}");
+    }
+}
+
+#[test]
+fn pkcs8_bound_prices_the_largest_4096_bit_der() {
+    use crate::RS256_PKCS8_KEY_BYTES;
+    let n = [0xff; 512];
+    let e = [0x01, 0xff, 0xff, 0xff, 0xff];
+    let prime = [0xff; 256];
+    let inner = integers(&[&[0], &n, &e, &n, &prime, &prime, &prime, &prime, &prime]).expect("largest PKCS#1 DER");
+    assert_eq!(inner.len().checked_add(26), Some(RS256_PKCS8_KEY_BYTES), "PrivateKeyInfo wrapper");
 }

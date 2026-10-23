@@ -44,7 +44,7 @@ owners take it there. Owners keep the rows their work changes
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
 | `fake-llm.md` | partly | 2.4, 3: a script cued by a request and an answer otherwise, a peer without records, the test root exported: temper's first-run; 2.2: the byte peer as a process of its own, refusing a script with a hold at its start: not planned; 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 7: IPv6 loopback, device authorization, a credential helper: not planned |
-| `oauth-issuer.md` | no | all, designed: `skein-oauth-issuer`, its world `tests/oauth-issuer` and skein-tls's `rs256_public` (tls.md, 4): o/sign-in's M3 |
+| `oauth-issuer.md` | yes | 2–9: `skein-oauth-issuer`, its real-client world `tests/oauth-issuer`, and skein-tls's PKCS#8 signing and `rs256_public` (tls.md, 4) |
 | `browser.md` | partly | 6, 7: a test answering a native dialog itself, and the kit's `browser.rs` split by concern; 11: open questions: not planned |
 | `fake-checkout.md` | partly | 1: the kit in `crates/`, its tests in `tests/fake-checkout`, shipped in temper's `temper fake git` over the fake forge's git route: temper's first-run |
 | `ui.md` | partly | 4.2, 18, 19: the vocabulary that waits (a combo box, a slider and a meter, a switch, media, a feed, a list box choosing several, a tree grid) and right-to-left text, each by the light path (4.3) when an application needs it; 3: the builder's assertion that a named button, tab or menu item holds no node: not planned; 19: a markup macro for the builder, a server keeping the previous bundle's digest directory; 16, 18: parts for a phone or a desktop: not planned |

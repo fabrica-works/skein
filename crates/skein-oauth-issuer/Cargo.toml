@@ -1,0 +1,19 @@
+[package]
+name = "skein-oauth-issuer"
+description = "Bounded stateless OpenID Connect issuer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-lib.workspace = true
+skein-json.workspace = true
+skein-tls.workspace = true
+
+[dev-dependencies]
+skein-heap.workspace = true
+
+[lints]
+workspace = true

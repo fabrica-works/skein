@@ -28,10 +28,11 @@ lives, are its caller's: in jig, the clients' component's provider.
   the token endpoint by Basic or by its secret in the body, never both.
   No refresh token, no consent, no implicit or hybrid flow, no dynamic
   registration.
-- **RS256 alone,** signed by `skein_tls::sign_rs256` with the issuer's
-  2048-bit key; its public half, the key set's one JWK, read from the
-  same key by `skein_tls::rs256_public` (tls.md, section 4), its `kid`
-  the key's thumbprint. PKCS#1 v1.5 is deterministic, so a world's trace
+- **RS256 alone,** signed by `skein_tls::sign_rs256_pkcs8` with the
+  issuer's RSA key, PKCS#8, of 2048 to 4096 bits, its size its
+  deployment's policy (jig's is 3072); its public half, the key set's
+  one JWK, read from the same key by `skein_tls::rs256_public` (tls.md,
+  section 4), its `kid` the key's thumbprint. PKCS#1 v1.5 is deterministic, so a world's trace
   does not depend on ring's blinding.
 - **Independent of the client.** It shares no type or codec with
   `skein-oauth`: it writes its documents with `skein-json` and reads its
@@ -51,7 +52,7 @@ pub struct Settings {
     pub userinfo_endpoint: Box<[u8]>,
     pub jwks_uri: Box<[u8]>,
     pub clients: List<Client>,
-    /// PKCS#1 `RSAPrivateKey` DER of a 2048-bit key, as `skein_tls::sign_rs256` takes it.
+    /// PKCS#8 `PrivateKeyInfo` DER of an RSA key of 2048 to 4096 bits, as `skein_tls::sign_rs256_pkcs8` takes it.
     pub key: Secret,
 }
 pub struct Client {
@@ -77,13 +78,13 @@ impl Issuer {
   `client_bytes` bytes; and one redirect URI, under the URLs' rules
   above, compared byte for byte wherever a request names it. There are
   1 to `limits.clients` clients. Every client is confidential.
-- **The key** is one `sign_rs256` signs with; `new` reads its public
+- **The key** is one `sign_rs256_pkcs8` signs with; `new` reads its public
   half with `rs256_public` and refuses a key it gives none for.
 - **`Error`**, `new`'s and the encoders': `Limits` (a value past its
   bound, or the settings past `worst_case`'s arithmetic), `Address` (a
   URL off its rules), `Client` (an id or secret off its rules, a
   repeated id, no client), `Key` (a key `rs256_public` refuses),
-  `Claims` (a `Person` off section 6's rules), `Sign` (`sign_rs256`
+  `Claims` (a `Person` off section 6's rules), `Sign` (`sign_rs256_pkcs8`
   gave none for a key it took before).
 - **What a request leaves to its caller,** each kept by the caller as it
   chooses: the `Authorization` (section 4), with its code; the `Person`
@@ -117,7 +118,8 @@ The key set is `{"keys":[JWK]}` with one JWK, its members in this order:
 
 - **`n` and `e`** are the key's modulus and public exponent as
   `rs256_public` gives them, big-endian unsigned with no leading zero
-  byte (the modulus's 256 bytes; the exponent's 1 to 5, `AQAB` for
+  byte (the modulus's 256 to 512 bytes, 384 for 3072 bits; the
+  exponent's 1 to 5, `AQAB` for
   65537), each in base64url without padding (RFC 7518, 6.3.1).
 - **`kid`** is the key's JWK thumbprint (RFC 7638): base64url without
   padding of the SHA-256 (`skein_lib::sha256`) of
@@ -130,7 +132,7 @@ The key set is `{"keys":[JWK]}` with one JWK, its members in this order:
 ```rust
 impl Issuer {
     pub fn authorize(&self, query: &[u8]) -> Result<Authorization, Refusal>;
-    pub fn redirect(&self, authorization: &Authorization, code: &Secret) -> Box<[u8]>;
+    pub fn redirect(&self, authorization: &Authorization, code: &Secret) -> Result<Box<[u8]>, Error>;
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Authorization {
@@ -186,6 +188,12 @@ Any other parameter (`prompt`, `max_age`, `login_hint`, `response_mode`
   and `&state=<state>` when there is one, percent-encoded. The issuer
   never decides a person is signed in, and never sends a browser
   anywhere a client's registration does not name.
+- **`redirect` checks what it is given,** since an `Authorization` is a
+  plain value its caller may build: a code of 1 to `token_bytes` bytes
+  of RFC 6749's visible characters, and a state and a nonce within
+  `state_bytes`, else `Limits`; a client among the issuer's and its
+  redirect URI byte for byte that client's, else `Client`. An
+  authorization `authorize` gave always passes.
 
 ## 5. The token request
 
@@ -305,7 +313,8 @@ impl Issuer {
   5.1).
 - **The ID token,** a compact JWS: the base64url, without padding, of
   the header `{"alg":"RS256","typ":"JWT","kid":"<kid>"}`, a `.`, of the
-  claims, a `.`, and of `sign_rs256`'s signature over the two parts and
+  claims, a `.`, and of `sign_rs256_pkcs8`'s signature, as long as the
+  modulus, over the two parts and
   the `.` between them.
 - **Its claims,** in this order: `iss` the identifier; `sub` the
   person's subject; `aud` the authorization's client id, a string; `exp`
@@ -368,7 +377,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64>;
   measured with `skein-json`'s encoder before its one allocation.
 - **`worst_case`** is, with checked arithmetic, the issuer held (its
   settings at their bounds, every client's id, secret and redirect URI,
-  the key at `RS256_KEY_BYTES`, its public half and `kid`) plus the
+  the key at `RS256_PKCS8_KEY_BYTES`, its public half at 4096 bits and
+  `kid`) plus the
   largest single call's allocations, its output and temporaries
   together: the token answer's, an ID token of a person at its bounds,
   in practice. A call allocates nothing that outlives it but what it
@@ -413,8 +423,12 @@ pub fn worst_case(limits: &Limits) -> Option<u64>;
     is signed by: the client fails the signature.
 - **Its keys** are published test keys, never a secret: RFC 7515's
   Appendix A.2 key, which skein-tls's tests use, and RFC 9500's
-  `testRSA2048` (section 2.1) for the second, each a PKCS#1 DER
-  fixture beside the tests.
+  `testRSA2048` (section 2.1) for the second, each a PKCS#8 DER
+  fixture beside the tests, naming its source and saying it is a public
+  test key, never a secret, and given by one test function: the one
+  place a generated key would replace them. An application's own tests,
+  from its key file's loader up, use a 3072-bit key generated in their
+  scratch directory instead (jig's are).
 - **Against a real client:** Forgejo, in temper's process tier, through
   jig's provider (temper's draft `sign-in.md`, section 8).
 
@@ -426,6 +440,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64>;
   does.
 - **`prompt=none`,** an authorization a client asks be answered without
   a page: ignored, as the caller always shows its page.
-- **Rotation:** one key; the key set would hold the old and the new
+- **Rotation:** one key, replaced by its deployment with a new one,
+  whose `kid` names it anew; the key set would hold the old and the new
   while tokens signed by the old live, each named by its `kid`.
 - **Refresh tokens:** none; a client that needs one signs in again.

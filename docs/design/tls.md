@@ -400,12 +400,19 @@ independence.
   a handshake does, and the signature does not depend on it, so a fake
   forge checks it with `verify_rs256`. A key is parsed at each signing,
   never kept by skein-tls.
+- **An issuer's signature:** `sign_rs256_pkcs8(key, message) ->
+  Option<Box<[u8]>>`, the same signing, for an OAuth issuer's key
+  (oauth-issuer.md, section 1): PKCS#8 `PrivateKeyInfo` DER of an RSA
+  key of 2048 to 4096 bits, as ring's `RsaKeyPair::from_pkcs8` takes
+  it, at most `RS256_PKCS8_KEY_BYTES`, the largest such key's DER; its
+  signature is as long as its modulus. Another form, size or a key ring
+  refuses is none. `sign_rs256`, a GitHub App's, stays as it is.
 - **A key's public half:** `rs256_public(key) -> Option<Rs256Public>`,
-  `Rs256Public { modulus: [u8; 256], exponent: Box<[u8]> }`, read from
-  the same PKCS#1 DER `sign_rs256` takes: its `n` and `e`, big-endian
-  unsigned with no leading zero byte, the exponent 1 to 5 bytes. None
-  for a key `sign_rs256` would refuse: ring parses it first, then the
-  DER's version, `n` and `e` are read. The OAuth issuer publishes it as
+  `Rs256Public { modulus: Box<[u8]>, exponent: Box<[u8]> }`, read from
+  the PKCS#8 DER `sign_rs256_pkcs8` takes: its `n` and `e`, big-endian
+  unsigned with no leading zero byte, the modulus 256 to 512 bytes, the
+  exponent 1 to 5. None for a key `sign_rs256_pkcs8` would refuse: ring
+  parses it first, then the DER's `n` and `e` are read. The OAuth issuer publishes it as
   its key set's JWK (oauth-issuer.md, section 3).
 - **What rustls's API makes the crate use:** an `Arc` of the shared
   configuration, a trait object for the time, a hand-written `Debug`

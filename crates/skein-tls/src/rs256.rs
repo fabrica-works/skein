@@ -31,6 +31,86 @@ pub fn sign_rs256(key: &[u8], message: &[u8]) -> Option<[u8; 256]> {
     <[u8; 256]>::try_from(signature.as_slice()).ok()
 }
 
+/// The largest 4096-bit two-prime RSA PKCS#8 key ring accepts: the
+/// PKCS#1 sequence is 4 + 3 + 517 + 7 + 517 + 5 * 261 = 2353 bytes
+/// (version, n, e <= 2^33 - 1, d, and five half-size CRT integers).
+/// `PrivateKeyInfo` adds its sequence (4), version (3), rsaEncryption
+/// `AlgorithmIdentifier` (15), and OCTET STRING header (4): 2379 bytes.
+pub const RS256_PKCS8_KEY_BYTES: usize = 2379;
+
+/// An issuer's unsigned RSA public components (tls.md, 4).
+#[derive(Debug)]
+pub struct Rs256Public {
+    pub modulus: Box<[u8]>,
+    pub exponent: Box<[u8]>,
+}
+
+/// Signs with PKCS#8 RSA of 2048 to 4096 bits, through rustls's wrapper
+/// of ring's `RsaKeyPair::from_pkcs8`. Blinding does not change the bytes.
+#[must_use]
+pub fn sign_rs256_pkcs8(key: &[u8], message: &[u8]) -> Option<Box<[u8]>> {
+    let parsed = issuer_key(key)?;
+    let signer = parsed.choose_scheme(&[SignatureScheme::RSA_PKCS1_SHA256])?;
+    let signature = signer.sign(message).ok()?;
+    Some(signature.into_boxed_slice())
+}
+
+/// Reads a key only after ring accepts it; never accepts another key
+/// form or size than `sign_rs256_pkcs8` (tls.md, 4).
+#[must_use]
+pub fn rs256_public(key: &[u8]) -> Option<Rs256Public> {
+    let _parsed = issuer_key(key)?;
+    let (modulus, exponent) = issuer_components(key)?;
+    Some(Rs256Public { modulus: Box::from(modulus), exponent: Box::from(exponent) })
+}
+
+fn issuer_key(key: &[u8]) -> Option<ring::sign::RsaSigningKey> {
+    if key.len() > RS256_PKCS8_KEY_BYTES {
+        return None;
+    }
+    let der = PrivateKeyDer::Pkcs8(key.into());
+    let parsed = ring::sign::RsaSigningKey::new(&der).ok()?;
+    let (modulus, exponent) = issuer_components(key)?;
+    if !(256..=512).contains(&modulus.len()) || !(1..=5).contains(&exponent.len()) {
+        return None;
+    }
+    Some(parsed)
+}
+
+fn issuer_components(key: &[u8]) -> Option<(&[u8], &[u8])> {
+    let (sequence, _) = der_element(key, 0x30)?;
+    let (_version, rest) = der_element(sequence, 0x02)?;
+    let (_algorithm, rest) = der_element(rest, 0x30)?;
+    let (private, _) = der_element(rest, 0x04)?;
+    let (sequence, _) = der_element(private, 0x30)?;
+    let (version, rest) = der_element(sequence, 0x02)?;
+    if version != [0] {
+        return None;
+    }
+    let (modulus, rest) = der_element(rest, 0x02)?;
+    let (exponent, _) = der_element(rest, 0x02)?;
+    Some((unsigned(modulus), unsigned(exponent)))
+}
+
+// ring has already checked DER's canonical spelling and the whole key.
+fn der_element(bytes: &[u8], tag: u8) -> Option<(&[u8], &[u8])> {
+    let (&found, rest) = bytes.split_first()?;
+    if found != tag {
+        return None;
+    }
+    let (&first, mut rest) = rest.split_first()?;
+    let mut len = usize::from(first);
+    if first & 0x80 != 0 {
+        len = 0;
+        for _ in 0..(first & 0x7f) {
+            let (&byte, tail) = rest.split_first()?;
+            len = len.checked_mul(256)?.checked_add(usize::from(byte))?;
+            rest = tail;
+        }
+    }
+    rest.split_at_checked(len)
+}
+
 /// An RS256 signature check by an RSA key of 2048 to 8192 bits.
 #[must_use]
 pub fn verify_rs256(modulus: &[u8], exponent: &[u8], message: &[u8], signature: &[u8]) -> bool {
