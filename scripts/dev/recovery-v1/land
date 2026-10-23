@@ -22,7 +22,9 @@
 # too slow for its gate, runs on the landed commit in the background
 # (after-landing).
 #
-# --docs   Markdown only: check that, and skip the gate.
+# --docs   Markdown only, or the mockups under docs/design/ (a directory
+#          named mockups), which need no build or test: check that, and
+#          skip the gate.
 # --local  No remote: land on the local main under a lock (LAND_LOCK, or
 #          the repository's land.lock) instead of pushing.
 # --gate   The gate, a shell command, instead of scripts/check.sh.
@@ -99,8 +101,7 @@ fi
 # One code landing at a time in each repository on this machine
 # (owners.md, 4.4), from its rebase to its push: gates run one
 # at a time anyway, and a gate that passed on a base another landing moved
-# would be thrown away. Markdown-only landings take no turn: a gate holds
-# across them.
+# would be thrown away. Markdown and mockups landings take no turn.
 if ((!docs)); then
     exec 6>"$common/land-turn.lock"
     if ! flock --nonblock 6; then
@@ -355,10 +356,11 @@ Resolve them, run git rebase --continue, then land again."
     candidate_check
     if ((docs)); then
         others=$(git diff --no-renames --name-only "$base" "$candidate" |
-            grep -vE '\.md$' || true)
-        [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
-        summary="none (Markdown only)"
-        policy="none (Markdown only)"
+            grep -vE '\.md$|^docs/design/(.*/)?mockups/' || true)
+        [[ -z $others ]] ||
+            die 2 "--docs, but these are neither Markdown nor docs/design/'s mockups: $others"
+        summary="none (Markdown and mockups only)"
+        policy="none (Markdown and mockups only)"
         gated=$tree
     else
         [[ $gate != scripts/check.sh || -x $gate ]] ||

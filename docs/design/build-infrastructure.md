@@ -433,9 +433,12 @@ heavy. Normal completion and handled signals close and reap the client's
 transport. A killed client loses its pipes; a remote holder also has its
 independent input-liveness bound.
 
-Request, grant and fail-open appear immediately on caller stderr and in
-private `DEV_TMP/landing-turn/events.jsonl` (0600, umask 077). Release is
-emitted on the holder's stderr and stored on the coordinator at
+Request, grant, confirmed release and fail-open appear on caller stderr
+and in private `DEV_TMP/landing-turn/events.jsonl` (0600, umask 077).
+The caller confirms release only after its owned transport exits zero.
+A nonzero exit or transport reap timeout records a fixed fail-open reason
+without claiming the coordinator's lock was released; land's exit status
+is retained. Release is also emitted on the holder's stderr and stored at
 `/home/free/.local/state/skein-landing-turn/landing-turn/events.jsonl`;
 transport stderr is discarded at the client. Join these journals by
 token. Queued EOF/liveness expiry also records release without runtime.

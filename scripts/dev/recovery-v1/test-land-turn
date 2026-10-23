@@ -112,6 +112,38 @@ def turn_module():
     return module
 
 
+def release_visibility(root):
+    root.mkdir()
+    module = turn_module()
+    results = {}
+    for name, ending in [('healthy', 'sys.exit(0)'), ('nonzero', 'sys.exit(42)'),
+                         ('killed', 'os.kill(os.getpid(), 9)'), ('reap-timeout', 'time.sleep(60)')]:
+        tmp = root / name
+        tmp.mkdir()
+
+        def command(directory, who):
+            code = ('import json,os,sys,time; '
+                f'print(json.dumps({dict(who, wait_s=0)!r}), flush=True); '
+                'print("untrusted-transport-stderr", file=sys.stderr, flush=True); '
+                'sys.stdin.buffer.read(); ' + ending)
+            return [sys.executable, '-I', '-B', '-c', code], False
+
+        with (tmp / 'caller.stderr').open('w') as out:
+            with patch.object(module, 'transport_command', command), patch.object(sys, 'stderr', out):
+                assert module.client(tmp, 'temper', ['sh', '-c', 'exit 17']) == 17
+        rows = events(tmp)
+        expected = ['request', 'grant', 'release' if name == 'healthy' else 'fail-open']
+        assert [row['event'] for row in rows] == expected
+        assert rows[-1]['reason'] == ('transport-exit-zero' if name == 'healthy'
+                                     else 'transport-release-unconfirmed')
+        stderr = (tmp / 'caller.stderr').read_text()
+        assert 'untrusted-transport-stderr' not in stderr
+        assert [json.loads(line.removeprefix('land-turn: ')) for line in stderr.splitlines()] == rows
+        results[name] = {'events': expected, 'child_exit': 17, 'reason': rows[-1]['reason']}
+    return {'layer': 'owned-pipe-close', 'caller_stderr_matches_private_journal': True,
+            'untrusted_stderr_discarded': True, 'outcomes': results}
+
+
 def construction(root):
     root.mkdir()
     module = turn_module()
@@ -359,9 +391,53 @@ def serialization(lab):
     lab.finish(second, 'b')
     assert [e['event'] for e in lab.turn_events()].count('grant') == 2
     assert [e['event'] for e in lab.turn_events()].count('release') == 2
+    for tag in ('a', 'b'):
+        assert '"reason": "transport-exit-zero"' in (lab.path / (tag + '.land.txt')).read_text()
     receipts = list((lab.base / 'receipts').glob('*.json'))
     assert len(receipts) == 4, 'both prebuilds and both gates must run'
     return {'layer': 'actual-land', 'serialized_before_hostlock_and_heavy': True, 'receipts': len(receipts)}
+
+
+def docs_mockups(lab, rejected=None):
+    clone = lab.clones['a']
+    git(clone, 'reset', '--hard', 'main')
+    files = ['docs/design/mockups/index.html', 'docs/design/mockups/app.js',
+             'docs/design/mockups/style.css', 'docs/design/a/b/mockups/index.html',
+             'docs/design/a/b/mockups/app.js', 'docs/design/a/b/mockups/style.css',
+             'notes/readme.md']
+    if rejected:
+        files = [rejected] if rejected != 'mixed' else [files[0], 'src/lib.rs']
+    for name in files:
+        path = clone / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('fixture\n')
+    git(clone, 'add', '.')
+    git(clone, 'commit', '-qm', 'docs fixture')
+    before = git(lab.origin, 'rev-parse', 'main')
+    tree = git(clone, 'rev-parse', 'HEAD^{tree}')
+    environment = dict(lab.env, LAND_TURN_FIXTURE_DIR='/invalid/must-not-read',
+                       LAND_TURN_HOLDER='/invalid/must-not-read', LAND_TURN_MODE='invalid')
+    client = lab.start_land(extra=['--docs'], environment=environment)
+    lab.done(client, 2 if rejected else 0)
+    after = git(lab.origin, 'rev-parse', 'main')
+    output = (lab.path / 'a.land.txt').read_text()
+    if rejected:
+        assert before == after
+        assert 'neither Markdown nor docs/design/\'s mockups' in output
+    else:
+        assert before != after
+        assert git(lab.origin, 'rev-parse', 'main^{tree}') == tree
+        assert 'none (Markdown and mockups only)' in output
+    assert not list(lab.control.glob('*.json')) and not lab.state()['tasks']
+    assert not list((lab.base / 'receipts').glob('*.json'))
+    assert not (clone / '.git/land-turn.lock').exists()
+    assert not (lab.path / 'tmp/landing-turn').exists()
+    assert not (lab.path / 'tmp/coordinator').exists()
+    assert 'land-turn:' not in output
+    return {'layer': 'actual-land', 'files': files, 'rejected': bool(rejected),
+            'origin_before': before, 'origin_after': after, 'candidate_tree': tree,
+            'no_turn_state_transport_host_turn_heavy_prebuild_gate': True,
+            'ordinary_nonforce_push': not rejected}
 
 
 def lost(lab, queued=False, kill_client=False):
@@ -569,7 +645,7 @@ def simulated_ssh(lab, test, failure=None):
         + ('sys.exit(255)\n' if failure else
            f'args=shlex.split(sys.argv[-1]); m=runpy.run_path({str(KIT / "land-turn.py")!r})\n'
            f'm["holder"](Path({str(lab.path / "tmp/coordinator")!r}), '
-           f'm["identity"](*args[5:8]), Path({str(lab.path / "tmp")!r}), heartbeat=True)\n'))
+           f'm["identity"](*args[5:8]), Path({str(lab.path / "tmp/coordinator")!r}), heartbeat=True)\n'))
     shim.chmod(0o700)
     del lab.env['LAND_TURN_FIXTURE_DIR']
     lab.env.update(LAND_TURN_HOLDER=path, LAND_TURN_MODE='ssh')
@@ -605,6 +681,11 @@ def main():
              ('failed-gate', failure), ('after-landing', after_landing), ('terminated-client', terminated),
              ('missing-local-helper', missing_local_helper)]
     cases += [('inert-' + mode, lambda lab, mode=mode: inert(lab, mode)) for mode in ('off', 'docs', 'local', 'other')]
+    cases += [('inert-docs-mockups', docs_mockups)]
+    cases += [('docs-reject-' + name, lambda lab, path=path: docs_mockups(lab, path))
+              for name, path in [('outside', 'docs/design/page.html'),
+                                 ('lookalike', 'docs/design/mockups-like/index.html'),
+                                 ('outside-root', 'mockups/index.html'), ('mixed', 'mixed')]]
     cases += [(('killed-client' if killed else 'lost-holder') + ('-queued' if queued else '-granted'),
                lambda lab, queued=queued, killed=killed: lost(lab, queued, killed))
               for killed in (False, True) for queued in (True, False)]
@@ -621,6 +702,7 @@ def main():
                lambda lab, queued=queued: simulated_ssh(lab, lambda lab: lost(lab, queued, True)))
               for queued in (True, False)]
     for name, test in [('protocol', protocol), ('construction', construction),
+                       ('release-visibility', release_visibility),
                        ('heartbeat-lifetime', heartbeat_lifetime), ('installed-validation', installed_validation)]:
         if not opts.case or name in opts.case:
             results.append(dict(case=name, status='pass', **test(root / name)))

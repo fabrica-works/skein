@@ -113,10 +113,11 @@ def close_transport(transport):
     transport.stdin.close()
     transport.stdout.close()
     try:
-        transport.wait(timeout=1)
+        return transport.wait(timeout=1) == 0
     except subprocess.TimeoutExpired:
         transport.kill()
         transport.wait()
+        return False
 
 
 def transport_command(tmp, who):
@@ -127,7 +128,7 @@ def transport_command(tmp, who):
                 Path(fixture).resolve() == tmp.resolve()):
             raise ValueError('invalid-fixture')
         return ([sys.executable, '-I', '-B', str(Path(__file__).resolve()), 'holder', fixture,
-                 who['token'], who['repository'], who['holder'], str(tmp)], False)
+                 who['token'], who['repository'], who['holder'], fixture], False)
     path = os.environ.get('LAND_TURN_HOLDER', '')
     if not re.fullmatch(HOLDER, path):
         raise ValueError('invalid-holder-path')
@@ -230,7 +231,13 @@ def client(tmp, repo, command):
                 time.sleep(.05)
         return child.returncode if child.returncode >= 0 else 128 - child.returncode
     finally:
-        close_transport(transport)
+        if transport is not None:
+            confirmed = close_transport(transport)
+            if not failed:
+                if confirmed:
+                    event(tmp, who, 'release', start, granted, 'transport-exit-zero')
+                else:
+                    fail('transport-release-unconfirmed')
 
 
 def main():
