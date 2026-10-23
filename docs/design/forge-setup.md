@@ -623,12 +623,14 @@ accepted set; then:
    `Lacking`, at most the wanted's count, never refused: GitHub asks the
    person to approve what a newer service asks more, on the App's page.
 3. **Its hook,** `GET /app/hook/config`; one whose URL is not
-   `https://<slug>.invalid/` is set to it (`PATCH /app/hook/config`).
+   `https://<slug>.invalid/` is set to it (`PATCH /app/hook/config`),
+   unless the App is read-only (5.10).
 4. **Its installations,** `GET /app/installations`, paged: an accepted
    id gone is dropped from the set, which is written; one not accepted,
    made more than `state_life` ago, is uninstalled (`DELETE
-   /app/installations/{id}`; a `404` is as good). A younger one may be
-   waiting for its person's `Accept`.
+   /app/installations/{id}`; a `404` is as good), unless the App is
+   read-only (5.10). A younger one may be waiting for its person's
+   `Accept`.
 
 The setup host's rows-only replies make an empty page the installation
 listing's terminal marker; even a short nonempty page is followed.
@@ -668,7 +670,7 @@ and private key pasted. The owner serves the pasted key as `Pasted`
 3. **The bot's id** (5.3); a forge that has a user kept must find the
    same (`OtherUser`).
 4. **Its hook** set, and **its permissions and events** checked, as
-   5.6's steps 2 and 3.
+   5.6's steps 2 and 3; a read-only App's hook is read and left (5.10).
 5. **The writes:** the App's id, slug, key (DER) and bot's id, then
    `Done`, carrying what it lacks.
 
@@ -703,6 +705,23 @@ picker.
 - **Live,** no plan of this section runs (section 7): the dialect's
   conformance reads an installation's repositories on the probe App
   (section 10), and revokes each token it mints.
+
+### 5.10 An App kept read-only
+
+GitHub's given values hold `read_only`, false unless the owner says
+otherwise: the App, its hook and its installations are another's to
+change, as a probe App shared with a conformance suite is, and the
+plans change none of them.
+
+- **The hook is read and left:** 5.6's step 3 and 5.8's step 4 read
+  `GET /app/hook/config` and complete whatever its URL, sending no
+  `PATCH`.
+- **A stray is left installed:** 5.6's step 4 lists the installations
+  and keeps the accepted set as it says, pruning an accepted id gone,
+  and sends no `DELETE`; a stray stays the owner's to show.
+- **The rest is unchanged:** `Manifest` and `Convert`, `Install`'s
+  link, `Accept`'s read of an installation, `Reachable`'s mint and page, and the checks of the App's
+  id, key, permissions and events, which still name what it lacks.
 
 ## 6. The crate, and its host
 
