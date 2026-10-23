@@ -165,6 +165,11 @@ pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Req
         Event::Keep { owner, watches } => {
             d.identity_used = true;
             keep::replace(d, env, owner, watches, out);
+            // A replacement that drops the fresh pass's last pending watch
+            // finishes that pass, as an answer would.
+            if keep::restore::fresh_done(d) {
+                out.push(Request::ReadAfreshDone);
+            }
         }
         Event::Hint { hint } => keep::poll::hint(d, env, hint),
         Event::Writer { resource, taken } => keep::poll::writer(d, env, &resource, taken),

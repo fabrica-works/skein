@@ -463,7 +463,11 @@ before it writes.
    person to `Make`. An entry with an attempt starts at its find.
 4. **Read afresh.** `ReadAfresh` reads each repository's listing from its
    stored mark, inclusive, and each live resource, all as `Fresh`, so what
-   changed while it was down is read once. `ReadAfreshDone` ends it.
+   changed while it was down is read once. `ReadAfreshDone` ends it, once
+   no watched resource or repository is left to read: after an answer, or
+   after a `Keep` that drops the last one still owed (an owner that stops
+   watching a resource it can never read again, such as a forge gone for
+   good, does not hold the pass open).
 5. **Settle.** `SettleOutbox` lets the entries run. Each with an attempt
    is found, or waits for its saved deadline (section 7.5); a queued one
    is restored queued and its pull read at once, within the same bounds

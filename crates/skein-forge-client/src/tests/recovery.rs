@@ -37,6 +37,20 @@ fn restart_reads_before_settling_the_outbox() {
     assert_eq!(h.fresh_done, 1);
 }
 #[test]
+fn a_fresh_pass_ends_when_its_last_pending_watch_is_dropped() {
+    let mut h = kept::Harness::new();
+    h.domain = configured(&h.env.limits);
+    h.event(Event::Restored { clock: RecoveryClock::Monotonic });
+    h.keep(Box::new([kept::watch(kept::issue(), false)]));
+    h.event(Event::ReadAfresh);
+    assert_eq!(h.fresh_done, 0);
+    h.keep(Box::new([]));
+    assert_eq!(h.fresh_done, 1);
+    h.keep(Box::new([]));
+    assert_eq!(h.fresh_done, 1);
+}
+
+#[test]
 fn remake_releases_a_held_entry() {
     let (mut h, saved) = fixture::held_comment();
     h.store.insert(1, saved.clone()).expect("durable held entry");
