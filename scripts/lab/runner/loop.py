@@ -83,7 +83,8 @@ class Run:
     def spawn(self, effect):
         name, group = effect['name'], effect['group']
         phase = self.state.data['phase']
-        expected = dict(processes='start', actions='seed', collect='collect', checks='check')[group]
+        expected = ('stopped-' + ('collect' if group == 'collect' else 'check') if effect.get('cluster') == 'stopped'
+                    else dict(processes='start', actions='seed', collect='collect', checks='check')[group])
         if phase != expected or self.state.data['current'] != name:
             return
         identity = ('proc-' if group == 'processes' else group + '-') + name
@@ -96,6 +97,8 @@ class Run:
             definition = next(p for p in self.exp['processes'] if p['name'] == name)
             record['memory']['bound_bytes'] = definition['memory_bytes']
         else:
+            if effect.get('cluster') == 'stopped':
+                record['cluster'] = 'stopped'
             self.command_records.append(record)
             if group == 'actions' and 'await' in self.exp['actions'][self.state.data['index']]:
                 record['awaited'] = None
@@ -210,6 +213,8 @@ class Run:
         elif op == 'unavailable':
             self.undecided.append(dict(check=request['group'] + '/' + request['name'], reason=request['reason']))
             record = dict(group=request['group'], name=request['name'], skipped=request['reason'])
+            if request.get('cluster') == 'stopped':
+                record['cluster'] = 'stopped'
             if request['group'] == 'actions' and any(a['name'] == request['name'] and 'await' in a for a in self.exp['actions']):
                 record['awaited'] = None
             self.command_records.append(record)
@@ -322,8 +327,11 @@ class Run:
         item = self.items[identity]
         name, group, record = item['name'], item['group'], item['record']
         self.failures.extend(item['panic'])
+        error_start = len(self.errors)
         if group != 'processes':
             result = record['exit']
+            if group == 'collect' or record.get('cluster') == 'stopped':
+                result['killed'] = result['killed'] or self.host.children[identity]['killed']
             if group == 'checks' and not item['cancelled']:
                 failures, unknown, errors = checks.command(name, result.get('status'),
                     self.lab.read(self.base + '/' + record['output']['stdout']['path']), timed_out=item['timed_out'])
@@ -334,7 +342,8 @@ class Run:
                 self.errors.extend(errors)
                 record['check'] = dict(failures=failures, undecided=unknown, errors=errors)
             elif group == 'checks' and item['cancelled'] and not item['timed_out']:
-                self.undecided.append(dict(check=name, reason='check cut by process stop or interruption'))
+                check = 'checks/' + name if record.get('cluster') == 'stopped' else name
+                self.undecided.append(dict(check=check, reason='check cut by process stop or interruption'))
             if group == 'actions':
                 timed_out = any(b['name'] == 'command_seconds' and b['who'] == name for b in self.state.data['bounds'])
                 if 'awaited' in record and (result.get('status') != 0 or item['cancelled'] or result['killed'] or timed_out):
@@ -360,6 +369,8 @@ class Run:
             self.feed('tree_empty', name=name)
         else:
             self.feed('command_done', name=name, record=record)
+        if len(self.errors) != error_start:
+            self.feed('error', what='command/' + name, detail='command evidence could not be completed')
 
     def freeze_collections(self):
         if self.host is not None and self.host.children:
@@ -447,7 +458,7 @@ class Run:
             while True:
                 try:
                     if self.interrupt is not None and self.state.data['interrupted'] is None:
-                        self.effects.clear()
+                        self.effects[:] = [r for r in self.effects if r['op'] in ('cancel_command', 'unavailable')]
                         self.timeline('interrupted', signal=signal.Signals(self.interrupt).name)
                         self.feed('interrupt', signal=self.interrupt, detail=signal.Signals(self.interrupt).name)
                     self.observe()
@@ -458,6 +469,9 @@ class Run:
                         continue
                     if self.finishing and (self.host is None or not self.host.children):
                         return self.finish()
+                    if self.state.data['phase'] == 'stop' and (self.host is None or not self.host.children):
+                        self.feed('closed')
+                        continue
                     deadline = self.state.data['deadline']
                     deadlines = [x[field] for x in self.items.values() for field in ('cleanup', 'kill_deadline')
                                  if x[field] is not None]
@@ -475,13 +489,24 @@ class Run:
                     if self.publishing:
                         raise
                     self.timeline('machinery_error', detail=str(error))
-                    self.effects.clear()
-                    if self.state.data['phase'] == 'stop':
-                        # A broken host cannot promise more cleanup. systemd owns the unit fallback.
-                        self.errors.append(dict(what='containment', detail=str(error)))
-                        return self.finish()
-                    what = 'containment/provision' if isinstance(error, CapabilityError) and self.state.data['phase'] == 'provision' else 'runner'
+                    self.effects[:] = [r for r in self.effects if r['op'] in ('cancel_command', 'unavailable')]
+                    phase = self.state.data['phase']
+                    what = 'containment/provision' if isinstance(error, CapabilityError) and phase == 'provision' else 'runner'
                     self.feed('error', what=what, detail=str(error))
+                    if phase in ('stop', 'stopped-collect', 'stopped-check', 'judge', 'closed'):
+                        # A broken host cannot promise more cleanup. systemd owns the unit fallback.
+                        pending, self.effects = self.effects, []
+                        for request in pending:
+                            if request['op'] in ('cancel_command', 'unavailable'):
+                                try:
+                                    self.effect(request)
+                                except Exception as cleanup_error:
+                                    self.errors.append(dict(what='containment', detail=str(cleanup_error)))
+                        for item in self.items.values():
+                            if item['group'] == 'checks' and item['record'].get('cluster') == 'stopped':
+                                self.undecided.append(dict(check='checks/' + item['name'],
+                                                           reason='check cut by machinery error'))
+                        return self.finish()
         finally:
             signal.set_wakeup_fd(old_wakeup)
             for sig, handler in handlers.items():

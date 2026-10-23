@@ -178,6 +178,9 @@ def run_refusals(value):
     if type(obj.get('processes')) is not dict:
         out.append(Refusal('run.processes', 'expected named processes'))
     for i, command in enumerate(obj.get('commands', []) if type(obj.get('commands')) is list else []):
+        if type(command) is dict and 'cluster' in command:
+            if command.get('group') not in ('collect', 'checks') or command['cluster'] != 'stopped':
+                out.append(Refusal(f'run.commands.{i}.cluster', 'only stopped collections and checks name cluster'))
         if type(command) is dict and 'awaited' in command:
             m = f'run.commands.{i}.awaited'
             if command.get('group') != 'actions':

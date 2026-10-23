@@ -120,13 +120,26 @@ It selects the next ready dependency set using canonical u64 draws, renders a
 process's files immediately before its start, and publishes captures only when
 all that predecessor's ready lines have arrived. Arguments are literal and each
 environment is complete. Complete stdout/stderr lines drive readiness; no socket
-probe or sleep decides readiness. Every byte of process and command output is
+probe or sleep decides readiness. Process and command output is
 streamed into the run's retained files.
+
+Collections and checks accept `cluster: "up" | "stopped"`, defaulting to
+`"up"`. Live collections and checks precede reverse stop. After every started
+process is reaped and every process and command tree and stream has drained,
+`stopped-collect` and `stopped-check` run, using the same `command_seconds`.
+Only their command records gain `cluster: "stopped"`. A live check may use
+only live collections; a stopped check may use either. A stopped check runs
+only if every collection it names completed successfully, without a cut,
+kill or timeout. Directory existence is never proof of a whole copy. Missing
+or failed inputs skip that check with an explicit `<group>/<name>` undecided
+reason; independent checks still run. Commands are never retried.
 
 An unexpected process exit cuts the phase: later processes and seed actions do
 not start, an active command is cut, and collection and checks continue against
 what remains. An unavailable capture leaves that command explicitly unjudged.
-SIGINT or SIGTERM goes directly to stop. Teardown sends TERM to each first
+SIGINT or SIGTERM goes directly to stop. Interruption and machinery errors
+cancel an active stopped command and skip every pending stopped command.
+A product stop still permits stopped commands after confirmed cleanup. Teardown sends TERM to each first
 process in reverse start order, then uses the cost class's stop bound and
 `cgroup.kill`, awaits tree emptiness and removes the tree. Descendants left by
 an ended command or process are recorded as survivors and killed. A cleanup

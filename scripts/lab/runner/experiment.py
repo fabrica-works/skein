@@ -329,7 +329,7 @@ def validate(experiment, subject, settings, facts):
             m = f"driver.tools.{i}" if group == "tools" else f"{group}.{i}"
             if group != "processes":
                 extra = ("scan",) if group == "collect" else (("reads", "writes") if group == "tools" else ())
-                optional = () if group == "tools" else (("stdin", "await") if group == 'actions' else ("stdin",))
+                optional = () if group == "tools" else (("stdin", "await") if group == 'actions' else ("stdin", "cluster"))
                 p = shape(item, ("name", "argv", "env") + extra, optional, m, out)
                 if group == 'actions' and 'await' in p:
                     am = m + '.await'
@@ -346,6 +346,8 @@ def validate(experiment, subject, settings, facts):
                         out.append(Refusal(am + '.capture', 'invalid name'))
                     elif type(p.get('name')) is str:
                         action_captures[p['name']] = (i, capture)
+                if group in ("collect", "checks") and p.get("cluster", "up") not in ("up", "stopped"):
+                    out.append(Refusal(m + ".cluster", "expected up or stopped"))
                 if group == "collect":
                     for j, path in enumerate(_list(p.get("scan"), m + ".scan", out)):
                         if not relative(path):
@@ -411,7 +413,10 @@ def validate(experiment, subject, settings, facts):
             elif name == "collect.dir":
                 available = phase == "collect"
             elif len(bits) == 2 and bits[0] == "collected":
-                available = phase == "checks" and bits[1] in names["collect"]
+                collection = names["collect"].get(bits[1])
+                check = groups["checks"][int(member.split('.')[1])] if phase == "checks" else {}
+                available = (phase == "checks" and collection is not None
+                             and (collection.get("cluster", "up") == "up" or check.get("cluster", "up") == "stopped"))
             if not available:
                 out.append(Refusal(member, "unknown or unavailable template: " + name))
                 valid = False

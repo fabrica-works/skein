@@ -1,4 +1,4 @@
-"""Actual user units, spawns and cgroups. Capability denials are explicit skips."""
+"""Native user units, spawns and cgroups; missing containment fails the stories."""
 import json
 import io
 import os
@@ -29,12 +29,12 @@ class Runtime(unittest.TestCase):
         cls.systemctl = shutil.which('systemctl')
         bwrap = shutil.which('bwrap')
         if not cls.systemctl or not bwrap or not shutil.which('systemd-run') or not hasattr(os, 'pidfd_open'):
-            raise unittest.SkipTest('native process tier requires systemd user manager, bubblewrap and pidfds')
+            raise AssertionError('native process tier requires systemd user manager, bubblewrap and pidfds')
         try:
             manager(cls.systemctl, ['show', '--property=Version', '--value'], COST['command_seconds'])
             namespace_probe(bwrap, PYTHON, COST['command_seconds'])
         except (OSError, CapabilityError, subprocess.SubprocessError) as error:
-            raise unittest.SkipTest('native capability refused: ' + str(error)) from error
+            raise AssertionError('native capability refused: ' + str(error)) from error
 
     def setUp(self):
         # Native scratch is beneath tmp/lab, always private.
@@ -125,9 +125,9 @@ class Runtime(unittest.TestCase):
             return process
         stdout, stderr = process.communicate(timeout=COST['command_seconds'])
         if process.returncode == 2 and any(part in stderr for part in (b'containment', b'bubblewrap')):
-            self.skipTest('native provisioning refused: ' + stderr.decode('utf-8', 'replace'))
+            self.fail('native provisioning refused: ' + stderr.decode('utf-8', 'replace'))
         if process.returncode == 4 and b'containment/provision: native provision refused:' in stderr:
-            self.skipTest('native provisioning refused: ' + stderr.decode('utf-8', 'replace'))
+            self.fail('native provisioning refused: ' + stderr.decode('utf-8', 'replace'))
         return process.returncode, stdout.decode().strip(), stderr.decode('utf-8', 'replace')
 
     def records(self):
@@ -155,6 +155,66 @@ class Runtime(unittest.TestCase):
             self.assertIsNotNone(proc['memory']['peak_bytes'])
             self.assertIsNotNone(proc['memory']['tree_peak_bytes'])
             self.assertIn(proc['memory']['source'], ('VmHWM', 'wait4'))
+
+    def stopped_experiment(self, failed_copy=False):
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['processes'][0]['argv'].append('{proc.server.dir}/terminal')
+        argv = (self.command('partial-copy', '{collect.dir}') if failed_copy else
+                ['/bin/cp', '-R', '--', '{proc.server.dir}/.', '{collect.dir}/.'])
+        exp['collect'].append(dict(name='state', cluster='stopped', argv=argv, env={}, scan=[]))
+        exp['checks'] += [dict(name='state', cluster='stopped',
+                               argv=self.command('check-terminal', '{collected.state}'), env={}),
+                          dict(name='independent', cluster='stopped',
+                               argv=self.command('touch', '{dir.client}/independent'), env={})]
+        path.write_bytes(canonical.record_bytes(exp))
+
+    def test_stopped_copy_observes_sigterm_terminal_state(self):
+        self.experiment()
+        self.stopped_experiment()
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 0, stderr)
+        record = self.records()[2][0]
+        self.assertEqual([c['name'] for c in record['commands']], ['obs', 'end', 'state', 'state', 'independent'])
+        self.assertTrue(all(c.get('cluster') == 'stopped' for c in record['commands'][2:]))
+        root = self.lab_root / 'keys/native' / record['key'] / 'runs' / record['run']
+        self.assertEqual((root / 'collected/state/terminal').read_text(), 'terminal\n')
+        events = [canonical.loads(line + b'\n') for line in (root / 'events.jsonl').read_bytes().splitlines()]
+        stopped = next(e['ms'] for e in events if e['event'] == 'phase' and e['phase'] == 'stopped-collect')
+        emptied = next(e['ms'] for e in events if e['event'] == 'tree_empty' and e['group'] == 'processes')
+        self.assertGreaterEqual(stopped, emptied)
+        self.assert_empty(record)
+
+    def test_partial_failed_stopped_copy_never_starts_dependent_check(self):
+        self.experiment()
+        self.stopped_experiment(failed_copy=True)
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 3, stderr)
+        record = self.records()[2][0]
+        copy = next(c for c in record['commands'] if c['group'] == 'collect' and c['name'] == 'state')
+        check = next(c for c in record['commands'] if c['group'] == 'checks' and c['name'] == 'state')
+        self.assertEqual(copy['exit']['status'], 7)
+        self.assertEqual(check, dict(group='checks', name='state', cluster='stopped',
+                                     skipped='collection input did not complete successfully'))
+        self.assertTrue(any(u['check'] == 'checks/state' for u in record['undecided']))
+        root = self.lab_root / 'keys/native' / record['key'] / 'runs' / record['run']
+        self.assertEqual((root / 'collected/state/terminal').read_text(), 'partial\n')
+        self.assertTrue((root / 'dirs/client/independent').is_file())
+        self.assert_empty(record)
+
+    def test_interrupt_copies_nothing_and_skips_stopped_checks(self):
+        process, _connection, _note, fds = self.notified('none', self.stopped_experiment)
+        process.send_signal(signal.SIGINT)
+        _stdout, stderr = process.communicate(timeout=COST['command_seconds'])
+        self.assertEqual(process.returncode, 130, stderr)
+        self.assert_exited(fds)
+        record = self.records()[2][0]
+        stopped = [c for c in record['commands'] if c.get('cluster') == 'stopped']
+        self.assertEqual(len(stopped), 3)
+        self.assertTrue(all('skipped' in c and 'exit' not in c for c in stopped))
+        root = self.lab_root / 'keys/native' / record['key'] / 'runs' / record['run']
+        self.assertEqual(list((root / 'collected/state').iterdir()), [])
+        self.assert_empty(record)
 
     def test_ready_lines_late_dependent_file_and_pass_evidence(self):
         self.experiment(dependent=True)
@@ -320,7 +380,7 @@ class Runtime(unittest.TestCase):
             derived = finding_store.sync(lab, values[-1]['t'])
             self.assertEqual(next(f['state'] for f in derived['findings'] if f['id'] == identity), 'closed')
 
-    def notified(self, detach):
+    def notified(self, detach, configure=None):
         endpoint = str(self.root / 'notify')
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         listener.bind(endpoint)
@@ -328,13 +388,15 @@ class Runtime(unittest.TestCase):
         listener.settimeout(COST['ready_seconds'])
         self.addCleanup(listener.close)
         self.experiment(detach=detach, notify=endpoint)
+        if configure is not None:
+            configure()
         process = self.cli('run', seed='1', wait=False)
         ready, _, _ = select.select([listener, process.stdout, process.stderr], [], [], COST['ready_seconds'])
         if listener not in ready:
             stdout, stderr = process.communicate(timeout=COST['command_seconds'])
             if ((process.returncode == 2 and b'containment' in stderr)
                     or (process.returncode == 4 and b'containment/provision: native provision refused:' in stderr)):
-                self.skipTest('native provisioning refused: ' + stderr.decode('utf-8', 'replace'))
+                self.fail('native provisioning refused: ' + stderr.decode('utf-8', 'replace'))
             self.fail('canary did not notify: ' + repr((stdout, stderr)))
         connection, _ = listener.accept()
         connection.settimeout(COST['ready_seconds'])

@@ -35,9 +35,13 @@ def descendants(double_fork):
 
 
 def server(args):
-    notify, detach, run_id = args
+    notify, detach, run_id, *terminal = args
     owned = descendants(detach == 'doublefork') if detach in ('setsid', 'doublefork') else []
-    signal.signal(signal.SIGTERM, lambda _sig, _frame: sys.exit(0))
+    def stop(_sig, _frame):
+        if terminal:
+            Path(terminal[0]).write_text('terminal\n')
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stop)
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         listener.listen()
@@ -107,6 +111,14 @@ def main():
             select.select([pidfd], [], [])
         finally:
             os.close(pidfd)
+        return 0
+    if mode == 'partial-copy':
+        Path(args[0], 'terminal').write_text('partial\n')
+        return 7
+    if mode == 'check-terminal':
+        if Path(args[0], 'terminal').read_text() != 'terminal\n':
+            print(json.dumps({'fail': 'state/terminal', 'summary': 'terminal state missing'}))
+            return 1
         return 0
     if mode == 'touch':
         Path(args[0]).write_text('action ran')

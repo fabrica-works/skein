@@ -101,6 +101,19 @@ class Evidence(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn('run.commands.1.awaited.' + member, [r.member for r in records.run_refusals(record)])
 
+    def test_stopped_command_records_roundtrip_without_default_keys(self):
+        record = run_record(1, '1')
+        record['commands'] = [dict(group='collect', name='live'),
+                              dict(group='collect', name='copy', cluster='stopped', exit=dict(status=0)),
+                              dict(group='checks', name='state', cluster='stopped', skipped='input unavailable')]
+        self.publish(record)
+        saved = canonical.loads(self.lab.read(self.key_path + '/runs/' + record['run'] + '/run.json'))
+        self.assertEqual(saved['commands'], record['commands'])
+        self.assertNotIn('cluster', saved['commands'][0])
+        for group, value in (('collect', None), ('collect', []), ('collect', 'up'), ('actions', 'stopped')):
+            record['commands'][1].update(group=group, cluster=value)
+            self.assertIn('run.commands.1.cluster', [r.member for r in records.run_refusals(record)])
+
     def test_three_seeds_and_additive_rerun_replace_only_derived_verdict(self):
         old_records = []
         for n in range(1, 4):

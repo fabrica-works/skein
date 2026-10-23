@@ -10,6 +10,43 @@ class State:
     data: dict
 
 
+COMMAND_GROUP = {'seed': 'actions', 'collect': 'collect', 'check': 'checks',
+                 'stopped-collect': 'collect', 'stopped-check': 'checks'}
+
+
+def _items(d, phase):
+    items = d['exp'][COMMAND_GROUP[phase]]
+    if phase == 'seed':
+        return items
+    cluster = 'stopped' if phase.startswith('stopped-') else 'up'
+    return [item for item in items if item.get('cluster', 'up') == cluster]
+
+
+def _unavailable(d, effects, group, item, reason):
+    extra = {'cluster': 'stopped'} if item.get('cluster') == 'stopped' else {}
+    record = dict(group=group, name=item['name'], skipped=reason, **extra)
+    if group == 'actions' and 'await' in item:
+        record['awaited'] = None
+    d['commands'].append(record)
+    effects.append(dict(op='unavailable', group=group, name=item['name'], reason=reason, **extra))
+
+
+def _skip_stopped(d, effects):
+    for group in ('collect', 'checks'):
+        for item in d['exp'][group]:
+            if (item.get('cluster') == 'stopped'
+                    and not any(c['group'] == group and c['name'] == item['name']
+                                for c in d['commands'] + d['started_commands'])):
+                _unavailable(d, effects, group, item,
+                             'stopped command unavailable after interruption or machinery error')
+
+
+def _collection_inputs(item):
+    texts = item['argv'] + list(item['env'].values()) + ([item['stdin']] if 'stdin' in item else [])
+    return {name[10:] for text in texts for placeholder, name in experiment._parts(text)
+            if placeholder and name.startswith('collected.')}
+
+
 def initial(exp, seed, cost, known, texts):
     if exp['driver'] is not None:
         raise Refused('driver', 'nonnull drivers are unsupported by this runtime')
@@ -17,6 +54,7 @@ def initial(exp, seed, cost, known, texts):
     return State(dict(exp=exp, seed=seed, cost=cost, known=known, texts=texts,
                       phase='validate', order=[], ready=[], closed=[], processes={}, commands=[],
                       current=None, index=0, deadline=None, awaiting=None, stop_queue=[], cut=False,
+                      started_commands=[], collections={},
                       interrupted=None, errors=[], bounds=[], schedule=dict(draws={}, start_order=[], faults=[])))
 
 
@@ -67,33 +105,38 @@ def _advance(d, effects, ms):
     if phase == 'seed' and d['cut']:
         _phase(d, 'collect', effects)
         phase = 'collect'
-    if phase in ('seed', 'collect', 'check'):
-        group = dict(seed='actions', collect='collect', check='checks')[phase]
-        items = exp[group]
+    if phase in COMMAND_GROUP:
+        group = COMMAND_GROUP[phase]
+        items = _items(d, phase)
         if d['index'] < len(items):
             item = items[d['index']]
             name = item['name']
-            extra = {'collect.dir': d['known']['collected.' + name]} if phase == 'collect' else None
+            extra = {'collect.dir': d['known']['collected.' + name]} if group == 'collect' else None
+            if phase == 'stopped-check' and any(not d['collections'].get(n, False) for n in _collection_inputs(item)):
+                _unavailable(d, effects, group, item, 'collection input did not complete successfully')
+                d['index'] += 1
+                _advance(d, effects, ms)
+                return
             try:
                 rendered = _render(d, item, extra)
             except Refused as error:
                 # Early exit can leave a capture unavailable. Retain this as unjudged.
-                record = dict(group=group, name=name, skipped=str(error))
-                if group == 'actions' and 'await' in item:
-                    record['awaited'] = None
-                d['commands'].append(record)
-                effects.append(dict(op='unavailable', group=group, name=name, reason=str(error)))
+                _unavailable(d, effects, group, item, str(error))
                 d['index'] += 1
                 _advance(d, effects, ms)
                 return
             d['current'] = name
-            effects.append(dict(op='spawn', group=group, name=name, **rendered))
+            extra = {'cluster': 'stopped'} if phase.startswith('stopped-') else {}
+            effects.append(dict(op='spawn', group=group, name=name, **extra, **rendered))
             return
-        following = dict(seed='drive', collect='check', check='stop')[phase]
+        following = {'seed': 'drive', 'collect': 'check', 'check': 'stop',
+                     'stopped-collect': 'stopped-check', 'stopped-check': 'judge'}[phase]
         _phase(d, following, effects)
         if following == 'drive':
             _phase(d, 'collect', effects)
-        if following == 'stop':
+        if following == 'judge':
+            effects.append(dict(op='judge'))
+        elif following == 'stop':
             _stop(d, effects, ms)
         else:
             _advance(d, effects, ms)
@@ -106,8 +149,14 @@ def _stop(d, effects, ms):
     if not d['stop_queue']:
         d['stop_queue'] = [n for n in reversed(d['order']) if n not in d['closed']]
     if not d['stop_queue']:
-        _phase(d, 'judge', effects)
-        effects.append(dict(op='judge'))
+        d.update(current=None, deadline=None)
+        if d['errors'] or d['interrupted'] is not None:
+            _skip_stopped(d, effects)
+        if d['errors'] or d['interrupted'] is not None or not any(
+                item.get('cluster') == 'stopped' for group in ('collect', 'checks') for item in d['exp'][group]):
+            _phase(d, 'judge', effects)
+            effects.append(dict(op='judge'))
+        # The host supplies closed only after all command trees and streams drain too.
         return
     name = d['stop_queue'][0]
     d['current'] = name
@@ -154,6 +203,7 @@ def step(state, event):
             d['processes'][name] = dict(started_ms=ms, ready_ms=None, seen=[], captures={}, stopping=False, exit=None)
             d['deadline'] = ms + d['cost']['ready_seconds'] * 1000
         else:
+            d['started_commands'].append(dict(group=group, name=name))
             d['deadline'] = ms + d['cost']['command_seconds'] * 1000
             if group == 'actions':
                 item = d['exp']['actions'][d['index']]
@@ -206,15 +256,31 @@ def step(state, event):
             _cut(d, effects, ms)
     elif kind == 'tree_empty':
         name = event['name']
+        if d['processes'][name]['exit'] is None:
+            return State(d), effects
         if name not in d['closed']:
             d['closed'].append(name)
         if d['phase'] == 'stop' and d['current'] == name:
             d['stop_queue'] = [n for n in d['stop_queue'] if n != name]
             _advance(d, effects, ms)
+    elif kind == 'closed' and d['phase'] == 'stop':
+        if (all(n in d['closed'] and d['processes'][n]['exit'] is not None for n in d['order'])
+                and not d['errors'] and d['interrupted'] is None):
+            _phase(d, 'stopped-collect', effects)
+            _advance(d, effects, ms)
     elif kind == 'command_done':
-        if (d['current'] == event['name'] and d['phase'] in ('seed', 'collect', 'check')
-                and event['record']['group'] == dict(seed='actions', collect='collect', check='checks')[d['phase']]):
+        if (d['current'] == event['name'] and d['phase'] in COMMAND_GROUP
+                and event['record']['group'] == COMMAND_GROUP[d['phase']]):
             record = event['record']
+            if d['phase'].startswith('stopped-') and d['deadline'] is not None and ms >= d['deadline']:
+                d['bounds'].append(dict(name='command_seconds', who=d['current'], ms=ms))
+                effects.append(dict(op='bound', name='command_seconds', who=d['current']))
+                d['deadline'] = None
+            if record['group'] == 'collect':
+                end = record.get('exit') or {}
+                d['collections'][event['name']] = (end.get('status') == 0 and not end.get('stopped')
+                    and not end.get('killed') and d['deadline'] is not None
+                    and not record.get('timed_out') and not record.get('cancelled'))
             pending = d['awaiting']
             if pending is not None:
                 if pending['done']:
@@ -240,7 +306,8 @@ def step(state, event):
     elif kind == 'tick' and d['deadline'] is not None and ms >= d['deadline']:
         name = d['current']
         bound = dict(start='ready_seconds', seed='command_seconds', collect='command_seconds',
-                     check='command_seconds', stop='stop_seconds')[d['phase']]
+                     check='command_seconds', **{'stopped-collect': 'command_seconds',
+                                               'stopped-check': 'command_seconds'}, stop='stop_seconds')[d['phase']]
         d['bounds'].append(dict(name=bound, who=name, ms=ms))
         effects.append(dict(op='bound', name=bound, who=name))
         d['deadline'] = None
@@ -254,8 +321,9 @@ def step(state, event):
         if kind == 'interrupt':
             d['interrupted'] = event['signal']
         d['errors'].append(dict(what='interrupted' if kind == 'interrupt' else event['what'], detail=event.get('detail', kind)))
-        if d['phase'] in ('seed', 'collect', 'check') and d['current'] is not None:
+        if d['phase'] in COMMAND_GROUP and d['current'] is not None:
             effects.append(dict(op='cancel_command', name=d['current']))
+        _skip_stopped(d, effects)
         if d['phase'] != 'stop':
             _phase(d, 'stop', effects)
             _stop(d, effects, ms)
