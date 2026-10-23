@@ -84,7 +84,7 @@ class AwaitExperiment(unittest.TestCase):
         settings.update(driver=host, triager=None)
         facts.update(driver_host=True)
         facts['experiment_files']['charter.md'] = 'Invented test only.'
-        tool = dict(name='client', argv=['{artifact.app}'], env={}, reads=[], writes=[])
+        tool = dict(provision=dict(args=[], status=0), name='client', argv=['{artifact.app}'], env={}, reads=[], writes=[])
         exp['driver'] = dict(charter='charter.md', tools=[tool])
         self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
         tool.update(env={'VALUE': '{action.seed.word}'}, **{'await': exp['actions'][0]['await']})

@@ -75,6 +75,17 @@ def configuration(python: str, runner: str, program: str, tools: list[str], mode
                 schema=schema)
 
 
+def with_endpoint(toml: str, address: str) -> str:
+    marker = '[model_providers.lab-openai]\n'
+    assert toml.count(marker) == 1, 'expected one lab-openai provider'
+    before, provider = toml.split(marker)
+    assert not any(line.lstrip().startswith('[') for line in provider.splitlines()), 'provider block must be last'
+    return (before + marker + 'name = "OpenAI"\nwire_api = "responses"\n'
+            + 'base_url = ' + json.dumps('http://' + address + '/v1') + '\n'
+            + 'requires_openai_auth = false\nsupports_websockets = false\n'
+            + 'request_max_retries = 0\nstream_max_retries = 0\n')
+
+
 def catalog_refusals(data: bytes, model: str) -> list:
     """The pinned catalog must offer the model its tools directly: code mode makes no items."""
     member = 'settings.driver.catalog'

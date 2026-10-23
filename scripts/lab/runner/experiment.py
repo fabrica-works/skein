@@ -462,7 +462,7 @@ def validate(experiment, subject, settings, facts):
         for i, item in enumerate(items):
             m = f"driver.tools.{i}" if group == "tools" else f"{group}.{i}"
             if group != "processes":
-                extra = ("scan",) if group == "collect" else (("reads", "writes") if group == "tools" else ())
+                extra = ("scan",) if group == "collect" else (("reads", "writes", "provision") if group == "tools" else ())
                 optional = (() if group in ("tools", "meter") else (('stdin',) if group == 'release'
                             else (("stdin", "await") if group == 'actions' else ("stdin", "cluster"))))
                 p = shape(item, ("name", "argv", "env") + extra, optional, m, out)
@@ -491,6 +491,14 @@ def validate(experiment, subject, settings, facts):
                         if not relative(path):
                             out.append(Refusal(f"{m}.scan.{j}", "expected contained relative path"))
                 if group == "tools":
+                    pm = m + '.provision'
+                    provision = shape(p.get('provision'), ('args', 'status'), (), pm, out)
+                    args = provision.get('args')
+                    if type(args) is not list or any(type(arg) is not str for arg in args):
+                        out.append(Refusal(pm + '.args', 'expected literal strings'))
+                    status = provision.get('status')
+                    if type(status) is not int or not 0 <= status <= 255:
+                        out.append(Refusal(pm + '.status', 'expected exit status 0..255'))
                     for field in ("reads", "writes"):
                         _list(p.get(field), m + "." + field, out)
             else:

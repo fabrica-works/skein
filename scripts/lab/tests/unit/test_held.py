@@ -78,7 +78,7 @@ class Validation(unittest.TestCase):
         facts['experiment_files']['app.conf'] = '{held.token}'
         self.assertIn('processes.2.files.0.from', [r.member for r in experiment.validate(exp, subject, settings, facts)])
         exp, subject, settings, facts = validation_world()
-        exp['driver'] = dict(charter='charter', tools=[dict(name='read', argv=['/usr/bin/helper', '{held.token}'],
+        exp['driver'] = dict(charter='charter', tools=[dict(provision=dict(args=[], status=0), name='read', argv=['/usr/bin/helper', '{held.token}'],
                                                         env={}, reads=[], writes=[])])
         self.assertIn(records.Refusal('driver.tools.0.argv.1', 'unknown or unavailable template: held.token'),
                       experiment.validate(exp, subject, settings, facts))

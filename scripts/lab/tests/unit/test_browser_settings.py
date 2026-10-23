@@ -82,7 +82,7 @@ class BrowserSettings(unittest.TestCase):
             elif location == 'file':
                 facts['experiment_files']['app.conf'] = text
             else:
-                exp['driver'] = {'charter': 'charter', 'tools': [dict(name='tool', argv=['{artifact.app}'], env={}, reads=[], writes=[])]}
+                exp['driver'] = {'charter': 'charter', 'tools': [dict(provision=dict(args=[], status=0), name='tool', argv=['{artifact.app}'], env={}, reads=[], writes=[])]}
                 exp['driver']['tools'][0][location] = [text]
             with self.subTest(location=location):
                 self.assertTrue(experiment.uses_browser(exp, facts['experiment_files']))
@@ -100,7 +100,7 @@ class BrowserSettings(unittest.TestCase):
         host = {'program': {'path': '/codex', 'sha256': D, 'version': '1'},
                 'model': 'model', 'effort': 'medium'}
         settings.update(driver=host, triager=None)
-        exp['driver'] = {'charter': 'charter', 'tools': [dict(name='look', argv=['{browser.program}'],
+        exp['driver'] = {'charter': 'charter', 'tools': [dict(provision=dict(args=[], status=0), name='look', argv=['{browser.program}'],
             env={'RUNNER': '{runner}'}, reads=['{runner}/look', '{browser.fonts}'], writes=['{browser.fonts}'])]}
         facts['experiment_files']['charter'] = 'Inspect the page.'
         facts['driver_host'] = True

@@ -36,6 +36,7 @@ class Run:
         self.origin = time.monotonic_ns()
         self.host = None
         self.driver = None
+        self.drive = None
         self.driver_record, self.driver_usage = None, None
         self.records, self.command_records = {}, []
         self.held_records = []
@@ -93,6 +94,7 @@ class Run:
         if self.exp['driver'] is not None:
             self.driver = driver.Driver(self)
             self.driver.prepare()
+            self.drive = self.driver
         try:
             self.host = self.host_factory(self.spec['unit'], self.spec['systemctl'], self.cost)
         except (OSError, CapabilityError) as error:
@@ -233,23 +235,28 @@ class Run:
         data = self.lab.read(self.base + '/' + path)
         return dict(path=path, bytes=len(data), sha256=store.file_digest(data))
 
-    def spawn_driver(self, argv, env, stdin_fd, cwd):
-        record = dict(name='driver', group='driver', argv=argv, env=env, started_ms=self.ms(),
+    def spawn_driver(self, argv, env, stdin_fd, cwd, *, identity='driver', base=None, group='driver'):
+        base = self.base + '/driver' if base is None else base
+        record = dict(name=identity, group=group, argv=argv, env=env, started_ms=self.ms(),
                       exit=None, memory=dict(peak_bytes=None, source=None, tree_peak_bytes=None), output={})
         outputs = {}
         try:
             for stream in ('stdout', 'stderr'):
-                path = 'driver/host.' + stream
+                path = base[len(self.base) + 1:] + ('/endpoint.' if group == 'endpoint' else '/host.') + stream
                 outputs[stream] = dict(path=path, fd=self.lab.create_file(self.base + '/' + path), buffer=b'')
-            owned = self.host.spawn('driver', argv, env, stdin_fd, cwd=cwd)
+            if stdin_fd is None:
+                with open(os.devnull, 'rb') as null:
+                    owned = self.host.spawn(identity, argv, env, null.fileno(), cwd=cwd)
+            else:
+                owned = self.host.spawn(identity, argv, env, stdin_fd, cwd=cwd)
         except BaseException:
             for output in outputs.values():
                 os.close(output['fd'])
             raise
-        self.items['driver'] = dict(name='driver', group='driver', record=record, outputs=outputs,
+        self.items[identity] = dict(name=identity, group=group, record=record, outputs=outputs,
                                    cleanup=None, kill_deadline=None, timed_out=False, cancelled=False,
                                    panic=[], panic_message=None)
-        self.timeline('start', name='driver', group='driver', argv=argv, env=env, pid=owned['pid'])
+        self.timeline('start', name=identity, group=group, argv=argv, env=env, pid=owned['pid'])
 
     def begin_cleanup(self, identity):
         item = self.items[identity]
@@ -287,6 +294,10 @@ class Run:
             self.timeline('phase', phase=request['phase'])
         elif op == 'spawn':
             self.spawn(request)
+        elif op == 'provision_tools':
+            if self.state.data['phase'] == 'drive' and not self.state.data['tool_provision']['ending']:
+                self.driver = driver.Driver(self, provisioning=True)
+                self.driver.start()
         elif op == 'start_driver':
             if self.state.data['phase'] == 'drive' and not self.state.data['driver']['ending']:
                 self.driver.start()
@@ -397,12 +408,17 @@ class Run:
             os.close(fd)
             del child['streams'][stream]
             os.fsync(output['fd'])
-            os.fchmod(output['fd'], 0o600 if item['group'] == 'driver' else 0o400)
+            os.fchmod(output['fd'], 0o600 if item['group'] in ('driver', 'endpoint') else 0o400)
             os.close(output['fd'])
             output['fd'] = None
             item['record']['output'][stream] = self.file_record(output['path'])
 
     def output_line(self, item, stream, line, *, complete):
+        if item['group'] == 'endpoint':
+            if not complete:
+                raise RuntimeError('endpoint ended with a partial line')
+            self.driver.endpoint_line(stream, line)
+            return
         if item['group'] == 'driver':
             if stream == 'stdout' and not self.driver.protocol_failed:
                 try:
@@ -411,7 +427,10 @@ class Run:
                     self.driver.protocol.accept(line.decode('utf-8', 'strict'))
                 except (Refused, RuntimeError, ValueError, KeyError, TypeError, UnicodeError) as error:
                     self.driver.protocol_failed = True
-                    self.feed('error', what='driver/transport', detail=str(error))
+                    if self.driver.provisioning:
+                        self.feed('provision_error', what='provision/host', detail=str(error))
+                    else:
+                        self.feed('error', what='driver/transport', detail=str(error))
             return
         text = line.decode('utf-8', 'replace')
         if stream == 'stderr':
@@ -532,19 +551,37 @@ class Run:
         if group == 'meter':
             self.complete_meter(item)
         self.host.remove(identity)
-        if group == 'driver':
+        if group == 'driver' and not self.driver.provisioning:
             self.feed('driver_closed', result=record['exit'], stopped=item['cancelled'])
             self.driver_record, self.driver_usage = self.driver.finish()
             self.driver_record['end'] = record['exit']
             self.driver_record['files'].update(record['output'])
+        if group == 'driver' and self.driver.provisioning:
+            self.driver.host_end = record['exit']
+            self.driver.stop_endpoint()
         del self.items[identity]
         self.timeline('tree_empty', name=name, group=group)
+        if group == 'endpoint':
+            self.driver.endpoint_end = record['exit']
+            if self.driver.identity in self.host.children:
+                self.feed('provision_error', what='provision/host', detail='endpoint ended before its host')
+        if (group in ('driver', 'endpoint') and self.driver.provisioning
+                and self.driver.identity not in self.host.children and self.driver.endpoint not in self.host.children):
+            self.end_tools_provision(self.driver)
         if group == 'processes':
             self.feed('tree_empty', name=name)
-        elif group not in ('driver', 'meter'):
+        elif group not in ('driver', 'meter', 'endpoint'):
             self.feed('command_done', name=name, record=record)
         if group == 'collect' and len(self.errors) != error_start:
             self.feed('error', what='command/' + name, detail='command evidence could not be completed')
+
+    def end_tools_provision(self, session):
+        provision, errors = session.finish_provision()
+        if session.endpoint_end is None or session.endpoint_end.get('status') != 0:
+            errors.append(dict(what='provision/host', detail='endpoint ended otherwise'))
+        self.drive.provision_record = provision
+        self.driver = self.drive
+        self.feed('tools_provisioned', errors=errors)
 
     def complete_meter(self, item):
         record = item['record']
@@ -628,7 +665,7 @@ class Run:
 
     def longest_ms(self):
         return (self.cost['command_seconds']
-                + (self.cost['driver_seconds'] + self.cost['stop_seconds'] if self.exp['driver'] is not None else 0)
+                + (self.cost['command_seconds'] + self.cost['driver_seconds'] + 3 * self.cost['stop_seconds'] if self.exp['driver'] is not None else 0)
                 + (self.cost['command_seconds'] + self.cost['stop_seconds'] if self.exp.get('meter') is not None else 0)
                 + len(self.exp['processes']) * (self.cost['ready_seconds'] + 2 * self.cost['stop_seconds'])
                 + sum(len(self.exp.get(g, [])) for g in ('actions', 'collect', 'checks', 'release'))
@@ -708,7 +745,10 @@ class Run:
                     self.effects[:] = [r for r in self.effects if r['op'] in FINISH_EFFECTS]
                     phase = self.state.data['phase']
                     what = 'containment/provision' if isinstance(error, CapabilityError) and phase == 'provision' else 'runner'
-                    self.feed('error', what=what, detail=str(error))
+                    if self.driver is not None and self.driver.provisioning:
+                        self.feed('provision_error', what='provision/host', detail=str(error))
+                    else:
+                        self.feed('error', what=what, detail=str(error))
                     if phase in ('stop', 'stopped-collect', 'stopped-check', 'judge', 'closed'):
                         # A broken host cannot promise more cleanup. systemd owns the unit fallback.
                         pending, self.effects = self.effects, []

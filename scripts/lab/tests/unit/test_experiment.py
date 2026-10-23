@@ -98,7 +98,7 @@ class Experiment(unittest.TestCase):
         settings['driver'] = host
         settings['triager'] = None
         exp['driver'] = {'charter': 'charter.md', 'tools': [
-            {'name': 'client', 'argv': ['{artifact.app}', '{proc.app.ready.address}'], 'env': {},
+            {'provision': {'args': [], 'status': 0}, 'name': 'client', 'argv': ['{artifact.app}', '{proc.app.ready.address}'], 'env': {},
              'writes': ['{dir.client}'], 'reads': ['{source}']} ]}
         facts['experiment_files']['charter.md'] = 'Exercise the client.'
         facts['driver_host'] = True
@@ -119,7 +119,7 @@ class Experiment(unittest.TestCase):
             settings['driver'] = {'program': {'path': '/usr/bin/codex', 'sha256': D, 'version': '1'},
                                   'model': 'gpt-6.1-sol', 'effort': 'medium'}
             exp['driver'] = {'charter': 'charter.md', 'tools': [
-                {'name': 'client', 'argv': ['/usr/bin/python3', '-I'], 'env': {},
+                {'provision': {'args': [], 'status': 0}, 'name': 'client', 'argv': ['/usr/bin/python3', '-I'], 'env': {},
                  'writes': ['{dir.client}'], 'reads': ['{source}', '/usr/share/data']}]}
             facts['experiment_files']['charter.md'] = 'Exercise the client.'
             facts['driver_host'] = True
@@ -170,3 +170,23 @@ class Experiment(unittest.TestCase):
             changed = deepcopy(lab)
             changed['driver'][field] = value
             self.assertNotEqual(driver_identity, canonical.digest(experiment.key(D, subject, changed)))
+
+
+class ProvisionValidation(unittest.TestCase):
+    def test_required_closed_provision_and_literal_arguments(self):
+        exp, subject, settings, facts, _ = fixture()
+        exp['driver'] = dict(charter='charter', tools=[dict(name='tool', argv=['{artifact.app}'], env={},
+            reads=[], writes=[], provision=dict(args=['{literal}', ''], status=255))])
+        facts.update(driver_host=True)
+        facts['experiment_files']['charter'] = 'charter'
+        settings['driver'] = dict(program=dict(path='/host', sha256=D, version='1'), model='script', effort='low')
+        self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
+        tool = exp['driver']['tools'][0]
+        for provision in (None, {}, dict(args=[], status=True), dict(args=[], status=256),
+                          dict(args=[], status=-1), dict(args=[1], status=0),
+                          dict(args='literal', status=0), dict(args=[], status=0, extra=1)):
+            with self.subTest(provision=provision):
+                tool['provision'] = provision
+                self.assertTrue(any(r.member.startswith('driver.tools.0.provision') for r in experiment.validate(exp, subject, settings, facts)))
+        del tool['provision']
+        self.assertTrue(any(r.member == 'driver.tools.0.provision' for r in experiment.validate(exp, subject, settings, facts)))

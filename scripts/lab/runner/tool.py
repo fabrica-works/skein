@@ -166,7 +166,12 @@ def main(root, run):
         raise Refused('run', 'expected a run id')
     # The runner owns the writer lock. This reader neither sweeps nor reconciles it.
     with store.open_lab(root) as lab:
-        found = list(lab.root.glob('keys/*/*/runs/' + run + '/driver/tools.json'))
+        runs = list(lab.root.glob('keys/*/*/runs/' + run + '/driver'))
+        found = []
+        for directory in runs:
+            # The drive manifest is published only after provisioning has ended.
+            path = directory / 'tools.json'
+            found.append(path if path.exists() else directory / 'provision/tools.json')
         if len(found) != 1:
             raise Refused('run', 'expected exactly one driver/tools.json')
         path = found[0].relative_to(lab.root).as_posix()

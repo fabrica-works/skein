@@ -47,7 +47,7 @@ class DriverQA(RealCase):
         # lab.md 6.1: "Calls ... held until the observation is complete";
         # 6.3: "a tool call observed in both is one action".
         host = self.driver(dict(pages=True, items=[call(args=['invented'], early=True)]))
-        self.exp['driver']['tools'] = [dict(name='echo', argv=['/usr/bin/echo'], env={}, writes=[], reads=[])]
+        self.exp['driver']['tools'] = [dict(provision=dict(args=[], status=0), name='echo', argv=['/usr/bin/echo'], env={}, writes=[], reads=[])]
         record, run, result = self.execute(self.subject())
         self.assertEqual(result.returncode, 0, record)
         self.assertTrue(host.with_suffix('.held').is_file())
@@ -66,7 +66,7 @@ class DriverQA(RealCase):
         item = call(tool='echo')
         item['arguments']['stdin'] = 'invented-input\n'
         self.driver(dict(items=[item]))
-        self.exp['driver']['tools'] = [dict(name='echo', argv=['/usr/bin/cat'], env={}, writes=[], reads=[])]
+        self.exp['driver']['tools'] = [dict(provision=dict(args=[], status=0), name='echo', argv=['/usr/bin/cat'], env={}, writes=[], reads=[])]
         record, run, result = self.execute(self.subject())
         self.assertEqual(result.returncode, 0, record)
         calls = [json.loads(line) for line in (run / 'driver/calls.jsonl').read_text().splitlines()]
@@ -150,7 +150,7 @@ class DriverQA(RealCase):
         # lab.md 6.5: "commands and its tool calls together"; "Past either ... stopped".
         self.driver(dict(items=[dict(type='commandExecution', argv=['/usr/bin/true']),
                                 call(args=['first']), call(args=['past-bound'])]))
-        self.exp['driver']['tools'] = [dict(name='echo', argv=['/usr/bin/echo'], env={}, writes=[], reads=[])]
+        self.exp['driver']['tools'] = [dict(provision=dict(args=[], status=0), name='echo', argv=['/usr/bin/echo'], env={}, writes=[], reads=[])]
         record, _, result = self.execute(self.subject())
         self.assertEqual(result.returncode, 1, record)
         self.assertIn('bound/driver_actions', self.signatures(record))

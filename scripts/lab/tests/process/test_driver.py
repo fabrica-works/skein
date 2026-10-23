@@ -37,7 +37,7 @@ class Driver(unittest.TestCase):
         self.settings['costs']['smoke'].update(driver_seconds=2, driver_actions=5, driver_input_tokens=100)
         self.exp = dict(format='lab-experiment/1', name='native', cost='smoke', dirs=[], processes=[], actions=[],
                         collect=[], checks=[], driver=dict(charter='charter.md', tools=[
-                            dict(name='echo', argv=['/usr/bin/echo'], env={}, reads=[], writes=[])]), faults=[], planted=[])
+                            dict(provision=dict(args=[], status=0), name='echo', argv=['/usr/bin/echo'], env={}, reads=[], writes=[])]), faults=[], planted=[])
         (self.directory / 'charter.md').write_text('This charter exercises the scripted driver.')
 
     tearDown = native.Runtime.tearDown
@@ -69,7 +69,7 @@ class Driver(unittest.TestCase):
         return record
 
     def test_pass_records_commands_calls_usage_inventory_and_report(self):
-        self.exp['driver']['tools'].append(dict(name='read', argv=['/usr/bin/cat'], env={}, reads=[], writes=[]))
+        self.exp['driver']['tools'].append(dict(provision=dict(args=[], status=0), name='read', argv=['/usr/bin/cat'], env={}, reads=[], writes=[]))
         record = self.story(dict(pages=True, items=[
             dict(type='mcpToolCall', server='lab', tool='echo', arguments=dict(args=['early'], stdin='input'), early=True),
             dict(type='commandExecution', argv=['/bin/sh', '-c', 'printf observed > evidence; printf command-output']),
@@ -171,7 +171,7 @@ class Driver(unittest.TestCase):
     def waiting_tool(self, *, command_timeout=False):
         endpoint = str(self.root / 'endpoint')
         helper = str(native.PACKAGE / 'tests/support/tool_client.py')
-        self.exp['driver']['tools'] = [dict(name='wait', argv=[native.PYTHON, '-I', '-B', '-S', helper],
+        self.exp['driver']['tools'] = [dict(provision=dict(args=['help'], status=0), name='wait', argv=[native.PYTHON, '-I', '-B', '-S', helper],
             env={}, reads=[helper], writes=[str(self.root)])]
         return dict(endpoint=endpoint, command_timeout=command_timeout, items=[
             dict(type='mcpToolCall', server='lab', tool='wait', arguments=dict(

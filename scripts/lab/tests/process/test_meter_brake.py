@@ -82,7 +82,7 @@ class MeterBrake(unittest.TestCase):
         self.assertLess(max(i for i, e in enumerate(self.events) if e['event'] == 'meter'), collect)
         self.assertEqual(record['bounds']['subject_spend'], 10)
         self.assertEqual(record['bounds']['meter_seconds'], 1)
-        self.assertEqual(record['usage']['longest_ms'], 11000)
+        self.assertEqual(record['usage']['longest_ms'], 15000)
 
     def test_two_failed_readings_stop_drive(self):
         self.meter(['/bin/sh', '-c', 'exit 3'])

@@ -631,3 +631,25 @@ checks the seven observations in lab.md, 6.2 through `codex sandbox -P lab`.
 It returns per-check evidence or raises `BoundaryError` carrying that evidence.
 It uses no login and starts no model turn. The native stories include a
 weakened profile that makes a throwaway home readable and must fail.
+
+## Each tool's provisioning call
+
+Each experiment tool requires `"provision": {"args": ["help"], "status": 0}`.
+The arguments are literal strings, and the expected status is an integer from
+0 through 255. Choose a call harmless after the seed, such as help or a read.
+Before the drive, a second host runs the same configuration with its provider
+pointed at the runner's loopback Responses endpoint. It calls every tool once
+through the MCP server, view and broker, then reports. Its own private home,
+configuration, raw events, calls and endpoint requests/responses are retained
+under `driver/provision/`; `run.json.driver.provision` records its invocation,
+inventory, offered tools, calls and times. Provisioning is bounded by the
+class's `command_seconds`. It contributes no drive actions, time, tokens,
+fault counts or meter readings.
+
+An inventory mismatch, unhandled call, unexpected exit or signal, missing call,
+unadmitted offered tool, timeout or host failure prevents the drive's host from
+starting and records a `provision/...` error. Offered names use the namespace
+Codex sent, separated by a dot: `mcp__lab.ledger`. The admitted built-ins are
+`exec_command`, `write_stdin`, `list_mcp_resources`,
+`list_mcp_resource_templates` and `read_mcp_resource`; their names and namespace
+shape are held to a recorded Codex 0.162.1 request in the unit vectors.

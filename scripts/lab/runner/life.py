@@ -55,7 +55,7 @@ def initial(exp, seed, cost, known, texts):
     return State(dict(exp=exp, seed=seed, cost=cost, known=known, texts=texts,
                       phase='validate', order=[], ready=[], closed=[], processes={}, commands=[],
                       current=None, index=0, deadline=None, awaiting=None, stop_queue=[], cut=False,
-                      started_commands=[], collections={}, driver=None, meter=None,
+                      started_commands=[], collections={}, driver=None, tool_provision=None, meter=None,
                       interrupted=None, machinery=False, errors=[], bounds=[], schedule=dict(draws={}, start_order=[], faults=[])))
 
 
@@ -193,12 +193,15 @@ def _advance(d, effects, ms):
                      'stopped-collect': 'stopped-check', 'stopped-check': 'judge'}[phase]
         _phase(d, following, effects)
         if following == 'drive':
-            _meter_begin(d, ms)
             if exp['driver'] is not None and not d['cut']:
                 d['driver'] = dict(observed=codex.initial(), inventory=None, started_ms=None,
                                    ended_ms=None, ending=False)
-                effects.append(dict(op='start_driver'))
+                d['tool_provision'] = dict(observed=codex.initial(), inventory=None, started_ms=ms,
+                                           ended_ms=None, ending=False)
+                d['deadline'] = ms + d['cost']['command_seconds'] * 1000
+                effects.append(dict(op='provision_tools'))
                 return
+            _meter_begin(d, ms)
             _drive_ended(d, effects, ms)
             return
         if following == 'judge':
@@ -325,6 +328,13 @@ def _meter_done(d, event, effects, ms):
 
 
 def _end_driver(d, effects):
+    provision = d['tool_provision']
+    if provision is not None and provision['ended_ms'] is None:
+        if not provision['ending']:
+            provision['ending'] = True
+            d['deadline'] = None
+            effects.append(dict(op='stop_driver'))
+        return
     if d['driver'] is not None and not d['driver']['ending']:
         d['driver']['ending'] = True
         d['deadline'] = None
@@ -404,6 +414,47 @@ def step(state, event):
         _meter_due(d, effects, ms)
     elif kind == 'meter_done':
         _meter_done(d, event, effects, ms)
+    elif kind == 'tools_provisioned':
+        d['tool_provision']['ended_ms'] = ms
+        if d['phase'] == 'drive':
+            d['deadline'] = None
+        d['errors'].extend(event['errors'])
+        if (event['errors'] or any(e['what'].startswith('provision/') for e in d['errors'])
+                or d['cut'] or d['machinery'] or d['interrupted'] is not None):
+            d['driver']['ending'] = True
+            if d['phase'] == 'drive':
+                if event['errors'] or any(e['what'].startswith('provision/') for e in d['errors']):
+                    d['machinery'] = True
+                    _skip_stopped(d, effects)
+                    _release(d, effects, ms)
+                else:
+                    _drive_ended(d, effects, ms)
+        elif d['phase'] == 'drive':
+            _meter_begin(d, ms)
+            effects.append(dict(op='start_driver'))
+    elif kind in ('provision_inventory', 'provision_event', 'provision_call', 'provision_error'):
+        provision = d['tool_provision']
+        try:
+            if kind == 'provision_inventory':
+                provision['inventory'] = event['inventory']
+                if any(v['state'] == 'mismatch' for v in event['inventory'].values()):
+                    raise Refused('provision/inventory', 'incomplete or mismatched inventory')
+                if not provision['ending']:
+                    effects.append(dict(op='driver_turn'))
+            elif kind == 'provision_call':
+                action = codex.action_start(provision['observed'], event['item'], ms, 'broker')
+                provision['call_number'] = action['n']
+            elif kind == 'provision_event':
+                provision['observed'] = codex.fold(provision['observed'], event['message'], ms)
+                if provision['observed']['unhandled'] is not None:
+                    raise Refused('provision/host', provision['observed']['unhandled'])
+                if any(t['completed_ms'] is not None for t in provision['observed']['turns']):
+                    _end_driver(d, effects)
+            else:
+                raise Refused(event['what'], event['detail'])
+        except Refused as error:
+            d['errors'].append(dict(what=error.refusal.member, detail=error.refusal.why))
+            _end_driver(d, effects)
     elif kind == 'driver_spawned':
         d['driver']['started_ms'] = ms
         d['deadline'] = ms + d['cost']['driver_seconds'] * 1000
@@ -544,7 +595,13 @@ def step(state, event):
                 d['commands'].append(record)
             _command_advance(d, effects, ms)
     elif kind == 'tick' and d['phase'] == 'drive':
-        _driver_limits(d, effects, ms)
+        provision = d['tool_provision']
+        if provision is not None and provision['ended_ms'] is None:
+            if not provision['ending'] and d['deadline'] is not None and ms >= d['deadline']:
+                d['errors'].append(dict(what='provision/timeout', detail='provisioning exceeded command_seconds'))
+                _end_driver(d, effects)
+        else:
+            _driver_limits(d, effects, ms)
     elif kind == 'tick' and d['deadline'] is not None and ms >= d['deadline']:
         name = d['current']
         bound = dict(start='ready_seconds', seed='command_seconds', collect='command_seconds',

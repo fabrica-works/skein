@@ -9,4 +9,7 @@ from runner.cli import main
 
 if __name__ == '__main__':
     root = sys.argv[1]
+    if sys.argv[2] == 'endpoint':
+        from runner.endpoint import main as endpoint_main
+        raise SystemExit(endpoint_main(sys.argv[4], sys.argv[5]))
     raise SystemExit(main(sys.argv[2:], lab_root=root))

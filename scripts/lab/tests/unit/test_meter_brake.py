@@ -23,7 +23,8 @@ def drive(driver=True):
     cost = dict(settings['costs']['smoke'], meter_seconds=1, subject_spend=10, command_seconds=5)
     state = life.initial(exp, '1', cost, {'run.seed': '1', 'collected.obs': '/collected'}, {})
     state, _ = event(state, 'validated')
-    return event(state, 'provisioned', 100)
+    state, effects = event(state, 'provisioned', 100)
+    return event(state, 'tools_provisioned', 100, errors=[]) if driver else (state, effects)
 
 
 def done(state, ms, *, spend=None, status=0, signal=None, timed_out=False):

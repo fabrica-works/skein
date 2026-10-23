@@ -1,0 +1,1 @@
+{"input":[],"model":"gpt-5.4","tools":[{"name":"exec_command","type":"function"},{"name":"write_stdin","type":"function"},{"name":"list_mcp_resources","type":"function"},{"name":"list_mcp_resource_templates","type":"function"},{"name":"read_mcp_resource","type":"function"},{"name":"mcp__lab","tools":[{"name":"ledger","type":"function"}],"type":"namespace"}]}

@@ -6,7 +6,9 @@ import socket
 import sys
 
 mode, *args = sys.argv[1:]
-if mode == 'view':
+if mode == 'help':
+    pass
+elif mode == 'view':
     outside, read, write, work, endpoint, runner_namespace = args
     result = dict(read=Path(read).read_text(), stdin=sys.stdin.read(), env=dict(os.environ),
                   tmp=os.listdir('/tmp'), namespace=os.readlink('/proc/self/ns/pid') != runner_namespace)

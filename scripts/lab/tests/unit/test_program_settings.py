@@ -57,7 +57,7 @@ class Programs(unittest.TestCase):
         facts['experiment_files']['app.conf'] = '{program.server}'
         host = dict(program=dict(path='/codex', sha256=D, version='1'), model='model', effort='medium')
         settings.update(driver=host, triager=None)
-        exp['driver'] = dict(charter='charter', tools=[dict(name='tool', argv=['{program.server}'], env={},
+        exp['driver'] = dict(charter='charter', tools=[dict(provision=dict(args=[], status=0), name='tool', argv=['{program.server}'], env={},
                                                          reads=['{program.server}'], writes=['{program.server}'])])
         facts['experiment_files']['charter'] = 'Inspect.'
         facts['driver_host'] = True

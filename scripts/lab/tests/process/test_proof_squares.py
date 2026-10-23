@@ -66,7 +66,7 @@ class Squares(unittest.TestCase):
         containment = next(e for e in events if e['event'] == 'containment')
         self.assertFalse(Path(containment['cgroup']).exists())
         self.assertFalse((root / 'live.json').exists())
-        calls = [dict(verb='task'), dict(verb='program', bytes=len(program.encode())),
+        calls = [dict(verb='task'), dict(verb='task'), dict(verb='program', bytes=len(program.encode())),
                  dict(verb='answer', value=expected + offset, verdict='wrong' if offset else 'accepted')]
         observations = json.loads((root / 'collected/observations/observations.json').read_text())
         self.assertEqual(observations, dict(numbers=values, expected=expected, calls=calls))

@@ -6,7 +6,8 @@ import select
 import signal
 import socket
 import stat
-from . import canonical, codex, experiment, probe, store, transport, views
+import sys
+from . import canonical, codex, experiment, probe, store, transport, views, script
 from .records import Refused
 
 
@@ -55,9 +56,17 @@ def _write_config(home, data):
 
 
 class Driver:
-    def __init__(self, run):
+    def __init__(self, run, *, provisioning=False):
         self.run = run
-        self.base = run.base + '/driver'
+        self.provisioning = provisioning
+        self.base = run.base + ('/driver/provision' if provisioning else '/driver')
+        self.identity = 'provision-host' if provisioning else 'driver'
+        self.endpoint = None
+        self.address = None
+        self.provision_record = None
+        self.host_end = None
+        self.endpoint_end = None
+        self.started_ms = None
         self.listener = None
         self.connections = []
         self.input = None
@@ -73,6 +82,47 @@ class Driver:
         self.protocol_failed = False
         self.probe = None
         self.command_deadlines = {}
+
+    @property
+    def state(self):
+        return self.run.state.data['tool_provision' if self.provisioning else 'driver']
+
+    def feed(self, kind, **fields):
+        if self.provisioning:
+            kind = {'driver_event': 'provision_event', 'driver_inventory': 'provision_inventory',
+                    'driver_call': 'provision_call'}[kind]
+        self.run.feed(kind, **fields)
+
+    def start_endpoint(self):
+        run, lab = self.run, self.run.lab
+        self.endpoint = 'provision-endpoint'
+        self.started_ms = run.ms()
+        for path in ('home', 'calls'):
+            os.close(lab.directory(self.base + '/' + path, create=True))
+        lab.write_once(self.base + '/script.json', canonical.record_bytes(script.provisioning(run.exp['driver']['tools'])))
+        root = lab.root / self.base
+        argv = [os.path.realpath(sys.executable), '-I', '-B', '-S', str(Path(__file__).with_name('launch.py')),
+                str(lab.root), 'endpoint', run.spec['run'], str(root / 'script.json'), str(root)]
+        run.spawn_driver(argv, dict(PATH=os.defpath, LANG='C.UTF-8'), None, str(root),
+                         identity=self.endpoint, base=self.base, group='endpoint')
+
+    def endpoint_line(self, stream, line):
+        if stream != 'stdout':
+            return
+        if self.address is not None or not line.startswith(b'listening 127.0.0.1:'):
+            raise RuntimeError('invalid endpoint readiness')
+        self.address = line.decode().removeprefix('listening ')
+        if not self.state['ending']:
+            data = self.run.lab.read(self.run.base + '/driver/config.toml').decode()
+            self.run.lab.write_once(self.base + '/config.toml', codex.with_endpoint(data, self.address).encode())
+            self.start_host()
+
+    def stop_endpoint(self):
+        if (self.endpoint in self.run.host.children and not self.run.host.children[self.endpoint]['reaped']
+                and not self.run.items[self.endpoint]['cancelled']):
+            self.run.host.signal_first(self.endpoint, signal.SIGTERM)
+            self.run.items[self.endpoint]['cancelled'] = True
+            self.run.items[self.endpoint]['kill_deadline'] = self.run.ms() + self.run.cost['stop_seconds'] * 1000
 
     def prepare(self):
         run, lab = self.run, self.run.lab
@@ -110,11 +160,17 @@ class Driver:
         lab.write_once(self.base + '/config.toml', toml.encode('utf-8'))
 
     def start(self):
+        if self.provisioning:
+            self.start_endpoint()
+        else:
+            self.start_host()
+
+    def start_host(self):
         run, lab = self.run, self.run.lab
         known = run.state.data['known']
-        root = lab.root / self.base
+        root = lab.root / run.base / 'driver'
         settings = canonical.loads(lab.read('settings.json'))
-        home = Path(settings.get('codex_home', str(lab.root / 'codex')))
+        home = lab.root / self.base / 'home' if self.provisioning else Path(settings.get('codex_home', str(lab.root / 'codex')))
         config = run.key['lab']['driver']['config']
         _write_config(home, lab.read(self.base + '/config.toml'))
         tools = []
@@ -125,7 +181,7 @@ class Driver:
         subject = canonical.loads(lab.read('store/subjects/' + run.key['subject'] + '/subject.json'))
         lab.write_once(self.base + '/tools.json', canonical.record_bytes(dict(format='lab-driver-tools/1',
             run=run.spec['run'], work=str(root / 'work'), source=known['source'] if subject['source'] is not None else None,
-            socket=str(root / 'broker.sock'), tools=tools)))
+            socket=str(lab.root / self.base / 'broker.sock'), tools=tools)))
         for path in ('events.jsonl', 'calls.jsonl', 'transcript.jsonl'):
             opened = lab.create_file(self.base + '/' + path)
             if path == 'events.jsonl':
@@ -152,10 +208,11 @@ class Driver:
         env = dict(PATH=os.defpath, LANG='C.UTF-8', HOME=str(root / 'home'), CODEX_HOME=str(home))
         self.invocation = dict(argv=argv, env=env, cwd=str(root / 'work'))
         try:
-            run.spawn_driver(argv, env, read, str(root / 'work'))
+            run.spawn_driver(argv, env, read, str(root / 'work'), identity=self.identity, base=self.base)
         finally:
             os.close(read)
-        run.feed('driver_spawned')
+        if not self.provisioning:
+            run.feed('driver_spawned')
 
     def received(self, message):
         # Broker ends precede MCP results; retain them before a host completion can stop the drive.
@@ -169,17 +226,17 @@ class Driver:
                 raise OSError('driver event write made no progress')
             data = data[n:]
         if 'method' in message and 'id' not in message:
-            self.run.feed('driver_event', message=message)
+            self.feed('driver_event', message=message)
 
     def inventory(self, responses):
         observed = codex.observe(responses, self.expected)
-        self.run.feed('driver_inventory', inventory=observed)
+        self.feed('driver_inventory', inventory=observed)
 
     def descriptors(self):
         result = []
         if self.listener is not None:
             result.append((self.listener.fileno(), select.POLLIN))
-        if self.input is not None and self.protocol.outgoing and not self.run.state.data['driver']['ending']:
+        if self.input is not None and self.protocol.outgoing and not self.state['ending']:
             result.append((self.input, select.POLLOUT))
         result.extend((c['socket'].fileno(), select.POLLIN | (select.POLLOUT if c['out'] else 0))
                       for c in self.connections)
@@ -187,14 +244,14 @@ class Driver:
 
     def can_go(self):
         state = self.run.state.data
-        driver = state['driver']
+        driver = self.state
         return (state['phase'] == 'drive' and driver is not None and driver['inventory'] is not None
                 and not driver['ending'] and not any(v['state'] == 'mismatch' for v in driver['inventory'].values()))
 
     def poll(self):
         if self.protocol is None:
             return
-        if self.input is not None and self.protocol.outgoing and not self.run.state.data['driver']['ending']:
+        if self.input is not None and self.protocol.outgoing and not self.state['ending']:
             try:
                 n = os.write(self.input, self.protocol.outgoing)
                 self.protocol.outgoing = self.protocol.outgoing[n:]
@@ -232,13 +289,15 @@ class Driver:
                     connection['out'] = connection['out'][n:]
                 except BlockingIOError:
                     pass
-        if self.command_deadlines and self.run.ms() >= min(self.command_deadlines.values()):
+        if not self.provisioning and self.command_deadlines and self.run.ms() >= min(self.command_deadlines.values()):
             self.run.feed('driver_command_bound')
         if self.stop_deadline is not None and self.run.ms() >= self.stop_deadline:
-            if 'driver' in self.run.host.children:
-                self.run.host.kill_tree('driver')
-                self.run.items['driver']['kill_deadline'] = self.run.ms() + self.run.cost['stop_seconds'] * 1000
+            if self.identity in self.run.host.children:
+                self.run.host.kill_tree(self.identity)
+                self.run.items[self.identity]['kill_deadline'] = self.run.ms() + self.run.cost['stop_seconds'] * 1000
             self.stop_deadline = None
+        if self.endpoint is not None and self.stopped and self.identity not in self.run.host.children:
+            self.stop_endpoint()
 
     def broker(self, connection, message):
         if type(message) is not dict:
@@ -251,15 +310,15 @@ class Driver:
                     or start['tool'] not in [t['name'] for t in self.run.exp['driver']['tools']]):
                 raise RuntimeError('invalid tool broker start')
             pending_ms = self.run.ms()
-            if self.run.state.data['driver']['ending']:
+            if self.state['ending']:
                 _send(connection, dict(refuse='driver ended'))
                 return
             item = dict(type='mcpToolCall', server='lab', tool=start['tool'],
                         arguments=dict(args=start['args'], stdin='' if start['stdin'] else None))
-            self.run.feed('driver_call', item=item)
-            number = self.run.state.data['driver']['call_number']
+            self.feed('driver_call', item=item)
+            number = self.state['call_number']
             self.run.timeline('driver_call', n=number, tool=start['tool'])
-            if self.run.state.data['driver']['ending']:
+            if self.state['ending']:
                 _send(connection, dict(refuse='driver bound passed'))
                 return
             connection['pending'].append((start, pending_ms, number))
@@ -274,7 +333,7 @@ class Driver:
             record = dict(event='end', n=n, t_ms=self.run.ms(), status=message['status'], signal=message['signal'])
             for stream in ('stdin', 'stdout', 'stderr'):
                 if stream != 'stdin' or self.calls[n]['stdin']:
-                    record[stream] = self.run.file_record(f'driver/calls/{n}.{stream}')
+                    record[stream] = self.run.file_record(self.base[len(self.run.base) + 1:] + f'/calls/{n}.{stream}')
             self.run.lab.append_line(self.base + '/calls.jsonl', record)
             self.calls[n]['end'] = record
             connection['active'].remove(n)
@@ -285,7 +344,7 @@ class Driver:
     def admit(self, connection):
         start, pending_ms, n = connection['pending'].pop(0)
         self.run.feed('tick')
-        if self.command_deadlines and self.run.ms() >= min(self.command_deadlines.values()):
+        if not self.provisioning and self.command_deadlines and self.run.ms() >= min(self.command_deadlines.values()):
             self.run.feed('driver_command_bound')
         if not self.can_go():
             _send(connection, dict(refuse='driver ended'))
@@ -294,7 +353,7 @@ class Driver:
         self.command_deadlines[n] = self.run.ms() + self.run.cost['command_seconds'] * 1000
         self.calls[n] = dict(**start, end=None)
         self.run.lab.append_line(self.base + '/calls.jsonl', dict(event='start', n=n, tool=start['tool'],
-            args=start['args'], stdin=dict(path=f'driver/calls/{n}.stdin') if start['stdin'] else None, t_ms=pending_ms))
+            args=start['args'], stdin=dict(path=self.base[len(self.run.base) + 1:] + f'/calls/{n}.stdin') if start['stdin'] else None, t_ms=pending_ms))
         _send(connection, dict(go=n))
 
     def stop(self):
@@ -302,12 +361,16 @@ class Driver:
             return
         self.stopped = True
         self.close_channels()
-        if 'driver' in self.run.host.children and not self.run.host.children['driver']['reaped']:
-            observed = self.run.state.data['driver']['observed']
+        if self.identity not in self.run.host.children:
+            self.stop_endpoint()
+            if self.provisioning and self.endpoint not in self.run.host.children:
+                self.run.end_tools_provision(self)
+        if self.identity in self.run.host.children and not self.run.host.children[self.identity]['reaped']:
+            observed = self.state['observed']
             completed = any(t['completed_ms'] is not None for t in observed['turns'])
             if not completed or self.run.state.data['bounds'] or self.run.state.data['errors']:
-                self.run.host.signal_first('driver', signal.SIGTERM)
-                self.run.items['driver']['cancelled'] = True
+                self.run.host.signal_first(self.identity, signal.SIGTERM)
+                self.run.items[self.identity]['cancelled'] = True
             self.stop_deadline = self.run.ms() + self.run.cost['stop_seconds'] * 1000
 
     def close_channels(self):
@@ -321,6 +384,57 @@ class Driver:
             connection['socket'].close()
         self.connections.clear()
         self.command_deadlines.clear()
+        try:
+            (self.run.lab.root / self.base / 'broker.sock').unlink()
+        except FileNotFoundError:
+            pass
+
+    def finish_provision(self):
+        self.close_channels()
+        if self.events_fd is not None:
+            os.fsync(self.events_fd)
+            os.close(self.events_fd)
+            self.events_fd = None
+        errors, offered, calls = [], set(), []
+        root = self.run.lab.root / self.base
+        for path in sorted((root / 'requests').glob('*.json')):
+            if path.name.endswith('.http.json'):
+                continue
+            try:
+                offered.update(script.offered(json.loads(path.read_bytes())))
+            except (ValueError, TypeError, AttributeError) as error:
+                errors.append(dict(what='provision/host', detail='invalid endpoint request: ' + str(error)))
+        for name in script.admitted(sorted(offered), self.run.exp['driver']['tools']):
+            errors.append(dict(what='provision/offered/' + name, detail='unadmitted offered tool'))
+        for tool in self.run.exp['driver']['tools']:
+            found = [c for c in self.calls.values() if c['tool'] == tool['name']
+                     and c['args'] == tool['provision']['args'] and not c['stdin']]
+            if not found:
+                errors.append(dict(what='provision/' + tool['name'] + '/missing', detail='provisioning call never reached the broker'))
+                continue
+            for call in found:
+                end = call['end']
+                if end is None:
+                    continue
+                item = dict(tool=tool['name'], args=call['args'],
+                            files={k: v for k, v in end.items() if k in ('stdin', 'stdout', 'stderr')})
+                field = 'signal' if end['signal'] is not None else 'status'
+                item[field] = end[field]
+                calls.append(item)
+                if field == 'signal' or end['status'] != tool['provision']['status']:
+                    suffix = '/signal:' + end['signal'] if field == 'signal' else '/exit:' + str(end['status'])
+                    errors.append(dict(what='provision/' + tool['name'] + suffix, detail='provisioning call ended otherwise'))
+        observed = self.state['observed']
+        completed = any(t['completed_ms'] is not None for t in observed['turns'])
+        if not completed or self.host_end is None or self.host_end.get('status') != 0 or self.protocol_failed:
+            errors.append(dict(what='provision/host', detail='host failed or ended without completing the turn'))
+        inventory = self.state['inventory']
+        if inventory is None and self.expected is not None:
+            inventory = codex.observe(self.protocol.responses if self.protocol is not None else {}, self.expected)
+        record = dict(invocation=self.invocation, inventory=inventory, offered=sorted(offered), calls=calls,
+                      started_ms=self.started_ms, ended_ms=self.run.ms())
+        self.closed = True
+        return record, errors
 
     def finish(self):
         self.close_channels()
@@ -334,11 +448,11 @@ class Driver:
             socket_path.unlink()
         except FileNotFoundError:
             pass
-        state = self.run.state.data['driver']
+        state = self.state
         if state is None:
             if self.probe is not None:
                 self.files['probe.json'] = self.run.file_record('driver/probe.json')
-            return dict(invocation=None, probe=self.probe, expected_inventory=None, inventory=None, actions=[],
+            return dict(invocation=None, provision=self.provision_record, probe=self.probe, expected_inventory=None, inventory=None, actions=[],
                 turns=[], end=None, started_ms=None, ended_ms=None, report_error=None, files=self.files), dict(elapsed_ms=None, seconds=None,
                 actions=0, turns=0, tokens=dict(input=None, cached=None, output=None), input_tokens_overshoot=None)
         observed = state['observed']
@@ -358,7 +472,7 @@ class Driver:
         inventory = state['inventory']
         if inventory is None and self.expected is not None:
             inventory = codex.observe(self.protocol.responses if self.protocol is not None else {}, self.expected)
-        record = dict(invocation=self.invocation, probe=self.probe, expected_inventory=self.expected, inventory=inventory,
+        record = dict(invocation=self.invocation, provision=self.provision_record, probe=self.probe, expected_inventory=self.expected, inventory=inventory,
             actions=observed['actions'], turns=observed['turns'], end=self.run.items.get('driver', {}).get('record', {}).get('exit'),
             started_ms=state['started_ms'], ended_ms=state['ended_ms'], report_error=observed['report_error'], files=self.files)
         elapsed = ((state['ended_ms'] if state['ended_ms'] is not None else self.run.ms()) - state['started_ms']

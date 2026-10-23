@@ -5,7 +5,7 @@ import unittest
 
 class Boundary(unittest.TestCase):
     def test_pure_modules_have_only_approved_imports_and_no_file_effects(self):
-        pure = {'canonical', 'views', 'codex', 'records', 'experiment', 'draws', 'judge', 'life', 'bootstrap', 'checks', 'findings', 'tree', 'meter'}
+        pure = {'canonical', 'views', 'codex', 'script', 'records', 'experiment', 'draws', 'judge', 'life', 'bootstrap', 'checks', 'findings', 'tree', 'meter'}
         allowed = {'json', 'hashlib', 're', 'dataclasses', 'enum', 'typing', 'tarfile'}
         root = Path(__file__).resolve().parents[2] / 'runner'
         for module in sorted(pure):

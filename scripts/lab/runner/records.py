@@ -10,7 +10,7 @@ COST_FIELDS = ("ready_seconds", "command_seconds", "stop_seconds", "driver_secon
 METER_COST_FIELDS = ("subject_spend", "meter_seconds")
 FORMATS = {"lab-experiment/1", "lab-tree/1", "lab-subject/1", "lab-key/1",
            "lab-settings/1", "lab-run/1", "lab-evidence/1", "lab-verdict/1",
-           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1", "lab-held/1"}
+           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1", "lab-held/1", "lab-script/1"}
 
 
 @dataclass(frozen=True)
@@ -184,11 +184,72 @@ def run_refusals(value):
     fields = ('run', 'key', 'experiment', 'seed', 'attempt', 'campaign', 'started', 'ended', 'outcome',
               'schedule', 'processes', 'commands', 'driver', 'failures', 'undecided', 'errors', 'bounds', 'usage')
     out = []
-    obj = shape(value, ('format',) + fields, ('about', 'held'), 'run', out)
+    obj = shape(value, ('format',) + fields, ('about', 'held', 'rehearsal'), 'run', out)
     if obj.get('format') != 'lab-run/1':
         out.append(Refusal('run.format', 'expected lab-run/1'))
     if not digest_value(obj.get('key')):
         out.append(Refusal('run.key', 'expected key digest'))
+    if 'rehearsal' in obj:
+        rehearsal = shape(obj['rehearsal'], ('script',), (), 'run.rehearsal', out)
+        if not digest_value(rehearsal.get('script')):
+            out.append(Refusal('run.rehearsal.script', 'expected script digest'))
+        if obj.get('campaign') is not None:
+            out.append(Refusal('run.campaign', 'a rehearsal has no campaign'))
+    driver = obj.get('driver')
+    if type(driver) is dict and 'provision' in driver and driver['provision'] is not None:
+        m = 'run.driver.provision'
+        provision = shape(driver['provision'], ('invocation', 'inventory', 'offered', 'calls', 'started_ms', 'ended_ms'), (), m, out)
+        invocation = provision.get('invocation')
+        if invocation is not None:
+            invocation = shape(invocation, ('argv', 'env', 'cwd'), (), m + '.invocation', out)
+            if type(invocation.get('argv')) is not list or not invocation['argv'] or any(type(a) is not str for a in invocation['argv']):
+                out.append(Refusal(m + '.invocation.argv', 'expected invocation arguments'))
+            if type(invocation.get('env')) is not dict or any(type(v) is not str for v in invocation.get('env', {}).values()):
+                out.append(Refusal(m + '.invocation.env', 'expected environment strings'))
+            if type(invocation.get('cwd')) is not str:
+                out.append(Refusal(m + '.invocation.cwd', 'expected working directory'))
+        if provision.get('inventory') is not None and type(provision['inventory']) is not dict:
+            out.append(Refusal(m + '.inventory', 'expected inventory or null'))
+        offered = provision.get('offered')
+        if (type(offered) is not list or any(type(name) is not str or not name for name in offered)
+                or all(type(name) is str for name in offered) and offered != sorted(set(offered))):
+            out.append(Refusal(m + '.offered', 'expected sorted unique offered names'))
+        for field in ('started_ms', 'ended_ms'):
+            ms = provision.get(field)
+            if type(ms) is not int or not 0 <= ms <= SAFE:
+                out.append(Refusal(m + '.' + field, 'expected milliseconds'))
+        started, ended = provision.get('started_ms'), provision.get('ended_ms')
+        if type(started) is int and type(ended) is int and ended < started:
+            out.append(Refusal(m + '.ended_ms', 'ended before started'))
+        if type(provision.get('calls')) is not list:
+            out.append(Refusal(m + '.calls', 'expected a list'))
+        else:
+            for i, call in enumerate(provision['calls']):
+                cm = f'{m}.calls.{i}'
+                call = shape(call, ('tool', 'args', 'files'), ('status', 'signal'), cm, out)
+                if type(call.get('tool')) is not str or not NAME.fullmatch(call['tool']):
+                    out.append(Refusal(cm + '.tool', 'expected tool name'))
+                if type(call.get('args')) is not list or any(type(a) is not str for a in call['args']):
+                    out.append(Refusal(cm + '.args', 'expected literal strings'))
+                if set(call) & {'status', 'signal'} == {'status'}:
+                    if type(call['status']) is not int or not 0 <= call['status'] <= 255:
+                        out.append(Refusal(cm + '.status', 'expected exit status 0..255'))
+                elif set(call) & {'status', 'signal'} == {'signal'}:
+                    if type(call['signal']) is not str or not re.fullmatch('SIG[A-Z0-9]+', call['signal']):
+                        out.append(Refusal(cm + '.signal', 'expected signal name'))
+                else:
+                    out.append(Refusal(cm, 'expected status or signal'))
+                files = call.get('files')
+                if type(files) is not dict or set(files) != {'stdout', 'stderr'}:
+                    out.append(Refusal(cm + '.files', 'expected stdout and stderr files'))
+                else:
+                    for name, ref in files.items():
+                        fm = cm + '.files.' + name
+                        ref = shape(ref, ('path', 'bytes', 'sha256'), (), fm, out)
+                        if not relative(ref.get('path')) or not digest_value(ref.get('sha256')):
+                            out.append(Refusal(fm, 'expected evidence reference'))
+                        if type(ref.get('bytes')) is not int or not 0 <= ref['bytes'] <= SAFE:
+                            out.append(Refusal(fm + '.bytes', 'expected byte count'))
     if 'held' in obj:
         held = obj['held']
         if type(held) is not list:

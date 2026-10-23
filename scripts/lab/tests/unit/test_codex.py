@@ -26,8 +26,8 @@ def drive(cost=None):
     exp, _, settings, _, _ = fixture()
     exp.update(processes=[], actions=[], collect=[], checks=[], driver=dict(charter='charter.md', tools=[]))
     state = life.initial(exp, '1', cost or settings['costs']['smoke'], {}, {})
-    for kind in ('begin', 'validated', 'provisioned', 'driver_spawned'):
-        state, effects = life.step(state, dict(kind=kind, ms=0))
+    for kind in ('begin', 'validated', 'provisioned', 'tools_provisioned', 'driver_spawned'):
+        state, effects = life.step(state, dict(kind=kind, ms=0, errors=[]))
     return state
 
 
@@ -397,3 +397,18 @@ class DriveLife(unittest.TestCase):
             self.assertFalse(state.data['errors'])
             self.assertTrue(state.data['driver']['ending'])
             self.assertEqual(state.data['driver']['observed']['report'], None if report == {} else report)
+
+
+class EndpointConfiguration(unittest.TestCase):
+    def test_endpoint_changes_only_the_last_provider_table(self):
+        original = codex.config_toml('/python', '/runner', 'RUN', ['ledger'], 'm', 'low', 'profile = "lab"')
+        changed = codex.with_endpoint(original, '127.0.0.1:1234')
+        marker = '[model_providers.lab-openai]\n'
+        self.assertEqual(original.split(marker)[0], changed.split(marker)[0])
+        self.assertNotIn('base_url', original)
+        import tomllib
+        self.assertEqual(tomllib.loads(changed)['model_providers']['lab-openai'], dict(name='OpenAI', wire_api='responses',
+            base_url='http://127.0.0.1:1234/v1', requires_openai_auth=False, supports_websockets=False,
+            request_max_retries=0, stream_max_retries=0))
+        with self.assertRaises(AssertionError):
+            codex.with_endpoint(original + '[later]\nx = 1\n', '127.0.0.1:1234')

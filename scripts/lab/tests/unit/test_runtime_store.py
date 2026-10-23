@@ -362,3 +362,34 @@ class Evidence(unittest.TestCase):
             self.assertEqual(cli.runtime_command(self.lab, fd, args), 1)
             self.assertEqual(canonical.loads(self.lab.read(self.key_path + '/verdict.json'))['verdict'], 'flaky')
         self.assertEqual(self.lab.read(self.key_path + '/runs/' + record['run'] + '/run.json'), immutable)
+
+
+class ProvisionRecords(unittest.TestCase):
+    def test_provision_record_and_each_malformed_member(self):
+        from copy import deepcopy
+        record = run_record(1, '1')
+        ref = dict(path='driver/provision/calls/1.stdout', bytes=0, sha256=D)
+        provision = dict(invocation=dict(argv=['/host'], env=dict(CODEX_HOME='/private/home'), cwd='/work'),
+                         inventory={}, offered=['exec_command', 'mcp__lab.tool'],
+                         calls=[dict(tool='tool', args=['help'], status=0, files=dict(stdout=ref, stderr=ref))],
+                         started_ms=0, ended_ms=3)
+        record['driver'] = dict(provision=provision)
+        self.assertEqual(records.run_refusals(record), [])
+        for member, bad in [('invocation', []), ('inventory', []), ('offered', ['z', 'a']), ('offered', [None]),
+                            ('calls', {}), ('started_ms', True), ('ended_ms', -1)]:
+            with self.subTest(member=member, bad=bad):
+                changed = deepcopy(record)
+                changed['driver']['provision'][member] = bad
+                self.assertTrue(records.run_refusals(changed))
+        for field, bad in [('tool', ''), ('args', [1]), ('status', 256), ('files', {})]:
+            with self.subTest(field=field):
+                changed = deepcopy(record)
+                changed['driver']['provision']['calls'][0][field] = bad
+                self.assertTrue(records.run_refusals(changed))
+        changed = deepcopy(record)
+        call = changed['driver']['provision']['calls'][0]
+        del call['status']
+        call['signal'] = 'SIGTERM'
+        self.assertEqual(records.run_refusals(changed), [])
+        call['status'] = 0
+        self.assertTrue(records.run_refusals(changed))

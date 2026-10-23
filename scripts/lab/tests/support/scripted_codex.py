@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tomllib
+import urllib.request
 
 os.umask(0o077)
 script = json.loads(Path(__file__).with_suffix('.json').read_text())
@@ -31,6 +32,10 @@ if script.get('rate_read'):
     Path(__file__).with_suffix('.brake-home').write_text(os.environ['HOME'])
 config_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
 config = {} if script.get('rate_read') else tomllib.loads(config_path.read_text())
+responses_url = config.get('model_providers', {}).get('lab-openai', {}).get('base_url')
+provisioning = config_path.parent.parent.name == 'provision'
+if provisioning:
+    script = script.get('provision', {})
 work = os.getcwd()
 thread, turn = 'script-thread', 'script-turn'
 
@@ -116,6 +121,52 @@ def wait_record(path, predicate):
 
 def call_item(entry, number):
     return dict(id='item-' + str(number), **entry)
+
+
+def play_responses():
+    offered = [dict(type='function', name=name, parameters=dict(type='object', properties={}))
+               for name in ('exec_command', 'write_stdin', 'list_mcp_resources',
+                            'list_mcp_resource_templates', 'read_mcp_resource')]
+    offered.append(dict(type='namespace', name='mcp__lab', tools=[dict(type='function', name=t['name'],
+                        parameters=t['inputSchema']) for t in tools.tools]))
+    offered.extend(dict(type='function', name=name) for name in script.get('offered', []))
+    history = []
+    for number in range(100):
+        body = json.dumps(dict(model=config['model'], tools=offered, input=history)).encode()
+        request = urllib.request.Request(responses_url + '/responses', data=body,
+                                         headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request) as response:
+            events = [json.loads(line[6:]) for line in response.read().decode().splitlines() if line.startswith('data: ')]
+        output = [e['item'] for e in events if e['type'] == 'response.output_item.done']
+        history.extend(output)
+        for entry in output:
+            if entry['type'] == 'message':
+                text = ''.join(c['text'] for c in entry['content'])
+                event('item/started', item=dict(type='agentMessage', id=entry['id'], text=''))
+                event('item/completed', item=dict(type='agentMessage', id=entry['id'], text=text))
+                usage = dict(inputTokens=100 * (number + 1), cachedInputTokens=0, outputTokens=10 * (number + 1))
+                event('thread/tokenUsage/updated', tokenUsage=dict(last=usage, total=usage, modelContextWindow=None))
+                event('turn/completed', turn=dict(id=turn, status='completed', items=[]))
+                return True
+            args = json.loads(entry['arguments'])
+            if entry.get('namespace') == 'mcp__lab':
+                item = dict(id=entry['call_id'], type='mcpToolCall', server='lab', tool=entry['name'], arguments=args)
+                tools.start(item)
+                completed = tools.complete(item)
+                text = '\n'.join(c['text'] for c in completed['result']['content'] if c['type'] == 'text')
+            elif entry['name'] == 'exec_command':
+                item = dict(id=entry['call_id'], type='commandExecution', command=args['cmd'], cwd=work, status='inProgress')
+                event('item/started', item=item)
+                result = subprocess.run(['/bin/sh', '-c', args['cmd']], cwd=work, env=dict(PATH='/usr/bin:/bin'),
+                                        stdin=subprocess.DEVNULL, capture_output=True)
+                text = result.stdout.decode() + result.stderr.decode()
+                event('item/completed', item=dict(item, status='completed', exitCode=result.returncode, aggregatedOutput=text))
+            else:
+                event('rawResponseItem/completed', item=entry)
+                event('turn/completed', turn=dict(id=turn, status='failed', items=[]))
+                return False
+            history.append(dict(type='function_call_output', call_id=entry['call_id'], output=text))
+    raise RuntimeError('script did not end')
 
 
 def play():
@@ -252,10 +303,11 @@ for line in sys.stdin:
         assert params['threadId'] == thread
         assert params['outputSchema']['required'] == ['done', 'retried', 'unseen', 'surprises']
         assert 'charter' in params['input'][0]['text']
-        Path(__file__).with_suffix('.turn').write_text(json.dumps(params))
+        if not provisioning:
+            Path(__file__).with_suffix('.turn').write_text(json.dumps(params))
         send(dict(id=request['id'], result=dict(turn=dict(id=turn, status='inProgress', items=[]))))
         event('turn/started', turn=dict(id=turn, status='inProgress', items=[]))
-        play()
+        play_responses() if responses_url else play()
         continue
     else:
         raise AssertionError(method)
