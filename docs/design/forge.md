@@ -927,7 +927,8 @@ such a request costs nothing.
 | anything after a byte was written: a reset, the end of the stream, the call's deadline, `5xx`; a `429` after one of the call's writes succeeded (`Merge`'s read after its merge) | `Timeout` |
 | a malformed answer (5.3) | `Timeout` on a write; `InvalidAnswer` on a read |
 | `401`, `403` | `Forbidden` |
-| a `404` that ends the call (one 5.2 says ends nothing is an answer, and the path stays) | `Missing`, the repository's path dropped; `MissingJob` on `Job`'s reads |
+| a `404` on a branch leaf (`reads::Stage::Read`, `Read::Branch`) or contents leaf (`contents::Stage::File`), classified as `Asked::Leaf` | `Missing`, `Drop::Nothing`: the repository row stays |
+| every other `404` that ends the call (one 5.2 says ends nothing is an answer, and the path stays), including repository resolution, its own GET and listings | `Missing`, the repository's path dropped; `MissingJob` on `Job`'s reads |
 | `413` (Forgejo's quota) | `Full` |
 | `423` (the repository is archived) | `Forbidden` |
 | `409` on `OpenPull` (a pull request for the head and base is open) | `Exists` |
@@ -956,6 +957,9 @@ such a request costs nothing.
   may have been read: it is a `Timeout`. To make that rare, an idle
   connection is closed before the forge's keep-alive timeout would
   close it (`idle`, forge-connection.md, section 7).
+A repository gone or inaccessible loses its row at its next repository-level
+call. An absent branch or contents leaf alone keeps the row that answered.
+
 - **One status, several meanings.** Where Forgejo answers two failures
   with one status (`405` on a merge), the decoder reads its `message`
   into the failure. The dialect names a refusal only when both the

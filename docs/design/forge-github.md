@@ -383,7 +383,8 @@ bound, revisions, markers and malformed answers; and GitHub's:
 | a malformed answer (section 6) | `Timeout` on a write; `InvalidAnswer` on a read |
 | `401`, on a token or the JSON Web Token | `Forbidden` |
 | `403` "Resource not accessible by integration", or any other `403` | `Forbidden` |
-| a `404` or `410` that ends the call | `Missing`, the row dropped; `MissingJob` on `Job`'s |
+| a `404` or `410` on a branch leaf (`Read::Branch`, `Stage::Read`) or contents leaf (`Read::File`, `Stage::Raw`), classified as `Asked::Leaf` | `Missing`, `Drop::Nothing`: the repository row stays |
+| every other `404` or `410` that ends the call, including repository resolution by id, its own GET and listings (`Asked::Read`) | `Missing`, the row dropped (`Drop::Row`); `MissingJob` on `Job`'s |
 | `409` on `Merge`, "Head branch was modified. Review and try the merge again." | `Stale` |
 | `405` on `Merge`, "Pull Request is not mergeable" | `Conflict` |
 | `405` on `Merge`, "Repository rule violations found" and the merge queue's line | the queue (5.1) |
@@ -425,6 +426,10 @@ bound, revisions, markers and malformed answers; and GitHub's:
   same merge sha and merged true. A different sha on that merged pull is
   inferred to be 409; the fake keeps the stale-head check before mergeability.
 - **A `304`** is not a failure: it answers a conditional read (8.5).
+
+A repository gone or outside the installation loses its row at its next
+repository-level call. An absent leaf alone does not invalidate the
+repository that answered it.
 
 ## 8. The App's documents
 

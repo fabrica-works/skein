@@ -169,6 +169,11 @@ The client holds the resources the owner names, and nothing else.
   rests `poll`, doubling after each quiet read to `poll_max` (capped at
   `slow`), and starts again at `poll` on a change or hint. That finds what
   moves no updated time: CI, a base. Issues and branches rest at `slow`.
+  A branch, issue or pull that answers `Missing` rests at `slow`, or
+  `hinted` when a hint named it: absence is an answer. A branch created
+  by someone else can therefore be seen up to `slow` late, or `hinted`
+  with a hint. The owner knows the result of its own pushes and reads
+  afresh before decisions (section 5).
   The read that ends a `slow` rest, or retries a failure, is `Slow`. A
   participating item's `Slow` read rescans its comments from 0 and rereads
   its reviews, finding an edit that moved no time; a hint naming an item
@@ -191,13 +196,22 @@ The client holds the resources the owner names, and nothing else.
   under a writer (a `Fresh` comparison finds the old tip not contained in
   the new), is moved by a hint's actor who is not a configured writer, or
   is gone (`observed` none). A forward move by a writer is its own and
-  reports no news. Releasing a branch (`taken` false) reads it afresh.
+  reports no news. An absent branch clears its cached tip in the stored
+  live record and reports deletion drift only when that tip was present;
+  a restart therefore repeats no deletion drift. A branch that reappears
+  is observed under the same drift rules. Releasing a branch (`taken`
+  false) reads it afresh.
 - **News.** `Changed { resource, result }` carries the item with its new
   comments (a page at a time, `more`), the pull request, the new reviews,
   or the tip. A comment or review is delivered once for each id and
   revision, and again when its revision moves; one the owner wrote is not
-  (section 7.6). A read that fails reports `Changed` with its error and
-  is read again after `backoff`.
+  (section 7.6). `Changed { result: Err(Missing), .. }` is reported once
+  per absence: on the first absent read, or after the resource was
+  present and is now gone. Further absent reads report nothing. Absence
+  is kept on the live row in memory, with no stored-format change: once
+  per absence, and once more after a restart at its first absent read.
+  The owner treats that notice as before the restart. Other errors
+  report `Changed` and are read again after `backoff`.
 - **Settling.** Forgejo answers a pull request not mergeable while it
   checks, and orders a job's end and its commit status nowhere (forge.md,
   section 9). Both settle within `settle`, which the client checks only
