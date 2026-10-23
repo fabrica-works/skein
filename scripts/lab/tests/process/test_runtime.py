@@ -216,17 +216,57 @@ class Runtime(unittest.TestCase):
         self.assertEqual(list((root / 'collected/state').iterdir()), [])
         self.assert_empty(record)
 
-    def test_live_check_machinery_error_skips_stopped_copy(self):
+    def test_malformed_live_check_records_error_and_runs_later_and_stopped_checks(self):
         self.experiment(check='malformed')
         self.stopped_experiment()
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['checks'].insert(1, dict(name='later', argv=self.command('touch', '{dir.client}/later'), env={}))
+        path.write_bytes(canonical.record_bytes(exp))
         status, _run, stderr = self.cli('run', seed='1')
         self.assertEqual(status, 4, stderr)
         record = self.records()[2][0]
+        self.assertEqual(record['outcome'], 'error')
+        self.assertEqual([c['name'] for c in record['commands']], ['obs', 'end', 'later', 'state', 'state', 'independent'])
+        self.assertTrue(all(c['exit']['status'] == 0 and 'skipped' not in c for c in record['commands']))
+        live = next(c for c in record['commands'] if c['name'] == 'end')
+        self.assertEqual([e['what'] for e in record['errors']], ['check/end'])
+        self.assertEqual(live['check'], dict(failures=[], undecided=[], errors=record['errors']))
+        for check in record['commands'][2:]:
+            if check['group'] == 'checks':
+                self.assertEqual(check['check'], dict(failures=[], undecided=[], errors=[]))
         stopped = [c for c in record['commands'] if c.get('cluster') == 'stopped']
         self.assertEqual(len(stopped), 3)
-        self.assertTrue(all('skipped' in c for c in stopped))
+        root = self.lab_root / 'keys/native' / record['key'] / 'runs' / record['run']
+        self.assertEqual((root / live['output']['stdout']['path']).read_text(), 'this is not a check record\n')
+        self.assertEqual((root / 'collected/state/terminal').read_text(), 'terminal\n')
+        self.assertTrue((root / 'dirs/client/later').is_file())
+        self.assertTrue((root / 'dirs/client/independent').is_file())
+        self.assert_empty(record)
+
+    def test_live_check_machinery_error_skips_stopped_copy(self):
+        self.experiment()
+        self.stopped_experiment()
+        program = self.directory / 'bad-executable'
+        program.write_text('not an executable format\n')
+        program.chmod(0o700)
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['checks'][0]['argv'] = ['{experiment}/bad-executable']
+        path.write_bytes(canonical.record_bytes(exp))
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 4, stderr)
+        record = self.records()[2][0]
+        self.assertEqual(record['outcome'], 'error')
+        live = next(c for c in record['commands'] if c['group'] == 'checks' and c['name'] == 'end')
+        self.assertTrue(live['spawn_error'])
+        self.assertTrue(any(e['what'] == 'spawn/end' and e['detail'] == live['spawn_error'] for e in record['errors']))
+        stopped = [c for c in record['commands'] if c.get('cluster') == 'stopped']
+        self.assertEqual(len(stopped), 3)
+        self.assertTrue(all('skipped' in c and 'exit' not in c for c in stopped))
         root = self.lab_root / 'keys/native' / record['key'] / 'runs' / record['run']
         self.assertEqual(list((root / 'collected/state').iterdir()), [])
+        self.assertFalse((root / 'dirs/client/independent').exists())
         self.assert_empty(record)
 
     def test_exec_ack_error_skips_stopped_copy(self):
