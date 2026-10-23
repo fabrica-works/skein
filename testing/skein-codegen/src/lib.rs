@@ -7,6 +7,7 @@ extern crate alloc;
 
 mod analysis;
 mod check;
+pub mod diff;
 mod emit_codec;
 mod emit_functions;
 mod emit_limits;

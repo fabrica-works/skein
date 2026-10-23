@@ -1,0 +1,10 @@
+family task-store 1
+record WorkItem {
+    summary: text 128
+    attachment: secret 512
+    credential: bytes 128
+    receipt: bytes 256 holds task-audit Receipt
+    history: list 16 text 128
+}
+enum State { pending done archived }
+record Cursor { next: option u64 }

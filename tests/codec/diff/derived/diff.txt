@@ -1,0 +1,13 @@
+family task-store 1 to 2
+derived versioned Task
+none widen Task.title text 64 text 128
+derived widen Task.id u8 u32
+derived add Task.attempts u32 ?
+derived add Task.note option text 128 none
+derived wrap Task.labels list 8 text 32 list 8 option text 32
+derived drop Task.obsolete
+derived order Task title id labels
+derived unversioned Cursor
+derived add State.blocked
+none add State.archived
+derived order State done open

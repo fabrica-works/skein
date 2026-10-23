@@ -1,0 +1,9 @@
+family task-store 2
+versioned record Task {
+    id: u64
+    title: text 128
+    due: duration
+    retries: u32
+    note: option text 128
+}
+enum State { open done archived }

@@ -1,0 +1,8 @@
+family task-store 1 to 2
+written reshape Key
+written retype Task.id u64 fixed 16
+written retype Task.title bytes 128 text 128
+written payload Event.opened Task -
+written payload Event.annotated Note Failure
+written payload Event.archived - Note
+written drop Event.deleted

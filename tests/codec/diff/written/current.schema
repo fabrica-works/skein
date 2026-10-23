@@ -1,0 +1,15 @@
+family task-store 2
+enum Key { local remote }
+record Note { body: text 128 }
+record Failure { reason: text 128 }
+record Task {
+    id: fixed 16
+    title: text 128
+    attempts: u32
+}
+enum Event {
+    opened
+    annotated: Failure
+    failed: Failure
+    archived: Note
+}

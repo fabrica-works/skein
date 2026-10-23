@@ -1,0 +1,9 @@
+family task-store 1
+record Task {
+    id: u8
+    title: text 64
+    obsolete: bool
+    labels: list 8 text 32
+}
+versioned record Cursor { offset: u32 }
+enum State { open done }

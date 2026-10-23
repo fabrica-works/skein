@@ -1,0 +1,16 @@
+family task-store 1
+record Key { number: u64 }
+record Note { body: text 128 }
+record Failure { reason: text 128 }
+record Task {
+    id: u64
+    title: bytes 128
+    attempts: u32
+}
+enum Event {
+    opened: Task
+    annotated: Note
+    failed: Failure
+    archived
+    deleted
+}

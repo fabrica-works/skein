@@ -1,0 +1,7 @@
+family task-store 1 to 2
+none widen Task.title text 64 text 128
+written retype Task.due u64 duration
+derived widen Task.retries u8 u32
+derived add Task.note option text 128 none
+derived drop Task.obsolete
+none add State.archived

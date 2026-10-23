@@ -1,0 +1,10 @@
+family task-store 1
+record LegacyCursor { position: u64 }
+record Task {
+    title: text 64
+    attachment: bytes 512
+    credential: secret 64
+    receipt: bytes 256
+    history: list 8 text 64
+}
+enum State { open done }

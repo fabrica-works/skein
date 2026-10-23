@@ -1,0 +1,9 @@
+family task-store 1
+versioned record Task {
+    id: u64
+    title: text 64
+    due: u64
+    retries: u8
+    obsolete: bool
+}
+enum State { open done }

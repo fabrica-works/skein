@@ -1,0 +1,12 @@
+family task-store 1 to 1
+none rename Task WorkItem
+none rename WorkItem.title summary
+none widen WorkItem.summary text 64 text 128
+none widen WorkItem.attachment bytes 512 secret 512
+none widen WorkItem.credential secret 64 bytes 128
+none widen WorkItem.receipt bytes 256 bytes 256 holds task-audit Receipt
+none widen WorkItem.history list 8 text 64 list 16 text 128
+none rename State.open pending
+none add State.archived
+none add Cursor
+none drop LegacyCursor

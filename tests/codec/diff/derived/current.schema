@@ -1,0 +1,10 @@
+family task-store 2
+versioned record Task {
+    title: text 128
+    id: u32
+    attempts: u32
+    note: option text 128
+    labels: list 8 option text 32
+}
+record Cursor { offset: u32 }
+enum State { done blocked open archived }
