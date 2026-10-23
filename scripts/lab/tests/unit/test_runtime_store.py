@@ -98,7 +98,37 @@ def run_record(number, seed, outcome='pass', attempt=1):
     return dict(format='lab-run/1', run=f'20261020T123456000Z-{number:06x}', key=D, experiment='sample',
                 seed=seed, attempt=attempt, campaign=None, started='2026-10-20T12:34:56.000Z',
                 ended='2026-10-20T12:34:56.001Z', outcome=outcome, schedule={}, processes={}, commands=[],
-                driver=None, failures=[], undecided=[], errors=[], bounds=[], usage={'driver': None})
+                driver=None, failures=[], undecided=[], errors=[], bounds={'name': 'smoke', **fixture()[2]['costs']['smoke']}, usage={'driver': None})
+
+
+class Bounds(unittest.TestCase):
+    def test_run_bounds_are_exact_named_positive_class_values(self):
+        value = run_record(1, '1')
+        self.assertEqual(records.run_refusals(value), [])
+        for bounds in ([], {}, {'name': 'smoke'}, {**value['bounds'], 'hits': []},
+                       {**value['bounds'], 'name': 'BAD'}):
+            with self.subTest(bounds=bounds):
+                self.assertTrue(records.run_refusals({**value, 'bounds': bounds}))
+        for field in records.COST_FIELDS:
+            for bad in (None, False, 0, -1, records.SAFE + 1):
+                bounds = {**value['bounds'], field: bad}
+                self.assertIn('run.bounds.' + field, [r.member for r in records.run_refusals({**value, 'bounds': bounds})])
+
+    def test_host_superseding_reads_fail_bounds_and_preserves_nonfail_outcomes(self):
+        from types import SimpleNamespace
+        current = run_record(1, '1')['bounds']
+        held = {**current, 'ready_seconds': current['ready_seconds'] - 1}
+        run = run_record(1, '1', 'fail')
+        run['bounds'] = held
+        run['failures'] = [dict(id='failure-1', signature='bound/ready_seconds/server', kind='bound', summary='', evidence=[])]
+        lines = [evidence.line_for(run), dict(evidence.line_for(run), run='error', outcome='error'),
+                 dict(evidence.line_for(run), run='incomplete', outcome='incomplete'),
+                 dict(evidence.line_for(run), run='pass', outcome='pass'),
+                 dict(evidence.line_for(run), run='mixed', signatures=['bound/ready_seconds', 'stop/server/exit:1'])]
+        read = unittest.mock.Mock(return_value=canonical.record_bytes(run))
+        lab = SimpleNamespace(read=read)
+        self.assertEqual(cli._superseded(lab, 'key', lines, current), frozenset({run['run']}))
+        read.assert_called_once_with(f"key/runs/{run['run']}/run.json")
 
 
 class Evidence(unittest.TestCase):
@@ -117,6 +147,12 @@ class Evidence(unittest.TestCase):
     def publish(self, record):
         with self.lab.lock():
             evidence.publish(self.lab, self.key_path, record)
+
+    def judge_inputs(self):
+        self.lab.write_once(self.key_path + '/key.json', canonical.record_bytes(
+            dict(format='lab-key/1', experiment=D, subject=D, lab=fixture()[4])))
+        self.lab.write_once('settings.json', canonical.record_bytes(fixture()[2]))
+        (self.lab.root / 'settings.json').chmod(0o600)
 
     def test_optional_awaited_record_roundtrip_and_refusals_preserve_ordinary_records(self):
         ordinary = dict(group='actions', name='ordinary', exit=dict(status=0))
@@ -254,6 +290,7 @@ class Evidence(unittest.TestCase):
         self.assertEqual(output.getvalue(), '')
 
     def test_judge_runs_three_new_seeds_once_and_stops_on_unjudged_evidence(self):
+        self.judge_inputs()
         from types import SimpleNamespace
         from runner import transport
         args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
@@ -273,6 +310,7 @@ class Evidence(unittest.TestCase):
             self.assertEqual(launched.call_count, 3)
 
     def test_judge_does_not_automatically_retry_error_or_run_another_seed(self):
+        self.judge_inputs()
         from types import SimpleNamespace
         from runner import transport
         args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
@@ -288,3 +326,39 @@ class Evidence(unittest.TestCase):
             self.assertEqual(cli.runtime_command(self.lab, fd, args), 4)
             self.assertEqual(cli.runtime_command(self.lab, fd, args), 3)
             self.assertEqual(launched.call_count, 1)
+
+    def test_judge_rebuilds_superseded_verdict_and_blocks_until_explicit_pass(self):
+        from types import SimpleNamespace
+        from runner import transport
+        self.judge_inputs()
+        record = run_record(1, '1', 'fail')
+        record['failures'] = [dict(id='failure-1', signature='bound/ready_seconds/server', kind='bound',
+                                   summary='readiness bound', evidence=[])]
+        self.publish(record)
+        self.publish(run_record(2, '2'))
+        self.publish(run_record(3, '3'))
+        settings = fixture()[2]
+        settings['costs']['smoke']['ready_seconds'] += 1
+        (self.lab.root / 'settings.json').write_bytes(canonical.record_bytes(settings))
+        immutable = self.lab.read(self.key_path + '/runs/' + record['run'] + '/run.json')
+        args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
+        with patch.object(cli, '_experiment_input', return_value=({'name': 'sample', 'driver': None}, [])), \
+             patch.object(cli, 'validate_command', return_value=(D, [])), \
+             patch.object(transport, 'launch', side_effect=AssertionError('unexpected run')), \
+             redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()), self.lab.lock() as fd:
+            self.assertEqual(cli.runtime_command(self.lab, fd, args), 3)
+            derived = canonical.loads(self.lab.read(self.key_path + '/verdict.json'))
+            self.assertEqual(derived['seeds'][0]['not_judged'], [record['run']])
+            self.assertEqual(derived['seeds'][0]['state'], 'not judged')
+            retry = run_record(4, '1', attempt=2)
+            retry['bounds'] = {'name': 'smoke', **settings['costs']['smoke']}
+            evidence.publish(self.lab, self.key_path, retry)
+            self.assertEqual(cli.runtime_command(self.lab, fd, args), 0)
+            derived = canonical.loads(self.lab.read(self.key_path + '/verdict.json'))
+            self.assertEqual(derived['verdict'], 'pass')
+            self.assertEqual(derived['seeds'][0]['judged'], [retry['run']])
+            settings['costs']['smoke']['ready_seconds'] -= 1
+            (self.lab.root / 'settings.json').write_bytes(canonical.record_bytes(settings))
+            self.assertEqual(cli.runtime_command(self.lab, fd, args), 1)
+            self.assertEqual(canonical.loads(self.lab.read(self.key_path + '/verdict.json'))['verdict'], 'flaky')
+        self.assertEqual(self.lab.read(self.key_path + '/runs/' + record['run'] + '/run.json'), immutable)

@@ -97,7 +97,7 @@ def lab_refusals(value):
     else:
         for i, item in enumerate(programs):
             m = f"lab.programs.{i}"
-            p = shape(item, ("path", "sha256"), (), m, out)
+            p = shape(item, ("path", "sha256"), ("version",), m, out)
             path = p.get("path")
             if type(path) is not str or not path.startswith("/") or "\x00" in path:
                 out.append(Refusal(m + ".path", "expected an absolute path"))
@@ -105,6 +105,8 @@ def lab_refusals(value):
                 paths.append(path)
             if not digest_value(p.get("sha256")):
                 out.append(Refusal(m + ".sha256", "expected a digest"))
+            if 'version' in p and not text_value(p['version']):
+                out.append(Refusal(m + '.version', 'expected nonempty text'))
         if paths != sorted(set(paths)):
             out.append(Refusal("lab.programs", "paths must be unique and sorted"))
     if "browser" in lab:
@@ -127,12 +129,20 @@ def lab_refusals(value):
             out.append(Refusal("lab.driver.program.version", "expected version"))
         if type(d.get("config")) is not dict:
             out.append(Refusal("lab.driver.config", "expected configuration object"))
-    cost = shape(lab.get("cost"), ("name",) + COST_FIELDS, (), "lab.cost", out)
+    cost = shape(lab.get("cost"), ("name",), (), "lab.cost", out)
     if type(cost.get("name")) is not str or not NAME.fullmatch(cost["name"]):
         out.append(Refusal("lab.cost.name", "expected a cost class name"))
+    return out
+
+
+def cost_refusals(value, member, *, named=False):
+    out = []
+    cost = shape(value, (('name',) if named else ()) + COST_FIELDS, (), member, out)
+    if named and (type(cost.get('name')) is not str or not NAME.fullmatch(cost['name'])):
+        out.append(Refusal(member + '.name', 'expected a cost class name'))
     for field in COST_FIELDS:
         if not positive(cost.get(field)):
-            out.append(Refusal("lab.cost." + field, "expected a positive safe integer"))
+            out.append(Refusal(member + '.' + field, 'expected a positive safe integer'))
     return out
 
 
@@ -172,7 +182,8 @@ def run_refusals(value):
         out.append(Refusal('run.format', 'expected lab-run/1'))
     if not digest_value(obj.get('key')):
         out.append(Refusal('run.key', 'expected key digest'))
-    for field in ('failures', 'undecided', 'errors', 'commands', 'bounds'):
+    out.extend(cost_refusals(obj.get('bounds'), 'run.bounds', named=True))
+    for field in ('failures', 'undecided', 'errors', 'commands'):
         if type(obj.get(field)) is not list:
             out.append(Refusal('run.' + field, 'expected list'))
     if type(obj.get('processes')) is not dict:
@@ -259,7 +270,7 @@ def signature_value(text):
 
 
 FINDING_ID = re.compile(r'F-(?:[0-9]{4}|[1-9][0-9]{4,})\Z')
-CLASSES = ('world', 'fake', 'below', 'tools', 'experiment', 'lab', 'look')
+CLASSES = ('world', 'fake', 'below', 'tools', 'experiment', 'lab', 'look', 'words')
 FINDING_FIELDS = {
     'candidate': ('signature', 'kind', 'summary', 'run', 'key', 'seed', 'failure'),
     'occurred': ('run', 'key', 'seed', 'failure'),

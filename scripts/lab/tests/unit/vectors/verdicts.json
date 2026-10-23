@@ -79,5 +79,172 @@
       }
     ],
     "verdict": "not enough evidence"
+  },
+  {
+    "name": "raised",
+    "evidence": [
+      {
+        "run": "bound",
+        "seed": "1",
+        "outcome": "fail",
+        "signatures": [
+          "bound/ready_seconds/server"
+        ]
+      },
+      {
+        "run": "second",
+        "seed": "2",
+        "outcome": "pass",
+        "signatures": []
+      },
+      {
+        "run": "third",
+        "seed": "3",
+        "outcome": "pass",
+        "signatures": []
+      }
+    ],
+    "held_to": {
+      "bound": {
+        "ready_seconds": 60
+      }
+    },
+    "current": {
+      "ready_seconds": 61
+    },
+    "superseded": [
+      "bound"
+    ],
+    "verdict": "not enough evidence",
+    "next_seed": {
+      "action": "blocked",
+      "seed": "1"
+    }
+  },
+  {
+    "name": "equal",
+    "evidence": [
+      {
+        "run": "bound",
+        "seed": "1",
+        "outcome": "fail",
+        "signatures": [
+          "bound/ready_seconds/server"
+        ]
+      },
+      {
+        "run": "second",
+        "seed": "2",
+        "outcome": "pass",
+        "signatures": []
+      },
+      {
+        "run": "third",
+        "seed": "3",
+        "outcome": "pass",
+        "signatures": []
+      }
+    ],
+    "held_to": {
+      "bound": {
+        "ready_seconds": 60
+      }
+    },
+    "current": {
+      "ready_seconds": 60
+    },
+    "superseded": [],
+    "verdict": "flaky",
+    "next_seed": {
+      "action": "done",
+      "verdict": "flaky"
+    }
+  },
+  {
+    "name": "mixed-signatures",
+    "evidence": [
+      {
+        "run": "bound",
+        "seed": "1",
+        "outcome": "fail",
+        "signatures": [
+          "bound/ready_seconds/server",
+          "stop/server/exit:1"
+        ]
+      },
+      {
+        "run": "second",
+        "seed": "2",
+        "outcome": "pass",
+        "signatures": []
+      },
+      {
+        "run": "third",
+        "seed": "3",
+        "outcome": "pass",
+        "signatures": []
+      }
+    ],
+    "held_to": {
+      "bound": {
+        "ready_seconds": 60
+      }
+    },
+    "current": {
+      "ready_seconds": 61
+    },
+    "superseded": [],
+    "verdict": "flaky",
+    "next_seed": {
+      "action": "done",
+      "verdict": "flaky"
+    }
+  },
+  {
+    "name": "explicit-pass",
+    "evidence": [
+      {
+        "run": "bound",
+        "seed": "1",
+        "outcome": "fail",
+        "signatures": [
+          "bound/ready_seconds/server"
+        ]
+      },
+      {
+        "run": "second",
+        "seed": "2",
+        "outcome": "pass",
+        "signatures": []
+      },
+      {
+        "run": "third",
+        "seed": "3",
+        "outcome": "pass",
+        "signatures": []
+      },
+      {
+        "run": "retry",
+        "seed": "1",
+        "outcome": "pass",
+        "signatures": []
+      }
+    ],
+    "held_to": {
+      "bound": {
+        "ready_seconds": 60
+      }
+    },
+    "current": {
+      "ready_seconds": 61
+    },
+    "superseded": [
+      "bound"
+    ],
+    "verdict": "pass",
+    "next_seed": {
+      "action": "done",
+      "verdict": "pass"
+    }
   }
 ]

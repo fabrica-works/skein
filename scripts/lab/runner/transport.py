@@ -26,10 +26,43 @@ def _receive(connection, size):
     return data
 
 
+def _admission(connection):
+    marker = _receive(connection, 1)
+    if marker == b'R':
+        detail = _receive(connection, int.from_bytes(_receive(connection, 8), 'big')).decode('utf-8', 'strict')
+        raise Refused('provision', detail)
+    if marker != b'A':
+        raise CapabilityError('unit did not acknowledge admission')
+
+
 def _runtime_known(lab, key):
-    """Recheck requested browser inputs before provisioning and supply their paths."""
-    from .cli import _browser_facts, _runner_root
+    """Recheck requested host inputs before provisioning and supply their paths."""
+    from .cli import _browser_facts, _experiment_input, _program_facts, _runner_root
+    from . import experiment
     known = {'runner': str(_runner_root())}
+    if any('version' in p for p in key['lab']['programs']):
+        settings = canonical.loads(lab.read('settings.json'))
+        exp, files = _experiment_input(lab.root / 'store/experiments' / key['experiment'])
+        texts = {}
+        for file in files:
+            try:
+                texts[file['path']] = file['data'].decode('utf-8', 'strict')
+            except UnicodeError:
+                texts[file['path']] = None
+        used = experiment.uses_programs(exp, texts)
+        paths, facts, problems = _program_facts(settings, used)
+        if problems:
+            raise Refused('settings.programs', '; '.join(str(p) for p in problems))
+        for name in sorted(used):
+            member = 'settings.programs.' + name
+            programs = settings.get('programs')
+            configured = programs.get(name) if type(programs) is dict else None
+            current = facts.get(paths.get('program.' + name))
+            if (type(configured) is not dict or current is None
+                    or any(current[k] != configured[k] for k in ('path', 'sha256'))
+                    or configured not in key['lab']['programs']):
+                raise Refused(member, 'program changed before provision')
+        known.update(paths)
     if 'browser' not in key['lab']:
         return known
     try:
@@ -44,8 +77,8 @@ def _runtime_known(lab, key):
             raise RuntimeError('settings.browser.chromium')
         if facts['fonts'] != expected['fonts']:
             raise RuntimeError('settings.browser.fonts')
-        program = {k: facts['program'][k] for k in ('path', 'sha256')}
-        if program not in key['lab']['programs']:
+        if not any(all(program[k] == facts['program'][k] for k in ('path', 'sha256'))
+                   for program in key['lab']['programs']):
             raise RuntimeError('settings.browser.program')
         known.update(paths)
     except (OSError, Refused, RuntimeError) as error:
@@ -85,7 +118,12 @@ def worker(endpoint, token):
                 if canonical.digest(key) != spec['key'] or key['lab']['runner'] != _runner_digest():
                     raise RuntimeError('runner or key changed before provision')
                 _subject(lab, key['subject'])
-                known = _runtime_known(lab, key)
+                try:
+                    known = _runtime_known(lab, key)
+                except Refused as error:
+                    detail = str(error).encode('utf-8')
+                    connection.sendall(b'R' + len(detail).to_bytes(8, 'big') + detail)
+                    return 2
                 for program in key['lab']['programs']:
                     current = _program(program['path'])
                     if any(current[k] != program[k] for k in ('path', 'sha256')):
@@ -107,12 +145,14 @@ def worker(endpoint, token):
 def launch(lab, lock_fd, key_path, seed, campaign):
     """Start one unit and keep the same flock alive in both outer and worker."""
     key = canonical.loads(lab.read(key_path + '/key.json'))
+    from .cli import _runtime_cost
+    cost = _runtime_cost(lab, key)
+    _runtime_known(lab, key)
     programs = {Path(p['path']).name: p['path'] for p in key['lab']['programs']}
     systemctl, systemd_run = programs.get('systemctl'), programs.get('systemd-run')
     bwrap = programs.get('bwrap')
     if not systemctl or not systemd_run or not bwrap:
         raise Refused('containment', 'systemd-run, systemctl and bwrap identities are required')
-    cost = key['lab']['cost']
     try:
         manager_version = manager(systemctl, ['show', '--property=Version', '--value'], cost['command_seconds'])
         namespace_probe(bwrap, os.path.realpath(sys.executable), cost['command_seconds'])
@@ -127,7 +167,8 @@ def launch(lab, lock_fd, key_path, seed, campaign):
     os.fsync(lock_fd)
     spec = dict(root=str(lab.root), key_path=key_path, key=key_path.rsplit('/', 1)[-1],
                 run=run_id, unit=unit, seed=seed, campaign=campaign,
-                attempt=1 + sum(e['seed'] == seed for e in previous), systemctl=systemctl, manager_version=manager_version)
+                attempt=1 + sum(e['seed'] == seed for e in previous), systemctl=systemctl,
+                manager_version=manager_version, bounds=cost)
     token = secrets.token_hex(16)
     endpoint = str(lab.root / ('.transport-' + secrets.token_hex(6)))
     runner_root = str(Path(__file__).resolve().parent.parent)
@@ -189,8 +230,7 @@ def launch(lab, lock_fd, key_path, seed, campaign):
                             connection.sendmsg([b'L'], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', [lock_fd]))])
                             data = canonical.dumps(spec)
                             connection.sendall(len(data).to_bytes(8, 'big') + data)
-                            if _receive(connection, 1) != b'A':
-                                raise CapabilityError('unit did not acknowledge admission')
+                            _admission(connection)
                             accepted = True
                 else:
                     # pidfd completion and the wakeup pipe avoid polling or wall sleeps.

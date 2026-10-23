@@ -29,5 +29,5 @@ def fixture():
                  executables={path: {'regular': True, 'exec': True, 'sha256': D}
                               for path in ('/immutable/artifacts/app', '/usr/bin/helper', '/immutable/experiment/check')})
     lab = {'runner': D, 'python': '3.11.0', 'programs': [{'path': '/usr/bin/helper', 'sha256': D}],
-           'driver': None, 'cost': {'name': 'smoke', **cost}}
+           'driver': None, 'cost': {'name': 'smoke'}}
     return exp, subject, settings, facts, lab

@@ -1363,7 +1363,9 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   its own tests. For `look`: the repository and commit of the
   stylesheet's fix, and the look experiment's expectation that fails
   before it and passes after, since no world below a browser renders a
-  page; the product's commit that carries it.
+  page; the product's commit that carries it. For `words`, as for `world`: the
+  test that holds the text, the repository and commit of its fix, and
+  the product's commit that carries it.
 - **Closed** only after a recheck: the experiment (the corrected one,
   for `experiment`) at a subject that carries the fix, so under a new
   key, judged pass, with no judged run showing the signature. `lab

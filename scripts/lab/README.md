@@ -30,7 +30,7 @@ directories 0500. Existing content is verified before reuse.
 
 Create `settings.json` in the lab before validation, as **canonical JSON with
 one final newline**. Its `lab-settings/1` record has `costs`, `driver`, and
-`triager`, with optional `about` and `browser`. `costs` maps experiment cost
+`triager`, with optional `about`, `browser` and `programs`. `costs` maps experiment cost
 names to objects with exactly these positive integer fields: `ready_seconds`, `command_seconds`,
 `stop_seconds`, `driver_seconds`, `driver_actions`, `driver_input_tokens`.
 There are no default cost values. For experiments with `driver: null`, settings
@@ -39,6 +39,18 @@ For agent experiments, `driver` is the key's driver object (lab.md, 2.3), and
 `triager` has the same fields plus positive `triage_seconds`, `triage_tokens`.
 This slice validates their input shapes and declared driver executable identity;
 it does not run a driver or check its effective inventory.
+
+Optional `programs` maps names matching `[a-z][a-z0-9-]*` to `{"path",
+"sha256", "version"}`: a resolved absolute executable path, its digest and
+nonempty version. `{program.N}` names its path everywhere templates are
+allowed, including executable paths. Only used programs are read and keyed,
+with their versions beside them in `lab.programs`; each is checked again
+before provisioning. An unused program's missing file or stale digest
+refuses nothing.
+
+The key's `lab.cost` is exactly `{"name": NAME}`. Each run reads that class's
+current values from settings; tuning a value keeps the key, changing its
+name changes the key.
 
 Optional `browser` is null or an object with `program` (absolute executable
 path), `chromium` (`path`, `sha256`, `version`), and `fonts` (`path`, `tree`).
@@ -202,7 +214,8 @@ Failures take precedence over errors, then undecided checks, then pass. No
 report is required without a driver. There are no default time or resource
 limits: every deadline comes from the experiment's named class.
 
-`run.json` is canonical `lab-run/1`, written once. Its `events.jsonl` is
+`run.json` is canonical `lab-run/1`, written once. Its `bounds` is the class's
+`name` and all six values the run was held to. Its `events.jsonl` is
 append-only `lab-event/1`; each line has `event` and monotonic `ms` plus that
 event's observations. The live marker is `lab-live/1` with `unit`.
 `evidence.jsonl` contains canonical `lab-evidence/1` lines verified against the
@@ -218,6 +231,12 @@ never retries an unjudged seed automatically. Rerun it explicitly with `run
 --seed N`, then call `judge` again. A decided key runs nothing on `judge`.
 Exit codes are 0 pass, 1 fail/flaky, 2 refused, 3 incomplete/not enough evidence,
 4 machinery error, or 128 plus the interrupting signal.
+
+`judge` re-derives the verdict with the class's current values. A fail whose
+signatures are all `bound/NAME` or `bound/NAME/WHO`, each now strictly above
+its recorded value, is superseded: listed in `not_judged`, as an error is.
+An equal value or any non-bound failure keeps it judged. A seed left with
+no judged attempt needs an explicit additive run.
 
 There is **no sweeper or pruning** here. Scratch and failed/error evidence are
 retained, including passing scratch. A live marker or an unfinished run causes
@@ -280,8 +299,9 @@ Each `findings/F-NNNN.jsonl` line is canonical `lab-finding/1`, with `event`,
 `t` (UTC milliseconds) and `by`. Candidates retain signature/kind/summary and
 run/key/seed/failure identity; occurrences and reopenings retain that failure
 identity. Proposed class/title/reason remains distinct from owner `classed`.
-The seven classes are exactly `world`, `fake`, `below`, `tools`, `experiment`,
-`lab`, `look` (a page's appearance). An omitted `--by` on owner commands records
+The classes are `world`, `fake`, `below`, `tools`, `experiment`, `lab`,
+`look` (a page's appearance), and `words` (text a product's model reads).
+An omitted `--by` on owner commands records
 `uid:<uid>`; `take` requires `--by`. Reserved actors `runner` and `triager` cannot confirm a class or act
 as an owner.
 
@@ -296,7 +316,7 @@ An error or incomplete attempt with no signature contributes to the
 denominator; its outcome stays error or incomplete.
 
 `take` follows filing; `fix` needs a taken finding and a confirmed class.
-For world/fake/below/tools, fix arguments are `--repository /absolute/path
+For world/fake/below/tools/words, fix arguments are `--repository /absolute/path
 --commit FULL_OID --test LOWEST_WORLD_TEST [--test ...] --product-commit
 FULL_OID`. Those test names record the owner's evidence that they fail before
 the fix and pass after it; the lab does not run or repair product tests. For

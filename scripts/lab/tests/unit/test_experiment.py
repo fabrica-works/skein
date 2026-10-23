@@ -129,7 +129,7 @@ class Experiment(unittest.TestCase):
         self.assertNotEqual(identity, canonical.digest(experiment.key('sha256:' + 'b' * 64, subject, lab)))
         for change in [lambda l: l.update(runner='sha256:' + 'b' * 64),
                        lambda l: l['programs'][0].update(sha256='sha256:' + 'b' * 64),
-                       lambda l: l['cost'].update(ready_seconds=61), lambda l: l.update(python='3.12.0')]:
+                       lambda l: l['cost'].update(name='other'), lambda l: l.update(python='3.12.0')]:
             changed = deepcopy(lab)
             change(changed)
             self.assertNotEqual(identity, canonical.digest(experiment.key(D, subject, changed)))

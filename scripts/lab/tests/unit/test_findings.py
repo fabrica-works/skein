@@ -82,6 +82,23 @@ class Lifecycle(unittest.TestCase):
             self.assertEqual(rate['denominator'], vector['denominator'])
             self.assertEqual(findings.filing(state, records)['flaky'], vector['flaky'])
 
+    def test_words_lifecycle_vector_requires_product_fix_and_recheck(self):
+        vectors = json.loads((Path(__file__).parent / 'vectors/findings.json').read_text())
+        for vector in vectors:
+            if vector.get('class') != 'words':
+                continue
+            states = [self.add('classed', **{'class': vector['class']})['state']]
+            states.append(self.add('filed', **findings.filing(self.state(), self.records))['state'])
+            states.append(self.add('taken')['state'])
+            states.append(self.add('fixed', fix=vector['fix'])['state'])
+            with self.assertRaises(Refused):
+                self.add('closed')
+            with self.assertRaisesRegex(Refused, 'carriage'):
+                self.add('rechecked', key=Q, verdict=findings.snapshot(Q, self.records[Q]))
+            states.append(self.recheck(vector['fix'])['state'])
+            states.append(self.add('closed')['state'])
+            self.assertEqual(states, vector['states'])
+
     def test_proposal_allows_filing_but_only_owner_confirms_and_fix_needs_confirmation(self):
         self.add('proposed', by='triager', **{'class': 'experiment', 'title': 'Proposal', 'reason': 'evidence'})
         self.assertIsNone(self.state()['class'])
@@ -141,8 +158,8 @@ class Lifecycle(unittest.TestCase):
         rate = findings.reproduction(self.state(), self.records)
         self.assertEqual((rate['numerator'], rate['denominator']), (1, 2))
 
-    def test_exact_seven_classes_and_each_fix_field_required(self):
-        self.assertEqual(CLASSES, ('world', 'fake', 'below', 'tools', 'experiment', 'lab', 'look'))
+    def test_exact_classes_and_each_fix_field_required(self):
+        self.assertEqual(CLASSES, ('world', 'fake', 'below', 'tools', 'experiment', 'lab', 'look', 'words'))
         for finding_class in CLASSES:
             fix = ({'experiment': P} if finding_class == 'experiment' else
                    {'runner_commit': 'a' * 40, 'tests': ['own::test']} if finding_class == 'lab' else

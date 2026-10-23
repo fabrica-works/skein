@@ -458,6 +458,16 @@ class Runtime(unittest.TestCase):
 
     def test_ready_lines_late_dependent_file_and_pass_evidence(self):
         self.experiment(dependent=True)
+        settings_path = self.lab_root / 'settings.json'
+        settings_path.chmod(0o600)
+        settings = canonical.loads(settings_path.read_bytes())
+        settings['programs'] = {'python': dict(path=PYTHON, sha256=store.file_digest(Path(PYTHON).read_bytes()),
+                                              version=sys.version.split()[0])}
+        settings_path.write_bytes(canonical.record_bytes(settings))
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['processes'][0]['argv'][0] = '{program.python}'
+        path.write_bytes(canonical.record_bytes(exp))
         status, _run, stderr = self.cli('run', seed='18446744073709551615')
         self.assertEqual(status, 0, stderr)
         key_path, entries, records = self.records()
@@ -470,7 +480,20 @@ class Runtime(unittest.TestCase):
         self.assertEqual(rendered.read_text(), record['processes']['server']['captures']['address'])
         self.assertTrue(record['processes']['server']['exit']['stopped'])
         self.assertEqual(entries[0]['outcome'], 'pass')
+        self.assertEqual(record['bounds'], {'name': 'smoke', **COST})
+        key = canonical.loads((self.lab_root / key_path / 'key.json').read_bytes())
+        self.assertEqual([p for p in key['lab']['programs'] if p['path'] == PYTHON], [settings['programs']['python']])
         self.assert_empty(record)
+        before = (self.lab_root / key_path / 'evidence.jsonl').read_bytes()
+        settings['programs']['python']['sha256'] = 'sha256:' + '0' * 64
+        settings_path.write_bytes(canonical.record_bytes(settings))
+        status, output, stderr = self.cli('run', seed='18446744073709551615')
+        self.assertEqual(status, 2, stderr)
+        self.assertEqual(output, '')
+        self.assertIn('settings.programs.python.sha256', stderr)
+        self.assertEqual((self.lab_root / key_path / 'evidence.jsonl').read_bytes(), before)
+        self.assertEqual(len(list((self.lab_root / 'transport').iterdir())), 1)
+        self.assertEqual(len(list((self.lab_root / key_path / 'runs').iterdir())), 1)
 
     def test_action_awaits_fresh_process_line_and_next_action_receives_capture_on_stdin(self):
         self.experiment()

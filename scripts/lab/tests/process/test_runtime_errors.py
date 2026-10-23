@@ -49,7 +49,8 @@ class TerminalErrors(unittest.TestCase):
                     key_path = 'keys/hello/' + identity
                     lab.write_once(key_path + '/key.json', canonical.record_bytes(key))
                     spec = dict(key=identity, key_path=key_path, run='20261023T052500000Z-000001',
-                                seed='1', attempt=1, campaign=None, unit='test-owned.service', systemctl='/unused')
+                                seed='1', attempt=1, campaign=None, unit='test-owned.service', systemctl='/unused',
+                                bounds={'name': 'smoke', **_settings['costs']['smoke']})
                     run = Run(lab, spec, host_factory=PopulatedHost)
                     run.ms = lambda: 1
                     group = 'checks' if phase in ('check', 'stopped-check') else 'collect'

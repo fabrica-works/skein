@@ -30,7 +30,31 @@ class Judge(unittest.TestCase):
         vectors = json.loads((Path(__file__).parent / 'vectors/verdicts.json').read_text())
         for vector in vectors:
             with self.subTest(vector=vector):
-                self.assertEqual(judge.verdict(vector['evidence']), vector['verdict'])
+                superseded = frozenset(r['run'] for r in vector['evidence']
+                    if 'current' in vector and r['outcome'] == 'fail'
+                    and judge.superseded(r['signatures'], vector['held_to'].get(r['run'], {}), vector['current']))
+                self.assertEqual(judge.verdict(vector['evidence'], superseded), vector['verdict'])
+                if 'superseded' in vector:
+                    self.assertEqual(superseded, frozenset(vector['superseded']))
+                    self.assertEqual(judge.next_seed(vector['evidence'], superseded), vector['next_seed'])
+                    record = judge.verdict_record('key', vector['evidence'], superseded)
+                    self.assertEqual(record['verdict'], vector['verdict'])
+                    self.assertEqual(record['seeds'][0]['not_judged'], vector['superseded'])
+                    self.assertEqual(record['seeds'][0]['judged'], [r['run'] for r in vector['evidence']
+                        if r['seed'] == '1' and r['run'] not in superseded])
+                    self.assertEqual(judge.verdict(vector['evidence']), 'flaky')
+
+    def test_superseded_requires_every_signature_to_name_a_strictly_raised_class_bound(self):
+        held = dict(ready_seconds=10, command_seconds=20)
+        current = dict(ready_seconds=11, command_seconds=21)
+        signatures = ['bound/ready_seconds', 'bound/command_seconds/check']
+        self.assertTrue(judge.superseded(signatures, held, current))
+        for invalid in ([], ['stop/server/exit:1'], ['bound/unknown'], ['bound/ready_seconds/'],
+                        ['bound/ready_seconds/check/extra'], ['bound/ready_seconds', 'stop/server/exit:1']):
+            self.assertFalse(judge.superseded(invalid, held, current))
+        for values in ({}, dict(ready_seconds=11), dict(ready_seconds=11, command_seconds=20),
+                       dict(ready_seconds=11, command_seconds=19)):
+            self.assertFalse(judge.superseded(signatures, held, values))
 
     def test_seed_admission_and_additive_attempts(self):
         evidence = [{'seed': '1', 'outcome': 'error'}, {'seed': '1', 'outcome': 'pass'},

@@ -30,7 +30,7 @@ class Run:
         self.key = canonical.loads(lab.read(spec['key_path'] + '/key.json'))
         exp_base = 'store/experiments/' + self.key['experiment']
         self.exp = canonical.loads(lab.read(exp_base + '/experiment.json'))
-        self.cost = self.key['lab']['cost']
+        self.cost = spec['bounds']
         self.started = utc()
         self.origin = time.monotonic_ns()
         self.host = None
@@ -491,7 +491,7 @@ class Run:
                       seed=self.spec['seed'], attempt=self.spec['attempt'], campaign=self.spec['campaign'],
                       started=self.started, ended=utc(), outcome=outcome, schedule=self.state.data['schedule'],
                       processes=self.records, commands=self.command_records, driver=None,
-                      failures=self.failures, undecided=self.undecided, errors=self.errors, bounds=self.state.data['bounds'],
+                      failures=self.failures, undecided=self.undecided, errors=self.errors, bounds=self.cost,
                       usage=dict(elapsed_ms=self.ms(), longest_ms=self.longest_ms(), driver=None, triage=[]),
                       about=dict(hostname=platform.node(), kernel=platform.release(), processors=os.cpu_count(),
                                  unit=self.spec['unit'], manager=self.spec.get('manager_version'),

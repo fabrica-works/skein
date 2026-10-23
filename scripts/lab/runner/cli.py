@@ -11,7 +11,7 @@ import subprocess
 import stat
 import sys
 from . import canonical, evidence, experiment, finding_store, judge, store
-from .records import CLASSES, Refusal, Refused, digest_value, relative, subject_refusals
+from .records import CLASSES, Refusal, Refused, cost_refusals, digest_value, relative, subject_refusals
 
 
 def _program(path):
@@ -46,6 +46,50 @@ def _browser_facts(browser):
     except (OSError, Refused) as error:
         problems.append(Refusal('settings.browser.fonts', str(error)))
     return known, facts, problems
+
+
+def _program_facts(settings, used):
+    """Inspect only the named programs the experiment's templates request."""
+    known, facts, problems = {}, {}, []
+    programs = settings.get('programs', {})
+    if type(programs) is not dict:
+        return known, facts, problems
+    for name in sorted(used):
+        configured = programs.get(name)
+        if type(configured) is not dict:
+            continue
+        member = 'settings.programs.' + name
+        if experiment.programs_settings_refusals({name: configured}):
+            continue
+        known['program.' + name] = configured['path']
+        try:
+            facts[configured['path']] = _program(configured['path'])
+        except (OSError, Refused) as error:
+            problems.append(Refusal(member + '.path', str(error)))
+    return known, facts, problems
+
+
+def _runtime_cost(lab, key):
+    settings = canonical.loads(lab.read('settings.json'))
+    name = key['lab']['cost']['name']
+    costs = settings.get('costs')
+    selected = costs.get(name) if type(costs) is dict else None
+    problems = cost_refusals(selected, 'settings.costs.' + name)
+    if problems:
+        raise Refused(problems[0].member, '; '.join(str(p) for p in problems))
+    return {'name': name, **selected}
+
+
+def _superseded(lab, key_path, previous, current):
+    result = set()
+    for line in previous:
+        if (line['outcome'] != 'fail' or not line['signatures']
+                or not all(signature.startswith('bound/') for signature in line['signatures'])):
+            continue
+        record = canonical.loads(lab.read(f"{key_path}/runs/{line['run']}/run.json"))
+        if judge.superseded(line['signatures'], record['bounds'], current):
+            result.add(line['run'])
+    return frozenset(result)
 
 
 def _subject(lab, identity):
@@ -159,6 +203,11 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
     for name, item in subject.get("artifacts", {}).items():
         executables[known["artifact." + name]] = {"regular": True, "exec": item["exec"], "sha256": item["sha256"]}
     system = {}
+    used_programs = experiment.uses_programs(exp, texts)
+    program_known, program_facts, problems = _program_facts(settings, used_programs)
+    known.update(program_known)
+    executables.update(program_facts)
+    out.extend(problems)
     browser_facts = {}
     browser_used = experiment.uses_browser(exp, texts)
     if browser_used:
@@ -201,6 +250,12 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
             system[metadata["path"]] = {k: metadata[k] for k in ("path", "sha256")}
         except (OSError, Refused) as error:
             out.append(Refusal("lab.programs", str(error)))
+    for name in sorted(used_programs):
+        path = program_known.get('program.' + name)
+        if path in program_facts:
+            metadata = program_facts[path]
+            system[metadata['path']] = {k: metadata[k] for k in ('path', 'sha256')}
+            system[metadata['path']]['version'] = settings['programs'][name]['version']
     driver = settings.get("driver") if exp.get("driver") is not None else None
     driver_available = False
     if type(driver) is dict and type(driver.get("program")) is dict:
@@ -233,7 +288,7 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
         return None, out
     lab_inputs = {"runner": _runner_digest(),
                   "python": sys.version.split()[0], "programs": sorted(system.values(), key=lambda p: p["path"]),
-                  "driver": driver, "cost": {"name": exp["cost"], **settings["costs"][exp["cost"]]}}
+                  "driver": driver, "cost": {"name": exp["cost"]}}
     if browser_used:
         lab_inputs['browser'] = {'chromium': settings['browser']['chromium'], 'fonts': browser_facts['fonts']}
     value = experiment.key(exp_id, subject, lab_inputs)
@@ -279,8 +334,10 @@ def runtime_command(lab, lock_fd, args):
             print(error['what'] + ': ' + error['detail'], file=sys.stderr)
         return status
     while True:
-        decision = judge.next_seed(previous)
-        derived = judge.verdict_record(identity, previous)
+        key = canonical.loads(lab.read(key_path + '/key.json'))
+        superseded = _superseded(lab, key_path, previous, _runtime_cost(lab, key))
+        decision = judge.next_seed(previous, superseded)
+        derived = judge.verdict_record(identity, previous, superseded)
         lab.replace_derived(key_path + '/verdict.json', derived)
         if decision['action'] == 'done':
             print(derived['verdict'])

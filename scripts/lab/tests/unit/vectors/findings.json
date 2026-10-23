@@ -2,5 +2,10 @@
   {"reruns": ["fail"], "numerator": 1, "denominator": 1, "flaky": false},
   {"reruns": ["pass"], "numerator": 0, "denominator": 1, "flaky": true},
   {"reruns": ["error"], "numerator": 0, "denominator": 1, "flaky": false},
-  {"reruns": ["incomplete", "error", "fail", "pass"], "numerator": 1, "denominator": 4, "flaky": true}
+  {"reruns": ["incomplete", "error", "fail", "pass"], "numerator": 1, "denominator": 4, "flaky": true},
+  {"reruns": ["fail"], "numerator": 1, "denominator": 1, "flaky": false,
+   "class": "words",
+   "fix": {"repository": "/repository", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+           "tests": ["world::instructions"], "product_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+   "states": ["candidate", "open", "taken", "fixed", "rechecked", "closed"]}
 ]
