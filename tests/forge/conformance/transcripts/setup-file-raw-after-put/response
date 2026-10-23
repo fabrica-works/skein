@@ -1,0 +1,16 @@
+HTTP/1.1 200 OK
+Access-Control-Expose-Headers: Content-Disposition
+Cache-Control: private, max-age=300
+Content-Disposition: inline; filename="first.txt"; filename*=UTF-8''first.txt
+Content-Type: text/plain; charset=utf-8
+Etag: "0000000000000000000000000000000000000003"
+Last-Modified: Wed, 01 Jan 2020 00:00:00 GMT
+X-Content-Type-Options: nosniff
+X-Forgejo-Object-Type: file
+X-Frame-Options: SAMEORIGIN
+X-Gitea-Object-Type: file
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 11
+
+first file

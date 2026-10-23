@@ -37,6 +37,69 @@ pub(crate) fn record(r: &mut Recorder<'_>) -> Result<()> {
     ] {
         r.send(case, "GET", target, None, Some(&r.f.owner.token), None)?;
     }
+    first_files(r)?;
+    Ok(())
+}
+const FILE_ROUTE: &str = "/api/v1/repos/first-creation/starter/contents/dir/first.txt";
+const FILE_BODY: &str = r#"{"content":"Zmlyc3QgZmlsZQo=","branch":"main","message":"Add dir/first.txt","author":{"name":"kit","email":"kit@example.invalid"},"committer":{"name":"kit","email":"kit@example.invalid"}}"#;
+fn first_files(r: &mut Recorder<'_>) -> Result<()> {
+    r.f.api("POST", "/api/v1/admin/users/fixture/orgs", br#"{"username":"first-creation","visibility":"private"}"#)?;
+    let token = Some(&r.f.owner.token);
+    r.send("setup-first-repository-created", "POST", "/api/v1/orgs/first-creation/repos", Some(PRIVATE), token, None)?;
+    r.send(
+        "setup-first-repository-created-again",
+        "POST",
+        "/api/v1/orgs/first-creation/repos",
+        Some(PRIVATE),
+        token,
+        None,
+    )?;
+    r.send(
+        "setup-first-repository-readme",
+        "GET",
+        "/api/v1/repos/first-creation/starter/raw/README.md?ref=main",
+        None,
+        token,
+        None,
+    )?;
+    let head = r.send(
+        "setup-created-main-before-file",
+        "GET",
+        "/api/v1/repos/first-creation/starter/branches/main",
+        None,
+        token,
+        None,
+    )?;
+    let json = crate::json(&head)?;
+    let head = json.root().get("commit").get("id").str().ok_or("created main missing commit")?;
+    r.send(
+        "setup-file-missing-raw",
+        "GET",
+        &format!("/api/v1/repos/first-creation/starter/raw/dir/first.txt?ref={head}"),
+        None,
+        token,
+        None,
+    )?;
+    let file = r.send("setup-file-put", "POST", FILE_ROUTE, Some(FILE_BODY), token, None)?;
+    let json = crate::json(&file)?;
+    let commit = json.root().get("commit").get("sha").str().ok_or("created file missing commit")?;
+    r.send(
+        "setup-created-main-after-file",
+        "GET",
+        "/api/v1/repos/first-creation/starter/branches/main",
+        None,
+        token,
+        None,
+    )?;
+    r.send(
+        "setup-file-raw-after-put",
+        "GET",
+        &format!("/api/v1/repos/first-creation/starter/raw/dir/first.txt?ref={commit}"),
+        None,
+        token,
+        None,
+    )?;
+    r.send("setup-file-put-again", "POST", FILE_ROUTE, Some(FILE_BODY), token, None)?;
     Ok(())
 }
 pub(crate) fn facts(out: &Path) -> Result<Vec<Fact>> {
@@ -86,6 +149,58 @@ pub(crate) fn facts(out: &Path) -> Result<Vec<Fact>> {
     ] {
         add(&mut facts, case_name, case(out, case_name)?.status == status, "refusal status differs");
     }
+    let first = case(out, "setup-first-repository-created")?;
+    let row = first.body.root();
+    let readme = std::fs::read(out.join("transcripts/setup-first-repository-readme/response"))?;
+    add(
+        &mut facts,
+        "setup-repository-made-in-an-org-is-201-with-a-readme-on-main",
+        first.status == 201
+            && row.get("private").bool() == Some(true)
+            && row.get("owner").get("visibility").is("private")
+            && row.get("default_branch").is("main")
+            && readme.starts_with(b"HTTP/1.1 200 ")
+            && case(out, "setup-created-main-before-file")?.status == 200,
+        "creation did not initialize private main with README",
+    );
+    add(
+        &mut facts,
+        "setup-repository-made-again-is-409",
+        case(out, "setup-first-repository-created-again")?.status == 409,
+        "repeat creation status differs",
+    );
+    add(
+        &mut facts,
+        "setup-repository-made-has-actions-when-the-forge-enables-them",
+        row.get("has_actions").bool() == Some(true),
+        "created repository has_actions is not true; no setting was sent",
+    );
+    let file = case(out, "setup-file-put")?;
+    let head = case(out, "setup-created-main-after-file")?;
+    let raw = std::fs::read(out.join("transcripts/setup-file-raw-after-put/response"))?;
+    add(
+        &mut facts,
+        "setup-file-put-is-201-and-read-back-on-its-branch",
+        file.status == 201
+            && head.status == 200
+            && file.body.root().get("commit").get("sha").str().is_some()
+            && file.body.root().get("commit").get("sha").str() == head.body.root().get("commit").get("id").str()
+            && raw.starts_with(b"HTTP/1.1 200 ")
+            && raw.ends_with(b"first file\n"),
+        "file creation, branch head or raw content differs",
+    );
+    add(
+        &mut facts,
+        "setup-file-put-again-is-422",
+        case(out, "setup-file-put-again")?.status == 422,
+        "existing file status differs",
+    );
+    add(
+        &mut facts,
+        "setup-file-missing-reads-raw-404",
+        case(out, "setup-file-missing-raw")?.status == 404,
+        "missing file status differs",
+    );
     Ok(facts)
 }
 /// Records just repository creation against the pinned, disposable Forgejo.

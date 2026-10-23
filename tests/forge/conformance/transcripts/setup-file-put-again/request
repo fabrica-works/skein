@@ -1,0 +1,8 @@
+POST /api/v1/repos/first-creation/starter/contents/dir/first.txt HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 187
+Connection: close
+
+{"content":"Zmlyc3QgZmlsZQo=","branch":"main","message":"Add dir/first.txt","author":{"name":"kit","email":"kit@example.invalid"},"committer":{"name":"kit","email":"kit@example.invalid"}}

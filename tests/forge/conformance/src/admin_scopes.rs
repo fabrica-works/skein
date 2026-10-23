@@ -21,6 +21,7 @@ const NAMES: &[(&str, &str, u16)] = &[
     ("org", "read:organization", 200),
     ("create-org", "write:admin", 201),
     ("create-repository", "write:organization", 201),
+    ("create-file", "write:repository", 201),
     ("repository", "read:repository", 200),
     ("permission", "read:repository", 200),
     ("add-collaborator", "write:repository", 204),
@@ -41,6 +42,7 @@ const FACTS: &[&str] = &[
     "setup-scope-org-is-read-organization",
     "setup-scope-create-org-is-write-admin",
     "setup-scope-create-repository-is-write-organization",
+    "setup-scope-create-file-is-write-repository",
     "setup-scope-repository-is-read-repository",
     "setup-scope-permission-is-read-repository",
     "setup-scope-add-collaborator-is-write-repository",
@@ -87,6 +89,7 @@ fn routes(repository: u64, token: u64, hook: u64, suffix: &str) -> Vec<Route> {
                 r#"{{"name":"scope-repo-{suffix}","private":true,"auto_init":true,"default_branch":"main"}}"#
             )),
         ),
+        ("create-file", "POST", format!("/api/v1/repos/fixture/scopes/contents/scope-{suffix}.txt"), Some(r#"{"content":"c2NvcGVzCg==","branch":"main","message":"Add scope file","author":{"name":"kit","email":"kit@example.invalid"},"committer":{"name":"kit","email":"kit@example.invalid"}}"#.into())),
         ("repository", "GET", format!("/api/v1/repositories/{repository}"), None),
         ("permission", "GET", "/api/v1/repos/fixture/scopes/collaborators/writer/permission".into(), None),
         (

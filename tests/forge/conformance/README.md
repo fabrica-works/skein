@@ -73,3 +73,17 @@ heavy cargo run -p forgejo-conformance -- --admin-scopes \
 The missing-scope token carries unrelated `read:issue`: Forgejo refuses
 empty scope lists. The settings route is also checked anonymously. The
 normal setup group records these cases too.
+
+`--create-repository` records repository and contents creation alone, including
+README initialization, Actions' default, repeated creation and raw reads:
+
+```sh
+heavy cargo run -p forgejo-conformance -- --create-repository \
+  --forgejo <absolute path to Forgejo 17.0.0> \
+  --scratch target/create-repository --out <output directory>
+```
+
+The two focused recording modes write their own facts only. When refreshing the
+shared captures, merge those named facts into `facts.txt`, retaining its binary
+provenance and the other groups. Both use the same pinned throwaway fixture and
+secret masking as the full recording.

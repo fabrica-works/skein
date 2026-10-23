@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/scopes/contents/scope-least.txt HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 180
+Connection: close
+
+{"content":"c2NvcGVzCg==","branch":"main","message":"Add scope file","author":{"name":"kit","email":"kit@example.invalid"},"committer":{"name":"kit","email":"kit@example.invalid"}}
