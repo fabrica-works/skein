@@ -1,6 +1,6 @@
 # The lab
 
-Provisional, 2026-10-20, revised 2026-10-22. The lab's records and its runner: how an
+Provisional, 2026-10-20, revised 2026-10-23. The lab's records and its runner: how an
 experiment a product keeps in its own repository is run as processes,
 driven by an agent, checked from outside, and judged over seeds into
 verdicts and findings. The records are files of a fixed form, so that a
@@ -26,8 +26,9 @@ What is still open is in section 11.
 - **A key is what a run may not vary:** the experiment's digest, the
   subject's (the product's artifacts and source) and the lab's (the
   runner, the programs it runs, the driver host with its model and its
-  configuration, the cost class's values) (2.3). A run adds its seed and
-  what it is given: addresses, directories, scratch.
+  configuration, the cost class's name) (2.3). A run adds its seed, what
+  it is given (addresses, directories, scratch) and the class's values
+  it is held to.
 - **Evidence only grows.** A run's record is written once; a key's
   evidence, a finding's history and a campaign's are appended to;
   verdicts and indexes are derived and never edited (2.4).
@@ -39,14 +40,19 @@ What is still open is in section 11.
 - **Addresses are reported:** a process binds port 0 itself and prints
   its address on a ready line. The runner never picks, binds or passes
   a port (4.4).
+- **Held files move, never copy:** a secret one holder may have at a
+  time, such as an account's signed-in record, is kept by the lab, taken
+  by a run, moved into the cluster by its seed, and given back by its
+  release, however the drive ended (4.8).
 - **The driver's boundary is the runner's, not the prompt's.** The
   agent's own commands run in Codex's sandbox: reads of the host's
   minimal roots, the subject's source and its work directory, writes to
   its work directory, no network. The product is reached only through
   the experiment's tools, trusted programs each call of which the runner
   runs in a view of its own and records. A probe checks what it names
-  before each start, and the host's tools are checked every run
-  (section 6).
+  before each start, and the host's tools are checked every run. A host
+  whose tools cannot all be observed runs as a user of its own, which
+  reaches none of the runner's files (section 6).
 - **Checks are commands with three statuses** (passed, failed with
   signatures, could not judge) beside the runner's own: stops, panics,
   survivors, memory, bounds, seed actions and the agent's report
@@ -72,7 +78,9 @@ What is still open is in section 11.
   lab's settings; a run without them is refused. Actions are bounded as
   they start; tokens are observed as the host reports them, so a drive
   may overshoot by a turn, recorded. Each run records what it used,
-  unknown where the host did not say, never 0 (6.5).
+  unknown where the host did not say, never 0. A subject that spends on
+  a metered account of its own is metered and bounded too, and a brake
+  keeps runs off an account near its limits (6.5).
 - **On demand, one cluster at a time, private:** everything under
   `~/src/rust/tmp/lab/`, `0700`, one run holding the lab's lock, one
   campaign open (section 3).
@@ -98,7 +106,7 @@ What is still open is in section 11.
 | verdict | the evidence judged by the policy (section 8) | `.../verdict.json`, derived |
 | finding | a failure with a signature, and its history (section 9) | `findings/<id>.jsonl`; `findings/index.json`, derived |
 | campaign | the runs of one campaign, and its note | `campaigns/<name>.jsonl`, `<name>.md` |
-| settings | the lab's own: the driver host, the triager, the cost classes, the browser | `settings.json` |
+| settings | the lab's own: the driver host and its user, the triager, the cost classes, the browser, the named programs, the brake | `settings.json` |
 
 ### 2.2 Canonical JSON and digests
 
@@ -166,11 +174,13 @@ named by its digest.
     the run, so they are identity, not the machine's provenance;
   - `driver`, null for an experiment without one, or the host's
     `program` (`{"path", "sha256", "version"}`), its `model`, its
-    `effort`, and its `config`, the configuration the runner gives it
-    (6.1) as JSON: its arguments, permission profile, disabled features,
-    server and schema, with each run's own paths left as their template
-    names;
-  - `cost`, the class's `name` and every value;
+    `effort`, its `user`, null unless it runs separated (6.1), and its
+    `config`, the configuration the runner gives it (6.1) as JSON: its
+    arguments, permission profile, disabled features, server and schema,
+    with each run's own paths left as their template names;
+  - `cost`, the class's `name` alone: its values are each run's, in its
+    `bounds` (5.6), so that a class tuned between runs keeps its keys
+    (6.5);
   - `browser`, only for an experiment that names the browser by its
     templates (4.2): `chromium`, its `{"path", "sha256", "version"}`,
     and `fonts`, the fonts directory's tree digest; the browser's
@@ -188,8 +198,19 @@ named by its digest.
   Chromium or walks the fonts, and a `browser` missing, stale or
   naming files that are gone refuses nothing of it.
 
+  The lab's settings name the machine's programs that a product's
+  experiments need at a path of the machine's in `programs`, each by
+  name, `{"path", "sha256", "version"}`: a binary the machine keeps
+  pinned to a version, such as a forge's server, which no run fetches.
+  An experiment names one by its template, `{program.N}` (4.2), and it
+  is then among the key's `programs`, its version beside it; validation
+  refuses a file whose digest differs from the settings', and a run
+  checks it again before it starts. A name no template uses is never
+  read.
+
   A runner whose checks change, a helper or a host updated, another
-  model, a changed configuration or a changed value is a new key.
+  model, a changed configuration or another cost class is a new key; a
+  class's value changed is not (6.5).
 - **Not in the key:** the seed; the addresses and directories a run is
   given; what the runner renders with them (files, the driver's
   configuration with its paths); the time; the machine. The machine's
@@ -225,10 +246,12 @@ named by its digest.
 
 ```
 ~/src/rust/tmp/lab/                 the lab, 0700
-├── settings.json                   the driver host, the triager, the cost classes, the browser
+├── settings.json                   the driver host, the triager, the cost classes, the browser, programs, the brake
 ├── browser/                        the browser's program and fonts/ (lab-browser.md, 7)
 ├── lock                            held by every command that writes
 ├── canary                          a file no driver or triager may read (6.2)
+├── pause                           while it exists, the brake refuses every run (6.5)
+├── held/                           held files, <name>, or <name>.taken naming the run that has it (4.8)
 ├── store/experiments/<digest>/     immutable experiment trees
 ├── store/subjects/<digest>/        subject.json, artifacts/<name>, source/
 ├── keys/<experiment>/<key>/        key.json, evidence.jsonl, verdict.json
@@ -250,6 +273,7 @@ named by its digest.
   unit. Each writing command first sweeps: a live run whose unit has
   ended (5.2) gets an `interrupted` event, its `run.json` from its
   events with outcome error, its evidence line, and `live.json` removed.
+  Its held files stay taken, for their owner to settle (4.8).
 - **The disk floor:** a run is refused while the lab's file system has
   less free space than the machine's floor (`owners.md`, 4.5).
 
@@ -348,7 +372,8 @@ and an agent:
   `stdin` in a command, which are empty when absent, `bootstrap` in a
   process, none when absent, `cluster` in a
   collection or a check, which is `"up"` when absent (4.5), and `await`
-  in a seed action, none when absent (4.5).
+  in a seed action, none when absent (4.5), `held` and `release`, empty
+  when absent (4.8), and `meter`, null when absent (6.5).
   `driver` may be null: an experiment with no agent. An unknown member
   is refused.
 
@@ -363,6 +388,8 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 | `{experiment}` | the experiment's tree in the store | everything |
 | `{runner}` | the runner's own directory, `scripts/lab/` as it runs, as `{runner}/look/capture` | everything |
 | `{browser.program}`, `{browser.chromium}`, `{browser.fonts}` | the settings' browser: the program, Chromium and the fonts directory, by path (2.3) | everything |
+| `{program.N}` | the settings' named program N, by path (2.3) | everything |
+| `{held.N}` | held file N's place in the run (4.8) | seed actions and the release, in `argv` alone |
 | `{artifact.A}` | the subject's artifact A | everything |
 | `{source}` | the subject's source tree | everything |
 | `{run.id}`, `{run.seed}` | the run's id and seed, the seed in decimal | everything |
@@ -614,11 +641,63 @@ run:
   when needed; for an experiment that names the browser by a template,
   and for it alone, the browser's settings missing, or its Chromium or
   fonts differing from them (2.3);
+- a `{program.N}` the settings do not name, or whose file differs from
+  them (2.3); a `held` name the lab does not hold, naming the run that
+  has taken it, or a `{held.N}` naming a file the experiment does not
+  hold (4.8); a `meter` whose class lacks `subject_spend` or
+  `meter_seconds` (6.5);
+- for an experiment with a driver, a host version without an observer
+  for every item of the inventory, unless the settings name the host's
+  user (6.1);
+- by `lab run` alone, the brake's refusal, its line named (6.5);
 - a seed that is not a canonical decimal string (2.2); a seed new to a
   key that already has three (section 8);
 - the lab: not private, its lock held, the disk below its floor, no
   containment (5.2), no bubblewrap, or no driver host for an experiment
   with a driver.
+
+### 4.8 Held files and the release
+
+A held file is a secret one holder may have at a time, such as an
+account's signed-in record whose refresh token rotates, where a copy
+that refreshes signs the other out. The lab keeps it between runs; a
+run takes it, its seed moves it into the cluster, and its release moves
+it out and gives it back. It is never copied.
+
+- **Kept:** `held/<name>`, the user's own, `0600`, not a link, put there
+  by its owner with `lab held put NAME FILE` (10.2), which moves FILE
+  in (renamed, or copied then removed across file systems), refuses a
+  name already held, and settles one taken by a run that did not give
+  it back, removing its `.taken`: the owner's word that FILE is the one
+  copy that holds.
+- **Taken:** an experiment names the held files it needs in `held`. At
+  provision, before any process starts, the run renames each into its
+  own `held/`, `{held.N}`, and writes the lab's `held/<name>.taken`,
+  `{"format": "lab-held/1", "name", "run", "taken"}`. A name not held
+  refuses the run (4.7), naming the run its `.taken` names.
+- **Moved by the product's commands:** `{held.N}` is known in the seed
+  actions and the release alone, in their `argv`; a product's command
+  moves the record into the cluster, removing the file, and out again,
+  writing it new. The runner never reads it, and neither a record, an
+  event nor a kept output holds it: no `stdin` names it.
+- **The release,** `release`, commands as seed actions are (4.5),
+  without `await`: run in order once the live checks are done, the
+  cluster up, however the drive ended, by its report, a bound, a
+  process's stop or an interruption; not once containment has failed,
+  nor when no process is left. Each is bounded by `command_seconds`; one
+  that fails is a failure, `release/<name>/exit:<status>`, and the next
+  still runs.
+- **Given back:** after the release, each held file found at
+  `{held.N}`, a regular file, the user's own, `0600`, not a link, is
+  renamed back to `held/<name>`, and its `.taken` removed. One not found
+  is a failure, `release/held:<name>`: the name stays taken, the run's
+  scratch is kept whatever its outcome, and the runs that need it are
+  refused until its owner puts it back, which removes the `.taken`.
+- **After a crash** of the runner, the file is where the run left it,
+  in the run's `held/` or in the cluster's kept state: the sweep (3.2)
+  gives nothing back, since only the owner knows which copy holds.
+- **Recorded:** `run.json`'s `held`, each `{"name", "taken_ms",
+  "given_ms"}`, `given_ms` null when not given back.
 
 ## 5. A run
 
@@ -626,17 +705,19 @@ run:
 
 1. **Provision:** the run's directory and `live.json`, its cgroups
    (5.2), the scratch and `{dir.D}` directories, the files whose inputs
-   are known, and, for an experiment with a driver, the boundary's
-   probe (6.2).
+   are known, its held files taken (4.8), and, for an experiment with a
+   driver, the boundary's probe (6.2).
 2. **Start:** the processes in dependency order, one at a time (5.4),
    each ready within `ready_seconds` of its start. Its files are rendered
    immediately before it starts, once its dependencies' readiness
    captures are known (4.2, 4.3), and its trees unpacked.
 3. **Seed:** the seed actions, each with its awaited line (4.5).
 4. **Drive:** the driver, until its host ends, a bound passes (6.5) or a
-   process stops. Without a driver, nothing.
-5. **Collect,** then **check** (4.5), the cluster up: the live
-   collections, then the live checks.
+   process stops, the meter reading meanwhile (6.5). Without a driver,
+   nothing but the meter.
+5. **Collect,** then **check** (4.5), then **release** (4.8), the
+   cluster up: the live collections, the live checks, then the release
+   and the held files given back.
 6. **Stop:** the processes, in reverse order of start (5.2), until
    every exit is confirmed (4.5); then, the cluster down, the stopped
    collections, then the stopped checks.
@@ -646,12 +727,13 @@ run:
 
 A process that stops (ends before phase 6) cuts the phase it ends in:
 no later process starts, no later seed action runs, the driver is ended.
-The live collections and checks run on what is left, then phase 6 whole,
-its stopped commands included (4.5). A stop that cannot confirm an exit
-is containment's failure, an error (5.5), and runs no stopped command.
-A run interrupted (`SIGINT`, `SIGTERM` to the runner) goes to phase 6
-at once and runs no stopped command, ending any already running (5.2);
-its outcome is error, `interrupted`. Any machinery error (spawn, runner
+The live collections and checks run on what is left, then the release,
+then phase 6 whole, its stopped commands included (4.5). A stop that
+cannot confirm an exit is containment's failure, an error (5.5), and runs
+no stopped command. A run interrupted (`SIGINT`, `SIGTERM` to the runner)
+runs its release, bounded as ever, then goes to phase 6 and runs no
+stopped command, ending any already running (5.2); its outcome is error,
+`interrupted`. Any machinery error (spawn, runner
 or containment) likewise prevents stopped commands and ends an active one.
 A product or experiment failure that cuts the phase still permits them
 once every started process's exit is confirmed.
@@ -799,14 +881,16 @@ and `dirs/<D>/`.
   Stopped commands name `cluster: "stopped"`; their skipped records
   and reasons follow 4.5. The timeline records `bootstrap_received`
   and `bootstrap_delivered` with the process and action only;
-- `driver`: its host's invocation, the inventory it was checked against
-  and what was found (6.1), its actions and observed turns, its end, the
+- `driver`: its host's invocation and user, the inventory it was
+  checked against and what was found, each item observed or
+  `unobserved` (6.1), its actions and observed turns, its end, the
   report's and the transcript's files (6.3, 6.4);
 - `failures`, each `{"id", "signature", "kind", "summary", "evidence"}`;
   `undecided`, each `{"check", "reason"}` (a command left unavailable,
   5.1, as `<group>/<name>`: `actions/consume`); `errors`, each
   `{"what", "detail"}`;
-- `bounds` and `usage` (6.5); `about`, the machine (2.3).
+- `held` (4.8); `bounds`, the class's name and the values the run was
+  held to, and `usage` (6.5); `about`, the machine (2.3).
 
 The evidence line (`lab-evidence/1`) is `{"run", "seed", "attempt",
 "outcome", "signatures", "ended"}`, its seed a decimal string.
@@ -860,8 +944,10 @@ documentation.
   the inventory is read is the runner's, for each host version; no run
   with a driver starts on a version it cannot read.
 
-  Every item below needs an observer for the host's version. A missing
-  observer refuses the version; an incomplete observation or a mismatch
+  Every item below needs an observer for the host's version, or the
+  host's separation (below). Without separation, a missing observer
+  refuses the version; with it, the item is recorded `unobserved`, never
+  as absent. An incomplete observation or a mismatch of an observed item
   ends the run in error. The version adapter names its observers and
   the evidence they return. A list of configured capabilities, a
   rendered prompt, or the lab server's own traffic is not the host's
@@ -884,11 +970,36 @@ documentation.
   An action kind outside the admitted inventory ends the run in error.
   Detecting an unexpected action is an additional check; it does not
   establish that the action was confined.
+- **Separation:** the settings' `driver.user` names a user of the
+  machine's under which the host runs, so that the runner's files are
+  out of its reach by the machine's permissions, whatever the host's
+  own tools do. The machine's owner makes it once: the user, its home
+  private, its own Codex login (a person's sign-in, never the runner's),
+  and the right for the lab's user to start the host's program as it,
+  the host's tree contained in the run's cgroup as any is (5.2). Under
+  it:
+  - the host authenticates with its user's login, its own `CODEX_HOME`;
+  - that user is given the run's view alone, the source to read and the
+    work directory to write; the runner's home, the lab, the held files
+    and the cluster's files stay the runner's user's, private;
+  - `lab tool` (6.3), started by the host as its user, holds nothing and
+    runs nothing: it relays each call to the runner over a socket only
+    that user and the runner reach, the runner checking its peer's user,
+    and the runner runs the call as 6.2 says;
+  - the probe (6.2) runs as that user, through the profile and again
+    without it;
+  - the triager runs separated as well, its input given to its user
+    (9.2).
+
+  Separation bounds what an action can reach; it does not admit an
+  unexpected one: an action kind outside the admitted inventory still
+  ends the run in error. Without `driver.user`, the host runs as the
+  runner's user, as above.
 - **The model's credential stays with the host.** Codex authenticates
   its model transport with the machine's Codex login under
-  `CODEX_HOME`, the one credential in the host's reach; the profile
-  grants no part of it to the agent's commands, and no tool's view or
-  environment holds it (6.2, 6.3).
+  `CODEX_HOME`, or, separated, its user's, the one credential in the
+  host's reach; the profile grants no part of it to the agent's
+  commands, and no tool's view or environment holds it (6.2, 6.3).
 
 ### 6.2 The boundary
 
@@ -948,7 +1059,11 @@ What the agent's own commands may reach:
   the runner starts, named by a token in its arguments, must not appear
   in the probe's `/proc`. Each must be refused or absent, and a write in
   the work directory must succeed; otherwise the run ends in error
-  before any process starts, having spent nothing.
+  before any process starts, having spent nothing. Separated (6.1), the
+  probe runs as the host's user, and its commands run once more without
+  the profile, as an unconfined tool of the host's would: each but the
+  socket, loopback being the host's, must be refused or absent all the
+  same, the runner's home directory unlisted.
 - **The preamble says the same** for the agent's sake; the boundary does
   not rest on it.
 
@@ -958,7 +1073,8 @@ What the agent's own commands may reach:
   prefix (the program and its fixed arguments, a client directory among
   them) to which the agent's arguments are appended.
 - **One MCP server,** `lab tool`, which Codex starts over stdio as its
-  only server, with no environment of the runner's, offers one MCP tool
+  only server (separated, a relay to the runner, 6.1), with no
+  environment of the runner's, offers one MCP tool
   per experiment tool and no resources or prompts: a tool's input
   `{"args": [...], "stdin": TEXT | null}`, its result the call's status
   or signal, its stdout and its stderr, as text.
@@ -1009,13 +1125,20 @@ evidence for the owner, not failures.
 
 - **A cost class** of the lab's settings, named by the experiment:
   `ready_seconds`, `command_seconds`, `stop_seconds`, `driver_seconds`,
-  `driver_actions` and `driver_input_tokens`, and the lab's triage
-  class, `triage_seconds` and `triage_tokens`; each a positive integer.
+  `driver_actions` and `driver_input_tokens`, for an experiment with a
+  meter `subject_spend` and `meter_seconds`, and the lab's triage class,
+  `triage_seconds` and `triage_tokens`; each a positive integer.
   The class the experiment names is the one its runs are held to; a
   missing class or value refuses the run (4.7): there is no default.
   They are budgets and timeouts, decided as `owners.md` (3) says, kept
   in the lab's settings and named in the product's binding; never the
   runner's, and no number of theirs is in this document.
+- **Tuned, not keyed.** The key holds the class's name (2.3); each run
+  records the values it was held to, in `bounds` (5.6), and is judged
+  against them. A value may change between runs of a key, as use
+  teaches what a story needs: a run failed only by bounds since raised
+  above its own is superseded (section 8). A class whose purpose
+  changes, as a calibration's ends, is a class of another name.
 - **What each counts.** `driver_actions`: the agent's actions (6.3),
   its commands and its tool calls together. `driver_input_tokens`: the
   input tokens the host reports, cached ones included.
@@ -1039,13 +1162,39 @@ evidence for the owner, not failures.
   reported it, is recorded. Nothing promises that no token is spent past
   a bound: while a drive runs, its time and its actions are what bound
   it. A triage's time and tokens are bounded the same way.
+- **A subject's spend, metered.** A subject may spend on a metered
+  account of its own, such as an LLM's that its agents use beside the
+  driver, which the driver's bounds do not see. Its experiment names a
+  `meter`, a command `{"name", "argv", "env"}` contained as any (4.5),
+  run every `meter_seconds` from the seed's end to the release's start,
+  and once more after the drive: its stdout's last line is the
+  subject's spend so far, a non-negative integer in the unit the
+  product's binding names. Past `subject_spend`, the driver is stopped
+  as past its time, and the run fails `bound/subject_spend`. A meter
+  that fails twice running, or prints no such line, ends the drive too,
+  and fails the run `meter/exit:<status>` or `meter/reading`: no subject
+  spends unmetered. The meter is the outer bound; the product's own
+  budgets, set by the experiment, are its inner one.
+- **The brake.** An account shared beyond the lab, such as the one the
+  driver's host signs in with and its owner develops with, has limits
+  the lab must leave room in. The settings may name a `brake`, a
+  command `{"argv", "env"}` that `lab run` runs before it makes any run
+  whose experiment has a driver or a meter, within `command_seconds`:
+  exit 0 starts the run; any other end refuses it (4.7), naming the
+  brake's last line, and makes no run. The runner's own brake for its
+  host asks the host for the account's windows, with no model turn, and
+  refuses past the settings' share of each; and every brake refuses
+  while the lab's `pause` exists. `lab judge` stops at a refused run
+  and prints the verdict so far.
 - **Usage, whatever the outcome:** `usage` holds the driver's seconds,
   actions, observed turns and tokens by kind (input with cached
-  included, cached input, output, as the host reports them), and each
-  triage's (9.2). The driver's events are read until its end, so usage
-  it reports as it stops is kept. A value the host did not report, as
-  when it was ended within a turn, is null: unknown, never 0. A
-  campaign's totals add what is known and count what is not.
+  included, cached input, output, as the host reports them), each
+  triage's (9.2), the subject's last metered spend, and the account's
+  windows as the host last reported them. The driver's events are read
+  until its end, so usage it reports as it stops is kept. A value the
+  host did not report, as when it was ended within a turn, is null:
+  unknown, never 0. A campaign's totals add what is known and count what
+  is not.
 
 ## 7. Checks and signatures
 
@@ -1057,8 +1206,10 @@ evidence for the owner, not failures.
 | panics | a Rust panic's header, `thread '…' panicked at FILE:LINE:COL:`, in the stderr of a process, a command or a tool call, or in a collected log | `panic/<who>/<FILE>:<LINE>:<COL>`, the message in the summary |
 | survivors | a process, command or call whose tree outlived it | `survivor/<who>` |
 | memory | a peak past `memory_bytes` | `memory/<process>` |
-| bounds | a readiness, a command, a stop, or the driver's time, actions or input tokens past its bound | `bound/<name>/<who>` or `bound/<name>` |
+| bounds | a readiness, a command, a stop, the driver's time, actions or input tokens, or a subject's spend past its bound | `bound/<name>/<who>` or `bound/<name>` |
 | seed actions | an action that exited non-zero | `action/<name>/exit:<status>` |
+| release | a release action that exited non-zero; a held file not given back (4.8) | `release/<name>/exit:<status>`, `release/held:<name>` |
+| meter | a meter that failed twice running, or printed no reading (6.5) | `meter/exit:<status>`, `meter/reading` |
 | use | the report's `done: false`, each `unseen` | the triager's, `use/…` |
 | planted | a planted signature missing from a judged run | `planted-missing/<signature>` |
 
@@ -1110,9 +1261,15 @@ evidence for the owner, not failures.
   - then *pass* when every judged run passed, *fail* when every one
     failed, and *flaky* when any two disagree, a seed's own runs
     included.
+- **Superseded bounds:** a run whose failures are all bounds
+  (`bound/<name>`), each a value of the class's that is now above the
+  one the run was held to, is no longer judged: the verdict leaves it
+  out as it leaves out an error, and its seed may be attempted again.
+  So a class raised as use teaches keeps its keys' evidence (6.5).
 - **`verdict.json`** (`lab-verdict/1`): the key, the policy, each seed's
   state, the runs judged and the runs not, and the verdict. It is derived
-  from `evidence.jsonl` whenever that grows.
+  from `evidence.jsonl`, and from the class's values for superseded
+  bounds, whenever either changes.
 - **`lab judge`** runs a key's seeds one run at a time, drawing a new
   seed while the key has fewer than three, until each has a judged run;
   a key whose evidence already decides it runs nothing. It stops at the
@@ -1212,7 +1369,10 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   domain (protocol, io, the binary); `tools`, the driver's tools or
   their guide; `experiment`, the experiment itself; `lab`, the runner,
   or the driver's or the triager's setup; `look`, a page's appearance,
-  which no world below a browser draws (lab-browser.md).
+  which no world below a browser draws (lab-browser.md); `words`, the
+  text a product's own model reads (its instructions, its tools'
+  declarations, its refusals), whose fix a world can hold to its text
+  but only a real model's run rechecks.
 - **Fixed** needs a confirmed class and the fix's evidence. For `world`,
   `fake`, `below` and `tools`: the repository, the commit and the names
   of the tests that fail before it and pass after, in the lowest world
@@ -1301,6 +1461,7 @@ lab triage RUN
 lab finding ID file | class CLASS | take --by WHO | fix ... | close --recheck KEY
 lab campaign open NAME | close NAME
 lab prune --scratch | --runs | --subjects
+lab held [put NAME FILE]
 lab tool RUN
 ```
 
@@ -1308,8 +1469,9 @@ lab tool RUN
   and digests the artifacts, and prints the subject's digest.
   **`validate`** prints the key or every refusal, starting nothing.
   **`run`** makes one run. **`judge`** runs seeds until the verdict is
-  decided (section 8) and prints it. **`tool`** is the driver's MCP
-  server, started by its host (6.3).
+  decided (section 8) and prints it. **`held`** lists each held file,
+  kept or taken by a run, and **`held put`** moves one in (4.8).
+  **`tool`** is the driver's MCP server, started by its host (6.3).
 - **Exit statuses:** 0, done or pass; 1, fail; 2, refused; 3, incomplete;
   4, error; 128 plus N, cut by signal N. `judge` exits by its verdict:
   0 pass, 1 fail or flaky, 3 not enough evidence, 4 an error.
@@ -1473,3 +1635,11 @@ kinds (lab-browser.md, sections 4 and 5):
 - **A driver that replays a transcript** with no model, as a cheaper
   reproduction: another driver, so another key. This contract has none
   (5.4).
+- **The host's user on each machine** (6.1): how the lab's user starts
+  the host as it (a rule of `sudo`'s naming the program, or a user
+  manager's unit) and how its tree joins the run's cgroup are the
+  runner's for each machine; and whether a host whose inventory is
+  observed whole runs separated too, as a second wall.
+- **A held file's settling after a crash** is its owner's alone (4.8): a
+  product's recovery command, run by the runner on the kept state, could
+  give it back unattended.
