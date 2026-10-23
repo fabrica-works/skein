@@ -945,6 +945,16 @@ documentation.
   configuration turns the question tool off. The command tool's input
   to a running command (`write_stdin`) stays, and its use is a command
   execution.
+- **Three resource tools stay:** Codex adds `list_mcp_resources`,
+  `list_mcp_resource_templates` and `read_mcp_resource` whenever an MCP
+  server is configured, and no flag removes them; the lab's tools are
+  one. The audit admits exactly these three (a call to server `codex`),
+  each an action counted toward `driver_actions`. Their reach stays
+  empty: before its turn, each run checks from its own inventory that
+  `lab` is the only MCP server and declares no resources or templates,
+  and errors with no turn otherwise. Any other built-in still ends the
+  run in error, and so does any of the three returning content: a
+  listing that is not empty, or a read that is not an error.
 - **Three records of configuration:** the settings select the program,
   model and effort. The runner's version adapter derives the host's
   configuration and expected inventory from those settings and the
@@ -996,7 +1006,7 @@ documentation.
   | hooks and skills | none loaded or active |
   | configuration layers | only the run's configuration |
   | instruction files | none loaded from the user or the subject |
-  | built-in tools | only the sandboxed command tool, under the run's profile |
+  | built-in tools | only the sandboxed command tool, under the run's profile, and the three resource tools, reaching nothing |
 
   Calls to the lab's tools are held until the observation is complete.
   Commands that start before it completes still count as actions; a
