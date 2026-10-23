@@ -403,6 +403,14 @@ within `worst_case`.
 - **an ID token signed with a test key,** with its metadata and key set
   published, and scripted faults in each: another key, another `alg`, a
   wrong claim, an unreadable document;
+- **the account that signs in:** its subject, and the claims an identity
+  provider such as Google adds, an address (`email`, with
+  `email_verified` true or false) and a name, each in the ID token where
+  the account has it. A world sets the account for the authorizations
+  that follow, and each code keeps the account its authorization had,
+  so that one world signs in several people, or one address under two
+  subjects; until one is set, the account is the OpenID terms' subject
+  alone, with no other claim;
 - **granted scopes,** all those asked or fewer, in the token response;
 - **revocation,** answered as scripted: confirmed, refused, or never;
 - **the added error names,** on a refresh or an exchange, with the status
