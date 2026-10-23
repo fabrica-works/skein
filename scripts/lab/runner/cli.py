@@ -278,6 +278,16 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
                 driver_available = True
         except (OSError, Refused) as error:
             out.append(Refusal("settings.driver.program", str(error)))
+    if type(driver) is dict and type(driver.get("catalog")) is dict:
+        catalog = driver["catalog"]
+        try:
+            data, _ = store.read_regular(catalog.get("path"))
+            if store.file_digest(data) != catalog.get("sha256"):
+                out.append(Refusal("settings.driver.catalog", "catalog differs from its configured digest"))
+            else:
+                out.extend(codex.catalog_refusals(data, driver.get("model")))
+        except (OSError, TypeError, Refused) as error:
+            out.append(Refusal("settings.driver.catalog", str(error)))
     facts = {**_machine_facts(lab), "subject_available": subject_available,
              "source_available": subject_available and subject.get("source") is not None,
              "artifacts_available": list(subject.get("artifacts", {})), "experiment_files": texts,
@@ -302,7 +312,8 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
         driver = {**driver, 'config': codex.configuration(os.path.realpath(sys.executable), str(_runner_root()),
                   driver['program']['path'], [t['name'] for t in exp['driver']['tools']],
                   driver['model'], driver['effort'], subject['source'] is not None,
-                  json.loads((_runner_root() / 'schemas/report.json').read_text()))}
+                  json.loads((_runner_root() / 'schemas/report.json').read_text()),
+                  driver['catalog']['path'] if 'catalog' in driver else None)}
     lab_inputs = {"runner": _runner_digest(),
                   "python": sys.version.split()[0], "programs": sorted(system.values(), key=lambda p: p["path"]),
                   "driver": driver, "cost": {"name": exp["cost"]}}

@@ -449,7 +449,7 @@ def validate(experiment, subject, settings, facts):
         groups["tools"] = tools
         if facts.get("driver_host") is not True:
             out.append(Refusal("facts.driver_host", "driver host unavailable"))
-        configured = shape(settings.get('driver'), ('program', 'model', 'effort'), (), 'settings.driver', out)
+        configured = shape(settings.get('driver'), ('program', 'model', 'effort'), ('catalog',), 'settings.driver', out)
         # The runner derives configuration; settings select only the host and model.
         placeholder_lab = {"runner": "sha256:" + "0" * 64, "python": "3.11", "programs": [],
                            "driver": {**configured, 'config': {}}, "cost": {"name": "selected"}}

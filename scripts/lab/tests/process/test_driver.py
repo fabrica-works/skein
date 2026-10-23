@@ -124,6 +124,42 @@ class Driver(unittest.TestCase):
         self.assertEqual(config['schema'], json.loads(self.program.with_suffix('.turn').read_text())['outputSchema'])
         self.assertEqual((self.root_run / 'driver/host.stderr').stat().st_mode & 0o777, 0o600)
 
+    def catalog(self, tool_mode):
+        path = self.root / 'catalog.json'
+        path.write_text(json.dumps(dict(models=[dict(slug='scripted', tool_mode=tool_mode)])))
+        self.settings['driver']['catalog'] = dict(path=str(path), sha256=store.file_digest(path.read_bytes()))
+        return path
+
+    def validate(self):
+        settings = self.lab_root / 'settings.json'
+        settings.chmod(0o600)
+        settings.write_bytes(canonical.record_bytes(self.settings))
+        (self.directory / 'experiment.json').write_bytes(canonical.record_bytes(self.exp))
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            status = cli.main(['validate', str(self.directory), '--subject', self.subject], lab_root=self.lab_root)
+        return status, stdout.getvalue().strip(), stderr.getvalue()
+
+    def test_pinned_catalog_is_keyed_named_and_checked(self):
+        path = self.catalog(None)
+        status, identity, stderr = self.validate()
+        self.assertEqual(status, 0, stderr)
+        key = canonical.loads((self.lab_root / 'keys/native' / identity / 'key.json').read_bytes())
+        self.assertEqual(key['lab']['driver']['catalog'], self.settings['driver']['catalog'])
+        self.assertIn('model_catalog_json = ' + json.dumps(str(path)), key['lab']['driver']['config']['toml'])
+        path.write_text(json.dumps(dict(models=[])))
+        status, _, stderr = self.validate()
+        self.assertNotEqual(status, 0)
+        self.assertIn('catalog differs from its configured digest', stderr)
+        self.catalog('code_mode_only')
+        status, _, stderr = self.validate()
+        self.assertNotEqual(status, 0)
+        self.assertIn("the driver model's tool_mode must be null", stderr)
+        path.unlink()
+        status, _, stderr = self.validate()
+        self.assertNotEqual(status, 0)
+        self.assertIn('settings.driver.catalog', stderr)
+
     def test_seconds_bound_stops_a_waiting_host(self):
         self.settings['costs']['smoke']['driver_seconds'] = 1
         record = self.story(dict(items=[dict(type='commandExecution', argv=['/bin/true'], wait=True)]), 1)

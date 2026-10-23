@@ -1,7 +1,7 @@
 """Codex 0.162.1 decisions over supplied configuration and events (lab.md, 6)."""
 import json
 from . import canonical, judge, views
-from .records import Refused, SAFE
+from .records import Refusal, Refused, SAFE
 
 
 DISABLED = ('apps', 'plugins', 'remote_plugin', 'recommended_plugins', 'hooks',
@@ -29,12 +29,13 @@ def _response(responses, method):
 
 
 def config_toml(python: str, runner: str, run: str, tools: list[str], model: str,
-                effort: str, profile: str, lab_root: str = '{lab.root}') -> str:
+                effort: str, profile: str, lab_root: str = '{lab.root}', catalog: str | None = None) -> str:
     """Permission profile text is supplied by the view builder."""
     # Root keys precede every TOML table, including the profile's tables.
     # No base_url: Codex then picks the endpoint for the login, API key or ChatGPT.
     return ('model_provider = "lab-openai"\n'
-            f'model = {json.dumps(model)}\nmodel_reasoning_effort = {json.dumps(effort)}\n'
+            + (f'model_catalog_json = {json.dumps(catalog)}\n' if catalog is not None else '')
+            + f'model = {json.dumps(model)}\nmodel_reasoning_effort = {json.dumps(effort)}\n'
             'web_search = "disabled"\nallow_login_shell = false\nproject_doc_max_bytes = 0\n'
             + profile + '\n[shell_environment_policy]\ninherit = "none"\n[features]\n'
             + ''.join(f'{name} = false\n' for name in DISABLED)
@@ -48,13 +49,31 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
 
 
 def configuration(python: str, runner: str, program: str, tools: list[str], model: str,
-                  effort: str, source: bool, schema: dict) -> dict:
+                  effort: str, source: bool, schema: dict, catalog: str | None = None) -> dict:
     """The key uses template names for every path belonging to a run."""
     profile = views.profile_toml(program, '{source}' if source else None, '{driver.work}')
     return dict(argv=['app-server', '--stdio', '--strict-config'],
-                toml=config_toml(python, runner, '{run.id}', tools, model, effort, profile),
+                toml=config_toml(python, runner, '{run.id}', tools, model, effort, profile, catalog=catalog),
                 inventory=expected_inventory(tools, '{codex.home}/config.toml'),
                 schema=schema)
+
+
+def catalog_refusals(data: bytes, model: str) -> list:
+    """The pinned catalog must offer the model its tools directly: code mode makes no items."""
+    member = 'settings.driver.catalog'
+    try:
+        value = json.loads(data)
+    except (UnicodeDecodeError, ValueError):
+        return [Refusal(member, 'catalog is not JSON')]
+    models = value.get('models') if type(value) is dict else None
+    if type(models) is not list:
+        return [Refusal(member, 'catalog has no models list')]
+    entries = [m for m in models if type(m) is dict and m.get('slug') == model]
+    if len(entries) != 1:
+        return [Refusal(member, f'catalog must hold the driver model {model!r} once')]
+    if 'tool_mode' not in entries[0] or entries[0]['tool_mode'] is not None:
+        return [Refusal(member, 'the driver model\'s tool_mode must be null')]
+    return []
 
 
 def expected_inventory(tools: list[str], config_path: str) -> dict:

@@ -57,6 +57,41 @@ class Codex(unittest.TestCase):
         self.assertEqual(tomllib.loads(text)['default_permissions'], 'special')
         self.assertEqual(json.loads(canonical.record_bytes(value)), value)
 
+    def test_a_pinned_catalog_is_named_at_the_root(self):
+        schema = json.loads((Path(__file__).resolve().parents[2] / 'schemas/report.json').read_text())
+        plain = codex.configuration('/python', '/runner', '/bin/codex', [], 'm', 'low', False, schema)
+        self.assertNotIn('model_catalog_json', tomllib.loads(plain['toml']))
+        pinned = codex.configuration('/python', '/runner', '/bin/codex', [], 'm', 'low', False, schema, '/lab/catalog.json')
+        self.assertEqual(tomllib.loads(pinned['toml'])['model_catalog_json'], '/lab/catalog.json')
+
+    def test_catalog_must_give_the_driver_model_direct_tools(self):
+        def refused(value, model='m'):
+            data = value if type(value) is bytes else json.dumps(value).encode()
+            return [r.why for r in codex.catalog_refusals(data, model)]
+        entry = dict(slug='m', tool_mode=None, context_window=1)
+        self.assertEqual(refused(dict(models=[entry, dict(slug='other', tool_mode='code_mode_only')])), [])
+        self.assertEqual(refused(b'{'), ['catalog is not JSON'])
+        self.assertEqual(refused(b'\xff'), ['catalog is not JSON'])
+        self.assertEqual(refused([entry]), ['catalog has no models list'])
+        self.assertEqual(refused(dict(models=[entry]), model='absent'), ["catalog must hold the driver model 'absent' once"])
+        self.assertEqual(refused(dict(models=[entry, entry])), ["catalog must hold the driver model 'm' once"])
+        for mode in ({'tool_mode': 'code_mode_only'}, {}):
+            self.assertEqual(refused(dict(models=[dict(slug='m', **mode)])), ["the driver model's tool_mode must be null"])
+
+    def test_catalog_settings_are_absolute_and_digested(self):
+        exp, subject, settings, facts, _ = fixture()
+        exp['driver'] = dict(charter='charter.md', tools=[])
+        facts.update(driver_host=True)
+        facts['experiment_files']['charter.md'] = 'charter'
+        program = dict(path='/codex', sha256='sha256:' + 'a' * 64, version='1')
+        settings['driver'] = dict(program=program, model='m', effort='low',
+                                  catalog=dict(path='/lab/catalog.json', sha256='sha256:' + 'b' * 64))
+        self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
+        settings['driver']['catalog'] = dict(path='catalog.json', sha256='b', extra=1)
+        members = [p.member for p in experiment.validate(exp, subject, settings, facts)]
+        self.assertEqual(sorted(members), ['settings.driver.catalog.extra', 'settings.driver.catalog.path',
+                                           'settings.driver.catalog.sha256'])
+
     def test_every_inventory_row_and_unobserved_items(self):
         expected = codex.expected_inventory(['echo'], '/lab/codex/config.toml')
         observed = codex.observe(inventory(), expected)

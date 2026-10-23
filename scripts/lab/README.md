@@ -37,8 +37,12 @@ names to objects with these required positive safe integer fields: `ready_second
 when the experiment has a meter.
 There are no default cost values. For experiments with `driver: null`, settings
 `driver` and `triager` can both be null; no driver host or report is needed.
-For agent experiments, settings `driver` is `{program, model, effort}`; `program`
-is `{path, sha256, version}`. The runner derives the key's `driver.config`.
+For agent experiments, settings `driver` is `{program, model, effort}`, with an
+optional `catalog`; `program` is `{path, sha256, version}`. The runner derives the
+key's `driver.config`. `catalog` is `{path, sha256}`: a pinned Codex model catalog,
+keyed, whose driver-model entry must be `tool_mode: null` (lab.md 6.1). Make it from
+the account's catalog with that one field changed: every model of a ChatGPT login is
+`code_mode_only`, and the code-mode host stays off.
 `triager` must be null. `codex_home` optionally names a private absolute directory;
 its default is the lab's `codex/`. Only `config.toml` is written there; the runner
 never opens a credential file. The host owns its login.

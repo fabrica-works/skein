@@ -117,7 +117,7 @@ def lab_refusals(value):
             out.append(Refusal("lab.browser.fonts", "expected a tree digest"))
     driver = lab.get("driver")
     if driver is not None:
-        d = shape(driver, ("program", "model", "effort", "config"), (), "lab.driver", out)
+        d = shape(driver, ("program", "model", "effort", "config"), ("catalog",), "lab.driver", out)
         p = shape(d.get("program"), ("path", "sha256", "version"), (), "lab.driver.program", out)
         if type(p.get("path")) is not str or not p["path"].startswith("/"):
             out.append(Refusal("lab.driver.program.path", "expected an absolute path"))
@@ -130,6 +130,12 @@ def lab_refusals(value):
             out.append(Refusal("lab.driver.program.version", "expected version"))
         if type(d.get("config")) is not dict:
             out.append(Refusal("lab.driver.config", "expected configuration object"))
+        if "catalog" in d:
+            c = shape(d["catalog"], ("path", "sha256"), (), "lab.driver.catalog", out)
+            if type(c.get("path")) is not str or not c["path"].startswith("/"):
+                out.append(Refusal("lab.driver.catalog.path", "expected an absolute path"))
+            if not digest_value(c.get("sha256")):
+                out.append(Refusal("lab.driver.catalog.sha256", "expected a digest"))
     cost = shape(lab.get("cost"), ("name",), (), "lab.cost", out)
     if type(cost.get("name")) is not str or not NAME.fullmatch(cost["name"]):
         out.append(Refusal("lab.cost.name", "expected a cost class name"))
