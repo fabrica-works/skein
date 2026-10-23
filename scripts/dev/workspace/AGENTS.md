@@ -38,6 +38,7 @@ holds their reasons and open questions.
 
 - **Work on a branch in a worktree of your own,** never in a primary
   checkout.
+- **A rebased branch is pushed under a new name;** never force-push.
 - **Build and test through `heavy`:** `heavy cargo nextest run -p
   <crate>`. It queues every build on the machine, so that builds don't
   starve each other and gates run alone.
