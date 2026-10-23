@@ -336,8 +336,8 @@ held        = "holds" family word | "pieces" word
 - **Lines** count from 1, one more after each `\n`. Each declaration,
   field and variant keeps the line of its name. A refusal of the
   grammar has the line of its token, or the text's last line at its
-  end; a refusal of the layout, the line of the field, variant or
-  declaration it names.
+  end, which a final `\n` ends without starting another; a refusal of
+  the layout, the line of the field, variant or declaration it names.
 - **Bounded:** a text of at most `MAX_TEXT` bytes and `MAX_DECLARATIONS`
   declarations, refused past either. Each table is allocated once, at a
   size the text's length bounds. A type's chain of `list` and `option`
