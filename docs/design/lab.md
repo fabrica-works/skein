@@ -983,7 +983,7 @@ documentation.
   | permission profile | the run's profile is selected for the agent's commands |
   | MCP servers and tools | only `lab`, offering exactly the experiment's tools |
   | resources and prompts | none, including resource templates |
-  | apps and plugins | none offering a capability to the model |
+  | apps and plugins | none offering a capability to the model: an app listed both disabled and not callable, with apps turned off, offers none and is kept as evidence |
   | hooks and skills | none loaded or active |
   | configuration layers | only the run's configuration |
   | instruction files | none loaded from the user or the subject |
