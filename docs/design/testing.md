@@ -191,6 +191,11 @@ second, which is why it is skein's (testing-strategy.md, 7).
   (shell.md, 12), and `skein-world` re-exports both, so a service's worlds
   host the same `Host` its `main` drives, and a shipped binary links no
   testing crate.
+- **It builds on Linux and macOS alike.** The simulated worlds need no
+  real machine; the real loop opens the host's backend on either, and
+  refuses one a test forces that the host lacks (the ring on macOS,
+  shell.md, 7.1). Only the tree keeper's cgroup and walk are Linux's
+  (examples.md, 6); its process group runs on both.
 - **It calls each process's hook** where `drive` does: once per
   iteration, after the process's `iterate` and before its submit. The
   drains a world runs are then the ones that ship.

@@ -44,7 +44,9 @@ testing.md, 6.)
 
 `skein-shell` depends on lib, io (for the records), and the only crates
 from outside: `io-uring`, on Linux alone, and `libc`. A service's `main`
-depends on it and on the service's own `iterate`.
+depends on it and on the service's own `iterate`. It builds for Linux and
+for `aarch64-apple-darwin`; any other target is a compile error naming
+the two (7.5, 7.6).
 
 - **`Host` and `drive` are here** (section 12), moved from `skein-world`,
   which re-exports both. A service's shell then links no testing crate,
@@ -552,7 +554,7 @@ synchronous operations, the error tables, what decodes a `statx` or a
 |---|---|---|
 | The wait | `epoll_wait` | `kevent` |
 | Open beneath a root | `openat2`, `RESOLVE_BENEATH` | `openat`, `O_RESOLVE_BENEATH`, `O_NOFOLLOW_ANY` |
-| Listing a directory | `getdents64` | section 10 |
+| Listing a directory | `getdents64` | `readdir`, its positions kept (below) |
 | Rename, never replacing | `renameat2`, `RENAME_NOREPLACE` | `renameatx_np`, `RENAME_EXCL` |
 | Stat | `statx` | `fstat` |
 | Spawn | `pidfd_spawn` | `posix_spawn`: the same file actions, process group, and session for a terminal |
@@ -573,6 +575,118 @@ synchronous operations, the error tables, what decodes a `statx` or a
   handle to be readable, a `Signal` finds the pid its handle names, and
   a `Close` of the handle forgets it.
 
+**The crate's layout.** `unsafe` is in `linux` and `darwin` alone; every
+other module is safe Rust, the same on both systems.
+
+| Module | What it holds | Built for |
+|---|---|---|
+| `kernel` | `Kernel`, `Backend`, `Chosen`, `Config`, `Wait`, `OpenError`: the public kernel | both |
+| `readiness` | the readiness backend's shared part (7.2 to 7.4), over `system` | both |
+| `calls` | what every backend decodes the same way: each operation's error table, the kind of what an `Open` opened, the paths' checks, `Open`'s retries, the listing buffer's size, a release against a floor (7.6) | both |
+| `linux` | Linux's calls and wait (`linux::epoll`), and the ring adapter (`linux::ring`), the only user of `io-uring` | Linux |
+| `darwin` | Darwin's calls and wait (`darwin::kqueue`) | macOS |
+| `clock`, `seed`, `startup`, `terminal`, `settings`, `drive` | the public startup and loop, calling `system` | both |
+
+- **One face, two systems.** `linux` and `darwin` give the same
+  crate-private functions, by name and signature, and `lib.rs` names the
+  one built as `system`: sockets, files, processes, the signal source,
+  the terminal, the wait, the clock, the seed, the release and the
+  startup reads. They take and return io's values (`Fd`, `Addr`, `Stat`,
+  `Exit`, `Done`) and error numbers, never a system's structure: no
+  `statx`, `siginfo`, `stat` or `kevent` reaches the shared part, so each
+  system decodes its own. Building for each system checks the face.
+- **Each system's wrappers are its own,** written against that system's
+  manual and the `libc` types for it (a `sockaddr_in`'s length byte on
+  Darwin, its `stat`'s layout): neither module calls the other, and
+  neither emulates the other's calls. A call the two make alike (`flock`,
+  `ftruncate`, `tcgetattr`) is written in each.
+- **Linux's own is built for Linux alone:** the ring adapter and
+  `Running`'s ring arm; cgroups (`open_cgroup`, `start_binary_in_cgroup`,
+  `wait_cgroup_change`); the subreaper (`make_subreaper`, `subreaper`,
+  `set_subreaper`); and the pidfd helpers (`open_pidfd`, `pidfd_exited`).
+  `Backend::Ring` itself is on both, so a match on it downstream stays
+  exhaustive on both: `open_on(.., Backend::Ring)` on macOS is
+  `OpenError::Unsupported`, and `Kernel::open` there never tries the
+  ring. Every other public item is on both.
+- **The tree keeper's calls,** on both (examples.md, 6): `child_id`, the
+  pid a child's handle names; `signal_group`, a signal to a process group
+  by its ID (`kill` of its negative); and `group_live`, whether a process
+  group still has a member (`kill` of its negative with no signal, `ESRCH`
+  for none). They name a group by number, as no record does, and are
+  for the harness alone.
+
+**Darwin's parts,** in `darwin`:
+- **Sockets** are made without blocking and closed on exec by `fcntl`
+  after `socket` and `accept`, which take no such flags on Darwin; the
+  loop's thread makes both calls and every spawn, so no child starts
+  between them. Addresses carry their length byte. `SIGPIPE` is blocked
+  on the loop's thread, as on Linux.
+- **The wait** is a kqueue: `EVFILT_READ` and `EVFILT_WRITE` for a
+  descriptor's sides, level-triggered, added and deleted as its waiters
+  change (7.2). `EV_EOF` and `EV_ERROR` wake both sides, as epoll's
+  hang-up and error do. A descriptor kqueue cannot watch is always
+  ready, as 7.3's: the error its registration answers for one (`EINVAL`
+  for a device it does not support) is the one epoll's `EPERM` is.
+- **Opening beneath a root:** `openat` with `O_RESOLVE_BENEATH`, and
+  `O_NOFOLLOW_ANY` for the ways that refuse a link (kernel.md, 6.1),
+  close-on-exec, without blocking or a controlling terminal, as on Linux.
+  `PathNoFollow`, which Linux opens `O_PATH | O_NOFOLLOW`, is
+  `O_SYMLINK | O_EVTONLY` with `O_NOFOLLOW_ANY` and `O_RESOLVE_BENEATH`:
+  the entry itself, a link as a link, with no permission to read it,
+  for `Stat` and `Close` alone, held to the same conformance.
+  Darwin answers an escape with `ENOTCAPABLE`, which `darwin` gives up
+  as Linux's `EXDEV`, so that one error table serves both (`Escape`).
+- **Files:** `pread`, `pwrite`, `write`, `ftruncate`, `fstat` (decoded by
+  `darwin`), `renameatx_np` with `RENAME_EXCL` for a rename that never
+  replaces and `renameat` otherwise, `unlinkat`, `mkdirat`, `flock`.
+  `Sync` is `fcntl(F_FULLFSYNC)`, which reaches the disk as Linux's
+  `fsync` does, where Darwin's `fsync` stops at the drive's cache.
+- **Listing a directory** keeps `readdir`'s positions: the backend holds
+  a directory stream for each descriptor it has listed, opened on a
+  duplicate of it at its first `List` and closed with its `Close`. A
+  `List` reads entries until the next does not fit the record, sets the
+  stream back before that one (`telldir`, `seekdir`), and the next `List`
+  starts there. `.` and `..` are skipped and an entry's kind is its
+  `d_type`, or its `fstatat` where that is unknown, as on Linux. The
+  listing state is each system's: Linux's one buffer of the table's,
+  Darwin's streams.
+- **Spawn** is `posix_spawn`, with the file actions Linux's spawn has
+  (the working directory by `posix_spawn_file_actions_addfchdir_np`), the
+  child in a group of its own (`POSIX_SPAWN_SETPGROUP`), its signal mask
+  emptied and every signal the service ignores set back to its default
+  (`POSIX_SPAWN_SETSIGMASK`, `POSIX_SPAWN_SETSIGDEF`), and for a terminal
+  a session of its own (`POSIX_SPAWN_SETSID`) before the terminal is
+  opened as its standard streams.
+- **A child's handle** is a kqueue of the child's own, close-on-exec,
+  with `EVFILT_PROC` and `NOTE_EXIT` registered for its pid: readable once
+  the child has exited. A child that exits before its registration
+  (`ESRCH`) is still unreaped and the parent's: its handle is made
+  readable by an `EVFILT_USER` event triggered in the same kqueue. The
+  module keeps a table from each handle to its pid and whether it is
+  reaped, process-wide behind a lock: a spawn adds the handle, the `Wait`
+  that reaps marks it, its `Close` removes it. A `Wait` is `waitid` on
+  the pid (`P_PID`, `WEXITED | WNOHANG`, `WNOWAIT` to observe). A `Signal`
+  is `kill`, or `killpg` for the group the child leads; one after the
+  reap answers `ESRCH`, as a pidfd's does, and never signals the number.
+  A handle not in the table answers `EBADF`.
+- **Signals to the service:** startup sets the signals the service
+  watches (`SIGINT`, `SIGTERM`, and `SIGWINCH` at a terminal) to be
+  ignored, which Darwin still reports to a kqueue, and opens a kqueue with
+  an `EVFILT_SIGNAL` for each: the descriptor `ReadSignal` names, readable
+  while one is pending. A `ReadSignal` takes one event without waiting and
+  decodes its signal; deliveries of one signal before a read are one, as
+  signalfd's are for a standard signal.
+- **The rest:** `getentropy` for the seeds; `clock_gettime` with
+  `CLOCK_MONOTONIC` and `CLOCK_REALTIME`; `getrusage`, whose resident
+  size Darwin gives in bytes; `TIOCGWINSZ` and the terminal's modes as on
+  Linux; `faccessat` with `AT_EACCESS` for a directory's access; the
+  startup reads opened with `O_NOFOLLOW_ANY` where Linux's refuse links.
+- **Names that differ only in case** are one name on a default APFS
+  volume. The shell passes names as they are and answers as the volume
+  does (a `Create` of `A` beside `a` is `AlreadyExists` there); it folds
+  and checks nothing. The refusal of such names is the layer's that
+  names things, where a checkout's name is checked.
+
 ### 7.6 The floor on each system
 
 - **Linux's floor is section 4's,** 6.12, for both backends. Without a
@@ -584,9 +698,12 @@ synchronous operations, the error tables, what decodes a `statx` or a
   refused (`OpenError::Setup(EINVAL)`).
 - **macOS's floor is 15, Darwin 24,** the first with `O_RESOLVE_BENEATH`,
   which an open beneath a root needs: confirmed the same way, by the
-  release, and refused below it. No feature checks, on either.
+  release (`uname`'s, Darwin's own: `24.6.0` is 24), whose first number
+  is compared, and refused below it. One comparison serves both, a
+  release against a system's floor, in `calls`, and its table of cases
+  runs on Linux for both floors. No feature checks, on either.
 - **Apple Silicon only:** `aarch64-apple-darwin`. The shell does not
-  compile for Intel Macs.
+  compile for Intel Macs: a `compile_error!` says so.
 
 ### 7.7 What is weaker without the ring
 
@@ -685,6 +802,31 @@ and changes no code above io:
 - **Terminal modes,** end to end under a pseudo-terminal
   (testing-strategy.md, 2.9): input read a key at a time, the modes found
   again once the binary exits, and a size change heard.
+- **The Darwin check.** On our Linux machines, `cargo darwin`, an alias
+  in `.cargo/config.toml`, runs clippy over every target of the
+  workspace for `aarch64-apple-darwin` with warnings denied, as the
+  gate's clippy does; clippy's pass is `cargo check`'s too. Nothing
+  links, and no file of Apple's SDK is on our machines. The members that
+  reach rustls (whose `ring` crate compiles C against Apple's headers)
+  are excluded there by name, the alias's own list, the one place they
+  are named; they are checked on the macOS runner. Darwin's code is built
+  here and run there.
+- **Linux's own tests, by name.** A test that only Linux can run is
+  built for Linux alone, `cfg(target_os = "linux")` on its whole binary
+  or module, with its reason beside it, and listed here; none is dropped
+  silently. Every other test runs on both systems.
+
+| Test | Its reason |
+|---|---|
+| `tests/ring` (`skein-ring-tests`): `ring` and `files` but its `startup` module | the ring adapter's own |
+| `tests/conformance/real`: the `ring` module | the conformance on the ring |
+| `tests/io/tests/ring.rs` | io's real-kernel files on the ring |
+| `tests/echo/tests/real.rs`: the ring's cases | the echo's real loop on the ring |
+| `crates/skein-shell`: `linux`'s and `linux::ring`'s unit tests | Linux's calls: epoll, signalfd, pidfds, the ring |
+| `tests/world/tests/end_to_end.rs`: the cgroup's and the walk's tree tests, an escape from the group among them | a cgroup, the subreaper and `/proc` are Linux's (examples.md, 6) |
+
+  The list grows with each test that a Darwin build shows to be
+  Linux's, in the commit that marks it.
 
 ## 10. Open questions
 
@@ -692,13 +834,6 @@ and changes no code above io:
   the CI's container profile.
 - **Sanitizers on the ring adapter:** Miri cannot run the ring, so which of
   the address and leak sanitizers the real loop runs under.
-- **A path held without following its last link on macOS**
-  (`PathNoFollow`): Linux opens it `O_PATH | O_NOFOLLOW`, and macOS has
-  no `O_PATH`. Default: `O_SYMLINK` with `O_EVTONLY`, held to the same
-  conformance.
-- **A directory listing's position on macOS** (7.5): `getdirentries`'s
-  cookies, or `readdir`'s positions. Default: whichever passes the
-  listing scenarios with a position handed from one `List` to the next.
 - **A hashed certificate directory** (`SSL_CERT_DIR`) as the machine's
   trust roots, on a machine with no bundle file: read it, or refuse to
   start as today (6.2).

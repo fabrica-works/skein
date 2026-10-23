@@ -370,8 +370,13 @@ processes, each a host of an `iterate` (a service, or a fake client):
     processes of its own, which may leave its group or its session. None
     may outlive the test, and a test that measures what the binary used,
     a benchmark's harness among them, wants all of it: CPU time and peak
-    memory. The kit settles and counts the binary's whole tree, one of two
-    ways, and the test's result says which ran.
+    memory. The kit settles and counts the binary's whole tree, one of
+    three ways, and the test's result says which ran (`Method`): on Linux
+    a cgroup where the machine delegates one and a walk otherwise, on
+    macOS a process group. A test asks for one by its `Containment`
+    (`Binary::start_contained`): the best the machine has, the walk, or
+    the group, which Linux runs too so that its tests run on our
+    machines; one the machine cannot run fails the start, saying so.
   - **A cgroup, where the machine delegates one.** When the test's user
     holds a delegated cgroup v2 subtree (a systemd user scope, a
     container's), the kit makes a cgroup per binary and starts the binary
@@ -406,17 +411,39 @@ processes, each a host of an `iterate` (a service, or a fake client):
     binary per process. A process orphaned below a parent the kit does not
     hold is reparented to the test process all the same, and the next
     listing finds it.
+  - **A process group, on macOS,** which has neither a cgroup nor a
+    subreaper. The binary leads a process group of its own, as every
+    child does (kernel.md, 6.2), and the group's ID is its pid. The kit
+    holds the binary's handle and that ID, and adopts nothing: an orphan
+    goes to the system's first process, which reaps it. On Linux the
+    group refuses to start (`Busy`) while the test process is a
+    subreaper, another keeper's walk among them, since an orphan it
+    adopted would stay a zombie in the group. Whether the group has a
+    member is `kill` of its negative ID with no signal (`ESRCH`: none);
+    an ID is not given to another process while its group has a member,
+    so the answer is this tree's. The tree has settled once the binary is
+    reaped and its group has no member. Its counts are the walk's: the
+    reaped children's `Usage` before the start and after the tree
+    settles, CPU over the binary and what it reaped, and the largest one
+    process's peak. It cannot see a descendant that leaves the group (a
+    session or a group of its own), nor name a member but the binary: a
+    test that needs either stays Linux's (shell.md, 9), and the group's
+    pid lists (`TreeStatus`) hold the binary's alone.
   - **The end.** Once the binary has exited and the test is done with
     it, or at the test's deadline, the kit kills what is left of the tree
-    (`cgroup.kill`, or each pidfd it holds and the binary's group), waits
-    for it to settle, then reads the counts and removes the cgroup. A
+    (`cgroup.kill`, or each pidfd it holds and the binary's group, or the
+    group), waits for it to settle (the group's: the binary reaped, then
+    its group probed until empty, by the same deadline), then reads the
+    counts and removes the cgroup. A
     test that expects the tree to end with its binary fails on a process
-    still running at its exit, naming it; one that measures a binary it
+    still running at its exit, naming it (the group's: its ID, probed
+    once the binary is reaped); one that measures a binary it
     does not own only kills and counts.
   - **A crash on purpose.** A test that crashes its binary, to prove
     what a restart finds, is its supervisor (shell.md, 13). It supervises
     the tree (`Expectation::Supervise`), kills all of it at once
-    (`signal_tree`: `cgroup.kill`, or every process the walk has found),
+    (`signal_tree`: `cgroup.kill`, every process the walk has found, or
+    the group),
     expects nothing of the close a crash skips, and starts the binary
     again on its directory only once the tree has settled. A process its
     kill leaves keeps the tree from settling and fails the test at its

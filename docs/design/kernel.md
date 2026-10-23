@@ -468,7 +468,9 @@ documentation, with each operation's errors; the decisions behind it:
 ### 6.2 Processes
 
 - **A child is a pidfd from its spawn,** and the leader of a process
-  group of its own (io.md, 6). `Spawn` is synchronous: glibc's
+  group of its own (io.md, 6). On macOS its handle is a descriptor of
+  the shell's own that is readable once the child has exited, and
+  `posix_spawn` makes it (shell.md, 7.5): the records are the same. `Spawn` is synchronous: glibc's
   `pidfd_spawn`, with the group set in its attributes, and the cgroup if
   the spawn names one. `Spawn` carries io.md 6.3's fields, each io token
   its descriptor; one that asks for ids or containment starts the helper
@@ -503,7 +505,8 @@ documentation, with each operation's errors; the decisions behind it:
   `getrusage` for the process itself (`RUSAGE_SELF`) and for its reaped
   children (`RUSAGE_CHILDREN`). Each part answers user and system CPU
   time, as `Duration`s, and the peak resident size, in bytes (the kernel
-  counts it in KiB, which the backend multiplies, checked). The
+  counts it in KiB on Linux, which the backend multiplies, checked, and
+  in bytes on macOS). The
   children's CPU is the sum over every child reaped so far, and over what
   each of them reaped in turn; their peak is the largest any one of them
   reached. A child that has exited but is not yet reaped is in neither
@@ -884,6 +887,12 @@ interface for its backend.
   in the fuzzy one (testing-strategy.md, 8). Every outcome a race allows
   must appear over the fuzzy suite's seeds, and a calm world must pair
   each race as the ring does.
+- **What is Linux's is said so.** An answer that Linux gives and the
+  contract does not promise (the order of two refusals, an error number
+  another system answers otherwise) is checked as Linux's, by name, on
+  Linux, and every backend is held to what the contract promises; none
+  is loosened silently. The readiness backend on macOS meets every
+  scenario through kqueue (shell.md, 7.5).
 - **On the ring,** each scenario runs once, and fails, saying so, if
   io_uring is not usable. **On the readiness backend,** forced on Linux
   (shell.md, 7.1), each runs once too, and a check that only the ring
