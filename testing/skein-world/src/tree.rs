@@ -1,18 +1,25 @@
 //! A binary's tree keeper (examples.md, section 6). It keeps delegated cgroup
-//! paths or discovered pidfds, and the pre-spawn usage baseline, never service
-//! state. `prepare` chooses containment, `refresh` finds adopted children,
+//! paths, discovered pidfds, or a process group ID, and the pre-spawn usage
+//! baseline, never service state. `prepare` chooses containment, `refresh` finds adopted children,
 //! and `finish` kills leftovers, settles every owned pidfd and returns counts.
 //! An abandoned keeper performs the same settlement before releasing its paths.
-//! The last keeper restores the observer's prior subreaper setting, so later
+//! The last Linux keeper restores the observer's prior subreaper setting, so later
 //! fixture descendants are not adopted on that binary's behalf.
 //! Supervised scenarios keep identities before adoption, survey live members,
 //! and choose their own TERM and KILL deadlines (benchmarks.md, section 10).
 
+#[cfg(target_os = "linux")]
 use alloc::collections::{BTreeMap, BTreeSet};
-use core::cell::{Cell, RefCell};
+use core::cell::Cell;
+#[cfg(target_os = "linux")]
+use core::cell::RefCell;
+#[cfg(target_os = "linux")]
 use std::fs;
+#[cfg(target_os = "linux")]
 use std::io::{Read, Seek};
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
+#[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
 
 use skein_io::kernel::{Complete, Done, Error, Fd, Op, Resources, Signal, Submit, Target, Usage};
@@ -23,9 +30,25 @@ use skein_shell::{Clock, Config, Kernel, Wait};
 // counter, so another observer cannot share that accounting interval.
 std::thread_local! {
     static ACTIVE: Cell<u32> = const { Cell::new(0) };
+    #[cfg(target_os = "linux")]
     static WALK_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    #[cfg(target_os = "linux")]
     static SUBREAPER_BEFORE: Cell<bool> = const { Cell::new(false) };
+    #[cfg(target_os = "linux")]
+    static SUBREAPER_OWNED: Cell<bool> = const { Cell::new(false) };
+    #[cfg(target_os = "linux")]
     static CGROUP_BASE: RefCell<Option<CgroupBase>> = const { RefCell::new(None) };
+}
+
+/// The settlement a test asks for (examples.md, 6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Containment {
+    /// The best the machine has: on Linux a delegated cgroup, else the walk; on macOS the group.
+    Best,
+    /// The subreaper's walk of pidfds (Linux).
+    Walk,
+    /// The binary's process group (both systems).
+    Group,
 }
 
 /// The tree settlement method chosen at startup, reported to the scenario.
@@ -35,6 +58,8 @@ pub enum Method {
     Cgroup,
     /// The subreaper discovers children and waits on their pidfds.
     Walk,
+    /// The binary's process group: settled once the binary is reaped and the group has no member.
+    Group,
 }
 
 /// The resident-size scope of a settled tree's result.
@@ -126,8 +151,257 @@ impl TreeStatus {
     }
 }
 
+// skein-world uses the shell's Error vocabulary without depending on libc.
+// EBUSY is 16 on both systems; ENOTSUP is 95 on Linux and 45 on Darwin.
+const BUSY: Error = Error::Other(16);
+#[cfg(target_os = "linux")]
+const NOT_SUPPORTED: Error = Error::Other(95);
+#[cfg(not(target_os = "linux"))]
+const NOT_SUPPORTED: Error = Error::Other(45);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Choice {
+    Best,
+    Walk,
+    Group,
+}
+
+fn choose(
+    containment: Containment,
+    linux: bool,
+    subreaper: bool,
+    walk_active: bool,
+    active: u32,
+) -> Result<Choice, Error> {
+    let choice = match containment {
+        Containment::Best => {
+            if linux {
+                Choice::Best
+            } else {
+                Choice::Group
+            }
+        }
+        Containment::Walk => {
+            if !linux {
+                return Err(NOT_SUPPORTED);
+            }
+            Choice::Walk
+        }
+        Containment::Group => Choice::Group,
+    };
+    if walk_active {
+        return Err(BUSY);
+    }
+    match choice {
+        Choice::Group if subreaper => Err(BUSY),
+        Choice::Walk if active != 0 => Err(BUSY),
+        Choice::Best | Choice::Walk | Choice::Group => Ok(choice),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn prepare_choice(containment: Containment) -> Result<Choice, Error> {
+    choose(containment, true, skein_shell::subreaper()?, WALK_ACTIVE.get(), ACTIVE.get())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prepare_choice(containment: Containment) -> Result<Choice, Error> {
+    choose(containment, false, false, false, ACTIVE.get())
+}
+
 #[derive(Debug)]
-pub(crate) struct Tree {
+pub(crate) enum Tree {
+    #[cfg(target_os = "linux")]
+    Linux(LinuxTree),
+    Group(GroupTree),
+}
+
+impl Tree {
+    pub(crate) fn prepare(containment: Containment, baseline: Usage) -> Result<Self, Error> {
+        match prepare_choice(containment)? {
+            Choice::Group => {
+                ACTIVE.set(ACTIVE.get().checked_add(1).expect("observer count fits"));
+                Ok(Self::Group(GroupTree { baseline: baseline.children, leader: None, finished: false }))
+            }
+            #[cfg(target_os = "linux")]
+            Choice::Best => LinuxTree::prepare(false, baseline).map(Self::Linux),
+            #[cfg(target_os = "linux")]
+            Choice::Walk => LinuxTree::prepare(true, baseline).map(Self::Linux),
+            #[cfg(not(target_os = "linux"))]
+            Choice::Best | Choice::Walk => Err(NOT_SUPPORTED),
+        }
+    }
+
+    pub(crate) fn cgroup(&self) -> Option<Fd> {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.cgroup(),
+            Self::Group(_) => None,
+        }
+    }
+
+    pub(crate) fn started(&mut self, handle: Fd) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.started(handle),
+            Self::Group(tree) => {
+                tree.leader = Some(skein_shell::child_id(handle).expect("a live child handle names its leader"));
+            }
+        }
+    }
+
+    pub(crate) fn refresh(&mut self) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.refresh(),
+            Self::Group(_) => {}
+        }
+    }
+
+    pub(crate) fn survey(&mut self, leader: Fd) -> Vec<u32> {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.survey(leader),
+            Self::Group(tree) => {
+                if skein_shell::poll_child(leader, false).is_ok_and(|exit| exit.is_none()) {
+                    tree.leader.into_iter().collect()
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+    }
+
+    pub(crate) fn leader_exited(&self, live: &[u32]) -> Vec<u32> {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.leader_exited(live),
+            Self::Group(tree) => live.iter().copied().filter(|pid| Some(*pid) != tree.leader).collect(),
+        }
+    }
+
+    pub(crate) fn unpopulated(&mut self) -> bool {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.unpopulated(),
+            Self::Group(_) => true,
+        }
+    }
+
+    pub(crate) fn signal(&mut self, leader: Fd, signal: Signal) -> (Vec<u32>, bool) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.signal(leader, signal),
+            Self::Group(tree) => {
+                let id = tree.leader.expect("a started group has its leader");
+                let mut delivered = Vec::new();
+                if group_live(id).unwrap_or_else(|why| crate::fail(&why)) {
+                    match skein_shell::signal_group(id, signal) {
+                        Ok(()) => delivered.push(id),
+                        Err(Error::Other(3_i32)) => {} // The group may end between probe and signal.
+                        Err(error) => {
+                            crate::fail(&format!("signalling process group {id} (leader {leader:?}): {error:?}"))
+                        }
+                    }
+                }
+                let forced = signal == Signal::Kill && !delivered.is_empty();
+                (delivered, forced)
+            }
+        }
+    }
+
+    pub(crate) fn finish(&mut self, leader: Fd, expectation: Expectation, observed: bool) -> Result<Counts, String> {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.finish(leader, expectation, observed),
+            Self::Group(tree) => tree.finish(leader, expectation, observed),
+        }
+    }
+
+    pub(crate) fn abandon(&mut self, leader: Fd) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(tree) => tree.abandon(leader),
+            Self::Group(tree) => {
+                if tree.finished {
+                    return;
+                }
+                let _killed = skein_shell::signal_kept_child(leader, Signal::Kill, Target::Group);
+                if let Some(id) = tree.leader {
+                    let _killed = skein_shell::signal_group(id, Signal::Kill);
+                }
+                let _settled = tree.finish(leader, Expectation::Measure, false);
+            }
+        }
+    }
+}
+
+impl Drop for Tree {
+    fn drop(&mut self) {
+        match self {
+            #[cfg(target_os = "linux")]
+            Self::Linux(_) => {} // LinuxTree releases its registration and subreaper setting.
+            Self::Group(_) => ACTIVE.set(ACTIVE.get().checked_sub(1).expect("a registered observer is released")),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct GroupTree {
+    baseline: Resources,
+    leader: Option<u32>,
+    finished: bool,
+}
+
+impl GroupTree {
+    fn finish(&mut self, leader: Fd, expectation: Expectation, observed: bool) -> Result<Counts, String> {
+        let mut kernel = Kernel::open(Config { operations: 4 }).map_err(|error| format!("tree ring: {error}"))?;
+        let clock = Clock::new();
+        let until = clock.now().now.saturating_add(Duration::from_secs(2));
+        if !observed {
+            call(&mut kernel, Op::Wait { pidfd: leader, reap: false }, until)?;
+        }
+        call(&mut kernel, Op::Wait { pidfd: leader, reap: true }, until)?;
+        let id = self.leader.expect("a started group has its leader");
+        let lingering = expectation == Expectation::EndsWithBinary && group_live(id)?;
+        loop {
+            if !group_live(id)? {
+                break;
+            }
+            if expectation != Expectation::Supervise {
+                match skein_shell::signal_group(id, Signal::Kill) {
+                    Ok(()) | Err(Error::Other(3_i32)) => {}
+                    Err(error) => return Err(format!("killing process group {id}: {error:?}")),
+                }
+            }
+            if clock.now().now >= until {
+                return Err("tree did not settle within its kill deadline".into());
+            }
+            std::thread::sleep(core::time::Duration::from_millis(10));
+        }
+        let Done::Usage(usage) = call(&mut kernel, Op::Usage, until)? else { unreachable!("Usage returns usage") };
+        self.finished = true;
+        let counts = Counts {
+            method: Method::Group,
+            user: difference(usage.children.user, self.baseline.user),
+            system: difference(usage.children.system, self.baseline.system),
+            peak_rss_bytes: usage.children.peak_rss_bytes,
+            peak_scope: PeakScope::LargestProcess { baseline_bytes: self.baseline.peak_rss_bytes },
+        };
+        if lingering {
+            return Err(format!("binary exited while its process group {id} still had members"));
+        }
+        Ok(counts)
+    }
+}
+
+fn group_live(id: u32) -> Result<bool, String> {
+    skein_shell::group_live(id).map_err(|error| format!("probing process group {id}: {error:?}"))
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+pub(crate) struct LinuxTree {
     cgroup: Option<Cgroup>,
     baseline: Resources,
     ignored: BTreeSet<u32>,
@@ -138,6 +412,7 @@ pub(crate) struct Tree {
     finished: bool,
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug)]
 struct CgroupBase {
     original: PathBuf,
@@ -147,6 +422,7 @@ struct CgroupBase {
     next: u64,
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug)]
 struct Cgroup {
     binary: PathBuf,
@@ -154,7 +430,8 @@ struct Cgroup {
     events: fs::File,
 }
 
-impl Tree {
+#[cfg(target_os = "linux")]
+impl LinuxTree {
     pub(crate) fn prepare(walk: bool, baseline: Usage) -> Result<Self, Error> {
         if WALK_ACTIVE.get() {
             return Err(Error::Other(16));
@@ -163,6 +440,7 @@ impl Tree {
             let previous = skein_shell::subreaper()?;
             skein_shell::make_subreaper()?;
             SUBREAPER_BEFORE.set(previous);
+            SUBREAPER_OWNED.set(true);
         }
         let ignored = children();
         let cgroup = if walk { None } else { Cgroup::prepare() };
@@ -187,11 +465,7 @@ impl Tree {
     }
 
     pub(crate) fn started(&mut self, pidfd: Fd) {
-        let info = fs::read_to_string(format!("/proc/self/fdinfo/{}", pidfd.raw())).expect("a live pidfd has fdinfo");
-        let leader = info
-            .lines()
-            .find_map(|line| line.strip_prefix("Pid:\t").and_then(|value| value.parse::<u32>().ok()))
-            .expect("a live pidfd has its PID");
+        let leader = skein_shell::child_id(pidfd).expect("a live child handle names its leader");
         self.leader = Some(leader);
     }
 
@@ -456,11 +730,13 @@ fn difference(after: Duration, before: Duration) -> Duration {
     Duration::from_nanos(after.as_nanos().checked_sub(before.as_nanos()).expect("resource CPU never falls"))
 }
 
+#[cfg(target_os = "linux")]
 fn exited(descriptor: Fd) -> bool {
     skein_shell::pidfd_exited(descriptor)
         .unwrap_or_else(|error| crate::fail(&format!("polling tree identity: {error:?}")))
 }
 
+#[cfg(target_os = "linux")]
 fn deliver(descriptor: Fd, signal: Signal) -> bool {
     if exited(descriptor) {
         return false;
@@ -472,6 +748,7 @@ fn deliver(descriptor: Fd, signal: Signal) -> bool {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn process_children(pid: u32) -> BTreeSet<u32> {
     let mut result = BTreeSet::new();
     if let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) {
@@ -484,6 +761,7 @@ fn process_children(pid: u32) -> BTreeSet<u32> {
     result
 }
 
+#[cfg(target_os = "linux")]
 fn children() -> BTreeSet<u32> {
     let mut result = BTreeSet::new();
     for task in fs::read_dir("/proc/self/task").expect("the observer has a proc task directory").flatten() {
@@ -511,6 +789,7 @@ pub(crate) fn call(kernel: &mut Kernel, operation: Op, until: Time) -> Result<Do
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Cgroup {
     fn members(&self) -> BTreeSet<u32> {
         let mut result = BTreeSet::new();
@@ -646,7 +925,8 @@ impl Cgroup {
     }
 }
 
-impl Drop for Tree {
+#[cfg(target_os = "linux")]
+impl Drop for LinuxTree {
     fn drop(&mut self) {
         ACTIVE.set(ACTIVE.get().checked_sub(1).expect("a registered observer is released"));
         if self.cgroup.is_none() {
@@ -655,8 +935,39 @@ impl Drop for Tree {
         if let Some(group) = self.cgroup.take() {
             group.remove();
         }
-        if ACTIVE.get() == 0 {
+        if ACTIVE.get() == 0 && SUBREAPER_OWNED.replace(false) {
             skein_shell::set_subreaper(SUBREAPER_BEFORE.get()).expect("the observer restores its subreaper setting");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BUSY, Choice, Containment, NOT_SUPPORTED, choose};
+
+    #[test]
+    fn containment_choice_respects_platform_and_accounting() {
+        use Containment::{Best, Group, Walk};
+        let cases = [
+            (Group, true, false, false, 0, Ok(Choice::Group)),
+            (Group, true, true, false, 0, Err(BUSY)),
+            (Group, true, false, true, 1, Err(BUSY)),
+            (Group, true, false, false, 1, Ok(Choice::Group)),
+            (Best, false, false, false, 0, Ok(Choice::Group)),
+            (Walk, false, false, false, 0, Err(NOT_SUPPORTED)),
+            (Walk, true, false, true, 1, Err(BUSY)),
+            (Best, true, true, true, 1, Err(BUSY)),
+            (Walk, true, false, false, 1, Err(BUSY)),
+            (Walk, true, true, false, 0, Ok(Choice::Walk)),
+            (Best, true, false, false, 0, Ok(Choice::Best)),
+            (Best, true, true, false, 1, Ok(Choice::Best)),
+        ];
+        for (containment, linux, subreaper, walk_active, active, expected) in cases {
+            assert_eq!(
+                choose(containment, linux, subreaper, walk_active, active),
+                expected,
+                "{containment:?}, linux={linux}, subreaper={subreaper}, walk={walk_active}, active={active}"
+            );
         }
     }
 }

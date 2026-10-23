@@ -25,6 +25,7 @@
 
 pub(crate) mod epoll;
 pub(crate) mod files;
+pub(crate) mod group;
 
 use std::{mem, ptr};
 

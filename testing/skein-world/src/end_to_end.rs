@@ -18,7 +18,7 @@ use skein_shell::{Config, Kernel, OpenError, Wait};
 
 use crate::Host;
 use crate::tree::{self, Tree};
-pub use crate::tree::{Cleanup, Counts, Expectation, Method, PeakScope, TreeStatus};
+pub use crate::tree::{Cleanup, Containment, Counts, Expectation, Method, PeakScope, TreeStatus};
 
 /// A scenario's binary command, with an exact environment and working directory.
 #[derive(Debug)]
@@ -144,11 +144,32 @@ impl Binary {
         expectation: Expectation,
         force_walk: bool,
     ) -> Result<Self, StartError> {
+        Self::start_contained(
+            command,
+            mode,
+            stderr_limit,
+            expectation,
+            if force_walk { Containment::Walk } else { Containment::Best },
+        )
+    }
+
+    /// Starts with explicit containment. `Containment::Best` uses a delegated
+    /// cgroup on Linux, falling back to the walk, and the group on macOS.
+    /// `Containment::Walk` requires Linux's subreaper; `Containment::Group`
+    /// uses the binary's process group and adopts no descendants. A containment
+    /// the machine cannot run fails the start with `StartError::Tree`.
+    pub fn start_contained(
+        command: Command,
+        mode: Mode,
+        stderr_limit: usize,
+        expectation: Expectation,
+        containment: Containment,
+    ) -> Result<Self, StartError> {
         let mut startup = Kernel::open(Config { operations: 1 }).map_err(StartError::Ring)?;
         let until = skein_shell::Clock::new().now().now.saturating_add(Duration::from_secs(2));
         let baseline = tree::call(&mut startup, Op::Usage, until).expect("startup usage succeeds");
         let Done::Usage(baseline) = baseline else { unreachable!("Usage returns usage") };
-        let mut tree = Tree::prepare(force_walk, baseline).map_err(StartError::Tree)?;
+        let mut tree = Tree::prepare(containment, baseline).map_err(StartError::Tree)?;
         let root = skein_shell::open_root(&command.directory).map_err(StartError::Directory)?;
         let terminal = matches!(mode, Mode::Terminal);
         let mut pipes = Vec::new();

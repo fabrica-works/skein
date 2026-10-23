@@ -24,6 +24,7 @@
 
 mod clock;
 mod drive;
+mod group;
 mod kernel;
 mod linux;
 mod readiness;
@@ -37,6 +38,7 @@ mod tests;
 
 pub use clock::{Clock, Now};
 pub use drive::{Host, drive};
+pub use group::{child_id, group_live, signal_group};
 pub use kernel::{Backend, Chosen, Kernel};
 pub use ring::{
     Config, DirectoryAccess, HostedPipes, OpenError, OutputKind, Wait, abandon_binary, close_keeper_fd,
