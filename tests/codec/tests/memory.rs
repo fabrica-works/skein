@@ -57,4 +57,165 @@ mod tests {
         drop(decoded);
         assert_eq!(meter.held(), 0, "decoded allocations released");
     }
+
+    fn full_numbers() -> skein_codec_tests::every::Numbers {
+        use skein_codec_tests::every::{CEILINGS, Numbers, NumbersParts};
+        Numbers::new(
+            &CEILINGS,
+            NumbersParts {
+                small: u8::MAX,
+                short: u16::MAX,
+                word: u32::MAX,
+                long: u64::MAX,
+                flag: true,
+                wait: Duration::from_nanos(u64::MAX),
+                tag: [0xff; 3],
+            },
+        )
+        .expect("numbers at ceilings")
+    }
+
+    fn full_stamp() -> skein_codec_tests::every::Stamp {
+        use skein_codec_tests::every::{CEILINGS, Stamp, StampParts};
+        Stamp::new(
+            &CEILINGS,
+            StampParts {
+                at: u64::MAX,
+                note: Some(vec![b'a'; usize::try_from(CEILINGS.stamp_note_some).expect("bound")].into_boxed_slice()),
+            },
+        )
+        .expect("stamp at ceilings")
+    }
+
+    fn full_strings() -> skein_codec_tests::every::Strings {
+        use skein_codec_tests::every::{CEILINGS, Strings, StringsParts};
+        let bytes = |bound| vec![b'a'; usize::try_from(bound).expect("bound")].into_boxed_slice();
+        Strings::new(
+            &CEILINGS,
+            StringsParts {
+                raw: bytes(CEILINGS.strings_raw),
+                key: skein_lib::Secret::new(bytes(CEILINGS.strings_key)),
+                words: bytes(CEILINGS.strings_words),
+            },
+        )
+        .expect("strings at ceilings")
+    }
+
+    fn full_every() -> skein_codec_tests::every::Every {
+        use skein_codec_tests::every::{Blank, BlankParts, CEILINGS, Every, EveryParts, Light, Nest, NestParts, Shape};
+        let bytes = |bound| vec![b'a'; usize::try_from(bound).expect("bound")].into_boxed_slice();
+        let mut blanks = List::with_capacity(CEILINGS.nest_blanks);
+        for _ in 0..CEILINGS.nest_blanks {
+            blanks.push(Blank::new(&CEILINGS, BlankParts {}).expect("blank")).expect("room");
+        }
+        let mut lights = List::with_capacity(CEILINGS.nest_lights);
+        for _ in 0..CEILINGS.nest_lights {
+            lights.push(Light::Green).expect("room");
+        }
+        let mut maybe_lights = List::with_capacity(CEILINGS.nest_maybe_lights);
+        for _ in 0..CEILINGS.nest_maybe_lights {
+            maybe_lights.push(Some(Light::Green)).expect("room");
+        }
+        let mut grid = List::with_capacity(CEILINGS.nest_grid);
+        for _ in 0..CEILINGS.nest_grid {
+            let mut row = List::with_capacity(CEILINGS.nest_grid_item);
+            for _ in 0..CEILINGS.nest_grid_item {
+                row.push(u16::MAX).expect("room");
+            }
+            grid.push(row).expect("room");
+        }
+        let mut maybe_list = List::with_capacity(CEILINGS.nest_maybe_list_some);
+        for _ in 0..CEILINGS.nest_maybe_list_some {
+            maybe_list.push(u8::MAX).expect("room");
+        }
+        let mut shapes = List::with_capacity(CEILINGS.nest_shapes);
+        for _ in 0..CEILINGS.nest_shapes {
+            shapes.push(Shape::Strings(Box::new(full_strings()))).expect("room");
+        }
+        let mut secrets = List::with_capacity(CEILINGS.nest_secrets);
+        for _ in 0..CEILINGS.nest_secrets {
+            secrets.push(skein_lib::Secret::new(bytes(CEILINGS.nest_secrets_item))).expect("room");
+        }
+        let mut stamps = List::with_capacity(CEILINGS.nest_stamps);
+        for _ in 0..CEILINGS.nest_stamps {
+            stamps.push(full_stamp()).expect("room");
+        }
+        let mut pairs = List::with_capacity(CEILINGS.nest_pairs);
+        for _ in 0..CEILINGS.nest_pairs {
+            pairs.push([0xff; 2]).expect("room");
+        }
+        let nest = Nest::new(
+            &CEILINGS,
+            NestParts {
+                blanks,
+                lights,
+                maybe_lights,
+                grid,
+                maybe_list: Some(maybe_list),
+                maybe_numbers: Some(full_numbers()),
+                shapes,
+                secrets,
+                stamps,
+                pairs,
+            },
+        )
+        .expect("nest at ceilings");
+        Every::new(
+            &CEILINGS,
+            EveryParts {
+                numbers: full_numbers(),
+                strings: full_strings(),
+                light: Light::Green,
+                shape: Shape::Strings(Box::new(full_strings())),
+                stamp: full_stamp(),
+                nest,
+                empty: Blank::new(&CEILINGS, BlankParts {}).expect("blank"),
+                held: bytes(CEILINGS.every_held),
+                items: bytes(CEILINGS.every_items),
+            },
+        )
+        .expect("every at ceilings")
+    }
+
+    #[test]
+    fn a_value_allocates_its_room_once_and_decoding_allocates_nothing() {
+        use skein_codec::value::Value;
+        use skein_codec_tests::every::{CEILINGS, Every};
+        // Every's largest tree has 99 nodes; room also admits every other fixture.
+        const ROOM: u32 = 256;
+        let schema = skein_codec::schema::parse(include_bytes!("../schema/every-v1.schema")).expect("schema");
+        let root = schema.find(b"Every").expect("root");
+        let full = full_every();
+        assert_eq!(u64::from(full.measure()), Every::worst_case_bytes(&CEILINGS).expect("wire bound"));
+        let mut writer = Writer::new(usize::try_from(full.measure()).expect("wire length"));
+        full.encode(&mut writer).expect("measured room");
+        let wire = writer.finish();
+        drop(full);
+
+        let meter = Meter::new();
+        meter.start();
+        let mut value = Value::with_room(ROOM);
+        let measured = meter.end();
+        let bound = Value::worst_case_heap(ROOM).expect("heap bound");
+        assert_eq!(measured.peak(), bound, "room is allocated once");
+        assert_eq!(measured.held(), bound, "only the entries are held");
+
+        let meter = Meter::new();
+        meter.start();
+        value.decode(&schema, root, wire).expect("full every decodes");
+        let measured = meter.end();
+        assert_eq!(measured.peak(), 0, "decoding allocates nothing");
+        assert_eq!(measured.held(), 0, "decoding holds no new allocation");
+
+        // Reuse the allocated room after moving out its previous input.
+        let previous = value.take();
+        let wire = previous.expose().into();
+        drop(previous);
+        let meter = Meter::new();
+        meter.start();
+        value.decode(&schema, root, wire).expect("reused every decodes");
+        let measured = meter.end();
+        assert_eq!(measured.peak(), 0, "decoding again allocates nothing");
+        assert_eq!(measured.held(), 0, "decoding again holds no new allocation");
+    }
 }

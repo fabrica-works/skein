@@ -56,8 +56,8 @@ versioned record Every {
     stamp: Stamp
     nest: Nest
     empty: Blank
-    # Will hold a record of another family (codec.md 3, `holds`).
-    held: bytes 8
-    # Will hold pieces of Numbers (codec.md 3, `pieces`).
-    items: bytes 64
+    # Holds Thing of every-other (codec.md 3).
+    held: bytes 8 holds every-other Thing
+    # Holds pieces of Numbers (codec.md 3).
+    items: bytes 64 pieces Numbers
 }

@@ -20,6 +20,7 @@ use skein_lib::Reader;
 
 pub mod piece;
 pub mod schema;
+pub mod value;
 
 #[cfg(test)]
 mod tests;

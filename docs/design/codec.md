@@ -421,7 +421,8 @@ pub enum Expected { Family, Open, Colon, Record, Type, Declaration }
 ```
 
 The plain types derive `Clone`, `Copy` where small, `Debug`, equality
-and `Hash`. A refusal names its token by `at`; skein-codegen writes the
+and `Hash`; `Schema` derives `Debug` alone, as lib's `Map` holding its
+names has neither `Clone` nor equality. A refusal names its token by `at`; skein-codegen writes the
 message from it and the text. A type's fewest bytes are the generator's
 (a list's precheck, section 8.2): a scalar's width, `fixed N`'s N, 4 for
 a length or a count, 1 for an `option`, a record's fields' sum (2 more
@@ -457,7 +458,8 @@ variant's.
   opens it (section 11).
 - **Printed without content.** A value's bytes are a `lib::Secret`, so
   its `Debug` shows their length and the index (types, offsets, counts,
-  tags), never a byte of a field, a secret's or any other.
+  tags), never a byte of a field, a secret's or any other. They are
+  given back as that `Secret`, moved, not copied.
 - **Built by a patch.** A new value is built only by a patch's machine
   (section 11), checked against its schema as it goes.
 
@@ -479,13 +481,13 @@ impl Value {
     pub fn decode(&mut self, schema: &Schema, root: DeclIx, bytes: Box<[u8]>)
         -> Result<Node, Refusal>;              // the root; the bytes are dropped on a refusal
     pub fn bytes(&self) -> &[u8];              // the encoding
-    pub fn take(&mut self) -> Box<[u8]>;       // the bytes back; the value is empty
+    pub fn take(&mut self) -> Secret;          // the bytes back, moved; the value is empty
     pub fn span(&self, node: Node) -> Result<Span, Misread>;
-    pub fn field(&self, schema: &Schema, record: Node, field: FieldIx) -> Result<Node, Misread>;
+    pub fn field(&self, record: Node, field: FieldIx) -> Result<Node, Misread>;
     pub fn items(&self, list: Node) -> Result<Items, Misread>;
     pub fn next_item(&self, items: &mut Items) -> Option<Node>;
     pub fn some(&self, option: Node) -> Result<Option<Node>, Misread>;
-    pub fn tag(&self, schema: &Schema, enumeration: Node) -> Result<VariantIx, Misread>;
+    pub fn tag(&self, enumeration: Node) -> Result<VariantIx, Misread>;
     pub fn payload(&self, enumeration: Node) -> Result<Option<Node>, Misread>;
     pub fn uint(&self, node: Node) -> Result<u64, Misread>;     // u8 to u64; a duration's nanoseconds
     pub fn boolean(&self, node: Node) -> Result<bool, Misread>;
