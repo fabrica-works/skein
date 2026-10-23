@@ -1,6 +1,6 @@
 # The browser parts
 
-Provisional, 2026-10-15, revised 2026-10-19. The design of
+Provisional, 2026-10-15, revised 2026-10-23. The design of
 `skein-ui-web`, skein's browser parts; of `skein-ui-bundle`, their
 bundler; of the face and the harness in `skein-fake-person-browser`;
 and of the UI example's browser tier. The tree the parts map is
@@ -430,7 +430,7 @@ the host tests (section 14).
 | check | `<input type="checkbox">` with its label |
 | select, option | `<select>`, `<option>` showing its name as its text |
 | menu, menu item | `role="menu"` behind its button, `role="menuitem"` |
-| disclosure | `<details>` with `<summary>` |
+| disclosure | `<details>` with `<summary>`, holding its name, then its description's element |
 | dialog | `<dialog>`, shown modal |
 | status, alert, log | `role="status"`, `role="alert"`, `role="log"` |
 | tree, tree item | `role="tree"`, `role="treeitem"`; nested tree items in `<div role="group">` |
@@ -461,7 +461,15 @@ the host tests (section 14).
     part's that holds its words as text, shown beside the node's
     element: after it; inside it, last, for an item, a cell and a
     header, whose parents take no other child; after the `<select>` for
-    an option, which holds text alone;
+    an option, which holds text alone. A disclosure's is drawn with its
+    name, folded or not (ui.md, section 3): in its `<summary>`, after
+    the name, a `<span id="skein-ui-description-<node id>">` holding a
+    space and its words, and alone there for a disclosure with no name.
+    The summary's words are its accessible name, so the `<details>`
+    takes no `aria-describedby`, and a screen reader hears the
+    description once, within the name ("3 tool calls read · grep ·
+    edit, collapsed"). An owner's look tones it by that id, as
+    `summary > [id^="skein-ui-description-"]`;
   - *states:* disabled is `disabled` where the element takes it, else
     `aria-disabled`; expanded `aria-expanded`; busy `aria-busy`; current
     `aria-current`, `page` on a link; invalid `aria-invalid`; pressed
@@ -515,8 +523,9 @@ the host tests (section 14).
   while its scene is drawn; `data-act` on a mark that carries an act
   (section 8); and ids starting `skein-ui-` on its own elements, which
   a description's `aria-describedby` and a menu button's `aria-controls`
-  name, and by which `skein-ui.css` hides a completed item's word. It
-  reserves no class name. The parts' own elements (the mount element, a
+  name, by which `skein-ui.css` hides a completed item's word, and by
+  which an owner's look finds a disclosure's description. It reserves no
+  class name. The parts' own elements (the mount element, a
   scene's SVG, a menu's button, a description's element, a completed
   item's word, the restart part's words) carry no `data-node`.
 - **One listener per kind of event,** on the mount element, finds the
@@ -907,7 +916,10 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
     the role shown finds what it was shown for;
   - names by words in them or exactly (browser.md, section 5); text by
     words within one run, a sentence that a strong word or a link splits
-    being several runs;
+    being several runs. A described disclosure's name, as Chromium
+    computes it from its summary, holds its description after it (section
+    6), so a find by words in its name finds it, as the fake person's
+    find by its name alone does (ui.md, 17.1);
   - `Pending` while the kit answers.
 - **Its acts:** press; type, an input's whole value (the field's value
   selected whole by the kit's select-all key, then the words typed over

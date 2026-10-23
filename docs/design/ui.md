@@ -1,11 +1,12 @@
 # The UI kit
 
-Provisional, 2026-10-15. The design of `skein-ui`: an application's state
-shown as a semantic tree, a person's acts on it carried back to the
-tree's owners as tokens, and the diff between the last tree and the
-next; with the crates around it: the text shell (ui-text.md), the
-browser parts and their bundler (ui-web.md), and the fake person. What
-waits is in section 18, and what is open in section 19.
+Provisional, 2026-10-15, revised 2026-10-23. The design of `skein-ui`:
+an application's state shown as a semantic tree, a person's acts on it
+carried back to the tree's owners as tokens, and the diff between the
+last tree and the next; with the crates around it: the text shell
+(ui-text.md), the browser parts and their bundler (ui-web.md), and the
+fake person. What waits is in section 18, and what is open in section
+19.
 
 ## 1. In one page
 
@@ -112,8 +113,11 @@ waits is in section 18, and what is open in section 19.
 - **A disclosure** is a region a shell may show folded to its name, with
   no step. Its content is always in the tree, so the fake person, a
   screen reader and the text shell find what a shell folds; its folding
-  is the shell's, kept across patches because the diff keeps its id. A
-  fold that leaves content out of the tree is its owner's state instead.
+  is the shell's, kept across patches because the diff keeps its id. Its
+  description (3.2) is words beside its name, which a shell shows with
+  the name while it is folded ("3 tool calls", described "read · grep ·
+  edit"). A fold that leaves content out of the tree is its owner's
+  state instead.
 - **A select** is a named control choosing one of its options, option
   nodes always in the tree, which a shell may show as a list that opens,
   with no step. Choosing an option is a `Press` on it, and the chosen
@@ -555,15 +559,60 @@ nodes by a bounded reader of skein-ui's own:
 
 - **the subset:** paragraphs and line breaks; headings, below the levels
   the caller gives; emphasis, strong and inline code; fenced code; lists,
-  nested to the limit; quotes; links whose target is a checked `http` or
-  `https` URL, shown as text otherwise;
-- **the rest is text:** tables, HTML, images, a delimiter never closed, a
-  list nested too deep are shown as the characters they are, never
-  dropped, and nothing is ever made into markup of the platform's;
+  nested to the limit; quotes; tables (below); links whose target is a
+  checked `http` or `https` URL, shown as text otherwise;
+- **the rest is text:** HTML, images, a delimiter never closed, a list
+  nested too deep, a table's lines that make no table are shown as the
+  characters they are, never dropped, and nothing is ever made into
+  markup of the platform's;
+- **tables,** GFM's pipe tables, at the top level, where a paragraph
+  stands:
+  - *what makes one:* a header line, one the reader would otherwise read
+    as a paragraph's, and the delimiter line after it, each holding a `|`
+    that no backslash escapes, with as many cells each. A delimiter cell
+    is dashes, with a colon at either end or at both (`---`, `:--`,
+    `--:`, `:-:`), and spaces around. Otherwise both lines are what they
+    were: a paragraph's lines, a line holding a `|` shown as written. A
+    table ends the paragraph before it;
+  - *its cells:* a row's line is cut at each `|`, past the spaces at its
+    ends and one leading and one trailing `|`, and each cell drops the
+    spaces at its ends. A `\|` is a `|` in its cell, its backslash
+    dropped, within a code span too; a `|` inside a code span cuts no
+    cell, the line's backticks pairing from the left and a last unpaired
+    one being a character. A cell holds its runs as a paragraph's line
+    does, plain where it holds a `<`;
+  - *its rows:* the lines after the delimiter that hold a `|` no
+    backslash escapes. A blank line ends it, as does a line holding none,
+    or one that starts another block: a fence, a heading, a quote, a list
+    item. A row with fewer cells than the header keeps fewer, and a row
+    with more keeps them, past the header's columns: nothing is dropped,
+    and no cell is made from no bytes;
+  - *its nodes:* a table of rows, the header's of column headers, the
+    others' of cells, each holding its runs' text nodes. The delimiter
+    line makes no node: no property of 3.2 is an alignment, so its
+    colons are read for its form alone, and a column's alignment is the
+    look's;
+  - *in a quote or a list item,* whose lines hold their runs and no
+    paragraph, a table's lines stay what they are: each `> ` line a quote
+    of its text, and a line indented under an item, which ends the list,
+    so that an indented table follows its list, at the top level;
 - **a step machine:** one pass over the lines, with a bounded stack of
-  open blocks and of open emphasis; no recursion;
+  open blocks and of open emphasis; no recursion. A line that could head
+  a table is read with the line after it;
 - **bounded:** at most two nodes per input byte, plus two, and twice the
-  input's bytes of text, which an owner counts (section 15);
+  input's bytes of text, which an owner counts (section 15). Its nodes
+  nest at most `max(5, 2 × markdown_depth + 2)` below its parent: a list
+  item's link and its text at the deepest list, or a table's row, cell,
+  link and text. A table keeps the bounds line by line. A row's line
+  makes its row, at most one cell more than its `|`s, and at most a text
+  node a byte of its cells; the header's line, followed by its newline
+  and the delimiter, which makes no node, also makes the table. A row
+  of empty cells is the worst: `||||` and its newline, five bytes, make
+  a row and three cells. `| a | b |`, `|---|---|` and `| 1 | 2 |`, with
+  their newlines, are 30 bytes making 11 nodes and 4 bytes of text. A
+  cell's text is its bytes, a link's label twice, less a `\|`'s
+  backslash. Cells are found by a scan of their line, keeping no
+  offsets, so a table adds no scratch to the reader's worst case;
 - **fed real text:** its tests read texts kept as files beside them.
 
 ## 11. Scenes
