@@ -1272,8 +1272,12 @@ evidence for the owner, not failures.
     `provision/<tool>/signal:<SIG>`, or `provision/<tool>/missing` for
     a call that never reached the broker; `provision/offered/<name>` for
     a tool the host offered the model that is neither the experiment's
-    nor an admitted built-in (6.1); and an inventory that differs, the
-    provisioning host's inventory being checked as the drive's is.
+    nor an admitted built-in (6.1), a namespaced name printed
+    `<namespace>.<name>` (`mcp__lab.ctl`); `provision/inventory`, the
+    provisioning host's inventory being checked as the drive's is;
+    `provision/host` for a host that fails or ends before its turn
+    completes; and `provision/timeout` past the class's
+    `command_seconds`, which bounds the whole provisioning.
   - **The offered tools** the host's request names are kept as evidence.
     They are the provisioning host's, whose configuration differs from
     the drive's by its provider alone, so the drive's built-in tools
