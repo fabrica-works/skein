@@ -100,10 +100,13 @@ const LIMITS: Limits = Limits {
 fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {
     false
 }
-fn mapped(row: &Row, id: NodeId) -> Element {
+fn mapped(row: &Row, id: NodeId, description: Option<&[u8]>) -> Element {
     let mut builder = Builder::new(&LIMITS);
     builder.open(row.role);
     builder.name(row.name.as_bytes());
+    if let Some(description) = description {
+        builder.description(description);
+    }
     if let Some(entry) = row.entry {
         builder.entry(entry);
     }
@@ -128,12 +131,15 @@ fn mapped(row: &Row, id: NodeId) -> Element {
     }
     element
 }
+// The completion list, its item and text, and the placeholder field reserve four ids.
+const COMPLETED_AND_PLACEHOLDER_NODES: u32 = 4;
+
 fn fixed_page() -> Vec<u8> {
     let mut body = String::from(
         "<!doctype html><html><body><select aria-label=Pick><option>First</option><option>Second</option><option>Third</option></select>",
     );
     for (number, row) in (0..).zip(ROWS) {
-        let html = dom::print(&mapped(row, NodeId(number)));
+        let html = dom::print(&mapped(row, NodeId(number), None));
         let html = match row.role {
             Role::Row => format!("<table>{html}</table>"),
             Role::Cell | Role::ColumnHeader | Role::RowHeader => format!("<table><tr>{html}</tr></table>"),
@@ -142,6 +148,9 @@ fn fixed_page() -> Vec<u8> {
         };
         body.push_str(&html);
     }
+    let described = Row { role: Role::Disclosure, entry: None, name: "case-disclosure-named" };
+    let id = NodeId(u32::try_from(ROWS.len()).expect("fixed role rows fit u32") + COMPLETED_AND_PLACEHOLDER_NODES);
+    body.push_str(&dom::print(&mapped(&described, id, Some(b"case-disclosure-described"))));
     body.push_str("<style>");
     body.push_str(include_str!("../../../crates/skein-ui-bundle/skein-ui.css"));
     body.push_str("</style>");
@@ -175,6 +184,12 @@ fn chromium_computes_each_roles_accessible_role() {
         }
     }
     assert_eq!(missing, [] as [&str; 0], "snapshot:\n{snapshot}");
+    assert!(
+        snapshot
+            .lines()
+            .any(|line| line.trim_end() == "DisclosureTriangle case-disclosure-named case-disclosure-described"),
+        "snapshot:\n{snapshot}"
+    );
 }
 
 #[test]

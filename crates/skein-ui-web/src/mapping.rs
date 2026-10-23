@@ -2,7 +2,10 @@
 
 use skein_ui::{EntryKind, Made, Modifier, Role, Run, Shortcut, Source, State, TextRun};
 
-use crate::{Look, dom::Element};
+use crate::{
+    Look,
+    dom::{Child, Element},
+};
 
 /// The platform's primary shortcut modifier, read once at startup.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -34,11 +37,21 @@ pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary, wo
     if let Some(description) = &made.attribute.description {
         let id = format!("skein-ui-description-{}", made.id.0);
         let core = crate::page::semantic_mut(&mut e);
-        core.set("aria-describedby", &id);
+        if made.attribute.role != Role::Disclosure {
+            core.set("aria-describedby", &id);
+        }
         let mut words = Element::new("span");
         words.set("id", &id);
+        if made.attribute.role == Role::Disclosure {
+            words.text(b" ");
+        }
         words.text(description);
-        if [Role::Item, Role::Cell, Role::ColumnHeader, Role::RowHeader].contains(&made.attribute.role) {
+        if made.attribute.role == Role::Disclosure {
+            match core.children.first_mut().expect("disclosure has a summary") {
+                Child::Element(summary) => summary.append(words),
+                Child::Text(_) => unreachable!("summary is an element"),
+            }
+        } else if [Role::Item, Role::Cell, Role::ColumnHeader, Role::RowHeader].contains(&made.attribute.role) {
             core.append(words);
         } else if e.tag.is_empty() {
             e.append(words);

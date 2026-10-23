@@ -797,3 +797,46 @@ fn setting_then_clearing_a_placeholder_updates_its_attributes() {
         }
     }
 }
+
+fn described_disclosure(builder: &mut Builder, name: &[u8], description: &[u8]) {
+    main(builder);
+    builder.open(Role::Disclosure);
+    builder.name(name);
+    builder.description(description);
+    builder.open(Role::Paragraph);
+    builder.text(Run::Plain, b"Child");
+    builder.close();
+    builder.close();
+    end(builder);
+}
+
+#[test]
+fn disclosure_attribute_patches_keep_the_summary_before_its_children() {
+    for (name, description, expected, expected_summary) in [
+        (
+            b"Old".as_slice(),
+            b"New help".as_slice(),
+            r#"<div><main data-node="2"><details data-node="3"><summary>Old<span id="skein-ui-description-3"> New help</span></summary><p data-node="4"><span data-node="5">Child</span></p></details></main></div>"#,
+            r#"<details data-node="3"><summary>Old<span id="skein-ui-description-3"> New help</span></summary></details>"#,
+        ),
+        (
+            b"New".as_slice(),
+            b"Old help".as_slice(),
+            r#"<div><main data-node="2"><details data-node="3"><summary>New<span id="skein-ui-description-3"> Old help</span></summary><p data-node="4"><span data-node="5">Child</span></p></details></main></div>"#,
+            r#"<details data-node="3"><summary>New<span id="skein-ui-description-3"> Old help</span></summary></details>"#,
+        ),
+    ] {
+        let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+        page.apply(&fixtures::patches(&mut view, 0, |b| described_disclosure(b, b"Old", b"Old help")), &mut Vec::new());
+        page.apply(&fixtures::patches(&mut view, 1, |b| described_disclosure(b, name, description)), &mut ops);
+        assert_eq!(page.html(), expected);
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Op::Attributes { node, element } => {
+                assert_eq!(*node, NodeId(3));
+                assert_eq!(crate::dom::print(element), expected_summary);
+            }
+            op => panic!("expected disclosure attributes, got {op:?}"),
+        }
+    }
+}

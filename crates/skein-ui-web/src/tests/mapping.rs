@@ -177,6 +177,11 @@ const PROPERTIES: &[(Role, Property, &str)] = &[
         Property::Description,
         r#"<td data-node="1" aria-describedby="skein-ui-description-1"><span id="skein-ui-description-1">Help &amp; &lt;b&gt;</span></td>"#,
     ),
+    (
+        Role::Disclosure,
+        Property::Description,
+        r#"<details data-node="1"><summary><span id="skein-ui-description-1"> Help &amp; &lt;b&gt;</span></summary></details>"#,
+    ),
     (Role::TextField, Property::Entry(skein_ui::EntryKind::Text), r#"<input data-node="1" type="text">"#),
     (Role::TextField, Property::Entry(skein_ui::EntryKind::Number), r#"<input data-node="1" type="number">"#),
     (Role::TextField, Property::Entry(skein_ui::EntryKind::Email), r#"<input data-node="1" type="email">"#),
@@ -437,4 +442,15 @@ fn browser_roles_map_back_to_roles_that_find_them() {
     assert_eq!(person(b"textbox", false), Some(Role::TextField));
     assert_eq!(person(b"textbox", true), Some(Role::TextArea));
     assert_eq!(person(b"article", false), None);
+}
+
+#[test]
+fn a_disclosures_description_follows_its_name_in_the_summary() {
+    let mut made = fixtures::made(Role::Disclosure);
+    made.attribute.name = Some(b"3 tool calls".as_slice().into());
+    made.attribute.description = Some("read · grep · edit".as_bytes().into());
+    assert_eq!(
+        dom::print(&mapping::element(&made, &fixtures::look(), b"/", Primary::Control, &Words::ENGLISH)),
+        r#"<details data-node="1"><summary>3 tool calls<span id="skein-ui-description-1"> read · grep · edit</span></summary></details>"#
+    );
 }
