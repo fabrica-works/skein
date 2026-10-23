@@ -84,6 +84,9 @@ fn groups(b: &mut Builder) {
     ] {
         b.open(role);
         b.name(name);
+        if role == Role::Disclosure {
+            b.description(b"Disclosure description");
+        }
         leaf(b, Role::Paragraph, b"child");
         b.close();
     }

@@ -170,6 +170,11 @@ pub fn render(tree: &Tree, name: &[u8], status: Option<Region>, print: &mut Prin
             Some(item) => item.indent,
             None => indent.saturating_add(2),
         };
+        if n.role == Role::Row && empty_header_row(tree, index) {
+            descriptions(tree, index, end, indent, &mut print.text);
+            skip = end;
+            continue;
+        }
         match node(tree, index, indent, print) {
             Some(indent) => {
                 if n.role == Role::Item || n.role == Role::TreeItem {
@@ -180,7 +185,9 @@ pub fn render(tree: &Tree, name: &[u8], status: Option<Region>, print: &mut Prin
                 } else {
                     finish_items(tree, &mut pending, &mut print.text);
                     let described_indent = if within_item { description_indent } else { indent };
-                    descriptions(tree, index, index.saturating_add(1), described_indent, &mut print.text);
+                    if n.role != Role::Disclosure || n.name.is_none() {
+                        descriptions(tree, index, index.saturating_add(1), described_indent, &mut print.text);
+                    }
                     finish_items(tree, &mut pending, &mut print.text);
                 }
                 parents.push(Parent { end, indent }).expect("parents fit tree nodes");
@@ -225,17 +232,7 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
         | Role::Select
         | Role::Tabs
         | Role::Log
-        | Role::Drawing => {
-            if let Some(name) = &n.name {
-                start(&mut print.text, indent);
-                safe(&mut print.text, name, indent, false);
-                colon(&mut print.text, name);
-                finish(n, &mut print.text);
-                Some(indent.saturating_add(2))
-            } else {
-                Some(indent)
-            }
-        }
+        | Role::Drawing => Some(group(n, indent, &mut print.text)),
         Role::Description => Some(indent.saturating_add(2)),
         Role::Item | Role::TreeItem => {
             start(&mut print.text, indent);
@@ -303,6 +300,49 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
             None
         }
     }
+}
+fn group(n: &Node, indent: u32, out: &mut List<u8>) -> u32 {
+    if let Some(name) = &n.name {
+        start(out, indent);
+        safe(out, name, indent, false);
+        colon(out, name);
+        if n.role == Role::Disclosure
+            && let Some(description) = &n.description
+        {
+            raw(out, b" ");
+            safe(out, description, indent.saturating_add(2), false);
+        }
+        finish(n, out);
+        indent.saturating_add(2)
+    } else {
+        indent
+    }
+}
+fn empty_header_row(tree: &Tree, at: u32) -> bool {
+    let row = tree.get(at).expect("row exists");
+    let mut header = false;
+    for child in at.saturating_add(1)..at.saturating_add(row.size) {
+        let cell = tree.get(child).expect("row descendant exists");
+        if cell.role == Role::Cell || cell.role == Role::RowHeader {
+            return false;
+        }
+        if cell.role != Role::ColumnHeader {
+            continue;
+        }
+        header = true;
+        if let Some(name) = &cell.name
+            && !name.is_empty()
+        {
+            return false;
+        }
+        for index in child..child.saturating_add(cell.size) {
+            let node = tree.get(index).expect("header descendant exists");
+            if !node.text.is_empty() || node.external.is_some() {
+                return false;
+            }
+        }
+    }
+    header
 }
 fn control(tree: &Tree, at: u32, indent: u32, print: &mut Print) {
     let n = tree.get(at).expect("control exists");

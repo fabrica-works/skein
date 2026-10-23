@@ -197,13 +197,14 @@ this shell's text (ui.md, 17.1).
   | Role | Prints |
   |---|---|
   | page | its children |
-  | banner, navigation, main, complementary, content info, form, search, region, figure, dialog, disclosure | named: `NAME:` and its children indented; unnamed: its children |
+  | banner, navigation, main, complementary, content info, form, search, region, figure, dialog | named: `NAME:` and its children indented; unnamed: its children |
+  | disclosure | named: `NAME: DESCRIPTION`, then its states, and its children indented; without a description: `NAME:`; unnamed: its children |
   | heading | `#` once per level, a space, its text |
   | paragraph, text, time | its text; a time's text is its owner's words for it (ui.md, section 9) |
   | list, tree, menu | named: `NAME:` and its items indented; unnamed: its items |
   | item, tree item | `- ` before its first line, its other lines indented |
   | table | its rows, one line each |
-  | row | its cells', column headers' and row headers' texts, in order, joined by ` \| ` |
+  | row | its cells', column headers' and row headers' texts, in order, joined by ` \| `; a row whose cells are all column headers with no text prints no line; every other row prints its line, including empty data cells |
   | cell, column header, row header | its text, as its row joins it; outside a row, its text on a line of its own |
   | term | its text, then `:` |
   | description | its text, indented |
@@ -243,11 +244,17 @@ this shell's text (ui.md, 17.1).
     last two saying the form a value takes. A secret's value prints
     `(hidden)` whenever it is not empty, and never its bytes;
   - *a description:* on a line of its own after its node's line,
-    indented. The descriptions of nodes printed within another's line (a
+    indented, except a named disclosure's: after its name's colon and a
+    space, before its states, with any lines past the first at its
+    children's indentation, and never repeated on a line of its own.
+    An unnamed disclosure and every other role keep the separate line.
+    The descriptions of nodes printed within another's line (a
     row's cells, the nodes of an item's or a heading's text) follow that
     line, in preorder, at the same indentation. A node that prints no
-    line of its own (the page, a table, a slot, an unnamed group) prints
-    its description at its children's indentation, before them;
+    line of its own (the page, a table, a slot, an unnamed group, an
+    all-empty header row) prints its description at its children's
+    indentation, before them: an all-empty header row's descriptions
+    print at the row's indentation;
   - *a collection's count and an item's position:* `(P of C)` at the end
     of the first line of an item, a row or a tree item with a position,
     after everything else on that line: P its position, C the count of

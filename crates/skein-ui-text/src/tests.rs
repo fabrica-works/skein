@@ -44,6 +44,86 @@ fn a_name_ending_in_its_own_mark_takes_no_colon() {
     );
 }
 #[test]
+fn a_named_disclosure_prints_its_description_on_its_name_line() {
+    let tree = fixtures::page(|b| {
+        for (name, description) in [
+            (Some(b"1 tool call".as_slice()), Some(b"wait".as_slice())),
+            (Some(b"1 tool call".as_slice()), None),
+            (None, Some(b"wait".as_slice())),
+        ] {
+            b.open(Role::Disclosure);
+            if let Some(name) = name {
+                b.name(name);
+            }
+            if let Some(description) = description {
+                b.description(description);
+            }
+            fixtures::leaf(b, Role::Paragraph, b"wait");
+            b.close();
+        }
+        b.open(Role::Disclosure);
+        b.name(b"More?");
+        b.description(b"first\nnext\tline\x1b\xff");
+        b.state(skein_ui::State::Expanded);
+        fixtures::leaf(b, Role::Paragraph, b"child");
+        b.close();
+    });
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    assert_eq!(
+        print.text.as_slice(),
+        concat!(
+            "== ops == \n",
+            "1 tool call: wait\n  wait\n",
+            "1 tool call:\n  wait\n",
+            "wait\nwait\n",
+            "More? first\n  next line\u{fffd}\u{fffd} (expanded)\n  child\n",
+        )
+        .as_bytes()
+    );
+}
+#[test]
+fn an_all_empty_header_row_prints_no_line() {
+    let tree = fixtures::page(|b| {
+        for header in [b"".as_slice(), b"Name"] {
+            b.open(Role::Table);
+            b.open(Role::Row);
+            fixtures::leaf(b, Role::ColumnHeader, b"");
+            fixtures::leaf(b, Role::ColumnHeader, header);
+            b.close();
+            b.open(Role::Row);
+            fixtures::leaf(b, Role::Cell, b"left");
+            fixtures::leaf(b, Role::Cell, b"right");
+            b.close();
+            b.close();
+        }
+        b.open(Role::Region);
+        b.name(b"Indented");
+        b.open(Role::Table);
+        b.open(Role::Row);
+        b.description(b"Header description");
+        b.position(1);
+        b.state(skein_ui::State::Selected);
+        b.open(Role::ColumnHeader);
+        b.description(b"Cell description");
+        b.close();
+        fixtures::leaf(b, Role::ColumnHeader, b"");
+        b.close();
+        b.open(Role::Row);
+        fixtures::leaf(b, Role::Cell, b"");
+        fixtures::leaf(b, Role::RowHeader, b"");
+        b.close();
+        b.close();
+        b.close();
+    });
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    assert_eq!(
+        print.text.as_slice(),
+        b"== ops == \nleft | right\n | Name\nleft | right\nIndented:\n  Header description\n  Cell description\n   | \n"
+    );
+}
+#[test]
 fn a_disabled_button_prints_a_dash_not_a_number() {
     let tree = fixtures::page(|b| {
         fixtures::button(b, b"Accept", true);

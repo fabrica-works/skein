@@ -19,7 +19,7 @@ Figure:
   child
 Dialog:
   child
-Disclosure:
+Disclosure: Disclosure description
   child
 List:
   child
