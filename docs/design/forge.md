@@ -946,6 +946,9 @@ such a request costs nothing.
 | a write whose text is not UTF-8, which JSON cannot carry; nothing written | `Refused` |
 | any other `4xx` | `Refused` on a write; `InvalidAnswer` on a read |
 
+A repository gone or inaccessible loses its row at its next repository-level
+call. An absent branch or contents leaf alone keeps the row that answered.
+
 - **The plan gives the `Error`,** from what it hears (4.2). The
   component tells it how an exchange failed, `Unseen` or `Seen`, from
   skein-http's errors and its own deadlines (forge-connection.md,
@@ -957,9 +960,6 @@ such a request costs nothing.
   may have been read: it is a `Timeout`. To make that rare, an idle
   connection is closed before the forge's keep-alive timeout would
   close it (`idle`, forge-connection.md, section 7).
-
-A repository gone or inaccessible loses its row at its next repository-level
-call. An absent branch or contents leaf alone keeps the row that answered.
 
 - **One status, several meanings.** Where Forgejo answers two failures
   with one status (`405` on a merge), the decoder reads its `message`
