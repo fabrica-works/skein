@@ -3,6 +3,7 @@
 //! type through its edges, one module per area of lib.md.
 
 mod base64;
+mod buffer;
 mod bytes;
 mod containers;
 mod crypto_rng;

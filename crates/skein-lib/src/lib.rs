@@ -2,7 +2,7 @@
 //! typed handles and the slabs that issue them, bounded queues, lists, maps,
 //! sets and stacks, the per-layer deadline table, the stream vocabulary and
 //! the intake that meets its demands, a held buffer serving a stream,
-//! a reader and a writer for sized bytes
+//! a reader and a writer for sized bytes, a reusable bounded byte buffer,
 //! and the decimal digits of a count to write with them, monotonic and wall
 //! time, randomness, the tokens that cross layer boundaries, and the
 //! environment a step reads, and keyless state digests.
@@ -17,6 +17,7 @@ extern crate alloc;
 
 pub mod base64;
 mod btree;
+mod buffer;
 pub mod bytes;
 mod crypto_rng;
 mod deadlines;
@@ -44,6 +45,7 @@ mod time;
 mod token;
 mod writer;
 
+pub use buffer::Buffer;
 pub use crypto_rng::CryptoRng;
 pub use deadlines::Deadlines;
 pub use decimal::Decimal;

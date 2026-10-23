@@ -61,7 +61,7 @@ fn a_tuple_hashed_whole_digests_its_fields_in_order() {
 
 use crate::stream::Read;
 use crate::{
-    CryptoRng, Deadlines, Duration, Intake, Journal, JournalLimits, JournalRoom, List, Map, Queue, Released,
+    Buffer, CryptoRng, Deadlines, Duration, Intake, Journal, JournalLimits, JournalRoom, List, Map, Queue, Released,
     RequestLimits, RequestTable, Secret, Set, Slab, Stack, Time,
 };
 
@@ -195,6 +195,20 @@ fn an_intake_digests_the_bytes_it_holds_alone() {
     assert_eq!(state_digest(&first), state_digest(&second));
     let mut other = Intake::with_capacity(16);
     assert_eq!(other.append(b"abd"), Ok(()));
+    assert_ne!(state_digest(&first), state_digest(&other));
+}
+
+#[test]
+fn a_buffer_digests_the_bytes_it_holds_alone() {
+    let mut first = Buffer::with_capacity(4);
+    assert_eq!(first.put(b"abz"), Ok(()));
+    first.truncate(2);
+    assert_eq!(first.put(b"c"), Ok(()));
+    let mut second = Buffer::with_capacity(16);
+    assert_eq!(second.put(b"abc"), Ok(()));
+    assert_eq!(state_digest(&first), state_digest(&second));
+    let mut other = Buffer::with_capacity(16);
+    assert_eq!(other.put(b"abd"), Ok(()));
     assert_ne!(state_digest(&first), state_digest(&other));
 }
 
