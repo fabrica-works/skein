@@ -327,7 +327,9 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 // Owner/framing/answer = 2*16 + (3+9) + 16 + Answered 224 = 284.
 // Total = 2*767507 + connection index 288 + slab 2*1472 + 480584
 // + 138608 + 2*83600 + 3800 + 1120 + 489769 + 284 = 2_819_611.
-const FIXTURE_HEAP: u64 = 2_819_611;
+// Create's CreateFile widens the Forgejo call a Waiting slot and a call slot
+// hold, 552 -> 616 B: 2 slab slots + 1 call slot = 3*64 = 192 B (2_819_803).
+const FIXTURE_HEAP: u64 = 2_819_803;
 
 // Complete GitHub fixture: the same common limits and owned bytes. Its
 // decoder's fixed size is 2392, including the 96-byte GraphQL pull builder,
@@ -381,12 +383,12 @@ const FIXTURE_HEAP: u64 = 2_819_611;
 // held hint/text/body = 88+128+1042.
 // Puller payload = 28_913; its inline state grows GitHub 504 -> 776.
 // Checked total: 3_912_193 + 272 + 28_913 = 3_941_378.
-const GITHUB_FIXTURE_HEAP: u64 = 3_941_378;
+const GITHUB_FIXTURE_HEAP: u64 = 3_941_474;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 552 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
-const FORGEJO_CALL_SLOT: u64 = 151_240; // 552 + 16 + 1536 + 65536 + 83600.
+const FORGEJO_CALL_SLOT: u64 = 151_304; // 616 + 16 + 1536 + 65536 + 83600.
 const GITHUB_CALL_SLOT: u64 = 278_010; // 552 + 16 + 1536 + 65536 + 210370.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
@@ -429,7 +431,11 @@ fn a_github_forge_pays_its_app_share() {
     assert_eq!(limits::github_call_heap(&fixtures::limits(), &fixtures::shared()), Some(210_370));
     assert_eq!(size_of::<crate::installations::GitHub>(), 776);
     assert_eq!(limits::puller_heap(&fixtures::limits()), Some(28_913));
-    assert_eq!(3_912_193_u64.checked_add(272).expect("inline puller").checked_add(28_913), Some(GITHUB_FIXTURE_HEAP));
+    // CreateFile's wider Forgejo call adds 96 B to the GitHub fixture (measured).
+    assert_eq!(
+        3_912_193_u64.checked_add(96).expect("wider call").checked_add(272).expect("inline puller").checked_add(28_913),
+        Some(GITHUB_FIXTURE_HEAP)
+    );
     let settings = fixtures::github_settings();
     assert_eq!(limits::Forges::of(&settings), Some(GITHUB));
     assert_eq!(
