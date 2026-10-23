@@ -471,7 +471,8 @@ bound, revisions, markers and malformed answers; and GitHub's:
   token answers `403` "Resource not accessible by integration", with
   `x-accepted-github-permissions: issues=write; pull_requests=write`
   (`token-narrowed-creates-not-edits`). The dialect mints the same tokens;
-  its mint decoder reads token and expiry alone.
+  its mint decoder reads token, expiry and the contents and pull_requests
+  levels (8.2).
 - **So the git token is not a boundary:** for its hour it can open
   issues as the bot, though it is refused an edit (observed 2026-10-20).
   The narrowing stays; a second App would close the gap, and that is the

@@ -703,3 +703,29 @@ fn github_full_mint_replaces_levels_and_contents_mint_preserves_them() {
     h.answer(FORGE, &mint(FULL, EXPIRES));
     assert_eq!(h.component.test_github().rows.get(&1).expect("installation").permissions, Levels::NONE);
 }
+#[test]
+fn github_bot_permission_waits_for_the_first_full_mint() {
+    use skein_forge::api::{Answer, Op, Permission, Read};
+    let mut h = at(Stage::Full);
+    // Before the first full mint the kept levels are nothing; the bot's answer waits for them.
+    h.call(1, fixtures::REPO, Op::Read(Read::Permission { user: 9 }));
+    h.run(Duration::ZERO);
+    assert!(h.answered(1).is_none());
+    let full = br#"{"token":"artificial-full","expires_at":"1970-01-01T01:00:00Z","permissions":{"contents":"write","pull_requests":"write"}}"#;
+    h.answer(FORGE, &fixtures::response(201, full));
+    contents(&mut h);
+    h.answer(FORGE, &fixtures::ok(VIEWER));
+    h.run(Duration::ZERO);
+    assert!(h.answered(1).is_none());
+    h.connected(FORGE);
+    h.run(Duration::ZERO);
+    let lines = h.request_lines(FORGE);
+    assert_eq!(lines.as_slice().last().expect("repository read").as_ref(), b"GET /repositories/1 HTTP/1.1");
+    h.answer(FORGE, &fixtures::ok(fixtures::GITHUB_REPOSITORY));
+    h.run(Duration::ZERO);
+    let answer = h.answered(1).expect("call terminal");
+    assert_eq!(answer.result, Ok(Answer::Permission(Permission::Write)));
+    for line in h.request_lines(FORGE).as_slice() {
+        assert!(!contains(line, b"/collaborators/"));
+    }
+}
