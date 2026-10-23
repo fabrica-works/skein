@@ -106,13 +106,20 @@ def offered(request: dict) -> list[str]:
         result = []
         for tool in tools:
             if tool.get('type') == 'namespace':
-                result.extend(names(tool.get('tools', []), tool['name']))
+                inner = None if tool['name'] == 'functions' else tool['name']
+                result.extend(names(tool.get('tools', []), inner))
             else:
                 name = tool.get('name', tool.get('type'))
                 if type(name) is str:
                     result.append((namespace + '.' if namespace else '') + name)
         return result
-    return sorted(set(names(request.get('tools', []))))
+    # A pinned catalog's model is offered its tools as `additional_tools` input
+    # items, the plain functions under the `functions` namespace.
+    tools = list(request.get('tools', []))
+    for item in request.get('input', []):
+        if type(item) is dict and item.get('type') == 'additional_tools':
+            tools.extend(item.get('tools', []))
+    return sorted(set(names(tools)))
 
 
 def admitted(offered, tools) -> list[str]:

@@ -78,6 +78,13 @@ class Script(unittest.TestCase):
         self.assertEqual(script.admitted(names + ['invented', 'mcp__other.ledger'], []),
                          ['invented', 'mcp__lab.ledger', 'mcp__other.ledger'])
 
+    def test_offered_reads_additional_tools_items(self):
+        # Codex 0.162.1 on the pinned catalog's gpt-6-luna, from a rehearsal's provisioning request.
+        request = json.loads((Path(__file__).parent / 'vectors/responses-request-additional-tools.json').read_bytes())
+        self.assertNotIn('tools', request)
+        self.assertEqual(script.offered(request), ['exec_command', 'list_mcp_resource_templates', 'list_mcp_resources',
+                                                   'mcp__lab.ledger', 'read_mcp_resource', 'write_stdin'])
+
 
 class ProvisionLife(unittest.TestCase):
     def state(self):
