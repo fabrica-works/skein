@@ -176,7 +176,8 @@ named by its digest.
     the run, so they are identity, not the machine's provenance;
   - `driver`, null for an experiment without one, or the host's
     `program` (`{"path", "sha256", "version"}`), its `model`, its
-    `effort`, and its `config`, the configuration the runner gives it
+    `effort`, its `catalog` (`{"path", "sha256"}`) when the settings pin
+    one (6.1), and its `config`, the configuration the runner gives it
     (6.1) as JSON: its arguments, permission profile, disabled features,
     server and schema, with each run's own paths left as their template
     names;
@@ -925,6 +926,16 @@ documentation.
   client over stdio; no shared daemon owns any part of the run. The
   lab's settings name its program, model and effort; the key holds its
   version and digest, and its configuration (2.3).
+- **Its model catalog** may be pinned in the settings, as a file and its
+  digest, and is then keyed: the runner refuses a missing file, a
+  differing digest, or a catalog whose driver-model entry is not
+  `tool_mode: null`, and names the file to the host
+  (`model_catalog_json`). A catalog that marks the model code-mode-only
+  leaves it one tool, `exec`, whose calls run nested tools in a
+  JavaScript isolate; the code-mode host stays off, so `exec` fails
+  closed, because calls inside it make no items: the audit and
+  `driver_actions` would be blind to them. Admitting code mode is the
+  user's call.
 - **Three records of configuration:** the settings select the program,
   model and effort. The runner's version adapter derives the host's
   configuration and expected inventory from those settings and the
