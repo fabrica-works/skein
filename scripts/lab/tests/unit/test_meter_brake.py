@@ -267,11 +267,32 @@ class Windows(unittest.TestCase):
             self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(five, week))), 50, 75),
                              (1, 'refused: ' + line + seen))
 
+    def test_brake_week_alone_admits_and_a_reported_five_hour_window_binds(self):
+        # A plan reporting the week alone (promax, read 2026-10-23) has no five-hour share to keep.
+        week = dict(limitId='codex', planType='promax',
+                    primary=dict(windowDurationMins=10080, usedPercent=1, resetsAt=1793382149), secondary=None)
+        self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=week)), 50, 75), (0, 'go: five-hour none, week 1%/75%'))
+        week['primary']['usedPercent'] = 75
+        self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=week)), 50, 75),
+                         (1, 'refused: week 75%/75% (seen: limitId codex, planType promax, '
+                             'primary 10080 min 75% resets 1793382149, secondary none)'))
+        self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(60, 3))), 50, 75),
+                         (1, 'refused: five-hour 60%/50% (seen: primary 300 min 60% resets 100, '
+                             'secondary 10080 min 3% resets ?)'))
+        self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=dict(rateLimitReachedType='rate_limit_reached',
+                                                                          primary=week['primary']))), 50, 75)[0], 1)
+
     def test_brake_missing_reached_error_and_malformed(self):
         none = ' (seen: primary none, secondary none)'
-        for response, line in ((dict(result=dict(rateLimits=dict(primary=None, secondary=None))), 'five-hour window missing' + none),
+        for response, line in ((dict(result=dict(rateLimits=dict(primary=None, secondary=None))), 'week window missing' + none),
                                (dict(result=dict(rateLimits=dict(primary=snapshot()['primary']))),
                                 'week window missing (seen: primary 300 min 12% resets 100, secondary none)'),
+                               (dict(result=dict(rateLimits=dict(primary=dict(windowDurationMins=60, usedPercent=1),
+                                                                 secondary=snapshot()['secondary']))),
+                                'window of unknown duration or use (seen: primary 60 min 1% resets ?, '
+                                'secondary 10080 min 3% resets ?)'),
+                               (dict(result=dict(rateLimits=dict(primary=dict(windowDurationMins=10080, usedPercent=None)))),
+                                'window of unknown duration or use (seen: primary 10080 min ?% resets ?, secondary none)'),
                                (dict(result=dict(rateLimits=dict(rateLimitReachedType='rate_limit_reached'))), 'rate_limit_reached' + none),
                                (dict(error=dict(message='no account')), 'rateLimits: no account'),
                                (dict(result={}), 'rateLimits missing'),
@@ -287,7 +308,11 @@ class Windows(unittest.TestCase):
                                (dict(result=dict(rateLimits=dict(
                                    primary=dict(windowDurationMins=None, usedPercent=None, resetsAt=None),
                                    secondary=dict(windowDurationMins=10080, usedPercent=3, resetsAt=7)))),
-                                'five-hour window missing (seen: primary ? min ?% resets ?, secondary 10080 min 3% resets 7)')):
+                                'window of unknown duration or use (seen: primary ? min ?% resets ?, secondary 10080 min 3% resets 7)'),
+                               (dict(result=dict(rateLimits=dict(
+                                   primary=dict(windowDurationMins=None, usedPercent=5, resetsAt=None),
+                                   secondary=None))),
+                                'window of unknown duration or use (seen: primary ? min 5% resets ?, secondary none)')):
             with self.subTest(response=response):
                 self.assertEqual(codex.brake_fold(response, 50, 75), (1, 'refused: ' + line))
 

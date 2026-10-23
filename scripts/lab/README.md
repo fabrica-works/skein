@@ -100,9 +100,12 @@ It sends experimental `initialize`, `initialized`, then one
 timeout. It creates no thread or turn and reads no account file itself.
 Its effects are in `runner/brake_codex.py`; `codex.brake_fold` makes the pure
 decision. Windows are identified by duration, 300 and 10080 minutes,
-regardless of primary/secondary order. Both must be present and strictly below
-their shares, with no reached type or RPC error. Its final line is
-`go: five-hour U%/S%, week U%/S%` or `refused: WHY`. A refusal over an answer
+regardless of primary/secondary order. The week must be present, and the
+five-hour window when the account reports one (a plan may report the week
+alone); each strictly below its share, with no reached type, no window of
+another or a null duration or use, and no RPC error. Its final line is
+`go: five-hour U%/S%, week U%/S%` (`five-hour none` when not reported) or
+`refused: WHY`. A refusal over an answer
 names what it read, `(seen: ...)`: the snapshot's `limitId` and `planType`,
 and each slot's minutes, used percent and `resetsAt` as given, rate-limit data
 alone (never the account's id). The lock keeps it from

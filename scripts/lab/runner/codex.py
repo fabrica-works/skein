@@ -267,7 +267,7 @@ def brake_seen(snapshot):
 
 
 def brake_fold(response, five_hour, week):
-    """Admit only an account snapshot containing both windows below their shares."""
+    """Admit only a snapshot whose week, and five-hour window when reported, are below their shares."""
     if 'error' in response:
         error = response['error']
         return 1, 'refused: rateLimits: ' + str(error.get('message', error) if type(error) is dict else error)
@@ -282,10 +282,16 @@ def brake_fold(response, five_hour, week):
         rows = windows(snapshot)
     except (Refused, AttributeError):
         return 1, 'refused: rateLimits malformed' + seen
+    if any(r['minutes'] not in (300, 10080) or r['used_percent'] is None for r in rows):
+        return 1, 'refused: window of unknown duration or use' + seen
     found = []
     for minutes, name, share in ((300, 'five-hour', five_hour), (10080, 'week', week)):
         row = next((r for r in rows if r['minutes'] == minutes), None)
-        if row is None or row['used_percent'] is None:
+        # The week is required; a plan that reports no five-hour window has no share to keep.
+        if row is None and name == 'five-hour':
+            found.append('five-hour none')
+            continue
+        if row is None:
             return 1, 'refused: ' + name + ' window missing' + seen
         text = name + ' ' + str(row['used_percent']) + '%/' + str(share) + '%'
         if row['used_percent'] >= share:
