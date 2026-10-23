@@ -612,20 +612,13 @@ impl Component {
                             return;
                         }
                         *announced = true;
-                    } else {
-                        match source {
-                            Source::HandedIn => {
-                                if env.now >= *lead && !*announced && !*rejected {
-                                    *announced = true;
-                                    up.push(Event::Expiring {
-                                        account: number(&self.names, account),
-                                        generation: record.generation,
-                                    });
-                                    return;
-                                }
-                            }
-                            Source::SignIn { .. } => {}
-                        }
+                    } else if record.refresh_token.is_none() && env.now >= *lead && !*announced && !*rejected {
+                        *announced = true;
+                        up.push(Event::Expiring {
+                            account: number(&self.names, account),
+                            generation: record.generation,
+                        });
+                        return;
                     }
                     if *due
                         && match earliest {
@@ -1150,7 +1143,7 @@ impl Component {
             let next = match self.accounts.get(account).expect("account state") {
                 State::Record { lead, earliest, expiry, held, announced, rejected, attempted, due, record, .. } => {
                     match self.sources.get(account).expect("account source") {
-                        Source::HandedIn => {
+                        Source::HandedIn | Source::SignIn { .. } if record.refresh_token.is_none() => {
                             if !*announced && !*rejected {
                                 Some(*lead)
                             } else if *held {
@@ -1159,6 +1152,7 @@ impl Component {
                                 None
                             }
                         }
+                        Source::HandedIn => None,
                         Source::SignIn { .. } => {
                             let interested = *held || self.wanted(account);
                             if interested

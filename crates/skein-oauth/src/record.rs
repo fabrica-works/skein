@@ -82,11 +82,39 @@ pub fn rotate(
     common::bounded(&previous.refresh_token, limits.token_bytes)?;
     common::text(&previous.refresh_token)?;
     validate_refresh_additions(previous, limits)?;
+    complete(
+        SavedToken {
+            key: previous.key,
+            generation: previous.generation,
+            access_token: Box::new([]),
+            refresh_token: Some(previous.refresh_token.clone()),
+            metadata: None,
+            expires_at: wall,
+            issued_client_id: previous.issued_client_id.clone(),
+            granted_scopes: previous.granted_scopes.clone(),
+            subject: previous.subject.clone(),
+            id_token: previous.id_token.clone(),
+            earliest_refresh_at: None,
+        },
+        response,
+        claim,
+        wall,
+        limits,
+    )
+}
+/// Completes a sign-in or refresh candidate with the answer's tokens and expiry.
+pub(crate) fn complete(
+    mut candidate: SavedToken,
+    response: &TokenResponse,
+    claim: Option<&ClaimSelector>,
+    wall: Wall,
+    limits: &Limits,
+) -> Result<SavedToken, DecodeError> {
     documents::validate_response(response, limits)?;
-    let generation = previous.generation.checked_add(1).ok_or(DecodeError::TooLarge)?;
+    candidate.generation = candidate.generation.checked_add(1).ok_or(DecodeError::TooLarge)?;
     let nanos = response.expires_in.checked_mul(1_000_000_000).ok_or(DecodeError::TooLarge)?;
     let mut expires_at = Wall::from_nanos(wall.as_nanos().checked_add(nanos).ok_or(DecodeError::TooLarge)?);
-    let metadata = match claim {
+    candidate.metadata = match claim {
         None => None,
         Some(selector) => {
             let claims = jwt::read_claims(&response.access_token, selector, wall, limits)?;
@@ -96,23 +124,11 @@ pub fn rotate(
             Some(claims.metadata)
         }
     };
-    let refresh_token = match &response.refresh_token {
-        Some(refresh) => refresh.clone(),
-        None => previous.refresh_token.clone(),
-    };
-    let candidate = SavedToken {
-        key: previous.key,
-        generation,
-        access_token: response.access_token.clone(),
-        refresh_token: Some(refresh_token),
-        metadata,
-        expires_at,
-        issued_client_id: previous.issued_client_id.clone(),
-        granted_scopes: response.scope.clone().or(previous.granted_scopes.clone()),
-        subject: previous.subject.clone(),
-        id_token: previous.id_token.clone(),
-        earliest_refresh_at: response.earliest_refresh_at,
-    };
+    candidate.expires_at = expires_at;
+    candidate.access_token.clone_from(&response.access_token);
+    candidate.refresh_token = response.refresh_token.clone().or(candidate.refresh_token);
+    candidate.granted_scopes = response.scope.clone().or(candidate.granted_scopes);
+    candidate.earliest_refresh_at = response.earliest_refresh_at;
     validate(&candidate, limits)?;
     let _length = measured(&candidate, limits)?;
     Ok(candidate)

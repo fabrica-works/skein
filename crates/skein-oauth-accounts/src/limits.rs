@@ -21,7 +21,7 @@ pub struct Limits {
     /// Public redirect listeners admitted at once; zero permits only confidential sign-ins.
     pub listeners: u32,
     pub server: skein_http::server::Limits,
-    /// How long before expiry a held record refreshes or a handed-in one announces Expiring.
+    /// How long before expiry a held record refreshes or an access-only one announces Expiring.
     pub refresh_lead: Duration,
     pub client: ClientLimits,
     pub http: skein_http::client::Limits,

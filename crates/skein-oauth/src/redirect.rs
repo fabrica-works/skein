@@ -59,7 +59,11 @@ pub fn validate_registration(registration: &Registration, limits: &ClientLimits,
         {
             return Err(Failure::InvalidRedirect);
         }
-        if registration.client_secret.is_some() && !registration.redirect_uri.starts_with(b"https://") {
+        if registration.client_secret.is_some()
+            && (varying_port(registration)
+                || (!registration.redirect_uri.starts_with(b"https://")
+                    && parse_redirect(&registration.redirect_uri, false).is_err()))
+        {
             return Err(Failure::InvalidRedirect);
         }
     }

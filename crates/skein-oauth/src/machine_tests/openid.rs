@@ -17,7 +17,7 @@ fn registration_for_keys(direct: bool) -> Registration {
     registration.terms = Some(additions);
     registration
 }
-fn sign_in(registration: Registration) -> Event {
+pub(super) fn sign_in(registration: Registration) -> Event {
     Event::SignIn {
         registration,
         key: 7,
@@ -344,8 +344,11 @@ struct RetryOutcome {
 }
 
 fn redeeming() -> (Client, HttpRequest) {
+    redeeming_with(&one_key())
+}
+fn redeeming_with(keys: &[u8]) -> (Client, HttpRequest) {
     let (mut client, get) = fetching(true);
-    let _visit = step(&mut client, answered(get.id, 200, &one_key(), 2));
+    let _visit = step(&mut client, answered(get.id, 200, keys, 2));
     let event = Event::Redirected {
         client_id: None,
         uri: boxed(b"http://127.0.0.1:2345/callback"),
@@ -405,4 +408,22 @@ fn a_refresh_keeps_the_sign_ins_id_token_unchecked() {
     };
     assert!(record.subject.as_deref() == Some(b"user-42"));
     assert!(record.id_token.as_deref() == Some(b"prior-id"));
+}
+
+#[test]
+fn an_openid_sign_in_without_refresh_keeps_its_identity() {
+    use super::access_only_openid::{ANSWER, KEY_SET};
+    let (mut client, post) = redeeming_with(KEY_SET);
+    let response = decode_response(&Json::from_bytes(ANSWER, &limits().document).expect("answer"), &limits().document)
+        .expect("tokens");
+    let Some(Request::Tokens { record, .. }) = step(&mut client, answered(post.id, 200, ANSWER, 4)) else {
+        panic!("tokens expected")
+    };
+    assert_eq!((record.key, record.generation, record.expires_at), (7, 1, wall(34)));
+    assert!(record.refresh_state().is_none());
+    assert!(record.access_token.as_ref() == b"access");
+    assert!(record.subject.as_deref() == Some(b"user-42"));
+    assert!(record.id_token.is_some() && record.id_token == response.id_token);
+    let encoded = encode_record(&record, &limits().document).expect("encode");
+    assert!(decode_record(&encoded, &limits().document).expect("decode") == record);
 }

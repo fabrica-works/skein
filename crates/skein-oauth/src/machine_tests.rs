@@ -736,3 +736,78 @@ mod issued;
 
 mod openid;
 mod revoke;
+
+#[test]
+fn confidential_redirects_admit_https_and_fixed_loopback() {
+    for uri in [
+        b"http://127.0.0.1:8080/cb".as_slice(),
+        b"http://[::1]:8080/cb",
+        b"http://localhost:8080/cb",
+        b"https://app.example.com/cb",
+    ] {
+        let mut registration = registration(false, WireFormat::Form);
+        registration.redirect_uri = boxed(uri);
+        assert_eq!(validate_registration(&registration, &limits(), true), Ok(()), "{uri:?}");
+    }
+}
+
+#[test]
+fn confidential_redirects_refuse_loopback_neighbours_and_plain_http() {
+    for uri in [
+        b"http://localhost.:8080/cb".as_slice(),
+        b"http://localhost.evil:8080/cb",
+        b"http://localhost:0/cb",
+        b"http://127.0.0.1/cb",
+        b"http://127.0.0.1:8080",
+        b"http://app.example.com/cb",
+    ] {
+        let mut registration = registration(false, WireFormat::Form);
+        registration.redirect_uri = boxed(uri);
+        assert_eq!(validate_registration(&registration, &limits(), true), Err(Failure::InvalidRedirect), "{uri:?}");
+    }
+}
+
+#[test]
+fn confidential_redirects_never_vary() {
+    for uri in [b"http://127.0.0.1:8080/cb".as_slice(), b"https://app.example.com/cb"] {
+        let mut registration = registration(false, WireFormat::Form);
+        registration.redirect_uri = boxed(uri);
+        registration.terms = Some(terms::terms(false, true));
+        assert_eq!(validate_registration(&registration, &limits(), true), Err(Failure::InvalidRedirect), "{uri:?}");
+    }
+}
+
+#[test]
+fn a_sign_in_without_refresh_completes_and_round_trips() {
+    let mut client = Client::new(limits()).expect("client");
+    let mut sign_in = openid::sign_in(registration(true, WireFormat::Form));
+    if let Event::SignIn { nonce, .. } = &mut sign_in {
+        *nonce = None;
+    }
+    let _visit = step(&mut client, sign_in);
+    let post = request(step(
+        &mut client,
+        Event::Redirected {
+            client_id: None,
+            uri: boxed(b"http://127.0.0.1:2345/callback"),
+            state: state(),
+            code: Some(boxed(b"code")),
+            error: None,
+            now: time(2),
+        },
+    ));
+    let body = br#"{"access_token":"access","expires_in":30,"scope":"read","earliest_refresh_at":20}"#;
+    let Some(Request::Tokens { record, .. }) = step(&mut client, answered(post.id, 200, body, 3)) else {
+        panic!("tokens expected")
+    };
+    assert_eq!((record.key, record.generation, record.expires_at), (7, 1, wall(33)));
+    assert!(record.access_token.as_ref() == b"access");
+    assert!(record.refresh_state().is_none());
+    assert!(record.subject.is_none() && record.id_token.is_none());
+    assert!(record.granted_scopes.as_deref() == Some(b"read"));
+    assert_eq!(record.earliest_refresh_at, Some(wall(20)));
+    let encoded = encode_record(&record, &limits().document).expect("encode");
+    assert!(decode_record(&encoded, &limits().document).expect("decode") == record);
+}
+
+mod access_only_openid;

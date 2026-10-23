@@ -51,6 +51,15 @@ impl Judge {
                 Story::OpenIdAgain | Story::Return(super::Return::After) => {
                     assert_eq!(client.facts.iter().filter(|fact| matches!(fact, Fact::Visit)).count(), SIGN_INS);
                     assert!(client.facts.contains(&Fact::SignedIn(SECOND_GENERATION)));
+                    if self.story == Story::OpenIdAgain {
+                        assert!(client.records.iter().all(|record| record.refresh_token.is_none()));
+                        let posts = issuer
+                            .observations()
+                            .iter()
+                            .filter(|event| matches!(event, peer::Observation::Post { .. }))
+                            .count();
+                        assert_eq!(posts, SIGN_INS, "only sign-in token requests");
+                    }
                     document_visits(issuer.observations(), SIGN_INS);
                 }
                 Story::IssuedClientId => {

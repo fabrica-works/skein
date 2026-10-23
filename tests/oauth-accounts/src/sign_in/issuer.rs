@@ -62,10 +62,12 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
                         },
                         bytes::copy_of,
                     ),
-                    refresh_token: Some(if large {
-                        vec![if access == b'a' { b'r' } else { b't' }; 256].into_boxed_slice()
-                    } else {
-                        bytes::copy_of(refresh)
+                    refresh_token: (story != Story::OpenIdAgain).then(|| {
+                        if large {
+                            vec![if access == b'a' { b'r' } else { b't' }; 256].into_boxed_slice()
+                        } else {
+                            bytes::copy_of(refresh)
+                        }
                     }),
                     expires_in: 30,
                     scope: (story == Story::RequiredScopes).then(|| bytes::copy_of(b"read")),

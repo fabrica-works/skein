@@ -180,3 +180,49 @@ fn two_subjects_share_an_address_in_one_world() {
         let _ = client_step(&mut client, oauth::Event::Reset);
     }
 }
+
+#[test]
+fn a_google_like_sign_in_keeps_an_access_only_identity() {
+    for confidential in [false, true] {
+        let mut registration = openid_registration();
+        registration.scope = boxed(b"openid email profile");
+        if confidential {
+            registration.client_secret = Some(boxed(b"test-secret"));
+        }
+        let mut additions = skein_oauth_world::issued(&[]);
+        additions.openid = Some(fake::OpenId {
+            issuer: boxed(b"https://issuer.example"),
+            key_set_url: boxed(b"https://issuer.example/keys"),
+            subject: boxed(b"user-42"),
+            lifetime: Duration::from_secs(30),
+            header_kid: true,
+            fault: None,
+        });
+        let mut issuer = skein_oauth_world::configured_issuer(&registration, Some(additions));
+        issuer
+            .sign_in_as(fake::Account {
+                subject: boxed(b"user-42"),
+                email: Some(fake::Email { address: boxed(b"person@example.test"), verified: true }),
+                name: Some(boxed(b"Test Person")),
+            })
+            .expect("account");
+        let mut plan = success(b"access", None, 0);
+        if let fake::Body::Token(token) = &mut plan.body {
+            token.scope = Some(boxed(b"openid email profile"));
+        }
+        issuer.queue(plan).expect("plan");
+        let mut client = oauth::Client::new(client_limits()).expect("client");
+        let post = openid_post(&mut client, &mut issuer, registration);
+        let answer =
+            response(fake_step(&mut issuer, fake::Event::Post { request: post, now: time(2), wall: wall(100) }));
+        let json = oauth::Json::from_bytes(&answer.body, &documents()).expect("answer");
+        let id_token = oauth::decode_response(&json, &documents()).expect("token answer").id_token;
+        let record = record(client_step(&mut client, oauth::Event::Http(answer)));
+        assert!(record.refresh_token.is_none());
+        assert!(record.subject.as_deref() == Some(b"user-42"));
+        assert!(record.id_token.is_some() && record.id_token == id_token);
+        assert!(record.granted_scopes.as_deref() == Some(b"openid email profile"));
+        let encoded = oauth::encode_record(&record, &documents()).expect("encode");
+        assert!(oauth::decode_record(&encoded, &documents()).expect("decode") == record);
+    }
+}

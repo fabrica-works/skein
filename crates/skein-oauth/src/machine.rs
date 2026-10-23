@@ -527,20 +527,32 @@ impl Client {
 
     fn record(&self, exchange: &Exchange, response: &TokenResponse, wall: Wall) -> Result<SavedToken, Failure> {
         let prior = match &exchange.grant {
-            Grant::Refresh { prior } => prior.clone(),
+            Grant::Refresh { prior } => {
+                return match rotate(
+                    prior,
+                    response,
+                    exchange.registration.metadata_claim.as_ref(),
+                    wall,
+                    &self.limits.document,
+                ) {
+                    Ok(record) => Ok(record),
+                    Err(error) => Err(admit(error)),
+                };
+            }
             Grant::Revoke { .. } => return Err(Failure::Malformed),
             Grant::SignIn { key, generation, .. } => {
                 let identity = match self.identity(exchange, response, wall) {
                     Ok(value) => value,
                     Err(check) => return Err(Failure::Unverified { check }),
                 };
-                let Some(refresh) = &response.refresh_token else {
-                    return Err(Failure::Malformed);
-                };
-                RefreshState {
+                SavedToken {
                     key: *key,
                     generation: *generation,
-                    refresh_token: refresh.clone(),
+                    access_token: Box::new([]),
+                    refresh_token: None,
+                    metadata: None,
+                    expires_at: wall,
+                    earliest_refresh_at: None,
                     issued_client_id: if issued_id(&exchange.registration) {
                         Some(exchange.registration.client_id.clone())
                     } else {
@@ -552,7 +564,13 @@ impl Client {
                 }
             }
         };
-        match rotate(&prior, response, exchange.registration.metadata_claim.as_ref(), wall, &self.limits.document) {
+        match crate::record::complete(
+            prior,
+            response,
+            exchange.registration.metadata_claim.as_ref(),
+            wall,
+            &self.limits.document,
+        ) {
             Ok(record) => Ok(record),
             Err(error) => Err(admit(error)),
         }

@@ -17,8 +17,8 @@ and confidential sign-in with a client secret and the web's redirect. Where a
 registration asks for them, it also covers a client id the issuer issues at
 the first sign-in (section 2.1), an OpenID ID token checked against the
 issuer's published keys (section 2.2), and revocation (section 2.3). Its
-records may also be access-only: a token obtained elsewhere, never
-refreshed. Device authorization is outside this component. The same HTTP
+records may also be access-only, never refreshed: a token obtained
+elsewhere, or a sign-in's whose issuer gave no refresh token. Device authorization is outside this component. The same HTTP
 records travel through `skein-http` as in `skein-llm`.
 
 ## 1. Boundary and entities
@@ -32,7 +32,11 @@ exchange. The endpoint binding is kept through the exchange; a redirect cannot
 choose a new token endpoint. A public client requires an already bound
 loopback listener and a redirect URI whose loopback address, port, and path
 match that listener. The confidential client has a secret supplied beside its
-registration. The caller routes the browser's redirect to the same in-progress
+registration. Its redirect URI is `https`, or `http` on loopback, written as a
+public client's is (below: `127.0.0.1`, `[::1]` or `localhost`, an explicit
+port that is not zero, and a path), for a caller that serves its sign-in on
+its own loopback address; the caller's server receives it, never a listener
+of the client's, and its port never varies. The caller routes the browser's redirect to the same in-progress
 client and checks the request's actual URI against the bound redirect URI
 before giving its query parameters to the machine. A caller using multiple
 issuers keeps each sign-in bound to its issuer and redirect; the machine never
@@ -82,7 +86,8 @@ used when it can be bound. Each sign-in is given the port its listener bound
 (section 6.5), and that port replaces the registration's for the sign-in: the
 authorization URL, the redirect's check and the code exchange all carry the
 same URI, and a redirect to any other port is refused. A redirect whose port
-does not vary is bound as written, or the sign-in fails.
+does not vary is bound as written, or the sign-in fails. A confidential
+client's redirect never varies: its registration refuses a varying port.
 
 `Client` owns only a sign-in or refresh in progress: its registration, private
 state value and optional PKCE verifier, one authorization code or prior token
@@ -118,9 +123,14 @@ would carry the entry point's client id. Any other version is unreadable.
 An **access-only record** has no refresh token. It holds a token obtained
 elsewhere and handed in by the caller, such as another program's sign-in that
 the caller may read but must not rotate: a shared refresh token, once
-rotated, would sign the other program out. An access-only record has no
-refresh state, so no refresh can be asked of it; it is lent until it expires,
-and only its source renews it (section 6.3).
+rotated, would sign the other program out. A sign-in whose token answer
+carries no refresh token, as an OpenID issuer's may for a scope without
+offline access (RFC 6749, section 5.1, makes it optional), gives an
+access-only record too, holding what the sign-in gave beside it: the issued
+client id, the granted scopes, the subject and the ID token. An access-only
+record has no refresh state, so no refresh can be asked of it; it is lent
+until it expires, and only its source renews it (section 6.3): a sign-in's,
+by signing in again.
 
 ## 2. Sign-in and refresh
 
@@ -365,11 +375,14 @@ exchange; exact values are exported with the implementation.
 
 Focused tests cover both sign-in types, state and redirect mismatch, duplicate
 and late redirect, PKCE challenge and form/JSON encodings, refresh rotation
-with and without a new refresh token, expiry and skew, refusals, malformed
+with and without a new refresh token, a sign-in answered without one and
+kept access-only, expiry and skew, refusals, malformed
 answers, and every limit boundary. Redirect tests admit `localhost` with an
 explicit port and path, and refuse `localhost.evil`, `localhost.`,
 `localhost:0`, a missing port, and a redirect whose authority is `127.0.0.1`
-for a `localhost` registration. Record tests round-trip access-only records. A
+for a `localhost` registration; a confidential registration admits each
+loopback redirect as a public one does, refuses the same neighbours and
+plain `http` to any other host, and keeps its `https` one. Record tests round-trip access-only records. A
 separate fake issuer drives sign-in, refresh, revocation, delay, replay, and
 transport faults through the real client machine. It also runs as a process on
 loopback, as the fake LLM peer does (fake-llm.md, 3). It mints no token: each
@@ -566,8 +579,9 @@ never renames or reuses one on its own. An account has:
 - **Access-only records are lent, never refreshed.** A grant of one is
   answered while it is valid. At its lead before expiry the owner hears
   `expiring`, once, so that it can ask a person to renew the token at its
-  source; past expiry, or once its token is rejected, a grant fails as
-  expired, until the owner hands in a newer record. The component never
+  source (a sign-in's, by signing in again); past expiry, or once its token
+  is rejected, a grant fails as expired, until a newer record comes: handed
+  in by the owner, or from a sign-in. The component never
   writes to the record's source.
 
 ### 6.4 Keeping records

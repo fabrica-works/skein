@@ -100,7 +100,8 @@ pub fn issuer_for(registration: &oauth::Registration) -> fake::Issuer {
 pub fn issuer_with(public: bool, terms: Option<fake::Terms>) -> fake::Issuer {
     configured_issuer(&registration(public), terms)
 }
-fn configured_issuer(registration: &oauth::Registration, terms: Option<fake::Terms>) -> fake::Issuer {
+#[must_use]
+pub fn configured_issuer(registration: &oauth::Registration, terms: Option<fake::Terms>) -> fake::Issuer {
     fake::Issuer::new(
         fake::Config {
             authorization_url: registration.authorization_url.clone(),
