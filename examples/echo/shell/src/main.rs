@@ -17,7 +17,7 @@ use std::process::ExitCode;
 
 use skein_echo_service::{self as service, Limits};
 use skein_echo_shell::{Echo, limits};
-use skein_shell::{Clock, Config, Kernel, drive};
+use skein_shell::{Backend, Clock, Config, Kernel, drive};
 
 #[cfg(test)]
 mod tests;
@@ -89,6 +89,10 @@ fn run(configuration: &Configuration) -> Result<(), String> {
     let seed = skein_shell::seed().map_err(|errno| format!("the kernel refused a seed (errno {errno})"))?;
     let operations = service::operations(limits).ok_or("the ring's size is past a u32")?;
     let mut kernel = Kernel::open(Config { operations }).map_err(|error| error.to_string())?;
+    let chosen = kernel.chosen();
+    if chosen.backend != Backend::Ring {
+        eprintln!("skein-echo: kernel: {chosen}");
+    }
     let clock = Clock::new();
     let mut host = Echo::new(*limits, skein_io::Addr::Ip(configuration.addr), seed);
     host.svc.adopt_signals(signals).map_err(|_| "the configured io has no slot for termination signals")?;

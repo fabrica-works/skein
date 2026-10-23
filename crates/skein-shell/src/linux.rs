@@ -157,15 +157,19 @@ pub(crate) fn at_floor() -> Result<bool, i32> {
     let mut name: libc::utsname = unsafe { mem::zeroed() };
     // SAFETY: name is exclusive and writable for one utsname throughout the call.
     status(unsafe { libc::uname(ptr::from_mut(&mut name)) })?;
-    let mut parts = name.release.split(|byte| *byte == 46);
-    let number = |part: &[libc::c_char]| {
+    // SAFETY: uname wrote a NUL-terminated release in name, which lives across this borrow.
+    let release = unsafe { std::ffi::CStr::from_ptr(name.release.as_ptr()) };
+    release_at_floor(release.to_bytes())
+}
+
+fn release_at_floor(release: &[u8]) -> Result<bool, i32> {
+    let mut parts = release.split(|byte| *byte == b'.');
+    let number = |part: &[u8]| {
+        let mut digits = part.iter().copied().take_while(u8::is_ascii_digit).peekable();
+        digits.peek()?;
         let mut value = 0_u32;
-        for byte in part {
-            let byte = u32::try_from(*byte).ok()?;
-            if !(u32::from(b'0')..=u32::from(b'9')).contains(&byte) {
-                break;
-            }
-            let digit = byte.checked_sub(u32::from(b'0'))?;
+        for byte in digits {
+            let digit = u32::from(byte.checked_sub(b'0')?);
             value = value.checked_mul(10)?.checked_add(digit)?;
         }
         Some(value)
@@ -173,4 +177,29 @@ pub(crate) fn at_floor() -> Result<bool, i32> {
     let major = parts.next().and_then(number).ok_or(libc::EINVAL)?;
     let minor = parts.next().and_then(number).ok_or(libc::EINVAL)?;
     Ok((major, minor) >= (6, 12))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::release_at_floor;
+
+    #[test]
+    fn releases_at_above_below_and_without_the_floor() {
+        let cases: &[(&[u8], Result<bool, i32>)] = &[
+            (b"6.12", Ok(true)),
+            (b"6.12.107+deb13-cloud-amd64", Ok(true)),
+            (b"6.13-rc1", Ok(true)),
+            (b"7.0.0", Ok(true)),
+            (b"6.11.9", Ok(false)),
+            (b"5.15.0-91-generic", Ok(false)),
+            (b"10.1", Ok(true)),
+            (b"6", Err(libc::EINVAL)),
+            (b"", Err(libc::EINVAL)),
+            (b"six.12", Err(libc::EINVAL)),
+            (b"6.x", Err(libc::EINVAL)),
+        ];
+        for (release, expected) in cases {
+            assert_eq!(release_at_floor(release), *expected, "{release:?}");
+        }
+    }
 }

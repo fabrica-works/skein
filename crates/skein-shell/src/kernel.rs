@@ -50,6 +50,7 @@ impl fmt::Display for Chosen {
 #[derive(Debug)]
 pub struct Kernel {
     running: Running,
+    ring_refused: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -62,10 +63,31 @@ enum Running {
     Readiness(readiness::Readiness),
 }
 
+/// The ring's refusal that falls back to readiness (shell.md, 7.1):
+/// `Setup(ENOSYS)` or `Setup(EPERM)`, its errno; anything else, None.
+fn falls_back(refused: &OpenError) -> Option<i32> {
+    match refused {
+        OpenError::Setup(errno) => match *errno {
+            libc::ENOSYS | libc::EPERM => Some(*errno),
+            _ => None,
+        },
+        OpenError::Missing(_) | OpenError::BelowFloor | OpenError::NoOperations => None,
+    }
+}
+
 impl Kernel {
-    /// Opens the host's backend: the ring on Linux.
+    /// The host's backend (shell.md, 7.1).
     pub fn open(config: Config) -> Result<Self, OpenError> {
-        Self::open_on(config, Backend::Ring)
+        match ring::Ring::open(config) {
+            Ok(ring) => Ok(Self { running: Running::Ring(ring), ring_refused: None }),
+            Err(refused) => match falls_back(&refused) {
+                Some(errno) => Ok(Self {
+                    running: Running::Readiness(readiness::Readiness::open(config)?),
+                    ring_refused: Some(errno),
+                }),
+                None => Err(refused),
+            },
+        }
     }
 
     /// Forces a backend, so its conformance cannot silently use another.
@@ -74,7 +96,7 @@ impl Kernel {
             Backend::Ring => Running::Ring(ring::Ring::open(config)?),
             Backend::Readiness => Running::Readiness(readiness::Readiness::open(config)?),
         };
-        Ok(Self { running })
+        Ok(Self { running, ring_refused: None })
     }
 
     /// The backend selected at startup.
@@ -84,7 +106,7 @@ impl Kernel {
             Running::Ring(_) => Backend::Ring,
             Running::Readiness(_) => Backend::Readiness,
         };
-        Chosen { backend, ring_refused: None }
+        Chosen { backend, ring_refused: self.ring_refused }
     }
 
     /// Operations in flight, including completions not yet reaped.
@@ -133,8 +155,30 @@ impl Kernel {
 
 #[cfg(test)]
 mod tests {
-    use super::{Backend, Chosen, Kernel};
+    use super::{Backend, Chosen, Kernel, falls_back};
     use crate::{Config, OpenError};
+
+    #[test]
+    fn only_setup_refusals_fall_back() {
+        for (refused, expected) in [
+            (OpenError::Setup(libc::ENOSYS), Some(libc::ENOSYS)),
+            (OpenError::Setup(libc::EPERM), Some(libc::EPERM)),
+            (OpenError::Setup(libc::EINVAL), None),
+            (OpenError::Setup(libc::ENOMEM), None),
+            (OpenError::Missing("x"), None),
+            (OpenError::BelowFloor, None),
+            (OpenError::NoOperations, None),
+        ] {
+            assert_eq!(falls_back(&refused), expected, "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn the_host_chooses_the_ring() {
+        let kernel = Kernel::open(Config { operations: 2 }).expect("the host's ring is usable");
+        assert_eq!(kernel.chosen(), Chosen { backend: Backend::Ring, ring_refused: None });
+        assert_eq!(kernel.chosen().to_string(), "io_uring");
+    }
 
     #[test]
     fn chosen_names_the_backend_and_the_ring_refusal() {

@@ -13,13 +13,13 @@ use skein_io_world::owner::{Dial, Directory, Owner, Reads, Serve, ServeClose, Ta
 use skein_io_world::scenarios::{echo, expecting, framed, limits, local, message, plan};
 use skein_io_world::world::Proc;
 use skein_lib::{Duration, Rng};
-use skein_shell::{Clock, Config, Kernel, Wait};
+use skein_shell::{Backend, Clock, Config, Kernel, Wait};
 
 #[test]
 fn an_exchange_through_io_over_the_ring() {
     let limits = limits(3);
     let operations = operations(&limits).expect("a small ring");
-    let mut kernel = match Kernel::open(Config { operations }) {
+    let mut kernel = match Kernel::open_on(Config { operations }, Backend::Ring) {
         Ok(kernel) => kernel,
         Err(error) => panic!("io_uring is not usable here, so io cannot run on the ring: {error}"),
     };
@@ -54,7 +54,7 @@ fn an_exchange_through_io_over_the_ring() {
 #[test]
 fn a_loopback_and_a_named_listener_exchange_in_one_drive() {
     let limits = limits(6);
-    let mut kernel = Kernel::open(Config { operations: operations(&limits).expect("a small ring") })
+    let mut kernel = Kernel::open_on(Config { operations: operations(&limits).expect("a small ring") }, Backend::Ring)
         .expect("io_uring usable for the mixed-address exchange");
     let clock = Clock::new();
     let start = clock.now().now;
@@ -283,7 +283,7 @@ fn a_rename_across_over_the_ring_lands_the_file_in_its_destination() {
     std::fs::write(scratch.path().join("staging/index"), b"whole index").unwrap();
     let root = skein_shell::open_root(scratch.path()).unwrap();
     let mut owner = skein_io_world::renames::Owner::new(root, None, true);
-    let mut kernel = Kernel::open(Config { operations: 2 }).expect("ring usable");
+    let mut kernel = Kernel::open_on(Config { operations: 2 }, Backend::Ring).expect("ring usable");
     let result = skein_shell::drive(&mut kernel, &Clock::new(), &mut owner);
     assert_eq!(result, skein_io::kernel::Exit::Code(0));
     assert_eq!(owner.found, Some(skein_io_world::renames::Found::Destination));
@@ -301,7 +301,7 @@ fn a_directory_listed_by_pages_over_the_ring_gives_each_entry_once() {
     }
     let root = skein_shell::open_root(scratch.path()).unwrap();
     let mut owner = skein_io_world::pages::Owner::new(root, 4, 10);
-    let mut kernel = Kernel::open(Config { operations: 2 }).expect("ring usable");
+    let mut kernel = Kernel::open_on(Config { operations: 2 }, Backend::Ring).expect("ring usable");
     assert_eq!(skein_shell::drive(&mut kernel, &Clock::new(), &mut owner), skein_io::kernel::Exit::Code(0));
     assert_eq!(owner.pages.iter().map(|page| page.len()).collect::<Vec<_>>(), [4, 4, 2]);
     let mut listed: Vec<_> = owner.pages.iter().flatten().map(|entry| entry.name.to_vec()).collect();

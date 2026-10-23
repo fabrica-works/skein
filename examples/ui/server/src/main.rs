@@ -5,7 +5,7 @@ use skein_io::kernel::{Complete, Exit, Submit};
 use skein_io::{self as io, Addr, Io, Request};
 use skein_lib::stream::{self, Read};
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall};
-use skein_shell::{Clock, Config, Host, Kernel, drive};
+use skein_shell::{Backend, Clock, Config, Host, Kernel, drive};
 use skein_ui_example_server::{
     State,
     bundle::{BUNDLE_BYTES, Bundle, FILE_BYTES},
@@ -96,6 +96,10 @@ fn run() -> Result<(), String> {
     let signals = skein_shell::open_termination_signals().map_err(|why| format!("cannot open signals: {why:?}"))?;
     let operations = io::operations(&io_limits()).ok_or("ring bound overflow")?;
     let mut kernel = Kernel::open(Config { operations }).map_err(|why| why.to_string())?;
+    let chosen = kernel.chosen();
+    if chosen.backend != Backend::Ring {
+        eprintln!("skein-ui-example: kernel: {chosen}");
+    }
     let clock = Clock::new();
     let skein_shell::Now { now, wall } = clock.now();
     let mut host = Web::new(address, bundle, now, wall);

@@ -11,7 +11,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use skein_io::kernel::{Addr, Complete, Done, Error, Family, Fd, Op, Submit};
 use skein_lib::{Duration, Queue, Time, Token};
-use skein_shell::{Clock, Config, Kernel, Wait};
+use skein_shell::{Backend, Clock, Config, Kernel, Wait};
 
 /// How long a test waits for any one completion before it fails.
 pub const PATIENCE: Duration = Duration::from_secs(20);
@@ -33,7 +33,7 @@ pub struct World {
 impl World {
     #[must_use]
     pub fn new(operations: u32) -> World {
-        let kernel = match Kernel::open(Config { operations }) {
+        let kernel = match Kernel::open_on(Config { operations }, Backend::Ring) {
             Ok(kernel) => kernel,
             Err(error) => panic!("io_uring is not usable here, so the ring cannot be tested: {error}"),
         };

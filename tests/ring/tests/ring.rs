@@ -12,7 +12,7 @@
 use skein_io::kernel::{Complete, Done, Error, Family, Fd, Op, Submit};
 use skein_lib::{Duration, Queue, Time, Token};
 use skein_ring_tests::{PATIENCE, World, filled, pattern, v4};
-use skein_shell::{Clock, Config, Kernel, OpenError, Wait};
+use skein_shell::{Backend, Clock, Config, Kernel, OpenError, Wait};
 
 #[test]
 fn a_large_transfer_takes_short_sends_and_many_receives() {
@@ -177,7 +177,7 @@ fn a_deadline_already_past_does_not_wait() {
 
 #[test]
 fn a_kernel_of_no_operations_does_not_open() {
-    assert_eq!(Kernel::open(Config { operations: 0 }).unwrap_err(), OpenError::NoOperations);
+    assert_eq!(Kernel::open_on(Config { operations: 0 }, Backend::Ring).unwrap_err(), OpenError::NoOperations);
 }
 
 #[test]

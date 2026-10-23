@@ -271,9 +271,7 @@ pub enum OpenError {
     Setup(i32),
     /// The kernel is below the floor, 6.12: its ring lacks this operation.
     Missing(&'static str),
-    /// The kernel is below the floor, 6.12: its ring has every operation,
-    /// but not the absolute wait timeouts, which came with
-    /// `IORING_FEAT_MIN_TIMEOUT`.
+    /// The kernel's release is below the floor, 6.12 (shell.md, 4 and 7.6).
     BelowFloor,
 }
 
@@ -285,7 +283,7 @@ impl fmt::Display for OpenError {
                 write!(f, "io_uring could not be set up: {}", io::Error::from_raw_os_error(*errno))
             }
             OpenError::Missing(name) => write!(f, "the kernel is below 6.12: io_uring has no {name}"),
-            OpenError::BelowFloor => write!(f, "the kernel is below 6.12: io_uring has no absolute wait timeouts"),
+            OpenError::BelowFloor => write!(f, "the kernel is below the floor, 6.12"),
         }
     }
 }
@@ -461,7 +459,7 @@ impl Ring {
             }
         }
         if !ring.params().is_feature_min_timeout() {
-            return Err(OpenError::BelowFloor);
+            return Err(OpenError::Missing("absolute wait timeouts"));
         }
         assert!(
             ring.params().sq_entries() >= operations && ring.params().cq_entries() >= operations,
