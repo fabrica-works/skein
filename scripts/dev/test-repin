@@ -139,6 +139,39 @@ class Lab:
             # Start consumers at the first commit; precise updates fetch the second object.
             git(bare, self.env, 'update-ref', 'refs/heads/main', self.old[name])
             self.urls[name] = bare.as_uri()
+        # A third source whose newer commit names a skein crate without a rev: updating it alone
+        # moves skein's packages toward skein's branch, which then runs ahead of the pinned commit.
+        skein = root / 'skein-source'
+        (skein / 'skein-c/src').mkdir(parents=True)
+        (skein / 'skein-c/Cargo.toml').write_text('[package]\nname="skein-c"\nversion="0.1.0"\nedition="2021"\n'
+                                                  '[dependencies]\nskein-a={path="../skein-a"}\n')
+        (skein / 'skein-c/src/lib.rs').write_text('pub fn value() -> u8 { 3 }\n')
+        (skein / 'Cargo.toml').write_text('[workspace]\nresolver="2"\nmembers=["skein-a","skein-b","skein-c"]')
+        git(skein, self.env, 'add', '.')
+        git(skein, self.env, 'commit', '-m', 'third crate')
+        self.with_c = git(skein, self.env, 'rev-parse', 'HEAD')
+        (skein / 'skein-a/src/lib.rs').write_text('pub fn value() -> u8 { 4 }\n')
+        git(skein, self.env, 'commit', '-am', 'ahead')
+        self.ahead = git(skein, self.env, 'rev-parse', 'HEAD')
+        git(skein, self.env, 'push', self.urls['skein'], self.with_c + ':refs/heads/with-c', self.ahead + ':refs/heads/ahead')
+        jig = root / 'jig-source'
+        (jig / 'jig-a/src').mkdir(parents=True)
+        git(jig, self.env, 'init', '-b', 'main')
+        (jig / 'Cargo.toml').write_text('[workspace]\nresolver="2"\nmembers=["jig-a"]')
+        package = '[package]\nname="jig-a"\nversion="0.1.0"\nedition="2021"\n'
+        (jig / 'jig-a/Cargo.toml').write_text(package)
+        (jig / 'jig-a/src/lib.rs').write_text('')
+        git(jig, self.env, 'add', '.')
+        git(jig, self.env, 'commit', '-m', 'first')
+        self.old['jig'] = git(jig, self.env, 'rev-parse', 'HEAD')
+        (jig / 'jig-a/Cargo.toml').write_text(package + '[dependencies]\nskein-c={git=' + json.dumps(self.urls['skein']) + '}\n')
+        git(jig, self.env, 'commit', '-am', 'second')
+        self.new['jig'] = git(jig, self.env, 'rev-parse', 'HEAD')
+        bare = root / 'jig.git'
+        execute(root, ['git', 'clone', '--bare', str(jig), str(bare)], self.env)
+        git(bare, self.env, 'update-ref', 'refs/heads/next', self.new['jig'])
+        git(bare, self.env, 'update-ref', 'refs/heads/main', self.old['jig'])
+        self.urls['jig'] = bare.as_uri()
         primary = self.primary = root / 'consumer'
         primary.mkdir()
         git(primary, self.env, 'init', '-b', 'main')
@@ -147,6 +180,7 @@ class Lab:
         manifest = '[package]\nname="consumer"\nversion="0.1.0"\nedition="2021"\n[dependencies]\n'
         for name, crates in [('skein', ['skein-a', 'skein-b']), ('smith', ['smith-a'])]:
             manifest += ''.join(crate + '={git=' + json.dumps(self.urls[name]) + '}\n' for crate in crates)
+        manifest += 'jig-a={git=' + json.dumps(self.urls['jig']) + '}\n'
         (primary / 'Cargo.toml').write_text(manifest)
         (primary / 'generated.txt').write_text('base\n')
         (primary / 'other.txt').write_text('base\n')
@@ -257,7 +291,17 @@ def fixtures(root, evidence):
     stale, stale_env = lab.case('stale-local-main', success=True, setup=lambda p, e:
         git(p, e, 'update-ref', 'refs/heads/main', lab.base + '^'))
     assert git(stale, stale_env, 'rev-parse', 'main') == git(stale, stale_env, 'rev-parse', lab.base + '^')
-    lab.case('multiple-sources', success=True, pins=list(lab.new.items()))
+    lab.case('multiple-sources', success=True, pins=[('skein', lab.new['skein']), ('smith', lab.new['smith'])])
+    skein_main = lab.root / 'skein.git'
+    def ahead(p, e):
+        git(skein_main, e, 'update-ref', 'refs/heads/main', lab.ahead)
+    drifted, drifted_env = lab.case('dependency-runs-ahead', success=True, setup=ahead,
+                                    pins=[('jig', lab.new['jig']), ('skein', lab.with_c)])
+    packages = tomllib.loads((drifted / 'Cargo.lock').read_text())['package']
+    assert {p['name'] for p in packages if 'skein.git' in p.get('source', '')} == {'skein-a', 'skein-b', 'skein-c'}
+    lab.case('dependency-runs-ahead-last', setup=ahead, pins=[('skein', lab.with_c), ('jig', lab.new['jig'])],
+             reason='multiple revisions')
+    git(skein_main, lab.env, 'update-ref', 'refs/heads/main', lab.old['skein'])
     for label, pins in [('abbrev', [('skein', 'a' * 12)]), ('malformed', [('skein', 'z' * 40)]),
                         ('duplicate', [('skein', lab.new['skein'])] * 2),
                         ('absent', [('missing', 'a' * 40)]), ('no-change', [('skein', lab.old['skein'])]),

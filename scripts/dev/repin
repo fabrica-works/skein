@@ -234,20 +234,24 @@ def main():
     require((root / 'Cargo.lock').read_bytes() == original, 'worktree lock differs from base bytes')
     completed = {}
 
-    def phase(label, argv):
+    def phase(label, argv, pending=False):
         print('repin: ' + label + ' ' + json.dumps(['heavy', *argv]), flush=True)
         result = subprocess.run(['heavy', *argv], cwd=root, stdin=subprocess.DEVNULL)
         scope(root, branch, base, allowed, local_main=local_main)
-        validate_lock(baseline, tomllib.loads((root / 'Cargo.lock').read_text()), completed)
+        if not pending:
+            validate_lock(baseline, tomllib.loads((root / 'Cargo.lock').read_text()), completed)
         require(result.returncode == 0, f'{label} failed ({result.returncode})')
         print('repin: ' + label + ' passed', flush=True)
 
-    for identity, revision in selected.items():
+    # Updating one source can move another selected source's packages that name it without a rev;
+    # until the last pin is in, the lock is checked for scope alone, then whole.
+    for number, (identity, revision) in enumerate(selected.items(), 1):
         package = next(record for record in baseline['package']
                        if source(record) and source(record)[0] == identity)
         selector = identity + '#' + package['name'] + '@' + package['version']
         completed[identity] = revision
-        phase('update', ['cargo', 'update', '--precise', revision, '-p', selector])
+        phase('update', ['cargo', 'update', '--precise', revision, '-p', selector],
+              pending=number < len(selected))
     for label, argv in commands:
         phase(label, argv)
     scope(root, branch, base, allowed, local_main=local_main)

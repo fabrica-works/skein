@@ -512,7 +512,12 @@ including registry versions/checksums, other git SHAs, workspace records and
 lock metadata. All selected identities must still exist at exactly their
 requested full SHAs, with no new source identity. New nonselected dependencies
 refuse conservatively, even when a resolver would normally add them.
-Each intermediate update preserves all sources except the completed pins.
+Pins apply in the order given. Between them only the worktree's scope is
+checked: updating one source can move a later pinned source's packages, when
+the first names the second without a rev (jig names skein so, and Cargo then
+takes skein's branch). The whole lock is checked once the last pin is in, as
+it is after each generator and check. So a source others name goes last
+(`--pin jig=... --pin skein=...`); in the other order the run refuses.
 
 Generators and checks run through installed heavy, in the consumer root.
 Only Cargo.lock and explicitly named generated regular files may change.
