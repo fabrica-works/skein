@@ -515,7 +515,8 @@ run's contained driver tree, initializes the experimental API, creates one
 ephemeral thread with permissions `lab` and approvals `never`, reads the
 inventory, then starts one turn with the preamble, verbatim charter and report
 schema. Its configuration disables websocket preconnection with a custom
-Responses provider. `views.profile_toml` supplies the same profile text to the
+Responses provider. The provider names no base URL, so Codex picks the endpoint
+for the login: a ChatGPT login is refused by the API platform's. `views.profile_toml` supplies the same profile text to the
 key's configuration and the provisioning probe.
 
 | Inventory item | 0.162.1 observer and acceptance |

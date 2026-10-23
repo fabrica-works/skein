@@ -32,6 +32,7 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
                 effort: str, profile: str, lab_root: str = '{lab.root}') -> str:
     """Permission profile text is supplied by the view builder."""
     # Root keys precede every TOML table, including the profile's tables.
+    # No base_url: Codex then picks the endpoint for the login, API key or ChatGPT.
     return ('model_provider = "lab-openai"\n'
             f'model = {json.dumps(model)}\nmodel_reasoning_effort = {json.dumps(effort)}\n'
             'web_search = "disabled"\nallow_login_shell = false\nproject_doc_max_bytes = 0\n'
@@ -42,7 +43,7 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
             + 'args = ' + json.dumps(['-I', '-B', runner + '/runner/launch.py', lab_root, 'tool', run]) + '\n'
             + 'env_vars = []\nrequired = true\nenabled_tools = ' + json.dumps(sorted(tools)) + '\n'
             + '[skills.bundled]\nenabled = false\n[model_providers.lab-openai]\n'
-            + 'name = "OpenAI"\nbase_url = "https://api.openai.com/v1"\nwire_api = "responses"\n'
+            + 'name = "OpenAI"\nwire_api = "responses"\n'
             + 'requires_openai_auth = true\nsupports_websockets = false\n')
 
 

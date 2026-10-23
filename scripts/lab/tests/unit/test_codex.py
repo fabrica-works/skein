@@ -47,6 +47,7 @@ class Codex(unittest.TestCase):
         self.assertEqual(parsed['mcp_servers']['lab']['args'], ['-I', '-B', '/runner/runner/launch.py', '{lab.root}', 'tool', '{run.id}'])
         self.assertEqual(parsed['mcp_servers']['lab']['env_vars'], [])
         self.assertFalse(parsed['model_providers']['lab-openai']['supports_websockets'])
+        self.assertNotIn('base_url', parsed['model_providers']['lab-openai'])
         self.assertEqual(parsed['shell_environment_policy']['inherit'], 'none')
         self.assertEqual(parsed['features'], {**dict.fromkeys(codex.DISABLED, False), 'skip_host_skill_discovery': True})
         self.assertFalse(parsed['skills']['bundled']['enabled'])
