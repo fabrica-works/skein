@@ -557,7 +557,7 @@ synchronous operations, the error tables, what decodes a `statx` or a
 | Listing a directory | `getdents64` | `readdir`, its positions kept (below) |
 | Rename, never replacing | `renameat2`, `RENAME_NOREPLACE` | `renameatx_np`, `RENAME_EXCL` |
 | Stat | `statx` | `fstat` |
-| Spawn | `pidfd_spawn` | `posix_spawn`: the same file actions, process group, and session for a terminal |
+| Spawn | `pidfd_spawn` | `posix_spawn`: the same file actions and process group; for a terminal, `fork` and `execve` (below) |
 | A child's handle | its pidfd | a kqueue of the child's own, its `EVFILT_PROC` exit registered: a descriptor that is readable once the child has exited |
 | A child's exit | `waitid` on the pidfd | `waitid` on the child's pid, `WNOWAIT` to observe |
 | Signalling a child | `pidfd_send_signal` | `kill`, `killpg`, by the pid its handle names |
@@ -654,9 +654,27 @@ other module is safe Rust, the same on both systems.
   (the working directory by `posix_spawn_file_actions_addfchdir_np`), the
   child in a group of its own (`POSIX_SPAWN_SETPGROUP`), its signal mask
   emptied and every signal the service ignores set back to its default
-  (`POSIX_SPAWN_SETSIGMASK`, `POSIX_SPAWN_SETSIGDEF`), and for a terminal
-  a session of its own (`POSIX_SPAWN_SETSID`) before the terminal is
-  opened as its standard streams.
+  (`POSIX_SPAWN_SETSIGMASK`, `POSIX_SPAWN_SETSIGDEF`).
+- **A child on a terminal** is started by `fork` and `execve`, as
+  `posix_spawn` can't do it. On XNU, `posix_spawn` runs its file actions
+  before its `POSIX_SPAWN_SETSID`, so the terminal it opens never becomes
+  the child's controlling terminal; and its `SETPGROUP` comes before
+  `SETSID`, which then fails, the child already leading its group. Every
+  string, list and descriptor the child needs is made before the
+  `fork`. Between the `fork` and the `execve`, the child makes only
+  async-signal-safe calls, and allocates nothing:
+  1. `setsid`, which also makes the child a group of its own;
+  2. the terminal opened, and made controlling by `TIOCSCTTY`;
+  3. the same duplications as the file actions, then the working
+     directory;
+  4. the descriptors above its streams closed;
+  5. the mask emptied and the defaults restored;
+  6. `execve`.
+
+  A failure there writes its error number to a close-on-exec pipe and
+  `_exit`s. The parent reads that pipe to its end: no bytes, and the exec
+  happened; an error number, and the spawn fails with it, once the parent
+  has reaped the child.
 - **A child's handle** is a kqueue of the child's own, close-on-exec,
   with `EVFILT_PROC` and `NOTE_EXIT` registered for its pid: readable once
   the child has exited. A child that exits before its registration
