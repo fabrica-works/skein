@@ -299,6 +299,16 @@ def installed_validation(root):
 
 
 class TurnLab(Lab):
+    def __init__(self, root, name):
+        super().__init__(root, name)
+        toolhome = Path(self.env['HOME'])
+        self.switch = self.path / 'home/.config/skein-land-turn/enabled'
+        self.switch.parent.mkdir(parents=True)
+        self.env.update(HOME=str(self.path / 'home'),
+            CARGO_HOME=self.env.get('CARGO_HOME', str(toolhome / '.cargo')),
+            RUSTUP_HOME=self.env.get('RUSTUP_HOME', str(toolhome / '.rustup')),
+            XDG_CONFIG_HOME=self.env.get('XDG_CONFIG_HOME', str(toolhome / '.config')))
+
     def setup(self):
         super().setup()
         self.origin = self.path / 'origin.git'
@@ -687,6 +697,108 @@ def simulated_ssh(lab, test, failure=None):
     return dict(result, layer='actual-land-simulated-ssh', real_ssh=False)
 
 
+def config_hook(lab, route=True):
+    # Capture only switch routing; fixture holders do not prove installed acceptance.
+    interpreter = shutil.which('python3', path=lab.env['PATH'])
+    shim = lab.path / 'fixture-bin/python3'
+    shim.write_text('#!' + interpreter + '\nimport json,os,sys\nfrom pathlib import Path\n'
+        + f'if sys.argv[1:5] == ["-I", "-B", {str(KIT / "land-turn.py")!r}, "client"]:\n'
+        + f'    with Path({str(lab.path / "hook.jsonl")!r}).open("a") as out:\n'
+        + '        out.write(json.dumps({"argv":sys.argv[1:], "selection":'
+          '{key:os.environ.get(key) for key in ("LAND_TURN", "LAND_TURN_MODE", "LAND_TURN_HOLDER")}})+"\\n")\n'
+        + (f'    os.environ["LAND_TURN_FIXTURE_DIR"]={str(lab.path / "tmp/coordinator")!r}\n' if route else '')
+        + f'os.execv({interpreter!r}, [{interpreter!r}, *sys.argv[1:]])\n')
+    shim.chmod(0o700)
+    lab.env.pop('LAND_TURN_FIXTURE_DIR')
+    lab.env.update(LAND_TURN='0', LAND_TURN_MODE='stale', LAND_TURN_HOLDER='/stale/holder')
+
+
+def config_cycle(lab, mode):
+    config_hook(lab)
+    entry = lab.clones['a'] / 'invocation'
+    entry.mkdir()
+    expected = lab.path / 'a/locks/follow.lock'
+    expected.parent.mkdir()
+    environment = dict(lab.env, LAND_LOCK='../../locks/follow.lock')
+    for number, enabled in enumerate((False, True, False), 1):
+        if enabled:
+            lab.switch.write_text(mode + '\n')
+        else:
+            lab.switch.unlink(missing_ok=True)
+        (lab.clones['a'] / 'cycle.txt').write_text(str(number))
+        git(lab.clones['a'], 'add', '.')
+        git(lab.clones['a'], 'commit', '-qm', 'config cycle')
+        client = lab.start_land(environment=environment, cwd=entry, extra=['--tries', '2'])
+        lab.reached('prebuild-a-' + str(number))
+        lab.allow('prebuild-a-' + str(number))
+        lab.reached('gate-a-' + str(number))
+        lab.allow('gate-a-' + str(number))
+        lab.done(client)
+        assert len(lab.turn_events()) == (0 if number == 1 else 3)
+    captured = [json.loads(line) for line in (lab.path / 'hook.jsonl').read_text().splitlines()]
+    assert len(captured) == 1, 'recursive entry or removal started another advisory client'
+    assert captured[0]['selection'] == dict(LAND_TURN='1', LAND_TURN_MODE=mode,
+                                           LAND_TURN_HOLDER=str(KIT / 'land-turn.py'))
+    assert captured[0]['argv'][7:] == ['--gate', lab.command, '--tries', '2']
+    assert expected.is_file() and not (lab.path / 'locks/follow.lock').exists()
+    assert [row['event'] for row in lab.turn_events()] == ['request', 'grant', 'release']
+    return {'layer': 'actual-land-hook-routing-fixture', 'file_mode': mode,
+            'absent_present_removed': True, 'stale_environment_overridden': True,
+            'own_sibling_holder': True, 'args_subdir_lock_and_recursive_guard': True,
+            'installed_holder_acceptance': False, 'landings': 3}
+
+
+def config_invalid(lab, value, read_failure=False):
+    config_hook(lab, route=False)
+    lab.switch.write_text(value)
+    if read_failure:
+        cat = lab.path / 'fixture-bin/cat'
+        cat.write_text('#!/bin/sh\n'
+            + f'if [ "$1" = {shlex.quote(str(lab.switch))} ]; then\n'
+            + f'    touch {shlex.quote(str(lab.path / "read-failed"))}\n'
+            + '    echo untrusted-read-error >&2; exit 1\nfi\nexec /usr/bin/cat "$@"\n')
+        cat.chmod(0o700)
+    (lab.control / 'fail-gate-a-1').touch()
+    before = git(lab.origin, 'rev-parse', 'main')
+    client = lab.start_land()
+    lab.finish(client, code=4)
+    assert before == git(lab.origin, 'rev-parse', 'main')
+    captured = [json.loads(line) for line in (lab.path / 'hook.jsonl').read_text().splitlines()]
+    assert len(captured) == 1
+    assert captured[0]['selection']['LAND_TURN_MODE'] == ('invalid' if read_failure else value.rstrip('\n'))
+    assert [row['event'] for row in lab.turn_events()] == ['request', 'fail-open']
+    # Mutable source is rejected before mode validation; construction tests validate modes.
+    assert lab.turn_events()[-1]['reason'] == 'invalid-holder-path'
+    output = (lab.path / 'a.land.txt').read_text()
+    assert 'untrusted-read-error' not in output and 'land: line ' not in output
+    assert not read_failure or (lab.path / 'read-failed').exists()
+    return {'layer': 'actual-land-source-holder-fail-open', 'read_failure': read_failure,
+            'selected_mode': captured[0]['selection']['LAND_TURN_MODE'],
+            'fixed_reason': 'invalid-holder-path', 'payload_exit': 4, 'origin_unchanged': True}
+
+
+def config_inert(lab, mode):
+    lab.switch.write_text('local\n')
+    cat = lab.path / 'fixture-bin/cat'
+    cat.write_text('#!/bin/sh\n'
+        + f'if [ "$1" = {shlex.quote(str(lab.switch))} ]; then\n'
+        + f'    touch {shlex.quote(str(lab.path / "unexpected-config-read"))}\n'
+        + '    exit 1\nfi\nexec /usr/bin/cat "$@"\n')
+    cat.chmod(0o700)
+    if mode == 'recursive':
+        lab.env['LAND_TURN_ACTIVE'] = '1'
+        client = lab.start_land()
+        lab.finish(client)
+        assert not lab.turn_events()
+        result = {'mode': mode, 'recursive_guard': True}
+    elif mode == 'mockups':
+        result = docs_mockups(lab)
+    else:
+        result = inert(lab, mode)
+    assert not (lab.path / 'unexpected-config-read').exists()
+    return dict(result, layer='actual-land-private-config-bypass', config_not_read=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, required=True)
@@ -701,6 +813,14 @@ def main():
              ('missing-local-helper', missing_local_helper)]
     cases += [('inert-' + mode, lambda lab, mode=mode: inert(lab, mode)) for mode in ('off', 'docs', 'local', 'other')]
     cases += [('inert-docs-mockups', docs_mockups)]
+    cases += [('config-' + mode, lambda lab, mode=mode: config_cycle(lab, mode))
+              for mode in ('ssh', 'local')]
+    cases += [('config-invalid-' + name, lambda lab, value=value: config_invalid(lab, value))
+              for name, value in [('empty', ''), ('word', 'broken\n'), ('words', 'ssh local\n'),
+                                  ('lines', 'ssh\nlocal\n'), ('shell', '$(exit 99)\n')]]
+    cases += [('config-read-failure', lambda lab: config_invalid(lab, 'ssh\n', True))]
+    cases += [('config-inert-' + mode, lambda lab, mode=mode: config_inert(lab, mode))
+              for mode in ('docs', 'mockups', 'local', 'other', 'recursive')]
     cases += [('docs-reject-' + name, lambda lab, path=path: docs_mockups(lab, path))
               for name, path in [('outside', 'docs/design/page.html'),
                                  ('lookalike', 'docs/design/mockups-like/index.html'),

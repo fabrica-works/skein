@@ -371,8 +371,11 @@ landing after that capture failure.
 
 The recovery kit has an opt-in advisory turn before land's host repository
 lock and build-lane prebuild. Only remote code landings whose repository
-name is `temper` enter it, with `LAND_TURN=1`. With that variable unset or
-any other value, the hook starts no process and touches no turn state.
+name is `temper` enter it. `~/.config/skein-land-turn/enabled` containing
+`ssh` or `local` enables it, overriding environment mode and holder with that
+mode and this release's sibling `land-turn.py`. Removal turns off future
+ordinary invocations; without it, the `LAND_TURN=1` environment fixture
+interface below remains available. Invalid contents or read failure fail open.
 `--docs`, `--local` and other repository names bypass it even when opted
 in. The original arguments are retained across the guarded child entry.
 The gate, receipt validation, retry and fast-forward push remain land's
