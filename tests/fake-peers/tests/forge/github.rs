@@ -60,7 +60,8 @@ pub(super) fn limits() -> fake::Limits {
             writer: skein_json::writer::Limits { depth: 16, length: RESPONSE_BYTES },
             string_bytes: 256,
             body_bytes: BODY_BYTES,
-            inner: 8,
+            // The App's wanted grants are its longest list.
+            inner: u32::try_from(skein_forge::github::setup::PERMISSIONS.len()).expect("wanted count"),
             target_bytes: 1024,
         },
         installations: fake::installations::Limits { installations: 3, tokens: 4, listed: 2 },
@@ -102,7 +103,7 @@ pub(super) fn config() -> fake::Config {
             id: APP,
             slug: f::boxed(SLUG),
             owner: PERSON,
-            permissions: Box::new([]),
+            permissions: fake::app::wanted(),
             events: Box::new([]),
             key: fake::keys::KEYS[0],
             webhook: Secret::new(f::boxed(b"invented-hook-secret")),

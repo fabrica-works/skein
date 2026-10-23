@@ -34,8 +34,17 @@ pub struct Fake {
 }
 impl Fake {
     /// Uses the GitHub fake's fixture App, accounts, repositories and installations.
+    /// The App holds the grants setup asks for: its bot's permission is its
+    /// installation's (forge-github.md, 4.1, 8.2).
     #[must_use]
     pub fn new(seed: u64) -> Self {
+        Self::scenario(seed, AppFacts::Complete, true, b"https://hook.test/start")
+    }
+
+    /// The fixture App without grants or events: setup's checks of a lacking App
+    /// (forge-setup.md, 5.6). Its bot's repository permission is none.
+    #[must_use]
+    pub fn bare(seed: u64) -> Self {
         Self::scenario(seed, AppFacts::Complete, false, b"https://hook.test/start")
     }
 
@@ -51,7 +60,7 @@ impl Fake {
         Self::configured(
             seed,
             AppFacts::Complete,
-            false,
+            true,
             b"https://hook.test/start",
             Some(LogScenario { third_origin, blob_redirect }),
         )
@@ -61,15 +70,7 @@ impl Fake {
         let has_logs = logs.is_some();
         let LogScenario { third_origin, blob_redirect } =
             logs.unwrap_or(LogScenario { third_origin: None, blob_redirect: None });
-        let permissions = if complete {
-            github::setup::PERMISSIONS
-                .iter()
-                .map(|(name, access)| github::document::Permission { name: Box::from(*name), access: *access })
-                .collect::<Vec<_>>()
-                .into_boxed_slice()
-        } else {
-            Box::from([])
-        };
+        let permissions = if complete { skein_fake_forge_github::app::wanted() } else { Box::from([]) };
         let events = if complete {
             github::setup::EVENTS.iter().map(|name| Box::from(*name)).collect::<Vec<_>>().into_boxed_slice()
         } else {

@@ -215,7 +215,7 @@ pub fn full_heap(kinds: Kinds, tls: bool) -> Full {
     });
     let mut w = HostWorld::new_with(7, &[], configured, l);
     if matches!(kinds, Kinds::GitHub | Kinds::Both) {
-        w.github = Some(Fake::new(7));
+        w.github = Some(Fake::bare(7));
         w.put(Item::AppId, fixtures::app_id(7));
         w.put(Item::AppKey, fixtures::secret(github::app_key()));
         w.put(Item::AppSlug, fixtures::secret(b"test-app"));

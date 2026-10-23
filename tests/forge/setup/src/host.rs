@@ -117,7 +117,7 @@ impl HostWorld {
         // Conversion accepts PEM text up to twice the DER bound (forge-setup.md, 5.2).
         limits.string_bytes = fixtures::github_given().limits.key_bytes.checked_mul(2).expect("PEM bound");
         let mut world = Self::new_with(seed, script, fixtures::github_settings(), limits);
-        world.github = Some(Fake::new(seed));
+        world.github = Some(Fake::bare(seed));
         world.wall_base = Some(github::WALL_BASE);
         world.set_time(Time::ZERO);
         world.put(Item::AppId, fixtures::app_id(7));
@@ -671,7 +671,7 @@ mod tests {
         settings.forges.get_mut(1).expect("GitHub forge").transport =
             Transport::Tls { server_name: pki::name(), trust: pki::client(&[]) };
         let mut tls = HostWorld::new_with(7, &[], settings, plain.env.limits);
-        tls.github = Some(Fake::new(7));
+        tls.github = Some(Fake::bare(7));
         tls.wall_base = plain.wall_base;
         tls.set_time(Time::ZERO);
         tls.files.clone_from(&plain.files);

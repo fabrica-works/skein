@@ -77,7 +77,7 @@ pub(crate) fn service(seed: u64, key: &'static [u8]) -> Service {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),
                 owner: 1,
-                permissions: Box::from([]),
+                permissions: skein_fake_forge_github::app::wanted(),
                 events: Box::from([]),
                 key,
                 webhook: Secret::new(Box::from(b"test-webhook".as_slice())),

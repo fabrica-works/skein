@@ -19,6 +19,18 @@ pub struct App {
     pub webhook: Secret,
 }
 
+/// The grants setup asks for (forge-github.md, 11): a real App holds them, and
+/// its bot's repository permission is its installation's (4.1, 8.2).
+#[must_use]
+pub fn wanted() -> Box<[Permission]> {
+    let mut permissions =
+        List::with_capacity(u32::try_from(skein_forge::github::setup::PERMISSIONS.len()).expect("wanted count"));
+    for (name, access) in skein_forge::github::setup::PERMISSIONS {
+        permissions.push(Permission { name: Box::from(name), access }).expect("wanted room");
+    }
+    permissions.into_boxed()
+}
+
 // The key and webhook bytes must never appear in a trace.
 impl core::fmt::Debug for App {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

@@ -203,7 +203,7 @@ impl World {
                 id: 7,
                 slug: boxed(b"example-app-conformance"),
                 owner: PERSON,
-                permissions: Box::new([]),
+                permissions: fake::app::wanted(),
                 events: Box::new([]),
                 key: fake::keys::KEYS[0],
                 webhook: Secret::new(boxed(b"invented-webhook-secret")),
