@@ -7,10 +7,13 @@ use skein_world::end_to_end::{Binary, Command, Containment, Mode, StartError};
 use skein_world::{Host, Referee, real};
 use skein_world_tests::hosted::{Act, Script};
 
-#[cfg(target_os = "linux")]
-const DESCRIPTORS: &str = "/proc/self/fd";
-#[cfg(target_os = "macos")]
-const DESCRIPTORS: &str = "/dev/fd";
+/// Whether `fd` is open: a poll that does not wait answers every open
+/// descriptor, whatever it is, and refuses a closed one as EBADF. A `Stat`
+/// of `/dev/fd` would not do on macOS, where the child's handle is a kqueue.
+fn is_open(fd: skein_io::kernel::Fd) -> bool {
+    // EBADF is 9 on Linux and macOS alike.
+    skein_shell::wait_readable(fd, Duration::ZERO) != Err(9)
+}
 
 // A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
 #[cfg(target_os = "linux")]
@@ -224,8 +227,7 @@ fn an_abandoned_binary_is_reaped_and_its_untransferred_descriptors_are_closed() 
     let descriptors = binary.descriptors();
     drop(binary);
     for descriptor in descriptors {
-        let path = format!("{DESCRIPTORS}/{}", descriptor.raw());
-        assert!(std::fs::metadata(path).is_err(), "abandonment closes every owned descriptor");
+        assert!(!is_open(descriptor), "abandonment closes every owned descriptor");
     }
 }
 
@@ -474,7 +476,7 @@ fn abandoned_observer(backend: Option<skein_shell::Backend>, cancels_first: bool
         assert_eq!(child.submissions().len(), cancels, "repeated abandonment adds no cancels");
         assert!(!child.is_empty(), "abandonment waits for its completions");
         for fd in &descriptors {
-            assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_ok(), "pending descriptors stay open");
+            assert!(is_open(*fd), "pending descriptors stay open");
         }
         kernel.submit(child.submissions(), Wait::No);
         let mut completed = Queue::with_capacity(child.operations());
@@ -498,7 +500,7 @@ fn abandoned_observer(backend: Option<skein_shell::Backend>, cancels_first: bool
         assert!(child.submissions().is_empty(), "neither target nor cancel answers alone permit closure");
         assert!(!child.is_empty(), "the other answers still belong to the observer");
         for fd in &descriptors {
-            assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_ok(), "settling descriptors stay open");
+            assert!(is_open(*fd), "settling descriptors stay open");
         }
         while let Some(complete) = held.pop() {
             child.completions().push(complete);
@@ -507,7 +509,7 @@ fn abandoned_observer(backend: Option<skein_shell::Backend>, cancels_first: bool
         drop(child);
         assert_eq!(skein_shell::process_live(pid), Ok(false), "the abandoned descendant was reaped");
         for fd in descriptors {
-            assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
+            assert!(!is_open(fd));
         }
     }
 }
@@ -555,7 +557,7 @@ fn an_observer_can_be_abandoned_before_its_first_submission() {
                 assert!(child.work_pending(now.now), "abandonment has submission or settlement work");
                 drain_abandoned(&mut child, &mut kernel, &clock, until);
                 for fd in descriptors {
-                    assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
+                    assert!(!is_open(fd));
                 }
             }
         }
@@ -590,10 +592,7 @@ fn emergency_drop_leaves_outstanding_descriptors_and_the_waited_leader_owned() {
             let descriptors = child.descriptors();
             drop(child);
             for fd in &descriptors {
-                assert!(
-                    std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_ok(),
-                    "an outstanding descriptor stays open"
-                );
+                assert!(is_open(*fd), "an outstanding descriptor stays open");
             }
             let mut completions = Queue::with_capacity(8);
             while kernel.in_flight() > 0 {
@@ -611,7 +610,7 @@ fn emergency_drop_leaves_outstanding_descriptors_and_the_waited_leader_owned() {
             );
             skein_shell::abandon_binary(Some(leader), &descriptors);
             for fd in descriptors {
-                assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
+                assert!(!is_open(fd));
             }
         }
     }

@@ -383,7 +383,14 @@ impl Runtime {
         });
     }
     /// Where each person stood when the run's deadline passed.
-    fn stuck(&self, people: &[&mut dyn Play], faces: &[BrowserFace<'_>], done: &[bool], began: bool) -> String {
+    fn stuck(
+        &self,
+        people: &[&mut dyn Play],
+        faces: &[BrowserFace<'_>],
+        done: &[bool],
+        began: bool,
+        peers_empty: bool,
+    ) -> String {
         let each = people.iter().enumerate().map(|(index, play)| {
             format!(
                 "\nperson {index}: step {}, opened {}, done {}, pending {}",
@@ -393,10 +400,22 @@ impl Runtime {
                 faces.get(index).is_some_and(BrowserFace::pending)
             )
         });
+        let closing = format!(
+            "\nclosing {}: closed {} of {} spawned, io empty {}, ring empty {}, submits empty {}, origins closed {}, \
+             peers empty {peers_empty}",
+            self.closing,
+            self.closed,
+            self.spawned,
+            self.io.is_empty(),
+            self.ring.is_empty(),
+            self.submits.is_empty(),
+            self.origins.iter().all(crate::origins::Pages::is_closed),
+        );
         format!(
-            "browser harness deadline passed: began {began}, ready {}, server {:?}, last request {}{}",
+            "browser harness deadline passed: began {began}, ready {}, server {:?}, outcome before {:?}, last request {}{}{closing}",
             self.ready,
             self.server_state,
+            self.outcome,
             self.asked,
             each.collect::<String>()
         )
@@ -932,7 +951,7 @@ impl Runtime {
             }
             if time.now >= close_at {
                 let report = if started {
-                    self.stuck(people, &faces, &done, began)
+                    self.stuck(people, &faces, &done, began, peers.empty())
                 } else {
                     format!("lent peer startup deadline: {}", peers.waiting())
                 };

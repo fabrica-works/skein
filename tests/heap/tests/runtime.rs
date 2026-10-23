@@ -40,3 +40,12 @@ fn a_threads_destructor_record_is_neither_a_spans_nor_a_steps() {
     let step = meter.end();
     assert_eq!((step.peak(), step.held()), (0, 0), "a step over 16 more");
 }
+
+#[test]
+fn the_first_write_to_standard_error_is_not_a_steps() {
+    let meter = Meter::new();
+    meter.start();
+    eprintln!("a step's first line to the standard error");
+    let step = meter.end();
+    assert_eq!((step.peak(), step.held()), (0, 0), "a step over the first write to the standard error");
+}

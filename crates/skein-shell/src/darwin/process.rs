@@ -394,6 +394,10 @@ pub(crate) fn poll_child(handle: Fd, reap: bool) -> Result<Option<Exit>, Error> 
     let exit = match info.si_code {
         libc::CLD_EXITED => Exit::Code(u8::try_from(status).expect("a child exit code fits in a byte")),
         libc::CLD_KILLED | libc::CLD_DUMPED => Exit::Signal(u32::try_from(status).expect("a signal is positive")),
+        // A stop or a continue is not an exit: a Wait stays pending. macOS run
+        // 40010966195 saw waitid report a stopped child's state that is not
+        // an exit (WAIT_UNEXPECTED_STATUS) though only WEXITED was asked.
+        libc::CLD_STOPPED | libc::CLD_CONTINUED => return Ok(None),
         _ => {
             eprintln!(
                 "Darwin poll_child: unexpected waitid status: handle={handle:?}, pid={}, reap={reap}, si_pid={}, si_code={}, si_status={status}",

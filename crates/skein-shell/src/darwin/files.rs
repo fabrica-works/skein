@@ -43,8 +43,11 @@ pub(crate) fn open(root: Fd, path: &[u8], how: OpenHow) -> Result<i32, i32> {
             (libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW_ANY, mode.unwrap_or(0o666))
         }
     };
-    let flags = flags | O_RESOLVE_BENEATH | libc::O_CLOEXEC;
-    let flags = if matches!(how, OpenHow::PathNoFollow) { flags } else { flags | libc::O_NONBLOCK | libc::O_NOCTTY };
+    // O_NONBLOCK on every open, a path-only one too: O_EVTONLY's access is
+    // O_RDONLY's, so without it XNU's fifo_open sleeps until a FIFO has a
+    // writer, where Linux's O_PATH opens the entry without opening the FIFO.
+    let flags = flags | O_RESOLVE_BENEATH | libc::O_CLOEXEC | libc::O_NONBLOCK;
+    let flags = if matches!(how, OpenHow::PathNoFollow) { flags } else { flags | libc::O_NOCTTY };
     open_flags(root, path, flags, mode)
 }
 pub(super) fn open_flags(root: Fd, path: &[u8], flags: i32, mode: u32) -> Result<i32, i32> {
@@ -281,7 +284,10 @@ fn private_error(errno: i32) -> Unread {
 }
 
 fn denied_private(path: &CString, user: u32) -> Unread {
-    let Ok(fd) = open_private(path, libc::O_SYMLINK | libc::O_EVTONLY | libc::O_NOFOLLOW_ANY | libc::O_CLOEXEC) else {
+    let Ok(fd) = open_private(
+        path,
+        libc::O_SYMLINK | libc::O_EVTONLY | libc::O_NOFOLLOW_ANY | libc::O_NONBLOCK | libc::O_CLOEXEC,
+    ) else {
         return Unread::Kernel(Error::Permission);
     };
     let checked = check_private(fd, user);

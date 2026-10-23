@@ -644,7 +644,11 @@ other module is safe Rust, the same on both systems.
   Linux needs no permission to read the entry; Darwin needs it readable:
   `O_EVTONLY` still authorizes `READ_DATA` (XNU `bsd/vfs/vfs_syscalls.c`,
   lines 4894-4900; `bsd/vfs/vfs_subr.c`, lines 8434-8438). Each system's
-  answer is held to conformance.
+  answer is held to conformance. It is opened without blocking too:
+  `O_EVTONLY`'s access is `O_RDONLY`'s, so a FIFO without a writer would
+  hold `fifo_open` asleep, where `O_PATH` never opens the FIFO (macOS
+  runs 40003540284 and 40010966195, the path-only conformance test
+  stopped at the suite's budget).
   Darwin answers an escape with `ENOTCAPABLE`, which `darwin` gives up
   as Linux's `EXDEV`, so that one error table serves both (`Escape`).
 - **Files:** `pread`, `pwrite`, `write`, `ftruncate`, `fstat` (decoded by
@@ -717,8 +721,10 @@ other module is safe Rust, the same on both systems.
   Darwin reports diagnostic `Other(-10001)` for an already-reaped
   table entry, `Other(-10002)` for `waitid`'s own `ECHILD`, and
   `Other(-10003)` for a non-exit status, whose pid, code and status
-  also print to stderr. The source does not establish which path fired;
-  these diagnostics preserve the failure while identifying its source.
+  also print to stderr. Run 40010966195 answered `-10003`: `waitid`
+  reported a state that is not an exit though only `WEXITED` was asked,
+  so a stopped or continued child's state now leaves `Wait` pending, and
+  any other non-exit code still fails with the diagnostic.
 - **Signals to the service:** startup sets the signals the service
   watches (`SIGINT`, `SIGTERM`, and `SIGWINCH` at a terminal) to be
   ignored, which Darwin still reports to a kqueue, and opens a kqueue with

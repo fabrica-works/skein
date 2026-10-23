@@ -54,6 +54,14 @@
 //! destructor inside a span and inside a step, more than any world reaches,
 //! and fails when that policy leaves them less room.
 //!
+//! std's locks are the runtime's too: on macOS a `Mutex` is a pthread one,
+//! its `pthread_mutex_t` (64 bytes) boxed on the heap at its first lock, so
+//! the first write to the standard error, a process's `eprintln!` in a step,
+//! would hold 64 bytes that its drop never frees (macOS run 40010966195). A
+//! meter and a span lock it once first, on every system; on Linux the lock
+//! is a futex and allocates nothing. `tests/heap`'s `runtime` test writes to
+//! it for the first time inside a step.
+//!
 //! # The `unsafe`
 //!
 //! A global allocator is an `unsafe impl`: beside the ring adapter, the one
@@ -134,10 +142,12 @@ macro_rules! runtime_records {
             $(static $record: Cell<Option<Box<()>>> = const { Cell::new(None) };)*
         }
 
-        /// Fills the thread's destructor record before a base is read.
+        /// Fills the thread's destructor record, and makes std's standard
+        /// error lock, before a base is read.
         fn warm_runtime() {
             if !WARM.replace(true) {
                 $($record.with(|record| record.set(None));)*
+                drop(std::io::stderr().lock());
             }
         }
     };

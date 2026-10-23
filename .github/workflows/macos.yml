@@ -112,13 +112,13 @@ jobs:
                       taking = 0
               if not kept:
                   kept = [l for l in block if l and not BOILER.fullmatch(l)][-6:]
-              kept = [l[:300] for l in kept]
+              kept = [l[:900] for l in kept]
               # A panic quoted inside a longer line, as a child's report carries it.
               for line in block:
                   for match in re.finditer("panicked at", line):
                       if match.start() > 40:
                           kept.append("... " + line[match.start():match.start() + 300])
-              return "\n".join(dict.fromkeys(kept))[:1200]
+              return "\n".join(dict.fromkeys(kept))[:2000]
           if failures:
               names = {}
               for key in failures:
@@ -152,13 +152,15 @@ jobs:
           import re, sys
           name, path = sys.argv[1:]
           STATUS = re.compile(r"\s+([A-Z][A-Z-]+)\s+\[\s*([\d.]+)s\]\s+(?:\(\s*\d+/\d+\)\s+)?(\S+)\s+(.+)$")
-          tests, summary = [], ""
+          # Each test once: nextest repeats a failure's line in its summary.
+          seen, summary = {}, ""
           for line in open(path, encoding="utf-8", errors="replace"):
               if line.strip().startswith("Summary ["):
                   summary = line.strip()
               match = STATUS.match(line)
               if match:
-                  tests.append((float(match.group(2)), match.group(1), match.group(3), match.group(4).strip()))
+                  seen.setdefault((match.group(3), match.group(4).strip()), (float(match.group(2)), match.group(1)))
+          tests = [(took, status, binary, test) for (binary, test), (took, status) in seen.items()]
           if tests:
               bands = [0.1, 0.5, 1, 5, 15, 30]
               counts = [sum(1 for t in tests if low <= t[0] < high) for low, high in zip([0] + bands, bands + [float("inf")])]
