@@ -314,3 +314,18 @@ fn github_fake_suspension_preserves_but_refuses_tokens() {
     assert_eq!(h.ask(Method::Get, REACHABLE, Some(token.expose()), b"").status, 200);
     assert_eq!(h.calls, 0);
 }
+
+#[test]
+fn github_fake_mint_reports_full_and_narrowed_installation_levels() {
+    use skein_forge::github::document::{Access, Level, Levels, Permission};
+    let mut config = f::config();
+    config.app.permissions = Box::from([
+        Permission { name: f::boxed(b"contents"), access: Access::Write },
+        Permission { name: f::boxed(b"pull_requests"), access: Access::Write },
+    ]);
+    let mut h = Harness::with(f::limits(), config);
+    let full = h.mint(1, false);
+    assert_eq!(full.permissions, Levels { contents: Level::Write, pull_requests: Level::Write });
+    let contents = h.mint(1, true);
+    assert_eq!(contents.permissions, Levels { contents: Level::Write, pull_requests: Level::None });
+}

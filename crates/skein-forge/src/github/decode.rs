@@ -223,6 +223,7 @@ impl Decoder {
                 | Node::InstallationAccount
                 | Node::InstallationRows
                 | Node::Minted
+                | Node::MintPermissions
                 | Node::ReachableEnvelope
                 | Node::ReachableRows
                 | Node::Reachable
@@ -490,6 +491,7 @@ impl Decoder {
                 | Node::InstallationAccount
                 | Node::InstallationRows
                 | Node::Minted
+                | Node::MintPermissions
                 | Node::ReachableEnvelope
                 | Node::ReachableRows
                 | Node::Reachable

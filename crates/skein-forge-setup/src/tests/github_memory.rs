@@ -280,6 +280,7 @@ fn script(phase: u8) -> List<Event> {
             add(
                 &mut events,
                 document(Document::Minted(document::Minted {
+                    permissions: document::Levels::NONE,
                     token: secret(b"sentinel-installation-token"),
                     expires: WALL,
                 })),

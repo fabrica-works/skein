@@ -342,7 +342,7 @@ fn github_conformance_names_every_fact_of_forge_github_13() {
     let section = doc.split("## 13.").nth(1).expect("section 13").split("## 14.").next().expect("section end");
     let mut names: BTreeSet<_> = section.split('`').enumerate().filter(|(i, _)| i % 2 == 1).map(|(_, s)| s).collect();
     names.remove("unchecked");
-    names.retain(|s| !s.contains('/'));
+    names.retain(|s| s.contains('-') && !s.contains('/'));
     names.insert("installation-repository-removal-refusals");
     assert_eq!(cases::NAMES.iter().copied().collect::<BTreeSet<_>>(), names);
     assert_eq!(cases::NAMES.len(), names.len());
@@ -957,5 +957,18 @@ fn github_conformance_stops_without_an_organization_before_any_write() {
     assert_eq!(error.to_string(), "no organization installation for the merge-queue cases");
     assert!(r.replay.iter().all(|(_, request)| request.method == Method::Get));
     assert!(r.journal.pending.is_empty());
+    shutdown(&mut r);
+}
+
+#[test]
+fn github_conformance_bot_permission_is_not_a_role() {
+    let out = Temp::new("bot-permission");
+    let mut r = runner(&out.0);
+    r.start().expect("start");
+    cases::bot_permission_is_not_a_role(&mut r).expect("bot permission fact");
+    assert_eq!(r.facts.len(), 1);
+    assert_eq!(r.facts[0].name, "bot-permission-is-not-a-role");
+    assert_eq!(r.facts[0].outcome, Outcome::Holds);
+    r.finish().expect("cleanup");
     shutdown(&mut r);
 }

@@ -332,18 +332,18 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 const FIXTURE_HEAP: u64 = 2_819_803;
 
 // Complete GitHub fixture: the same common limits and owned bytes. Its
-// decoder's fixed size is 2392, including the 96-byte GraphQL pull builder,
+// decoder's fixed size is 2400, including the 96-byte GraphQL pull builder,
 // App builder state, the enqueue error's two type/message boxes, and the
-// 296-byte log row/wrapper builder and 96-byte protection builder.
+// 296-byte log row/wrapper builder, 96-byte protection builder and mint levels.
 // Both builders are inline in three connection and four hook decoders.
 // Job metadata retains a 24-byte optional failed step alongside its 24-byte
 // current step builder, in each decoder: 7*48 = 336 bytes.
 // App builder/document overlap needs max(3*128 + 2*48 + 2*16,
 // 4*128 + 2*24 + 2*16) = 592 per inner entry; its permissions and event
 // lists coexist. Decoder = 32*128 + 8*592 + 2*1042 + 16*128 + 4096 + 39+100
-// + 2392 = 19_591. Each connection also holds a 120-byte boxed exchange
+// + 2400 = 19_599. Each connection also holds a 120-byte boxed exchange
 // retaining request, raw retention and comparison. Three connections are
-// 770_550 each, including local JSON intake/delivery 2*1024; four hooks are 4*121861 + 4832 = 492_276.
+// 770_558 each, including local JSON intake/delivery 2*1024; four hooks are 4*121869 + 4832 = 492_308.
 // Installation storage = 2136 (live Row tree, Row 176) + 2*552 (metadata)
 // + 2*552 (accepted accounts) + 464 (missing accounts) + 3*200 (id sets)
 // + 2*3*8 (id lists) + 2*100*48 (installation pages) + 2*100*128
@@ -374,16 +374,16 @@ const FIXTURE_HEAP: u64 = 2_819_803;
 // coexist, so each call pays 2*24 = 48 bytes. Call payload = 210_370.
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
-// Total = 3*770550 + index 288 + slab 3*1472 + 492276 + 138608
-// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_912_193 before the puller.
+// Total = 3*770558 + index 288 + slab 3*1472 + 492308 + 138608
+// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_912_249 before the puller.
 // Puller: page = 8*(104+2*128)+2*128 = 3136; two page/header
 // handoffs = 6272, kept validator/cursor copies = 4*128 = 512.
 // LogPage/LogDelivery boxes = 400+320; pushed decoder = 304;
-// common decoder share = 19591; row event copies = 2*128;
+// common decoder share = 19599; row event copies = 2*128;
 // held hint/text/body = 88+128+1042.
-// Puller payload = 28_913; its inline state grows GitHub 504 -> 776.
-// Checked total: 3_912_193 + 272 + 28_913 = 3_941_378.
-const GITHUB_FIXTURE_HEAP: u64 = 3_941_474;
+// Puller payload = 28_921; the GitHub inline state is 776 bytes.
+// Checked total: 3_912_249 + 96 + 272 + 28_921 = 3_941_538.
+const GITHUB_FIXTURE_HEAP: u64 = 3_941_538;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 552 + drive-list pair 16 + 3*512 operation copies + 65536 held
@@ -426,14 +426,14 @@ fn a_forgejo_forge_pays_no_github_share() {
 
 #[test]
 fn a_github_forge_pays_its_app_share() {
-    assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2392);
+    assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2400);
     assert_eq!(size_of::<skein_forge::github::plans::reads::Plan>(), 1496);
     assert_eq!(limits::github_call_heap(&fixtures::limits(), &fixtures::shared()), Some(210_370));
     assert_eq!(size_of::<crate::installations::GitHub>(), 776);
-    assert_eq!(limits::puller_heap(&fixtures::limits()), Some(28_913));
+    assert_eq!(limits::puller_heap(&fixtures::limits()), Some(28_921));
     // CreateFile's wider Forgejo call adds 96 B to the GitHub fixture (measured).
     assert_eq!(
-        3_912_193_u64.checked_add(96).expect("wider call").checked_add(272).expect("inline puller").checked_add(28_913),
+        3_912_249_u64.checked_add(96).expect("wider call").checked_add(272).expect("inline puller").checked_add(28_921),
         Some(GITHUB_FIXTURE_HEAP)
     );
     let settings = fixtures::github_settings();

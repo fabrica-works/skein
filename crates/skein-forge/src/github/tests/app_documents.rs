@@ -172,7 +172,11 @@ fn reachable() -> document::Reachable {
     }
 }
 fn minted() -> document::Minted {
-    document::Minted { token: Secret::new(Box::from(*b"fixture-mint-sentinel")), expires: wall() }
+    document::Minted {
+        permissions: document::Levels { contents: document::Level::Write, pull_requests: document::Level::None },
+        token: Secret::new(Box::from(*b"fixture-mint-sentinel")),
+        expires: wall(),
+    }
 }
 fn conversion() -> document::Conversion {
     document::Conversion {
@@ -283,7 +287,11 @@ fn secret_bounds() {
     let good = limits();
     for count in [128, 129] {
         let value: Box<[u8]> = Box::from(&[b'x'; 129][..count]);
-        let minted = document::Minted { token: Secret::new(value.clone()), expires: wall() };
+        let minted = document::Minted {
+            permissions: document::Levels::NONE,
+            token: Secret::new(value.clone()),
+            expires: wall(),
+        };
         let mut conversion = conversion();
         conversion.pem = Secret::new(value.clone());
         conversion.webhook_secret = Secret::new(value);
@@ -582,5 +590,33 @@ fn server_refusals() {
         b"/users/a/b%5Bbot%5D",
     ] {
         assert_eq!(server::route(Method::Get, target, &good), None);
+    }
+}
+
+#[test]
+fn mint_permissions_keep_each_level_and_default_to_none() {
+    use document::{Level, Levels};
+    for (suffix, permissions) in [
+        (b"".as_slice(), Levels::NONE),
+        (br#", "permissions":{}"#, Levels::NONE),
+        (
+            br#", "permissions":{"contents":"read","pull_requests":"write"}"#,
+            Levels { contents: Level::Read, pull_requests: Level::Write },
+        ),
+        (
+            br#", "permissions":{"contents":"write","pull_requests":"read"}"#,
+            Levels { contents: Level::Write, pull_requests: Level::Read },
+        ),
+        (br#", "permissions":{"contents":"admin","pull_requests":"future"}"#, Levels::NONE),
+        (br#", "permissions":{"contents":"none","pull_requests":""}"#, Levels::NONE),
+    ] {
+        let mut body = Writer::new(256);
+        body.put(br#"{"token":"fixture-mint-sentinel","expires_at":"2026-10-20T08:00:00Z""#).unwrap();
+        body.put(suffix).unwrap();
+        body.put(b"}").unwrap();
+        let body = bytes(body);
+        let mut expected = minted();
+        expected.permissions = permissions;
+        assert_eq!(decode(Kind::Minted, &body, 1, &limits()).1, Ok(Document::Minted(expected)));
     }
 }

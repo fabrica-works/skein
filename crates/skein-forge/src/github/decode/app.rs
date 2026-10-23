@@ -43,7 +43,11 @@ impl State {
         Self {
             kind,
             installation: installation(),
-            minted: document::Minted { token: Secret::new(Box::from([])), expires: Wall::EPOCH },
+            minted: document::Minted {
+                permissions: document::Levels::NONE,
+                token: Secret::new(Box::from([])),
+                expires: Wall::EPOCH,
+            },
             reachable: reachable(),
             viewer: document::Viewer { id: 0, login: Box::from([]) },
             graphql: document::GraphqlRefusal { kind: Box::from([]), message: Box::from([]) },
@@ -97,6 +101,7 @@ impl State {
             Node::InstallationAccount
             | Node::InstallationRows
             | Node::Minted
+            | Node::MintPermissions
             | Node::ReachableEnvelope
             | Node::ReachableRows
             | Node::AppOwner
@@ -250,6 +255,12 @@ impl State {
                     _ => return Err(Malformed::Value { field: key }),
                 };
             }
+            (Node::MintPermissions, b"contents", Token::String(text)) => {
+                self.minted.permissions.contents = document::Level::read(&text);
+            }
+            (Node::MintPermissions, b"pull_requests", Token::String(text)) => {
+                self.minted.permissions.pull_requests = document::Level::read(&text);
+            }
             (Node::Minted, b"token", Token::String(text)) => self.minted.token = Secret::new(text),
             (Node::Minted, b"expires_at", Token::String(text)) => self.minted.expires = time(&text, key)?,
             (Node::Reachable, b"id", Token::Number(text)) => self.reachable.id = unsigned(&text),
@@ -299,6 +310,7 @@ impl State {
                 | Node::InstallationAccount
                 | Node::InstallationRows
                 | Node::Minted
+                | Node::MintPermissions
                 | Node::ReachableEnvelope
                 | Node::ReachableRows
                 | Node::Reachable

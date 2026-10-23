@@ -274,6 +274,7 @@ fn a_document_answer_is_a_github_document() {
             Request::Mint { installation: 8, scope: Scope::Full },
             br#"{"token":"new-installation-secret","expires_at":"1970-01-01T00:00:01Z"}"#.as_slice(),
             Document::Minted(dialect::document::Minted {
+                permissions: skein_forge::github::document::Levels::NONE,
                 token: fixtures::secret(MINTED),
                 expires: Wall::from_nanos(Duration::from_secs(1).as_nanos()),
             }),

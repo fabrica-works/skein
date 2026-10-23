@@ -19,6 +19,7 @@ pub(crate) struct Row {
     pub suspended: bool,
     pub accepted: bool,
     pub api: Option<Secret>,
+    pub permissions: document::Levels,
     pub api_expires: Wall,
     pub git_expires: Wall,
 }
@@ -35,6 +36,7 @@ impl Row {
         self.state = Tokens::Gone;
         self.revision = self.revision.wrapping_add(1);
         self.api = None;
+        self.permissions = document::Levels::NONE;
         self.api_expires = Wall::EPOCH;
         self.git_expires = Wall::EPOCH;
         self.full = Clock::empty();
@@ -614,6 +616,7 @@ impl GitHub {
                                     suspended: metadata.suspended,
                                     accepted: self.accepted.contains(&id),
                                     api: None,
+                                    permissions: document::Levels::NONE,
                                     api_expires: Wall::EPOCH,
                                     git_expires: Wall::EPOCH,
                                 },

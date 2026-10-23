@@ -681,3 +681,25 @@ fn installation_secrets_leave_only_as_git_tokens() {
     assert!(h.answers.is_empty());
     assert_eq!(tokens(&h).len(), 1);
 }
+
+#[test]
+fn github_full_mint_replaces_levels_and_contents_mint_preserves_them() {
+    use skein_forge::github::document::{Level, Levels};
+    let mut h = at(Stage::Full);
+    let full = br#"{"token":"artificial-full","expires_at":"1970-01-01T01:00:00Z","permissions":{"contents":"write","pull_requests":"write"}}"#;
+    h.answer(FORGE, &fixtures::response(201, full));
+    let expected = Levels { contents: Level::Write, pull_requests: Level::Write };
+    assert_eq!(h.component.test_github().rows.get(&1).expect("installation").permissions, expected);
+    let narrowed =
+        br#"{"token":"artificial-git","expires_at":"1970-01-01T01:00:00Z","permissions":{"contents":"write"}}"#;
+    h.answer(FORGE, &fixtures::response(201, narrowed));
+    assert_eq!(h.component.test_github().rows.get(&1).expect("installation").permissions, expected);
+    h.answer(FORGE, &fixtures::ok(VIEWER));
+    h.run(Duration::ZERO);
+    assert!(h.component.test_github().identity_checked);
+    h.component.test_github_mut().rows.get_mut(&1).expect("installation").full.pending = true;
+    h.run(Duration::ZERO);
+    // An absent permissions object in the next full mint revokes both kept levels.
+    h.answer(FORGE, &mint(FULL, EXPIRES));
+    assert_eq!(h.component.test_github().rows.get(&1).expect("installation").permissions, Levels::NONE);
+}

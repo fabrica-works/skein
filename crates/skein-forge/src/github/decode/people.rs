@@ -7,7 +7,7 @@ pub(super) fn permission(word: &[u8]) -> Result<api::Permission, Malformed> {
         b"admin" | b"maintain" => Ok(api::Permission::Admin),
         b"write" => Ok(api::Permission::Write),
         b"triage" | b"read" => Ok(api::Permission::Read),
-        b"none" => Ok(api::Permission::None),
+        b"" | b"none" => Ok(api::Permission::None),
         _ => Err(Malformed::Value { field: b"role_name" }),
     }
 }

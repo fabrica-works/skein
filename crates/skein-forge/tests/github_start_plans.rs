@@ -63,7 +63,11 @@ fn repository(id: u64) -> document::Reachable {
     document::Reachable { id, owner: ACCOUNT, login: Box::from(*b"acme"), name: Box::from(*b"widgets"), private: true }
 }
 fn minted() -> document::Minted {
-    document::Minted { token: Secret::new(Box::from(TOKEN)), expires: Wall::from_nanos(3_600_000_000_000) }
+    document::Minted {
+        permissions: document::Levels::NONE,
+        token: Secret::new(Box::from(TOKEN)),
+        expires: Wall::from_nanos(3_600_000_000_000),
+    }
 }
 fn viewer() -> document::Viewer {
     document::Viewer { id: ACCOUNT, login: Box::from(*b"example-app[bot]") }

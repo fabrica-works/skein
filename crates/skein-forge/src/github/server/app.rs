@@ -196,14 +196,7 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) {
             json.array_end();
         }
         Answer::Installation(row) => installation_json(row, json),
-        Answer::Minted(row) => {
-            json.object_start();
-            json.key(b"token");
-            json.string(row.token.expose());
-            json.key(b"expires_at");
-            json.string(&time::write(row.expires));
-            json.object_end();
-        }
+        Answer::Minted(row) => minted_json(row, json),
         Answer::Reachable(rows, total) => {
             json.object_start();
             json.key(b"total_count");
@@ -342,5 +335,21 @@ fn app_json(row: &document::App, grants: bool, json: &mut Encoder) {
         }
         json.array_end();
     }
+    json.object_end();
+}
+
+fn minted_json(row: &document::Minted, json: &mut Encoder) {
+    json.object_start();
+    json.key(b"token");
+    json.string(row.token.expose());
+    json.key(b"expires_at");
+    json.string(&time::write(row.expires));
+    json.key(b"permissions");
+    json.object_start();
+    json.key(b"contents");
+    json.string(row.permissions.contents.text());
+    json.key(b"pull_requests");
+    json.string(row.permissions.pull_requests.text());
+    json.object_end();
     json.object_end();
 }

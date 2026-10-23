@@ -218,6 +218,13 @@ pub(crate) fn call(
             let Some(user) = people::id(service, &login) else {
                 return Outcome::Reply(answers::missing(&service.limits));
             };
+            if user == service.bot {
+                return Outcome::Reply(answers::response(
+                    200,
+                    &Body::Permission(api::Permission::None),
+                    &service.limits,
+                ));
+            }
             (Pending::Permission, Op::Read(a::Read::Permission { user }))
         }
         Read::Pull { number, .. } => (Pending::Pull, Op::Read(a::Read::Pull { number })),

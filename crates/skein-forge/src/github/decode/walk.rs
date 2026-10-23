@@ -28,6 +28,7 @@ pub(super) enum Node {
     InstallationAccount,
     InstallationRows,
     Minted,
+    MintPermissions,
     ReachableEnvelope,
     ReachableRows,
     Reachable,
@@ -410,7 +411,16 @@ fn document_fields(node: Node) -> &'static [Field] {
         Node::InstallationAccount => {
             const { &[field(b"login", Read::Text), field(b"id", Read::Number), field(b"type", Read::Text)] }
         }
-        Node::Minted => const { &[field(b"token", Read::Secret), field(b"expires_at", Read::Text)] },
+        Node::Minted => {
+            const {
+                &[
+                    field(b"token", Read::Secret),
+                    field(b"expires_at", Read::Text),
+                    optional(b"permissions", Read::Container(Role::Document(Node::MintPermissions))),
+                ]
+            }
+        }
+        Node::MintPermissions => const { &[optional(b"contents", Read::Text), optional(b"pull_requests", Read::Text)] },
         Node::ReachableEnvelope => {
             const { &[field(b"repositories", Read::Container(Role::Document(Node::ReachableRows)))] }
         }
@@ -576,6 +586,7 @@ fn element(role: Role) -> Option<Role> {
         | Node::Installation
         | Node::InstallationAccount
         | Node::Minted
+        | Node::MintPermissions
         | Node::ReachableEnvelope
         | Node::Reachable
         | Node::AppOwner

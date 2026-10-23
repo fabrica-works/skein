@@ -42,6 +42,7 @@ fn key() -> Secret {
 }
 fn minted() -> Event {
     Event::Reply(Reply::GithubDocument(Document::Minted(Minted {
+        permissions: skein_forge::github::document::Levels::NONE,
         token: secret(TOKEN),
         expires: Wall::from_nanos(100),
     })))

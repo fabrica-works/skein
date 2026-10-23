@@ -150,6 +150,7 @@ fn github_permission_roles_and_bad_user() {
         ("triage", api::Permission::Read),
         ("read", api::Permission::Read),
         ("none", api::Permission::None),
+        ("", api::Permission::None),
     ] {
         let mut wire = Writer::new(64);
         wire.put(b"{\"role_name\":\"").unwrap();
@@ -1198,4 +1199,14 @@ fn github_issues_omits_since_only_at_zero_and_decodes_both_targets() {
             assert_eq!(server::route(request::Method::Get, raw, &limits()), Some(request));
         }
     }
+}
+
+#[test]
+fn github_empty_collaborator_role_is_none() {
+    document(
+        Kind::CollaboratorRows,
+        br#"[{"id":1,"role_name":""}]"#,
+        Document::Rows,
+        &[Row::Collaborator(collaborator(1, api::Permission::None))],
+    );
 }

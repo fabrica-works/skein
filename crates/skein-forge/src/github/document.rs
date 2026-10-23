@@ -172,9 +172,54 @@ pub struct Installation {
     pub suspended: bool,
 }
 
-/// An installation token and its expiry.
+/// Installation access levels kept from a full token mint (forge-github.md, 8.2).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Level {
+    None,
+    Read,
+    Write,
+}
+impl Level {
+    #[must_use]
+    pub fn read(word: &[u8]) -> Self {
+        match word {
+            b"read" => Self::Read,
+            b"write" => Self::Write,
+            _ => Self::None,
+        }
+    }
+    #[must_use]
+    pub const fn text(self) -> &'static [u8] {
+        match self {
+            Self::None => b"none",
+            Self::Read => b"read",
+            Self::Write => b"write",
+        }
+    }
+}
+/// The grants needed for the App bot's repository permission.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Levels {
+    pub contents: Level,
+    pub pull_requests: Level,
+}
+impl Levels {
+    pub const NONE: Self = Self { contents: Level::None, pull_requests: Level::None };
+    #[must_use]
+    pub const fn permission(self) -> api::Permission {
+        match (self.contents, self.pull_requests) {
+            (Level::Write, Level::Write) => api::Permission::Write,
+            (Level::Read | Level::Write, Level::None | Level::Read) | (Level::Read, Level::Write) => {
+                api::Permission::Read
+            }
+            (Level::None, Level::None | Level::Read | Level::Write) => api::Permission::None,
+        }
+    }
+}
+/// An installation token, its expiry and granted access levels.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Minted {
+    pub permissions: Levels,
     pub token: Secret,
     pub expires: Wall,
 }

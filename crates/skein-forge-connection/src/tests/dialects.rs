@@ -116,7 +116,7 @@ fn github_successes_use_the_requests_decoder() {
             Body::Document(Document::Installation(installation()))),
         ("minted", Request::Mint { installation: INSTALLATION, scope: Scope::Full }, 201,
             br#"{"token":"artificial-minted-token","expires_at":"2020-01-01T01:00:00Z"}"#,
-            Body::Document(Document::Minted(document::Minted {
+            Body::Document(Document::Minted(document::Minted { permissions: document::Levels::NONE,
                 token: Secret::new(Box::from(b"artificial-minted-token".as_slice())),
                 expires: Wall::from_nanos(1_577_840_400_000_000_000),
             }))),

@@ -93,3 +93,31 @@ fn github_fake_people_scope_and_all_permissions() {
         assert_eq!(h.calls, calls);
     }
 }
+
+#[test]
+fn github_fake_bot_collaborator_permission_is_not_a_role() {
+    let mut h = r::harness();
+    let token = r::token(&mut h);
+    let calls = h.calls;
+    let response = h.ask(
+        Method::Get,
+        b"/repos/acme/widgets/collaborators/test-app%5Bbot%5D/permission",
+        Some(token.expose()),
+        b"",
+    );
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body.as_ref(), br#"{"permission":"none","role_name":""}"#);
+    assert_eq!(h.decode(Kind::Permission, &response).1, Document::Permission(api::Permission::None));
+    assert_eq!(h.calls, calls);
+}
+
+#[test]
+fn github_fake_selected_installation_refuses_locate_before_permission() {
+    let mut h = r::harness();
+    let token = r::token(&mut h);
+    for target in [b"/repos/acme/absent".as_slice(), b"/repos/acme/absent/collaborators/test-app%5Bbot%5D/permission"] {
+        let response = h.ask(Method::Get, target, Some(token.expose()), b"");
+        f::refusal(&h, &response, 404, b"Not Found");
+    }
+    assert_eq!(h.calls, 0);
+}

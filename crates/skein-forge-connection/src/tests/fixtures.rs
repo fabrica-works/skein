@@ -1076,6 +1076,7 @@ pub fn github_account(h: &mut Harness, installation: u64, account: u64, login: &
                     suspended: false,
                     accepted: true,
                     api: Some(Secret::new(Box::from(token))),
+                    permissions: skein_forge::github::document::Levels::NONE,
                     api_expires: Wall::from_nanos(3_600_000_000_000),
                     git_expires: Wall::from_nanos(3_600_000_000_000),
                 },

@@ -31,6 +31,7 @@ pub(crate) const NAMES: &[&str] = &[
     "jwt-calls-no-rate",
     "viewer-is-bot",
     "user-on-installation-403",
+    "bot-permission-is-not-a-role",
     "app-routes-401-on-installation-token",
     "jwt-iss-string",
     "mergeable-null-then-settles",
@@ -386,6 +387,7 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
         let token = r.token(0)?;
         Ok(r.raw(Method::Get, "/user", &token, b"")?.is(403, "Resource not accessible by integration"))
     })?;
+    bot_permission_is_not_a_role(r)?;
     case(r, "app-routes-401-on-installation-token", |r| {
         let token = r.token(0)?;
         let mut holds = true;
@@ -1294,4 +1296,34 @@ pub(crate) fn setup_lifecycle(r: &mut Runner<'_>) -> Result<()> {
     }
     r.provenance.push("# holds strays, uninstall, hook-address-set: hosted fake lifecycle".into());
     r.flush()
+}
+
+pub(crate) fn bot_permission_is_not_a_role(r: &mut Runner<'_>) -> Result<()> {
+    case(r, "bot-permission-is-not-a-role", |r| {
+        let installation = r.fixtures.installations[0].id;
+        let at = r.now().as_nanos() / 1_000_000_000;
+        r.before(Made::Mint { installation, at })?;
+        let mint = r.app(Method::Post, format!("/app/installations/{installation}/access_tokens"), b"")?;
+        let mint_json = mint.json()?;
+        let permissions = mint_json.root().get("permissions");
+        let contents = permissions.get("contents").str();
+        let pulls = permissions.get("pull_requests").str();
+        r.provenance
+            .push(format!("# bot-permission-is-not-a-role full mint contents {contents:?} pull_requests {pulls:?}"));
+        let token = r.token(0)?;
+        let repo = r.repo(0)?;
+        let login = percent(format!("{}[bot]", r.fixtures.slug).as_bytes());
+        let route = r.raw(Method::Get, format!("/repos/{repo}/collaborators/{login}/permission"), &token, b"")?;
+        let route_json = route.json()?;
+        let permission = route_json.root().get("permission").str();
+        let role = route_json.root().get("role_name").str();
+        r.provenance
+            .push(format!("# bot-permission-is-not-a-role collaborator permission {permission:?} role_name {role:?}"));
+        Ok(mint.status == 201
+            && contents == Some("write")
+            && pulls == Some("write")
+            && route.status == 200
+            && permission == Some("none")
+            && role == Some(""))
+    })
 }

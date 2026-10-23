@@ -31,8 +31,10 @@ fn json(row: Option<&document::User>, value: api::Permission, json: &mut Encoder
         json.key(b"login");
         json.string(&row.login);
     } else {
-        json.key(b"role_name");
+        json.key(b"permission");
         json.string(role(value));
+        json.key(b"role_name");
+        json.string(if value == api::Permission::None { b"" } else { role(value) });
     }
     json.object_end();
 }

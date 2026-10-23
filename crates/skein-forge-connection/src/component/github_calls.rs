@@ -208,6 +208,10 @@ impl Component {
             self.finish(call, id, Ok(answer), up);
             return;
         }
+        if let Some(answer) = self.github_bot_permission(id, at) {
+            self.finish(call, id, Ok(answer), up);
+            return;
+        }
         if !self.assign(call, id, at, env, up, io) {
             return;
         }
@@ -222,6 +226,20 @@ impl Component {
                 budget.1.saturating_sub(io.len().saturating_sub(below)),
             ),
         );
+    }
+    fn github_bot_permission(&self, id: Id<Waiting>, at: u32) -> Option<api::Answer> {
+        let waiting = self.waiting.get(id).expect("call");
+        let gh = self.github.get(at).expect("forge").as_ref().expect("GitHub");
+        let bot = self.settings.forges.get(at).expect("forge").access.as_ref()?.user;
+        if waiting.discovery.is_none()
+            && let Some(api::Op::Read(api::Read::Permission { user })) = waiting.op.as_ref()
+            && *user == bot
+        {
+            let route = waiting.route.expect("eligible route");
+            let row = gh.rows.get(&route.selected.id).expect("eligible row");
+            return Some(api::Answer::Permission(row.permissions.permission()));
+        }
+        None
     }
     pub(super) fn begin_github_call(
         &mut self,
@@ -520,6 +538,15 @@ impl Component {
                         self.finish(call, id, Ok(answer), up);
                     } else {
                         self.waiting.get_mut(id).expect("call").discovered = Some(answer);
+                    }
+                    return;
+                }
+                if let Some(answer) = self.github_bot_permission(id, at) {
+                    self.release_github_call(id, env, io);
+                    if usable {
+                        self.finish(call, id, Ok(answer), up);
+                    } else {
+                        self.wake = Some(env.now);
                     }
                     return;
                 }

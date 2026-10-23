@@ -383,6 +383,7 @@ impl Component {
                     match scope {
                         Scope::Full => {
                             row.api = Some(minted.token);
+                            row.permissions = minted.permissions;
                             row.api_expires = minted.expires;
                             row.full = Clock::minted(minted.expires, next, env);
                             row.token_revision = row.token_revision.checked_add(1).expect("Full token revision space");
@@ -1025,6 +1026,7 @@ mod tests {
                         suspended: false,
                         accepted: false,
                         api: None,
+                        permissions: document::Levels::NONE,
                         api_expires: Wall::EPOCH,
                         git_expires: Wall::EPOCH,
                     },
@@ -1268,6 +1270,7 @@ mod tests {
                         suspended: false,
                         accepted: true,
                         api: Some(skein_lib::Secret::new(Box::from(token.as_slice()))),
+                        permissions: document::Levels::NONE,
                         api_expires: expiry,
                         git_expires: expiry,
                     },

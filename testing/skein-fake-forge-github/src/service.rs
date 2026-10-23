@@ -738,10 +738,18 @@ impl Service {
             request::Scope::Full => Scope::Full,
             request::Scope::Contents => Scope::Contents,
         };
+        let mut permissions = d::Levels::NONE;
+        for permission in &self.app.permissions {
+            if permission.name.as_ref() == b"contents" {
+                permissions.contents = d::Level::read(permission.access.text());
+            } else if permission.name.as_ref() == b"pull_requests" && scope == Scope::Full {
+                permissions.pull_requests = d::Level::read(permission.access.text());
+            }
+        }
         match self.installations.mint(id, scope, now) {
             Ok((token, expires)) => answers::response(
                 201,
-                &Body::Minted(&d::Minted { token, expires }, &self.app.permissions, scope),
+                &Body::Minted(&d::Minted { permissions, token, expires }, &self.app.permissions, scope),
                 &self.limits,
             ),
             Err(Mint::Missing) => answers::missing(&self.limits),
