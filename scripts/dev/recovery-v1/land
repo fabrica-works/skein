@@ -95,7 +95,7 @@ lock=${LAND_LOCK:-$common/land.lock}
 # The advisory connection spans retries, before the host turn and prebuild.
 if ((!docs && !local)) && [[ $repo == temper && ${LAND_TURN:-0} == 1 &&
     ${LAND_TURN_ACTIVE:-0} != 1 ]]; then
-    exec python3 -I -B "$kit/land-turn.py" client "$tmp" "$repo" "$kit/land" "${original_args[@]}"
+    LAND_LOCK="$lock" exec python3 -I -B "$kit/land-turn.py" client "$tmp" "$repo" "$kit/land" "${original_args[@]}"
 fi
 
 # One code landing at a time in each repository on this machine
