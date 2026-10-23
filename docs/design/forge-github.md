@@ -171,7 +171,7 @@ the call fails `TooLarge` when a 50th page still has a next.
 | `Read::Protection { branch }` | `GET R/rules/branches/<branch>?per_page=100&page=<n>`, every page; for each ruleset named, `GET R/rulesets/<ruleset_id>`; `GET R/branches/<branch>/protection` | section 5.3 |
 | `Read::Settings` | `GET /repositories/<id>` | `default_branch`; `allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`; the row kept afresh |
 | `Read::Collaborators { page }` | `GET R/collaborators?affiliation=all&per_page=<size>&page=<page>` | each `id` and `role_name` as below; `more` from `Link` |
-| `Read::Permission { user }` | `GET R/collaborators/<login>/permission` | `role_name`: `admin` and `maintain` `Admin`, `write` `Write`, `triage` and `read` `Read`, `none` `None` |
+| `Read::Permission { user }` | for the bot (the identity read's `databaseId`, 8.4), none; otherwise `GET R/collaborators/<login>/permission` | the bot's from its installation (8.2): `Write` when the full mint's `permissions` hold `contents: write` and `pull_requests: write`, `Read` when they hold `contents` at `read` or above, `None` otherwise; another user's from `role_name`: `admin` and `maintain` `Admin`, `write` `Write`, `triage` and `read` `Read`, `none` and the empty string `None` |
 | `Read::Locate { owner, name }` | `GET /repos/<owner>/<name>` | `id`; the row kept |
 
 The dropped rows are names the client can't hold, such as queue branches
@@ -455,7 +455,15 @@ bound, revisions, markers and malformed answers; and GitHub's:
   `{"permissions":{"contents":"write"}}`, the git token of a forge's
   `Event::GitToken`.
 - **Its decoder** keeps `token`, as a `Secret` within `string_bytes`,
-  and `expires_at`. Nothing else of it is read.
+  `expires_at`, and the `contents` and `pull_requests` levels of
+  `permissions` (`read`, `write`, absent or another word as none). The
+  full mint's levels are the installation's: the connection keeps them
+  beside the token, each mint replacing them, and answers the bot's
+  `Read::Permission` from them (4.1). GitHub answers a bot's
+  collaborator permission `{"permission":"none","role_name":""}`
+  (`bot-permission-is-not-a-role`): an App's access is its
+  installation's, never a role. A repository outside a selected
+  installation is refused at its read (`404`), before any permission.
 - **A token minted for Contents creates issues but cannot edit them:** the
   observed mint permissions are `contents: write`, `metadata: read`, with
   `repository_selection: selected`. Issue creation answers `201`, with
@@ -675,7 +683,10 @@ temper's draft section 11.
 - **Tokens and identity:** `token-expires-in-an-hour`,
   `token-narrowed-creates-not-edits` (P1); `rate-core-5000`, `jwt-calls-no-rate`
   (P1); `viewer-is-bot`, `user-on-installation-403`,
-  `app-routes-401-on-installation-token` (P2); `jwt-iss-string`.
+  `app-routes-401-on-installation-token` (P2); `jwt-iss-string`;
+  `bot-permission-is-not-a-role` (the App's bot's collaborator
+  permission is `none` with an empty `role_name`, and the full mint's
+  `permissions` name the installation's levels; observed 2026-10-23).
   Contents narrowing returns mint permissions contents: write,
   metadata: read. Issue creation is 201 with the accepted permissions
   header; a title PATCH of that issue with the same token is 403,
