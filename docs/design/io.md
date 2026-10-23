@@ -184,6 +184,7 @@ hands the kernel.
 | Entity | Made by | Owned by | Named above by | Ends with |
 |---|---|---|---|---|
 | listener | `Listen` | the owner of the `Listen` | `Listening.listener` | `Closed` |
+| listener, held | `adopt_listener` (3.2) | io, until a `Listen` for its address claims it; then that `Listen`'s owner | the token `adopt_listener` returns, which `Listening.listener` names once claimed | `Closed` |
 | socket, connecting | `Connect` | the owner of the `Connect` | `Connecting.socket` | `Closed` |
 | socket, accepted | a listener's accept | io until answered; then the owner of the `Bind` | `Accepted.socket` | `Closed` once bound; nothing once rejected |
 | operation | io, for an entity | that entity, until its completion | its `Submit` token, below | its completion |
@@ -261,6 +262,48 @@ connection it took (a reset, a timeout, no route, or an error the kernel
 gave no name: accept(2) has these retried), it tries again in the next
 iteration. Any other error says the socket no longer listens, and stops
 it.
+
+**A held listener.** A listening socket opened before the loop, by the
+service's startup or inherited from its parent (shell.md, 6.6), is
+adopted with the address it is bound to,
+`Io::adopt_listener(fd: Fd, addr: SocketAddr) -> Result<Token, Fd>`, and
+held: io arms no accept on it, and the kernel queues the connections it
+takes in its backlog until someone accepts.
+
+| State | Event | Next, and what it does |
+|---|---|---|
+| Held | a `Listen` for its address | Listening, the `Listen`'s owner its owner: `Listening`, arm |
+| Held | `Close`, `Abort` on its token | Releasing: `Close` |
+| Held | given to a child (6.3) | Held: io keeps its descriptor |
+
+- **Claimed by its address.** A `Listen { owner, addr }` whose address
+  equals a held listener's, its IP and its port, takes that listener in
+  place of making a socket: no `Socket`, `Bind` or `Listen` is
+  submitted, and it is the owner's from then on as if it had bound,
+  `Listening` naming the held listener's token. A `Listen` for any other
+  address, port 0 among them, makes its socket as before. So the
+  components of a service never know whether their listener was
+  inherited: the address their configuration gives is the one they
+  listen on, and the one `Listening` tells them.
+- **Held for giving.** A held listener's token may be given to a child,
+  which inherits the same socket at the descriptor `Given` names (6.3).
+  io keeps its own descriptor, so that a child started again can be
+  given it again, and nothing else can bind the address meanwhile. A
+  parent that gives never claims: it accepts nothing.
+- **Refused,** the caller keeping the descriptor (`Err(fd)`) as every
+  adoption does: on a full slab, which counts it among
+  `Limits::sockets`, and when a listener at the same address is already
+  held. io checks nothing of the socket itself: startup has (shell.md,
+  6.6).
+- **Its events.** Unclaimed, the held listener's token is its own
+  owner, as an adopted pipe's is: its `Closed` names it. Claimed, its
+  events are the claimant's. One never claimed is closed at io's close
+  as any entity is.
+- **Not taken: a short reservation.** The smaller design frees a
+  reserved port just before the step that binds it starts, and needs
+  nothing of io. It leaves a window, from the free to the bind, in which
+  another process takes the port, and the step then fails at its bind:
+  the address it reports is no longer certainly its own.
 
 ### 3.3 The stream
 
@@ -964,6 +1007,9 @@ private root or file owned by anyone else is refused, saying so.
   - The child starts in a process group of its own, so a terminal's
     interrupt reaches the service alone, which decides what its children
     hear (section 7).
+  - A given descriptor (6.3's `Given`) is one io holds, a held listener
+    (3.2) so far, which the child inherits at a chosen descriptor; io
+    keeps its own.
   - A requested pipe has a chosen child descriptor and direction. Its
     parent end is a one-way stream token in the `Spawned` event, in request
     order. Each pipe consumes one entity slot alongside the child.
@@ -1116,12 +1162,12 @@ pub struct Spawn {
     pub pipes: Box<[Pipe]>,
     pub cgroup: Option<Token>,          // a cgroup io holds; the service's own if none
     pub ids: Option<Ids>,               // the user and groups the command runs as
-    pub given: Box<[Given]>,            // io roots, at the child's descriptors
+    pub given: Box<[Given]>,            // io's descriptors, at the child's
     pub contain: Option<Box<Contain>>,  // namespaces, and a view of the file system
 }
 pub enum Dir    { Beneath { root: Token, path: Box<[u8]> }, InView(Box<[u8]>) }
 pub struct Ids  { pub user: u32, pub group: u32, pub groups: Box<[u32]> }
-pub struct Given { pub root: Token, pub at: u32 }
+pub struct Given { pub token: Token, pub at: u32 }  // a held listener (3.2) or an io root
 pub struct Contain {
     pub users: Box<[Map]>, pub groups: Box<[Map]>,  // the user namespace's maps
     pub pid: bool,                                  // a pid namespace of its own
@@ -1155,9 +1201,17 @@ pub struct Rlimit { pub resource: Resource, pub soft: u64, pub hard: u64 }
   activator running as root starts a service as its user so. Outside a
   user namespace this needs privilege; inside one, `ids` are the
   namespace's, root of the namespace if absent.
-- **Given descriptors.** Each names an io root, an open directory, and
-  the descriptor number it has in the child; with the pipes, they are
-  all the child inherits. A helper that works beneath a store the
+- **Given descriptors.** Each names a descriptor io holds, a held
+  listener (3.2) or an io root, an open directory, and the descriptor
+  number it has in the child; with the pipes, they are all the child
+  inherits. Built first for held listeners, on every spawn, a tree's or
+  not: the ring adapter's file actions `dup2` io's descriptor to the
+  child's number, which leaves it open across the exec, and io keeps its
+  own. A spawn whose given and pipes name one child descriptor twice, or
+  that names a token which is neither, is refused before anything is
+  made. The simulator puts the same listener in the child's socket
+  table, so that the child's claim (3.2) accepts what the parent's
+  backlog held. A helper that works beneath a store the
   service opened takes it so (hearth's domain/store.md, 5.2).
 - **Contained.** A contained child has a user namespace of its own,
   mapped as `users` and `groups` say, and with it mount, ipc and cgroup
