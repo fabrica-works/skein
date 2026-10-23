@@ -163,6 +163,9 @@ functions: the kit holds no startup function of its own.
 A service that starts trees also dispatches its helper before step 1,
 and opens its own cgroup before step 7 (6.4).
 
+A service that listens takes the listeners it was given, and opens
+the ones it holds for its children, before step 7 (6.6).
+
 What startup reads, its configuration, its secrets and certificates, it
 reads with the kit (6.1). Then `main` makes the service and calls `drive`
 (section 12).
@@ -362,6 +365,41 @@ alike, before startup's step 1:
   refusals say the same. Positional arguments stay the binary's own.
 - **A test never relies on a default under `$HOME`:** it gives every
   directory as a flag.
+
+### 6.6 Listeners, inherited and held
+
+A service may be given its listening sockets by its parent, so that
+the address it reports is certainly its own from before it starts, and
+a parent may hold its children's from its own start (io.md, 3.2). The
+kit's functions, each before startup's step 7, through the kernel as
+`open_root` is:
+
+- **`inherited_listeners() -> Result<Box<[(Fd, SocketAddr)]>, Refusal>`**
+  reads systemd's socket activation convention: `LISTEN_FDS`, a decimal
+  count *n*, and the descriptors 3 to 2 + *n*. `LISTEN_PID`, which a
+  parent cannot know before its spawn, is not read, as Forgejo does not
+  read it. Each descriptor must be a socket (`fstat`) of a stream type,
+  listening (`SO_ACCEPTCONN`), IPv4 or IPv6 (`getsockname`, which gives
+  its address); each is made close-on-exec, so that a child inherits it
+  only when given it (io.md, 6.3). `main` hands each to
+  `Io::adopt_listener` once io is made, and the component whose
+  configured address it is claims it by its `Listen`.
+  - **Absent or empty,** none, and descriptors from 3 are left alone.
+  - **Refused,** naming the descriptor and what it is: a count that is
+    not a decimal number, a count past the service's sockets, a
+    descriptor not open, or one that is not a listening TCP socket.
+- **`listener_at(fd) -> Result<SocketAddr, Refusal>`,** the same check
+  of one descriptor, which it leaves as it is: for a command that hands
+  its listener on across its exec, as temper's `forge run` hands
+  Forgejo's.
+- **`open_listener(addr, backlog) -> Result<(Fd, SocketAddr), Error>`**
+  makes, binds and listens, as io's `Listen` does, and answers the
+  address bound, without accepting: a parent holds it, adopted, to give
+  to its children (io.md, 3.2). A bind refused is the caller's to retry
+  at port 0, where it chooses a port.
+- **The environment is the service's to pass on.** The kit cannot
+  remove `LISTEN_FDS` from its own environment; a service that gives
+  its children its environment drops it, and sets each child's own.
 
 ## 7. The readiness backend
 
