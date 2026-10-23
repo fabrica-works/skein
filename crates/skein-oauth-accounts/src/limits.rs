@@ -80,6 +80,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.client.scope_bytes))?
         .checked_add(u64::from(limits.client.document.subject_bytes))?
         .checked_add(payload)?
+        .checked_add(u64::try_from(crate::RETURN_BYTES).ok()?)?
         .checked_add(
             u64::from(
                 limits

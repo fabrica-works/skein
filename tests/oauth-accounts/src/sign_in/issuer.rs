@@ -38,7 +38,11 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             document: profile.client.document,
             uri_bytes: 256,
             request_bytes: 1024,
-            codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 },
+            codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain | Story::Return(super::Return::After)) {
+                2
+            } else {
+                1
+            },
             rotations: 2,
             plans: 2,
             carried: 3,
@@ -77,7 +81,10 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
 }
 
 pub(super) fn port_terms(story: Story) -> Option<fake::Terms> {
-    if matches!(story, Story::OpenIdAgain | Story::IssuedClientId | Story::AnotherSubject) {
+    if matches!(
+        story,
+        Story::OpenIdAgain | Story::Return(super::Return::After) | Story::IssuedClientId | Story::AnotherSubject
+    ) {
         return Some(fake::Terms {
             issued: if story == Story::IssuedClientId {
                 Box::new([bytes::copy_of(super::ISSUED_CLIENT)])

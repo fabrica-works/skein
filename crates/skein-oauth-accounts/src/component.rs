@@ -243,6 +243,7 @@ impl Component {
             Request::SignOut { account } => self.sign_out(env, account, up, io),
             Request::SignIn { account, subject } => self.sign_in(env, account, subject, up, io),
             Request::Redirected { account, uri } => self.redirected(env, account, &uri, up),
+            Request::Return { account, location } => self.return_to(account, location),
             Request::Cancel { account } => match self.bindings.get(account) {
                 Some(Some(id)) => {
                     let id = *id;
@@ -829,6 +830,7 @@ impl Component {
                 return;
             }
         }
+        exchange.return_location = None;
         let stage = core::mem::replace(&mut exchange.stage, Stage::Finished);
         exchange.received();
         exchange.visit = None;
@@ -991,6 +993,7 @@ impl Component {
         exchange.received();
         exchange.visit = None;
         exchange.sign_in = None;
+        exchange.return_location = None;
         for _ in 0..oauth::MAX_OUT {
             drop(exchange.above.pop());
         }

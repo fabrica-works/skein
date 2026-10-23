@@ -1,6 +1,6 @@
 //! One public sign-in's loopback listener and bounded request head (oauth.md,
 //! section 6.5). It knows the registered URI, no state or verifier. It hands a
-//! checked redirect to its exchange, answers a fixed page, and settles at io.
+//! checked redirect to its exchange, answers the page or its owner's return, and settles at io.
 
 #![expect(
     clippy::single_match,
@@ -48,6 +48,7 @@ enum Binding {
 }
 
 pub(crate) struct Listener {
+    pub(crate) return_location: Option<Box<[u8]>>,
     registered: Box<[u8]>,
     binding: Binding,
     socket: Option<Token>,
@@ -70,8 +71,9 @@ struct Callback {
 }
 
 impl Listener {
-    pub(crate) fn new(registered: &[u8], varying: bool) -> Self {
+    pub(crate) fn new(registered: &[u8], varying: bool, return_location: Option<Box<[u8]>>) -> Self {
         Listener {
+            return_location,
             registered: bytes::copy_of(registered),
             binding: if !varying {
                 Binding::Fixed
@@ -231,6 +233,7 @@ impl Listener {
             Some(_) | None => {}
         }
         self.redirect = None;
+        self.return_location = None;
     }
 
     pub(crate) fn progress(&mut self, env: &Env<Limits>, io: &mut Queue<Request>) {
@@ -261,12 +264,29 @@ impl Listener {
                     callback.phase = Head::Responding;
                     callback.page = if accepted { PAGE } else { REFUSAL };
                     callback.requests.push(http::Request::Discard);
+                    let content_type = Header {
+                        name: bytes::copy_of(b"content-type"),
+                        value: bytes::copy_of(b"text/plain; charset=utf-8"),
+                    };
+                    let location = if accepted { self.return_location.take() } else { None };
+                    let (status, headers): (u16, Box<[Header]>) = match location {
+                        Some(location) => (
+                            303,
+                            Box::new([
+                                Header { name: bytes::copy_of(b"location"), value: location },
+                                Header { name: bytes::copy_of(b"cache-control"), value: bytes::copy_of(b"no-store") },
+                                Header {
+                                    name: bytes::copy_of(b"referrer-policy"),
+                                    value: bytes::copy_of(b"no-referrer"),
+                                },
+                                content_type,
+                            ]),
+                        ),
+                        None => (if accepted { 200 } else { 404 }, Box::new([content_type])),
+                    };
                     callback.requests.push(http::Request::Respond(http::Response {
-                        status: if accepted { 200 } else { 404 },
-                        headers: Box::new([Header {
-                            name: bytes::copy_of(b"content-type"),
-                            value: bytes::copy_of(b"text/plain; charset=utf-8"),
-                        }]),
+                        status,
+                        headers,
                         body: http::Body::Length(u64::try_from(callback.page.len()).expect("fixed page")),
                         close: true,
                     }));

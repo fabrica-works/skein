@@ -162,6 +162,18 @@ fn drive_partial_heads(component: &mut Component, env: &Env<Limits>, response: V
             &mut Queue::with_capacity(1),
         );
     }
+    for account in 0..env.limits.accounts {
+        let mut location = b"https://application.example/".to_vec();
+        location.resize(skein_oauth_accounts::RETURN_BYTES, b'x');
+        component.down(
+            env,
+            Request::Return { account, location: location.into_boxed_slice() },
+            &mut above,
+            &mut below,
+            &mut Queue::with_capacity(1),
+        );
+    }
+    assert!(above.is_empty(), "returns have no event");
     let mut sockets = ListenerSockets::new(response);
     let mut visits = 0;
     for _ in 0..LISTENER_TURNS {

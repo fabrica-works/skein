@@ -25,5 +25,8 @@ pub use component::{
 };
 pub use limits::{Limits, worst_case};
 
+/// The largest return location for one sign-in (oauth.md, section 6.5).
+pub const RETURN_BYTES: usize = 2048;
+
 #[cfg(test)]
 mod tests;

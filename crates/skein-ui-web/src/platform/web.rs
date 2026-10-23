@@ -41,11 +41,10 @@ impl<R: 'static> super::Platform for Browser<R> {
         self.fetch.exchange(exchange);
     }
     fn navigate(&mut self, to: &[u8]) {
-        let to = std::str::from_utf8(to).expect("navigation is UTF-8");
-        assert!(
-            (to.starts_with('/') && !to.starts_with("//") && !to.contains('\\')) || to.starts_with("https://"),
-            "navigation is an origin path or HTTPS address"
-        );
+        if !crate::navigation::allowed(to, cfg!(feature = "loopback-navigation")) {
+            return;
+        }
+        let to = std::str::from_utf8(to).expect("visible ASCII navigation");
         web_sys::window().expect("browser window").location().set_href(to).expect("navigation address");
     }
 }

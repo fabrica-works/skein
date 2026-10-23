@@ -48,7 +48,7 @@ impl Judge {
                     );
                     assert!(client.records.is_empty());
                 }
-                Story::OpenIdAgain => {
+                Story::OpenIdAgain | Story::Return(super::Return::After) => {
                     assert_eq!(client.facts.iter().filter(|fact| matches!(fact, Fact::Visit)).count(), SIGN_INS);
                     assert!(client.facts.contains(&Fact::SignedIn(SECOND_GENERATION)));
                     document_visits(issuer.observations(), SIGN_INS);
@@ -65,7 +65,8 @@ impl Judge {
                     assert!(client.facts.contains(&Fact::SignedIn(1)));
                     assert!(client.facts.contains(&Fact::Late));
                 }
-                Story::VaryingTaken
+                Story::Return(_)
+                | Story::VaryingTaken
                 | Story::TwoPorts
                 | Story::WrongPath
                 | Story::WrongHost

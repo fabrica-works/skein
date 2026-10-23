@@ -29,6 +29,7 @@ impl Component {
             Request::Redirected { account, uri } => {
                 Request::Redirected { account: self.lookup(account, Asked::Redirected, up)?, uri }
             }
+            Request::Return { account, location } => Request::Return { account: self.place(account)?, location },
             Request::HandIn { account, record } => {
                 Request::HandIn { account: self.lookup(account, Asked::HandIn, up)?, record }
             }

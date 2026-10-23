@@ -28,6 +28,8 @@ fn io_limits() -> io::Limits {
 /// The outside owner's actions during one sign-in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Story {
+    /// The listener's per-sign-in return setting.
+    Return(Return),
     /// Two sign-ins fetch fresh issuer documents before their visits.
     OpenIdAgain,
     /// An issued client id completes a new registration.
@@ -63,6 +65,75 @@ pub enum Story {
     /// The shipped person deadline ends a sign-in that receives no redirect.
     Timeout,
 }
+/// The owner's return settings at the sign-in boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Return {
+    /// Return admitted while the sign-in loads.
+    Back,
+    /// Return before any sign-in is dropped.
+    Before,
+    /// Return after the terminal is dropped before a second sign-in.
+    After,
+    /// A later setting replaces the first.
+    Replace,
+    /// Oversized setting is dropped.
+    Long,
+    /// A space makes a setting invalid.
+    Space,
+    /// A missing scheme makes a setting invalid.
+    Scheme,
+    /// An empty setting is dropped.
+    Empty,
+    /// A control byte makes a setting invalid.
+    Control,
+    /// A non-ASCII byte makes a setting invalid.
+    NonAscii,
+    /// Exactly the byte bound is admitted.
+    Bound,
+    /// A refused path gets no return.
+    WrongPath,
+}
+pub(super) fn again(story: Story) -> bool {
+    matches!(story, Story::OpenIdAgain | Story::Return(Return::After))
+}
+pub(super) fn return_location(story: Story) -> Option<Box<[u8]>> {
+    match story {
+        Story::Return(Return::Back | Return::WrongPath) => Some(bytes::copy_of(b"http://127.0.0.1:32000/back")),
+        Story::Return(Return::Replace) => Some(bytes::copy_of(b"https://application.example/replaced")),
+        Story::Return(Return::Bound) => {
+            let mut location = b"https://application.example/".to_vec();
+            location.resize(accounts::RETURN_BYTES, b'x');
+            Some(location.into_boxed_slice())
+        }
+        Story::Return(
+            Return::Before
+            | Return::After
+            | Return::Long
+            | Return::Space
+            | Return::Scheme
+            | Return::Empty
+            | Return::Control
+            | Return::NonAscii,
+        )
+        | Story::OpenIdAgain
+        | Story::IssuedClientId
+        | Story::AnotherSubject
+        | Story::RequiredScopes
+        | Story::Public
+        | Story::VaryingTaken
+        | Story::TwoPorts
+        | Story::Confidential
+        | Story::WrongPath
+        | Story::WrongHost
+        | Story::LongHead
+        | Story::CloseWaiting
+        | Story::CloseConfidential
+        | Story::Cancel
+        | Story::Abort
+        | Story::NotKept
+        | Story::Timeout => None,
+    }
+}
 fn confidential(story: Story) -> bool {
     matches!(story, Story::Confidential | Story::CloseConfidential)
 }
@@ -87,7 +158,10 @@ pub fn registration(story: Story) -> oauth::Registration {
         registration.terms =
             Some(oauth::Terms { required_scopes: Some(bytes::copy_of(REQUIRED_SCOPES)), ..crate::world::terms() });
     }
-    if matches!(story, Story::OpenIdAgain | Story::IssuedClientId | Story::AnotherSubject) {
+    if matches!(
+        story,
+        Story::OpenIdAgain | Story::Return(Return::After) | Story::IssuedClientId | Story::AnotherSubject
+    ) {
         registration.scope = bytes::copy_of(b"openid");
         registration.terms = Some(oauth::Terms {
             issued_client_id: story == Story::IssuedClientId,
@@ -203,6 +277,9 @@ impl Client {
     }
     fn with_limits(story: Story, large: bool, limits: &accounts::Limits, room: u32) -> Self {
         let mut limits = *limits;
+        if matches!(story, Story::Return(_)) {
+            limits.server.response = limits.server.response.max(4096);
+        }
         if story == Story::TwoPorts {
             limits.listeners = 2;
             limits.io.sockets = 6;
@@ -605,7 +682,15 @@ impl Referee<Process> for Judge {
             .filter(|observation| matches!(observation, peer::Observation::Post { .. }))
             .count();
         assert!(
-            posts <= if matches!(self.story, Story::Public | Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 }
+            posts
+                <= if matches!(
+                    self.story,
+                    Story::Public | Story::TwoPorts | Story::OpenIdAgain | Story::Return(Return::After)
+                ) {
+                    2
+                } else {
+                    1
+                }
         );
         if !self.private_failure
             && client.closed
@@ -615,7 +700,14 @@ impl Referee<Process> for Judge {
             assert!(browser.done);
             assert_eq!(
                 posts,
-                if matches!(self.story, Story::Public | Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 }
+                if matches!(
+                    self.story,
+                    Story::Public | Story::TwoPorts | Story::OpenIdAgain | Story::Return(Return::After)
+                ) {
+                    2
+                } else {
+                    1
+                }
             );
         }
         self.passed = self.shutdown && processes.iter().all(Host::is_empty);
@@ -692,9 +784,22 @@ pub fn assert_replay(first: &Outcome<Process>, second: &Outcome<Process>) {
 /// Signs in with the private keeper on the actual minimal machine and independent issuer/browser.
 #[must_use]
 pub fn run_private(seed: u64, private: crate::private::Story) -> Outcome<Process, crate::private::FileSystem> {
+    private_story(seed, private, Story::Confidential)
+}
+
+/// A public sign-in's return is set before its private load finishes.
+#[must_use]
+pub fn run_private_return(seed: u64) -> Outcome<Process, crate::private::FileSystem> {
+    private_story(seed, crate::private::Story::Missing, Story::Return(Return::Back))
+}
+
+fn private_story(
+    seed: u64,
+    private: crate::private::Story,
+    story: Story,
+) -> Outcome<Process, crate::private::FileSystem> {
     let mut files = crate::private::FileSystem::new(private);
     let root = files.startup();
-    let story = Story::Confidential;
     let private_failure = matches!(
         private,
         crate::private::Story::RootMode

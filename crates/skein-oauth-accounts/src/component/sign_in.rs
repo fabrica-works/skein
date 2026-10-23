@@ -16,6 +16,41 @@ use skein_lib::{CryptoRng, Env, Queue, Time, Writer};
 use skein_oauth as oauth;
 
 impl Component {
+    pub(super) fn return_to(&mut self, account: u32, location: Box<[u8]>) {
+        if location.is_empty()
+            || location.len() > crate::RETURN_BYTES
+            || !(location.starts_with(b"http://") || location.starts_with(b"https://"))
+        {
+            return;
+        }
+        for byte in &location {
+            if !(0x21..=0x7e).contains(byte) {
+                return;
+            }
+        }
+        let id = match self.bindings.get(account) {
+            Some(Some(id)) => *id,
+            Some(None) | None => return,
+        };
+        let exchange = self.exchanges.get_mut(id).expect("bound exchange");
+        if !exchange.signing_in() {
+            return;
+        }
+        match exchange.stage {
+            Stage::Finished => return,
+            Stage::Loading
+            | Stage::Locking
+            | Stage::Reading
+            | Stage::Running
+            | Stage::Keeping { .. }
+            | Stage::Forgetting { .. } => {}
+        }
+        match &mut exchange.listener {
+            Some(listener) => listener.return_location = Some(location),
+            None => exchange.return_location = Some(location),
+        }
+    }
+
     pub(super) fn sign_in(
         &mut self,
         env: &Env<Limits>,
@@ -158,7 +193,11 @@ impl Component {
         exchange.purpose = crate::exchange::Purpose::SignIn { waiting: true };
         if public {
             let preferred = redirect::port(&registration.redirect_uri).expect("validated public redirect");
-            exchange.listener = Some(Listener::new(&registration.redirect_uri, redirect::varying(&registration)));
+            exchange.listener = Some(Listener::new(
+                &registration.redirect_uri,
+                redirect::varying(&registration),
+                exchange.return_location.take(),
+            ));
             io.push(Lower::Listen {
                 owner: route::owner(id, Socket::Listener),
                 addr: skein_io::Addr::Ip(

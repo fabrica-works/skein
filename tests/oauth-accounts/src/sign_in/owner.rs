@@ -15,7 +15,8 @@ impl Client {
                 self.close(env);
                 self.ask(env, accounts::Request::Abort);
             }
-            Story::OpenIdAgain
+            Story::Return(_)
+            | Story::OpenIdAgain
             | Story::IssuedClientId
             | Story::AnotherSubject
             | Story::RequiredScopes
@@ -65,6 +66,16 @@ impl Client {
             )
             .expect("accounts"),
         );
+        if self.story == Story::Return(super::Return::Before) {
+            self.return_to(env, bytes::copy_of(b"https://application.example/stale"));
+            self.ask(
+                env,
+                accounts::Request::Return {
+                    account: u32::MAX,
+                    location: bytes::copy_of(b"https://application.example/missing"),
+                },
+            );
+        }
         for account in 0..count {
             self.ask(
                 env,
@@ -73,7 +84,62 @@ impl Client {
                     subject: (self.story == Story::AnotherSubject).then(|| bytes::copy_of(super::EXPECTED_SUBJECT)),
                 },
             );
+            self.set_return(env);
         }
+    }
+    fn set_return(&mut self, env: &Env<accounts::Limits>) {
+        match self.story {
+            Story::Return(super::Return::Replace) => {
+                self.return_to(env, bytes::copy_of(b"https://application.example/first"));
+                self.return_to(env, super::return_location(self.story).expect("replacement"));
+            }
+            Story::Return(super::Return::Long) => {
+                let mut location = b"https://application.example/".to_vec();
+                location.resize(accounts::RETURN_BYTES + 1, b'x');
+                self.return_to(env, location.into_boxed_slice());
+            }
+            Story::Return(super::Return::Space) => {
+                self.return_to(env, bytes::copy_of(b"https://application.example/a b"));
+            }
+            Story::Return(super::Return::Scheme) => self.return_to(env, bytes::copy_of(b"/back")),
+            Story::Return(super::Return::Empty) => self.return_to(env, Box::new([])),
+            Story::Return(super::Return::Control) => {
+                self.return_to(env, bytes::copy_of(b"https://application.example/\r\n"));
+            }
+            Story::Return(super::Return::NonAscii) => {
+                self.return_to(env, bytes::copy_of(b"https://application.example/\xff"));
+            }
+            Story::Return(super::Return::After) => {
+                self.return_to(env, bytes::copy_of(b"https://application.example/first"));
+            }
+            Story::Return(
+                super::Return::Back | super::Return::Before | super::Return::Bound | super::Return::WrongPath,
+            )
+            | Story::OpenIdAgain
+            | Story::IssuedClientId
+            | Story::AnotherSubject
+            | Story::RequiredScopes
+            | Story::Public
+            | Story::VaryingTaken
+            | Story::TwoPorts
+            | Story::Confidential
+            | Story::WrongPath
+            | Story::WrongHost
+            | Story::LongHead
+            | Story::CloseWaiting
+            | Story::CloseConfidential
+            | Story::Cancel
+            | Story::Abort
+            | Story::NotKept
+            | Story::Timeout => {
+                if let Some(location) = super::return_location(self.story) {
+                    self.return_to(env, location);
+                }
+            }
+        }
+    }
+    fn return_to(&mut self, env: &Env<accounts::Limits>, location: Box<[u8]>) {
+        self.ask(env, accounts::Request::Return { account: 0, location });
     }
     pub(super) fn restart(&mut self, env: &Env<accounts::Limits>) {
         if self.again_at.is_some_and(|at| env.now >= at) {
@@ -120,8 +186,11 @@ impl Client {
         self.facts.push(Fact::SignedIn(generation));
         assert_eq!(
             generation,
-            if self.story == Story::OpenIdAgain { u64::try_from(self.records.len()).expect("two records") } else { 1 }
+            if super::again(self.story) { u64::try_from(self.records.len()).expect("two records") } else { 1 }
         );
+        if self.story == Story::Return(super::Return::After) {
+            self.return_to(env, bytes::copy_of(b"https://application.example/stale"));
+        }
         if !missing.is_empty() {
             self.facts.push(Fact::Missing(missing));
         }
@@ -159,7 +228,7 @@ impl Client {
                 accounts::Event::Granted { account, generation, .. } => {
                     self.contracts[usize::try_from(account).expect("account index")].granted(generation);
                     self.facts.push(Fact::Granted(generation));
-                    if generation == 1 && self.story == Story::OpenIdAgain {
+                    if generation == 1 && super::again(self.story) {
                         self.ask(env, accounts::Request::Release { account });
                         self.again_at = Some(env.now.saturating_add(skein_lib::Duration::from_secs(1)));
                     } else if generation == 1 && self.story == Story::Public {

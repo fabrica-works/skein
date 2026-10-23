@@ -19,6 +19,8 @@ pub enum Request {
     SignIn { account: u32, subject: Option<Box<[u8]>> },
     /// The confidential owner's complete redirect URI; refusal leaves a sign-in waiting.
     Redirected { account: u32, uri: Box<[u8]> },
+    /// The address the listener sends the browser on to once it takes this sign-in's redirect (oauth.md, 6.5).
+    Return { account: u32, location: Box<[u8]> },
     /// Cancels this account's exchange; its requested or held work hears the terminal.
     Cancel { account: u32 },
     /// An access-only record; a newer generation replaces it, with only refusals answered.

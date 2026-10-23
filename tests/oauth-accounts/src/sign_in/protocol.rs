@@ -21,9 +21,16 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         profile.listeners = 2;
         profile.io.sockets = 6;
     }
+    if matches!(story, Story::Return(_)) {
+        profile.server.response = profile.server.response.max(4096);
+    }
     let registration = registration(story);
     let issuer_limits = fake::Limits {
-        codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 },
+        codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain | Story::Return(super::Return::After)) {
+            2
+        } else {
+            1
+        },
         carried: 3,
         ..crate::world::issuer_limits(&profile.client)
     };
@@ -130,7 +137,12 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             && callback_count
                 < if matches!(
                     story,
-                    Story::WrongPath | Story::WrongHost | Story::LongHead | Story::TwoPorts | Story::OpenIdAgain
+                    Story::WrongPath
+                        | Story::Return(super::Return::WrongPath | super::Return::After)
+                        | Story::WrongHost
+                        | Story::LongHead
+                        | Story::TwoPorts
+                        | Story::OpenIdAgain
                 ) {
                     2
                 } else {
@@ -156,7 +168,9 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     &mut client.files,
                 );
                 let (_, authority, target) = url_parts(uri);
-                let target = if callback_count == 0 && story == Story::WrongPath {
+                let target = if callback_count == 0
+                    && matches!(story, Story::WrongPath | Story::Return(super::Return::WrongPath))
+                {
                     b"/wrong?state=fake&code=fake".as_slice()
                 } else {
                     target
@@ -179,7 +193,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 browser_bytes.clear();
                 callback_count += 1;
                 callback_pending = true;
-                if matches!(story, Story::TwoPorts | Story::OpenIdAgain) {
+                if matches!(story, Story::TwoPorts | Story::OpenIdAgain | Story::Return(super::Return::After)) {
                     redirect = None;
                 }
             }
@@ -279,8 +293,17 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                         if !matches!(story, Story::Cancel | Story::Abort | Story::Timeout) {
                             assert!(browser_bytes.starts_with(if callback_count == 1 && story == Story::LongHead {
                                 b"HTTP/1.1 414"
-                            } else if callback_count == 1 && matches!(story, Story::WrongPath | Story::WrongHost) {
+                            } else if callback_count == 1
+                                && matches!(
+                                    story,
+                                    Story::WrongPath | Story::WrongHost | Story::Return(super::Return::WrongPath)
+                                )
+                            {
                                 b"HTTP/1.1 404"
+                            } else if super::return_location(story).is_some()
+                                || (story == Story::Return(super::Return::After) && callback_count == 1)
+                            {
+                                b"HTTP/1.1 303"
                             } else {
                                 b"HTTP/1.1 200"
                             }));
@@ -450,14 +473,17 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         {
             assert_eq!(
                 issuer.posts(),
-                if matches!(story, Story::Public | Story::TwoPorts | Story::OpenIdAgain) {
+                if matches!(
+                    story,
+                    Story::Public | Story::TwoPorts | Story::OpenIdAgain | Story::Return(super::Return::After)
+                ) {
                     2
                 } else {
                     u64::from(!matches!(story, Story::Cancel | Story::Abort | Story::Timeout))
                 }
             );
             assert_eq!(preferred_failed, story == Story::VaryingTaken);
-            if story == Story::OpenIdAgain {
+            if super::again(story) {
                 assert_eq!(
                     document_paths.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(),
                     [b"/.well-known/openid-configuration".as_slice(), b"/keys"].repeat(2)

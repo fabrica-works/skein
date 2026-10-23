@@ -171,3 +171,49 @@ fn a_new_registration_signs_in_with_its_issued_client_id() {
 fn a_sign_in_of_another_subject_fails_and_keeps_nothing() {
     openid_story(Story::AnotherSubject);
 }
+
+fn return_story(story: sign_in::Return) {
+    let story = Story::Return(story);
+    let outcome = sign_in::run(89, story, true, false, Memory::Checked);
+    assert!(sign_in::facts(&outcome.procs).contains(&sign_in::Fact::SignedIn(1)));
+    assert!(sign_in::protocol(89, story).0.contains(&sign_in::Fact::SignedIn(1)));
+}
+#[test]
+fn a_return_sends_the_browser_back_with_303() {
+    return_story(sign_in::Return::Back);
+    drop(sign_in::run_private_return(91));
+}
+#[test]
+fn without_a_return_the_listener_answers_its_fixed_page() {
+    drop(sign_in::run(89, Story::VaryingTaken, true, false, Memory::Checked));
+}
+#[test]
+fn a_return_for_no_sign_in_is_dropped() {
+    return_story(sign_in::Return::Before);
+}
+#[test]
+fn a_return_after_the_sign_in_ended_is_dropped() {
+    return_story(sign_in::Return::After);
+}
+#[test]
+fn a_later_return_replaces_the_first() {
+    return_story(sign_in::Return::Replace);
+}
+#[test]
+fn a_return_past_its_bounds_is_dropped() {
+    for story in [
+        sign_in::Return::Long,
+        sign_in::Return::Space,
+        sign_in::Return::Scheme,
+        sign_in::Return::Empty,
+        sign_in::Return::Control,
+        sign_in::Return::NonAscii,
+        sign_in::Return::Bound,
+    ] {
+        return_story(story);
+    }
+}
+#[test]
+fn a_refused_redirect_never_gets_the_return() {
+    return_story(sign_in::Return::WrongPath);
+}

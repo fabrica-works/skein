@@ -9,8 +9,63 @@ use std::net::{Ipv4Addr, SocketAddr};
 const WEB: Token = Token::new(3);
 const HOLDER: Token = Token::new(4);
 fn http_limits() -> http::Limits {
-    http::Limits { request: 4096, ..crate::world::limits().http }
+    http::Limits { request: 4096, head: 4096, ..crate::world::limits().http }
 }
+fn check_return(story: Story, returns: usize, response: &http::Response, received: &[u8]) {
+    let location = if story == Story::Return(super::Return::After) && returns == 0 {
+        Some(bytes::copy_of(b"https://application.example/first"))
+    } else {
+        super::return_location(story)
+    };
+    if let Some(location) = location {
+        assert_eq!(response.status, 303);
+        assert_eq!(response.header(b"location"), Some(location.as_ref()));
+        assert_eq!(response.header(b"cache-control"), Some(b"no-store".as_slice()));
+        assert_eq!(response.header(b"referrer-policy"), Some(b"no-referrer".as_slice()));
+    } else {
+        assert_eq!(response.status, 200);
+        assert!(response.header(b"location").is_none());
+        assert!(response.header(b"cache-control").is_none());
+        assert!(response.header(b"referrer-policy").is_none());
+    }
+    assert_eq!(response.header(b"content-type"), Some(b"text/plain; charset=utf-8".as_slice()));
+    assert_eq!(received, b"Sign-in received. You may close this page.\n");
+}
+
+fn callback_url(story: Story, redirect: &[u8]) -> Vec<u8> {
+    let mut url = redirect.to_vec();
+    match story {
+        Story::WrongPath | Story::Return(super::Return::WrongPath) => {
+            let at = url.windows(b"/callback".len()).position(|part| part == b"/callback").expect("callback");
+            url.splice(at..at + 9, b"/wrong".iter().copied());
+        }
+        Story::WrongHost => {
+            let at = url.windows(b"localhost".len()).position(|part| part == b"localhost").expect("localhost");
+            url.splice(at..at + 9, b"127.0.0.1".iter().copied());
+        }
+        Story::LongHead => {
+            url.extend_from_slice(b"&padding=");
+            url.resize(3000, b'x');
+        }
+        Story::Return(_)
+        | Story::OpenIdAgain
+        | Story::IssuedClientId
+        | Story::AnotherSubject
+        | Story::RequiredScopes
+        | Story::Public
+        | Story::VaryingTaken
+        | Story::TwoPorts
+        | Story::Confidential
+        | Story::CloseWaiting
+        | Story::CloseConfidential
+        | Story::Cancel
+        | Story::Abort
+        | Story::NotKept
+        | Story::Timeout => {}
+    }
+    url
+}
+
 struct Exchange {
     machine: http::Client,
     events: Queue<http::Event>,
@@ -156,6 +211,7 @@ pub struct Browser {
     stage: u32,
     pub(super) done: bool,
     story: Story,
+    returns: usize,
     pub(super) holder: Option<Token>,
 }
 impl Browser {
@@ -180,6 +236,7 @@ impl Browser {
             stage: 0,
             done: false,
             story,
+            returns: 0,
             holder: None,
         }
     }
@@ -207,11 +264,12 @@ impl Browser {
                     }
                     3 => {
                         assert_eq!(response.status, if self.story == Story::LongHead { 414 } else { 404 });
+                        assert!(response.header(b"location").is_none());
                         self.stage = 4;
                     }
                     5 => {
-                        assert_eq!(response.status, 200);
-                        assert!(exchange.received.starts_with(b"Sign-in received."));
+                        check_return(self.story, self.returns, &response, &exchange.received);
+                        self.returns += 1;
                         self.done = true;
                         self.stage = 6;
                     }
@@ -220,7 +278,10 @@ impl Browser {
             }
         }
         if self.exchange.is_none() {
-            if matches!(self.story, Story::TwoPorts | Story::OpenIdAgain) && self.inbox_len > 0 && self.stage == 6 {
+            if matches!(self.story, Story::TwoPorts | Story::OpenIdAgain | Story::Return(super::Return::After))
+                && self.inbox_len > 0
+                && self.stage == 6
+            {
                 self.stage = 0;
                 self.done = false;
             }
@@ -237,44 +298,16 @@ impl Browser {
                     self.stage = 1;
                 }
                 2 if !confidential(self.story) => {
-                    let mut url = self.redirect.as_ref().expect("redirect").to_vec();
-                    match self.story {
-                        Story::WrongPath => {
-                            let at = url
-                                .windows(b"/callback".len())
-                                .position(|part| part == b"/callback")
-                                .expect("callback");
-                            url.splice(at..at + 9, b"/wrong".iter().copied());
-                        }
-                        Story::WrongHost => {
-                            let at = url
-                                .windows(b"localhost".len())
-                                .position(|part| part == b"localhost")
-                                .expect("localhost");
-                            url.splice(at..at + 9, b"127.0.0.1".iter().copied());
-                        }
-                        Story::LongHead => {
-                            url.extend_from_slice(b"&padding=");
-                            url.resize(3000, b'x');
-                        }
-                        Story::OpenIdAgain
-                        | Story::IssuedClientId
-                        | Story::AnotherSubject
-                        | Story::RequiredScopes
-                        | Story::Public
-                        | Story::VaryingTaken
-                        | Story::TwoPorts
-                        | Story::Confidential
-                        | Story::CloseWaiting
-                        | Story::CloseConfidential
-                        | Story::Cancel
-                        | Story::Abort
-                        | Story::NotKept
-                        | Story::Timeout => {}
-                    }
+                    let url = callback_url(self.story, self.redirect.as_ref().expect("redirect"));
                     self.open(&url);
-                    self.stage =
-                        if matches!(self.story, Story::WrongPath | Story::WrongHost | Story::LongHead) { 3 } else { 5 };
+                    self.stage = if matches!(
+                        self.story,
+                        Story::WrongPath | Story::WrongHost | Story::LongHead | Story::Return(super::Return::WrongPath)
+                    ) {
+                        3
+                    } else {
+                        5
+                    };
                 }
                 4 => {
                     let url = self.redirect.as_ref().expect("redirect").clone();
