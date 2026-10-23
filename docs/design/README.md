@@ -51,6 +51,7 @@ this design.
 | LLM | `skein-llm` | provider-neutral calls, streaming deltas, concrete replay and completions; subscription wire dialects | [llm.md](llm.md) |
 | LLM connections | `skein-llm-connection` | a protocol layer's component that runs LLM calls end to end: connecting, TLS, deadlines, reuse | [llm-connection.md](llm-connection.md) |
 | OAuth | `skein-oauth`, `skein-oauth-accounts`, `skein-fake-oauth` | bounded sign-in and refresh client; the driver that runs it end to end for its owner, listener, connection and keeping included; an independent rotating issuer for worlds | [oauth.md](oauth.md) |
+| the OAuth issuer | `skein-oauth-issuer` | OpenID Connect's issuer, stateless: an authorization and a token request checked, an ID token signed, the discovery document, key set and userinfo answer | [oauth-issuer.md](oauth-issuer.md) |
 | the forge's vocabulary and dialects | `skein-forge` | a code forge's calls and documents, deliveries and credentials, neutral and rendered by a dialect; Forgejo's built, GitHub's later | [forge.md](forge.md) |
 | the forge component | `skein-forge-connection` | a protocol layer's component that runs a forge's calls end to end: connecting, TLS, credentials, deliveries | [forge-connection.md](forge-connection.md) |
 | the forge client | `skein-forge-client` | a bounded view of a forge for its owner's domain, and each write made at most once | [forge-client.md](forge-client.md) |
@@ -81,6 +82,7 @@ skein-llm-connection lib, io, tls, llm
 skein-oauth    lib, json
 skein-oauth-accounts lib, io, http, tls, oauth
 skein-fake-oauth lib, json, oauth
+skein-oauth-issuer lib, json, tls
 skein-forge    lib, json
 skein-forge-client lib, forge
 skein-forge-connection lib, io, http, tls, json, forge

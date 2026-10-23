@@ -400,6 +400,13 @@ independence.
   a handshake does, and the signature does not depend on it, so a fake
   forge checks it with `verify_rs256`. A key is parsed at each signing,
   never kept by skein-tls.
+- **A key's public half:** `rs256_public(key) -> Option<Rs256Public>`,
+  `Rs256Public { modulus: [u8; 256], exponent: Box<[u8]> }`, read from
+  the same PKCS#1 DER `sign_rs256` takes: its `n` and `e`, big-endian
+  unsigned with no leading zero byte, the exponent 1 to 5 bytes. None
+  for a key `sign_rs256` would refuse: ring parses it first, then the
+  DER's version, `n` and `e` are read. The OAuth issuer publishes it as
+  its key set's JWK (oauth-issuer.md, section 3).
 - **What rustls's API makes the crate use:** an `Arc` of the shared
   configuration, a trait object for the time, a hand-written `Debug`
   for its connection, `Vec`s in the configuration, and arms for the
