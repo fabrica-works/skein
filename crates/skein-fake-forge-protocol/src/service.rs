@@ -21,7 +21,7 @@ pub struct Service {
     pub(crate) setup: crate::setup::Store,
 }
 impl Service {
-    pub fn new(config: Config, limits: &Limits, seed: u64) -> Result<Self, Error> {
+    pub fn new(mut config: Config, limits: &Limits, seed: u64) -> Result<Self, Error> {
         if let Some(endpoint) = &config.hooks
             && (endpoint.host.is_empty() || endpoint.secret.is_empty())
         {
@@ -74,6 +74,11 @@ impl Service {
                 }
             }
         }
+        let mut repositories = List::with_capacity(limits.documents.inner);
+        for repository in config.repositories.into_boxed() {
+            repositories.push(repository).expect("checked repository count");
+        }
+        config.repositories = repositories;
         let tally = Tally::new(config.tokens.len().saturating_add(limits.documents.inner));
         let setup = crate::setup::Store::new(limits);
         Ok(Self { config, calls: Slab::with_capacity(limits.calls), rng: Rng::new(seed), tally, setup })
@@ -221,10 +226,13 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
             .checked_add(u64::try_from(endpoint.host.len()).ok()?)?
             .checked_add(u64::try_from(endpoint.secret.len()).ok()?)?;
     }
-    tables = tables
-        .checked_add(List::<(skein_lib::Secret, u64)>::worst_case(config.tokens.capacity())?)?
-        .checked_add(List::<(u64, Box<[u8]>)>::worst_case(config.users.capacity())?)?
-        .checked_add(List::<crate::Repository>::worst_case(config.repositories.capacity())?)?;
+    tables =
+        tables
+            .checked_add(List::<(skein_lib::Secret, u64)>::worst_case(config.tokens.capacity())?)?
+            .checked_add(List::<(u64, Box<[u8]>)>::worst_case(config.users.capacity())?)?
+            .checked_add(List::<crate::Repository>::worst_case(limits.documents.inner)?.checked_add(
+                u64::from(limits.documents.inner).checked_mul(u64::from(limits.documents.target_bytes))?,
+            )?)?;
     for (token, _) in &config.tokens {
         tables = tables.checked_add(u64::try_from(token.len()).ok()?)?;
     }

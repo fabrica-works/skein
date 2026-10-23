@@ -133,6 +133,12 @@ fn request_bytes(request: &Request) -> usize {
         Request::Run { plan, .. } => match plan {
             Plan::Reconcile { adopted, .. } => adopted.len() * size_of::<u64>(),
             Plan::TakeOver { admin_token, .. } => admin_token.len(),
+            Plan::Create { org, repository, files, .. } => {
+                org.len()
+                    + repository.len()
+                    + files.len() * size_of::<skein_forge_setup::host::File>()
+                    + files.iter().map(|f| f.path.len() + f.content.len()).sum::<usize>()
+            }
             Plan::Convert { code, state, .. } => code.len() + state.len(),
             Plan::Accept { state, .. } => state.len(),
             Plan::Manifest { .. }

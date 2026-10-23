@@ -118,6 +118,14 @@ fn invalid(place: Place, value: &[u8]) -> Given {
         | Place::Repository(_)
         | Place::OrgsLimit
         | Place::ReachableLimit
+        | Place::FilesLimit
+        | Place::FileBytesLimit
+        | Place::CreateOrg
+        | Place::CreateRepository
+        | Place::Files
+        | Place::FilePath(_)
+        | Place::FileContent(_)
+        | Place::Plan
         | Place::Page
         | Place::RepositoriesLimit
         | Place::Deadline
@@ -221,6 +229,14 @@ fn a_zero_limit_names_its_place() {
             | Place::Org(_)
             | Place::OrgOwner
             | Place::Repositories
+            | Place::FilesLimit
+            | Place::FileBytesLimit
+            | Place::CreateOrg
+            | Place::CreateRepository
+            | Place::Files
+            | Place::FilePath(_)
+            | Place::FileContent(_)
+            | Place::Plan
             | Place::Page
             | Place::Repository(_) => unreachable!("limit rows"),
         }

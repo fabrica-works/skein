@@ -40,6 +40,8 @@ pub enum Need {
 pub enum Outcome {
     /// Nothing to serve or show.
     Nothing,
+    /// The first repository, ready for adoption (4.9).
+    Created { id: core::num::NonZeroU64 },
     /// The browser page and the host-given state it was made for (5.1).
     Manifest { state: Box<[u8]>, page: Box<[u8]> },
     /// The App's missing wanted access, possibly empty (5.6 and 5.8).
@@ -91,6 +93,7 @@ pub enum Stage {
     Token,
     Org,
     Repository,
+    File,
     App,
     Installation,
     State,
@@ -185,7 +188,7 @@ impl Reconcile {
         self.shared.secret = None;
         let subject = match stage {
             Stage::Admin | Stage::App | Stage::Installation | Stage::State => self.admin_name.clone(),
-            Stage::Bot | Stage::Token | Stage::Org | Stage::Repository => self.bot_login.clone(),
+            Stage::Bot | Stage::Token | Stage::Org | Stage::Repository | Stage::File => self.bot_login.clone(),
         };
         Need::Stop(Failure { forge: self.forge, step: stage, subject, why })
     }
@@ -311,6 +314,7 @@ pub(crate) fn account(event: Event) -> Result<skein_forge::forgejo::document::Us
                 Document::User(user) => Ok(user),
                 Document::Token(_)
                 | Document::Org(_)
+                | Document::CreatedFile { .. }
                 | Document::CreatedRepository(_)
                 | Document::Hook(_)
                 | Document::Team(_)

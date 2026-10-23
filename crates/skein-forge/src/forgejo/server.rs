@@ -93,6 +93,9 @@ pub enum Answer {
     ApiSettings(ApiSettings),
     Repository(Repository),
     CreatedRepository(crate::forgejo::document::CreatedRepository),
+    CreatedFile {
+        commit: crate::forgejo::id::ObjectId,
+    },
     /// Encodes an admin search page, whose rows are all writable by the admin.
     RepoSearch {
         ok: bool,
@@ -151,6 +154,16 @@ pub fn encode(answer: &Answer, limits: &Limits) -> Result<Box<[u8]>, writer::Ref
 }
 fn write(json: &mut writer::Encoder, answer: &Answer) -> Result<(), writer::Refusal> {
     match answer {
+        Answer::CreatedFile { commit } => {
+            json.object_start();
+            json.key(b"commit");
+            json.object_start();
+            json.key(b"sha");
+            json.string(&crate::forgejo::id::write(commit));
+            json.object_end();
+            json.object_end();
+            Ok(())
+        }
         Answer::CreatedRepository(value) => {
             crate::forgejo::client::repositories::write(json, value);
             Ok(())

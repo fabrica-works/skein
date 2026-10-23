@@ -33,6 +33,7 @@ pub(super) fn route(method: Method, bytes: &[u8], limits: &Limits) -> Result<Rou
                 },
                 texts: List::with_capacity(limits.inner),
                 terminal: false,
+                committer: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
             }))
         }
         [api, v1, admin, users, login, tokens, tail @ ..]
@@ -52,6 +53,7 @@ pub(super) fn route(method: Method, bytes: &[u8], limits: &Limits) -> Result<Rou
                     request: Request::CreateToken { login, name: Box::from([]), scopes: Box::from([]) },
                     texts: List::with_capacity(limits.inner),
                     terminal: false,
+                    committer: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
                 })),
                 (Method::Delete, [id]) => {
                     Ok(Route::Ready(Request::DeleteToken { login, id: super::items::number_value(id)? }))

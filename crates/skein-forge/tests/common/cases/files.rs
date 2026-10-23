@@ -179,6 +179,7 @@ pub fn expected(answer: Answer) -> (Document, Vec<Row>) {
         }
         Answer::Org(_)
         | Answer::CreatedRepository(_)
+        | Answer::CreatedFile { .. }
         | Answer::Team(_)
         | Answer::Teams(_)
         | Answer::Hook(_)

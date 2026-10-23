@@ -49,8 +49,11 @@ pub fn repository(domain: &mut Domain, config: &Config, setup: Setup) -> u64 {
         fit_names(&protection.contexts, limits.contexts, limits).expect("contexts within the limits");
     }
     let tree = git::tree(limits, tree).expect("a first tree within the limits");
-    let first = git::store(domain, Object { parent: None, merge_parent: None, tree, message: Box::new([]) })
-        .expect("room for a first commit");
+    let first = git::store(
+        domain,
+        Object { parent: None, merge_parent: None, tree, message: Box::new([]), author: None, committer: None },
+    )
+    .expect("room for a first commit");
     let mut repository = Repository::new(limits, copy_of(&name), default, first, checks, protection, hooked);
     repository.id = id;
     for label in labels {
@@ -125,8 +128,17 @@ pub fn commit(
         return Ok(None);
     }
     fits(message, message_limit(&config.limits)?)?;
-    let commit =
-        git::store(domain, Object { parent: Some(parent), merge_parent: None, tree, message: copy_of(message) })?;
+    let commit = git::store(
+        domain,
+        Object {
+            parent: Some(parent),
+            merge_parent: None,
+            tree,
+            message: copy_of(message),
+            author: None,
+            committer: None,
+        },
+    )?;
     Ok(Some(commit))
 }
 
@@ -148,7 +160,14 @@ pub fn merge_commit(
     fits(message, message_limit(&config.limits)?)?;
     git::store(
         domain,
-        Object { parent: Some(parent), merge_parent: Some(merge_parent), tree, message: copy_of(message) },
+        Object {
+            parent: Some(parent),
+            merge_parent: Some(merge_parent),
+            tree,
+            message: copy_of(message),
+            author: None,
+            committer: None,
+        },
     )
 }
 
@@ -180,7 +199,10 @@ pub fn advance(
         return Err(Error::TooLarge);
     }
     tree.insert(copy_of(path), copy_of(content)).expect("checked for room above");
-    let commit = git::store(domain, Object { parent: Some(tip), merge_parent: None, tree, message: Box::new([]) })?;
+    let commit = git::store(
+        domain,
+        Object { parent: Some(tip), merge_parent: None, tree, message: Box::new([]), author: None, committer: None },
+    )?;
     let repository = domain.repositories.get_mut(id).expect("a repository of the forge");
     repository.has.insert(commit).expect("a repository has room for every commit");
     repository.branches.insert(copy_of(branch), commit).expect("the branch is there");
@@ -202,7 +224,17 @@ pub fn commit_tree(
     }
     let tree = git::tree(&config.limits, files)?;
     fits(message, message_limit(&config.limits)?)?;
-    git::store(domain, Object { parent: Some(parent), merge_parent: merging, tree, message: copy_of(message) })
+    git::store(
+        domain,
+        Object {
+            parent: Some(parent),
+            merge_parent: merging,
+            tree,
+            message: copy_of(message),
+            author: None,
+            committer: None,
+        },
+    )
 }
 
 /// Sets where the context's failed jobs fail in the repository.

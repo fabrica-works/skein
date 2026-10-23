@@ -60,6 +60,12 @@ impl Access {
     pub fn begin(&mut self) -> Request {
         Request::RepositoryById { id: self.id }
     }
+    /// Starts at the collaborator when creation already knows the repository path.
+    pub fn known(&mut self, path: Repo) -> Request {
+        self.path = Some(path.clone());
+        self.phase = Phase::Permission;
+        Request::Permission { at: path, login: self.bot.clone() }
+    }
     pub fn event(&mut self, shared: &mut Shared, event: Event) -> Result<Move, Fail> {
         if let (Phase::Repository, Event::Reply(Reply::Status(404))) = (&self.phase, &event) {
             return Err(Fail::Gone);

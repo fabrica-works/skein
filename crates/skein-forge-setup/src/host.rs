@@ -15,7 +15,7 @@ mod state_tests;
 mod states;
 use crate::item::Bounds;
 use crate::reconcile::{self, Failure, Reply, Stage, Why};
-pub use boundary::{Answer, Event, MAX_OUT, MaxOut, Need, Plan, Request};
+pub use boundary::{Answer, Event, File, MAX_OUT, MaxOut, Need, Plan, Request};
 use connection::{Connection, Refused};
 pub use limits::{Limits, Stacked, Unusable, documents, github, http};
 use run::{Run, Send, forgejo_pair};
@@ -70,6 +70,10 @@ impl Host {
                 let forge = plan.forge();
                 assert!(!self.runs.contains_key(&run), "one live run per owner token");
                 let configured = configured(&self.settings, forge);
+                if let (Kind::Forgejo(given), Plan::Create { .. }) = (&configured.kind, &plan) {
+                    crate::given::check_create(&given.limits, env.limits.string_bytes, &plan)
+                        .expect("the owner checks a creation plan before sending it");
+                }
                 let refused = if configured.takes(&plan) {
                     let mut busy = self.slots() == self.runs.capacity();
                     for (_, live) in &self.runs {

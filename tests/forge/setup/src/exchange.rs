@@ -42,6 +42,19 @@ pub fn send(
     repositories: &[fake::Repository],
     login: &[u8],
 ) -> Reply {
+    send_on(service, env, request, auth, seed, repositories, login, None)
+}
+#[expect(clippy::too_many_arguments, reason = "the exchange carries the scenario and its optional persistent domain")]
+pub fn send_on(
+    service: &mut Service,
+    env: &Env<fake::Limits>,
+    request: &Call,
+    auth: &Auth,
+    seed: u64,
+    repositories: &[fake::Repository],
+    login: &[u8],
+    mut hosted: Option<fake::Hosted<'_>>,
+) -> Reply {
     let (request, token) = match (request, auth) {
         (Call::Forgejo(request), Auth::Token(token)) => (request, token),
         pair => panic!("unsupported setup send: {pair:?}"),
@@ -103,7 +116,7 @@ pub fn send(
     }
     fake::start(&mut exchange.server, service, env, &mut exchange.events, &mut exchange.down);
     for _ in 0..100_000 {
-        exchange.tick(service, env);
+        exchange.tick(service, env, hosted.as_mut());
         if exchange.done && exchange.closed {
             return decode(request, exchange.status, &exchange.body, &env.limits);
         }
@@ -117,8 +130,18 @@ impl Exchange {
     fn client(&mut self, request: http::Request) {
         http::down(&mut self.client, &self.client_env, request, &mut self.above, &mut self.below);
     }
-    fn tick(&mut self, service: &mut Service, env: &Env<fake::Limits>) {
-        fake::resume(&mut self.server, service, env, &mut self.events, &mut self.down);
+    fn tick(&mut self, service: &mut Service, env: &Env<fake::Limits>, mut hosted: Option<&mut fake::Hosted<'_>>) {
+        match hosted.as_mut() {
+            Some(hosted) => fake::resume_with_domain(
+                &mut self.server,
+                service,
+                fake::Hosted { domain: hosted.domain, config: hosted.config },
+                env,
+                &mut self.events,
+                &mut self.down,
+            ),
+            None => fake::resume(&mut self.server, service, env, &mut self.events, &mut self.down),
+        }
         while let Some(down) = self.below.pop() {
             self.pipe.client_down(down);
         }
@@ -126,7 +149,18 @@ impl Exchange {
             self.pipe.server_down(down);
         }
         if let Some(up) = self.pipe.server_up() {
-            fake::up(&mut self.server, service, env, up, &mut self.events, &mut self.down);
+            match hosted.as_mut() {
+                Some(hosted) => fake::up_with_domain(
+                    &mut self.server,
+                    service,
+                    fake::Hosted { domain: hosted.domain, config: hosted.config },
+                    env,
+                    up,
+                    &mut self.events,
+                    &mut self.down,
+                ),
+                None => fake::up(&mut self.server, service, env, up, &mut self.events, &mut self.down),
+            }
         }
         if let Some(up) = self.pipe.client_up() {
             http::up(&mut self.client, &self.client_env, up, &mut self.above, &mut self.below);
@@ -135,6 +169,33 @@ impl Exchange {
             self.event(event);
         }
         while let Some(event) = self.events.pop() {
+            if let Some(hosted) = hosted.as_mut() {
+                let event = match event {
+                    fake::Event::Domain(event) => event,
+                    fake::Event::Close => {
+                        fake::closed(&mut self.server, service, env, &mut self.events, &mut self.down);
+                        continue;
+                    }
+                    fake::Event::Closed => {
+                        self.closed = true;
+                        continue;
+                    }
+                };
+                let domain_env = Env { now: env.now, wall: env.wall, limits: *hosted.config };
+                let mut answers = Queue::with_capacity(domain::MAX_OUT);
+                domain::step(hosted.domain, &domain_env, event, &mut answers);
+                domain::fire(hosted.domain, &domain_env, &mut answers);
+                while let Some(answer) = answers.pop() {
+                    match answer {
+                        domain::Request::Reply { .. } => {
+                            fake::down(&mut self.server, service, env, answer, &mut self.events, &mut self.down);
+                        }
+                        domain::Request::Hook { .. } => (),
+                    }
+                }
+                hosted.domain.reclaim();
+                continue;
+            }
             match event {
                 fake::Event::Domain(domain::Event::Call {
                     reply_to,
@@ -216,6 +277,9 @@ fn decode(request: &Request, status: u16, body: &[u8], limits: &fake::Limits) ->
         return Reply::Status(status);
     }
     let Some(decoder) = codec::decoder(request, &limits.documents) else {
+        if let Request::Raw { .. } = request {
+            return Reply::Empty;
+        }
         assert!(body.is_empty());
         return Reply::Empty;
     };
@@ -229,6 +293,7 @@ fn decode(request: &Request, status: u16, body: &[u8], limits: &fake::Limits) ->
         | Document::Token(_)
         | Document::Org(_)
         | Document::CreatedRepository(_)
+        | Document::CreatedFile { .. }
         | Document::Team(_)
         | Document::User(_)
         | Document::ApiSettings(_)

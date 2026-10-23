@@ -16,6 +16,8 @@ pub enum Ended {
 }
 pub struct World {
     given: Given,
+    domain: Option<skein_fake_forge_domain::Domain>,
+    domain_config: skein_fake_forge_domain::Config,
     service: Service,
     env: Env<skein_fake_forge_protocol::Limits>,
     files: Vec<(Item, Secret)>,
@@ -55,6 +57,8 @@ impl World {
         let (service, limits) = seeded_config(seed, owned, config);
         Self {
             given: fixtures::given(owned),
+            domain: None,
+            domain_config: skein_forge_machine_world::fixtures::fake_config(),
             repositories,
             service,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
@@ -66,6 +70,40 @@ impl World {
             outcome: None,
             refused: None,
         }
+    }
+    /// Uses a persistent git domain for creation and every later HTTP exchange.
+    pub fn creation_domain(&mut self) {
+        let config = &mut self.domain_config;
+        config.latency_min = skein_lib::Duration::ZERO;
+        config.latency_max = skein_lib::Duration::ZERO;
+        config.limits.repositories = 4;
+        config.limits.name_bytes = 512;
+        config.limits.content_bytes = 4096;
+        self.domain = Some(skein_fake_forge_domain::Domain::new(config, 1));
+    }
+    #[must_use]
+    pub fn domain(&self) -> &skein_fake_forge_domain::Domain {
+        self.domain.as_ref().expect("creation domain")
+    }
+    pub fn domain_mut(&mut self) -> (&mut skein_fake_forge_domain::Domain, &skein_fake_forge_domain::Config) {
+        (self.domain.as_mut().expect("creation domain"), &self.domain_config)
+    }
+    pub fn org_owner(&mut self, owner: Option<&[u8]>) {
+        self.given.orgs = Box::new([]);
+        self.given.org_owner = owner.map(Into::into);
+    }
+    pub fn admin_scopes(&mut self, scopes: &[&[u8]]) {
+        self.service.setup_mut().revoke(fixtures::ADMIN);
+        let admin = self.service.setup().find(b"kit-admin").expect("admin").id;
+        self.service.setup_mut().token(admin, b"limited", scopes, fixtures::secret(fixtures::ADMIN));
+    }
+    pub fn permit(&mut self) {
+        self.refused = None;
+    }
+    pub fn create(&mut self, org: &[u8], repository: &[u8], files: Box<[skein_forge_setup::host::File]>) -> Ended {
+        let mut machine = skein_forge_setup::create::Create::new(&self.given, org.into(), repository.into(), files)
+            .expect("fixture admitted");
+        self.drive(|event, out| skein_forge_setup::create::step(&mut machine, event, out))
     }
     pub fn forge_number(&mut self, forge: u16) {
         self.given.forge = forge;
@@ -257,7 +295,7 @@ impl World {
                     let reply = if self.refused == Some(skein_fake_forge_protocol::route(forgejo)) {
                         Reply::Status(403)
                     } else {
-                        exchange::send(
+                        exchange::send_on(
                             &mut self.service,
                             &self.env,
                             &request,
@@ -265,6 +303,10 @@ impl World {
                             self.rng.next_u64(),
                             &self.repositories,
                             &self.given.bot_login,
+                            self.domain.as_mut().map(|domain| skein_fake_forge_protocol::Hosted {
+                                domain,
+                                config: &self.domain_config,
+                            }),
                         )
                     };
                     if let Reply::Document(Document::Token(token)) = &reply

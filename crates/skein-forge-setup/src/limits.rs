@@ -8,6 +8,10 @@ pub struct Limits {
     pub repositories: u32, // Repositories adopted per forge.
     /// Repositories held in one picker page (forge-setup.md, 4.8).
     pub reachable: u32,
+    /// Files in a creation plan.
+    pub files: u32,
+    /// Bytes in each creation file.
+    pub file_bytes: u32,
     pub deadline: Duration,    // Whole reconcile run.
     pub backoff: Duration,     // First retry delay.
     pub backoff_max: Duration, // Largest retry delay.
@@ -18,6 +22,8 @@ pub fn check(limits: &Limits) -> Result<(), Refused> {
         (limits.orgs == 0, Place::OrgsLimit),
         (limits.repositories == 0, Place::RepositoriesLimit),
         (limits.reachable == 0, Place::ReachableLimit),
+        (limits.files == 0, Place::FilesLimit),
+        (limits.file_bytes == 0, Place::FileBytesLimit),
         (limits.deadline == Duration::ZERO, Place::Deadline),
         (limits.backoff == Duration::ZERO, Place::Backoff),
         (limits.backoff_max == Duration::ZERO, Place::BackoffMax),

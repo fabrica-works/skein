@@ -91,7 +91,7 @@ fn forgejo_mut(settings: &mut Settings) -> &mut crate::given::Given {
         Kind::GitHub(_) => panic!("Forgejo fixture"),
     }
 }
-fn settings(numbers: &[u16]) -> Settings {
+pub(crate) fn settings(numbers: &[u16]) -> Settings {
     let mut forges = List::with_capacity(u32::try_from(numbers.len()).expect("small table"));
     for number in numbers {
         forges.push(forge(*number)).expect("forge count");
@@ -553,8 +553,19 @@ fn an_adopt_run_waiting_on_the_owner_at_its_deadline_stops_down_at_its_step() {
     w.fire(120_000);
     assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Down)));
 }
-fn plans() -> [Plan; 4] {
-    [Plan::Reconcile { forge: 1, adopted: Box::new([]) }, check(), take_over(fixtures::TAKEN), adopt()]
+fn plans() -> [Plan; 5] {
+    [
+        Plan::Reconcile { forge: 1, adopted: Box::new([]) },
+        check(),
+        take_over(fixtures::TAKEN),
+        adopt(),
+        Plan::Create {
+            forge: 1,
+            org: b"first".as_slice().into(),
+            repository: b"starter".as_slice().into(),
+            files: Box::new([]),
+        },
+    ]
 }
 #[test]
 fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
@@ -563,7 +574,7 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
             let mut w = World::new();
             w.plan(1, first.clone());
             let connection = match first {
-                Plan::Reconcile { .. } | Plan::Check { .. } | Plan::Adopt { .. } => {
+                Plan::Reconcile { .. } | Plan::Check { .. } | Plan::Adopt { .. } | Plan::Create { .. } => {
                     assert!(w.up.pop().is_some());
                     None
                 }
@@ -603,7 +614,9 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                 w.answer(1, Answer::Read(None));
                 let expected = match first {
                     Plan::Check { .. } => token_stop(Why::Missing),
-                    Plan::Reconcile { .. } | Plan::Adopt { .. } | Plan::TakeOver { .. } => stop(1, 1, Why::Missing),
+                    Plan::Reconcile { .. } | Plan::Adopt { .. } | Plan::TakeOver { .. } | Plan::Create { .. } => {
+                        stop(1, 1, Why::Missing)
+                    }
                     Plan::Reachable { .. }
                     | Plan::Manifest { .. }
                     | Plan::Convert { .. }

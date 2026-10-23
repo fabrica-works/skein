@@ -93,9 +93,16 @@ impl Harness {
     pub fn hooked() -> Self {
         Self::with(hooked_config(), true)
     }
+    pub fn creating() -> Self {
+        let mut domain = fake_config();
+        domain.limits.repositories = 4;
+        setup_accounts(Self::with_config(config(), false, domain))
+    }
     fn with(config: Config, hooked: bool) -> Self {
+        Self::with_config(config, hooked, fake_config())
+    }
+    fn with_config(config: Config, hooked: bool, fake_config: fake::Config) -> Self {
         let limits = limits();
-        let fake_config = fake_config();
         let mut domain = fake::Domain::new(&fake_config, 3);
         fake::repository(
             &mut domain,

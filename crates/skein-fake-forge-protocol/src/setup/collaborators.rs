@@ -118,12 +118,16 @@ impl Store {
         &mut self,
         request: &skein_forge::forgejo::request::Request,
         user: u64,
-        config: &Config,
-        limits: &Limits,
+        config: &mut Config,
+        env: &skein_lib::Env<Limits>,
         domain: Option<&mut crate::Hosted<'_>>,
     ) -> Option<Reply> {
         use skein_forge::forgejo::request::Request;
+        let limits = &env.limits;
         let Some(hosted) = domain else { return self.answer(request, user, config, limits) };
+        if let Some(reply) = self.creation(request, user, config, env, hosted) {
+            return Some(reply);
+        }
         if let Request::RepositoryById { id } = request {
             let caller = self.user(user)?;
             return Some(self.repository_by_id(*id, &caller, config, limits, Some(hosted)));

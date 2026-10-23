@@ -84,6 +84,7 @@ impl Plan {
             | d::Document::Token(_)
             | d::Document::User(_)
             | d::Document::Org(_)
+            | d::Document::CreatedFile { .. }
             | d::Document::CreatedRepository(_)
             | d::Document::Hook(_)
             | d::Document::Team(_)
@@ -112,6 +113,7 @@ impl Plan {
             d::Document::Token(_)
             | d::Document::User(_)
             | d::Document::Org(_)
+            | d::Document::CreatedFile { .. }
             | d::Document::CreatedRepository(_)
             | d::Document::Hook(_)
             | d::Document::Team(_)

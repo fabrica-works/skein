@@ -94,8 +94,10 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Map::<Box<[u8]>, Id<Repository>>::worst_case(limits.repositories)?)?
         .checked_add(times(limits.repositories, repository(limits)?)?)?;
     let message = u64::from(limits.title_bytes).checked_add(u64::from(limits.body_bytes))?.checked_add(2)?;
-    let commits = Map::<u64, Object>::worst_case(limits.commits)?
-        .checked_add(times(limits.commits, tree(limits)?.checked_add(message)?)?)?;
+    let commits = Map::<u64, Object>::worst_case(limits.commits)?.checked_add(times(
+        limits.commits,
+        tree(limits)?.checked_add(message)?.checked_add(u64::from(limits.name_bytes).checked_mul(4)?)?,
+    )?)?;
     // A call holds its answer until it goes out, or what it brought until it
     // lands, late.
     let held = answer(limits)?.max(call(limits)?);

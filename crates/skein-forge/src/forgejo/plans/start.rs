@@ -80,6 +80,7 @@ impl Plan {
             | Document::Hook(_)
             | Document::Token(_)
             | Document::Org(_)
+            | Document::CreatedFile { .. }
             | Document::CreatedRepository(_)
             | Document::Team(_)
             | Document::Repository(_)

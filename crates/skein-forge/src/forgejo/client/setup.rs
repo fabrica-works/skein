@@ -18,6 +18,8 @@ pub(crate) enum SetupKind {
     Account,
     Org,
     CreatedRepository,
+    CreatedFile,
+    FileCommit,
     Team,
     Teams,
     Units,
@@ -45,6 +47,10 @@ pub(crate) fn fields(kind: SetupKind) -> &'static [Field] {
         SetupKind::Tokens | SetupKind::Scopes | SetupKind::Scope => &[],
         SetupKind::Org | SetupKind::Team | SetupKind::Teams | SetupKind::Units => super::orgs::fields(kind),
         SetupKind::CreatedRepository => super::repositories::fields(),
+        SetupKind::CreatedFile => {
+            const { &[Field { key: b"commit", read: Read::Object(Kind::Setup(SetupKind::FileCommit)), required: true }] }
+        }
+        SetupKind::FileCommit => const { &[Field { key: b"sha", read: Read::Id { empty: false }, required: true }] },
         SetupKind::Account => {
             const {
                 &[
@@ -139,6 +145,8 @@ impl Setup {
                     | SetupKind::Config
                     | SetupKind::Events
                     | SetupKind::Event
+                    | SetupKind::CreatedFile
+                    | SetupKind::FileCommit
                     | SetupKind::CreatedRepository
                     | SetupKind::Org
                     | SetupKind::Team
@@ -170,6 +178,8 @@ pub(crate) fn element(kind: SetupKind) -> Option<Kind> {
         SetupKind::Hook
         | SetupKind::Config
         | SetupKind::Event
+        | SetupKind::CreatedFile
+        | SetupKind::FileCommit
         | SetupKind::CreatedRepository
         | SetupKind::Org
         | SetupKind::Team

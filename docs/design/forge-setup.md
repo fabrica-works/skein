@@ -488,8 +488,9 @@ last one left, and a second run writes nothing.
 - **The files** are the owner's: a path and its bytes each, at most
   `files` of them, each path a relative one of at most 255 bytes whose
   segments are neither empty, `.` nor `..`, each content at most
-  `file_bytes`. The org and the name are Forgejo names, at most
-  `name_bytes` each. `given::check_create` checks a plan against them
+  `file_bytes`. The org follows `given::login`'s grammar; the repository name is
+  1 to 100 bytes of `[A-Za-z0-9._-]`, neither `.` nor `..`. Both must
+  fit the host's `string_bytes`. `given::check_create` checks a plan against them
   and the owner checks first; a plan that fails it is the owner's bug,
   which the host asserts, as for `Reconcile`'s `adopted` (6.3).
 - **Actions** are the forge's, not the plan's: a repository made on a
@@ -1005,7 +1006,7 @@ pin (forge.md, section 4.3), and named by the fact's name.
   only the listed scope succeeds; one carrying only unrelated `read:issue`
   gets `403` naming the required scope. Forgejo refuses to mint a token
   with an empty scope list. Write includes read within its own category,
-  and `all` includes every category. The eighteen `setup-scope-*` facts
+  and `all` includes every category. The nineteen `setup-scope-*` facts
   record these grants and refusals; settings is
   `setup-scope-settings-needs-no-scope`.
 

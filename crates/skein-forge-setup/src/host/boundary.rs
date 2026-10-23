@@ -7,6 +7,12 @@ use crate::{
 use alloc::boxed::Box;
 use core::num::{NonZeroU32, NonZeroU64};
 use skein_lib::{Secret, Token};
+/// An owner-provided file placed only when absent (forge-setup.md, 4.9).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct File {
+    pub path: Box<[u8]>,
+    pub content: Box<[u8]>,
+}
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Plan {
     /// The browser page for creating a GitHub App (5.1).
@@ -27,6 +33,8 @@ pub enum Plan {
     TakeOver { forge: u16, admin_token: Secret },
     /// The bot's access to the repository whose id the forge gave (4.5).
     Adopt { forge: u16, repository: NonZeroU64 },
+    /// Makes a first repository, its access and missing files (4.9).
+    Create { forge: u16, org: Box<[u8]>, repository: Box<[u8]>, files: Box<[File]> },
     /// One picker page, from 1 (4.8). Forgejo takes no installation.
     /// Reads only: the host forwards no Write for it.
     Reachable { forge: u16, installation: Option<u64>, page: NonZeroU32 },
@@ -38,6 +46,7 @@ impl Plan {
             | Self::Check { forge }
             | Self::TakeOver { forge, .. }
             | Self::Adopt { forge, .. }
+            | Self::Create { forge, .. }
             | Self::Reachable { forge, .. }
             | Self::Manifest { forge, .. }
             | Self::Convert { forge, .. }
@@ -53,6 +62,7 @@ impl Plan {
             | Self::Check { .. }
             | Self::TakeOver { .. }
             | Self::Adopt { .. }
+            | Self::Create { .. }
             | Self::Manifest { .. }
             | Self::Convert { .. }
             | Self::Paste { .. }
@@ -73,6 +83,7 @@ impl Plan {
             Self::Check { .. } => b"check",
             Self::TakeOver { .. } => b"take-over",
             Self::Adopt { .. } => b"adopt",
+            Self::Create { .. } => b"create",
             Self::Reachable { .. } => b"reachable",
         }
     }
@@ -85,7 +96,7 @@ impl Plan {
             | Self::Install { .. }
             | Self::Accept { .. } => Dialect::GitHub,
             Self::Reconcile { .. } | Self::Reachable { .. } => Dialect::Both,
-            Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => Dialect::Forgejo,
+            Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } | Self::Create { .. } => Dialect::Forgejo,
         }
     }
 }

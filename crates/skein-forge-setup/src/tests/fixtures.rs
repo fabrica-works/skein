@@ -98,6 +98,8 @@ pub fn limits() -> crate::limits::Limits {
         orgs: PROFILE_ORGS,
         repositories: PROFILE_REPOSITORIES,
         reachable: PROFILE_REACHABLE,
+        files: 1,
+        file_bytes: 4096,
         deadline: Duration::from_secs(120),
         backoff: Duration::from_millis(100),
         backoff_max: Duration::from_secs(5),

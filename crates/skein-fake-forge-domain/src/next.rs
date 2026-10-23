@@ -236,7 +236,14 @@ pub(crate) fn update(
     }
     let merged = git::store(
         domain,
-        crate::Object { parent: Some(head), merge_parent: Some(onto), tree, message: Box::new([]) },
+        crate::Object {
+            parent: Some(head),
+            merge_parent: Some(onto),
+            tree,
+            message: Box::new([]),
+            author: None,
+            committer: None,
+        },
     )?;
     let repository = domain.repositories.get_mut(id).expect("a repository of the forge");
     repository.has.insert(merged).expect("a repository has room for every commit");

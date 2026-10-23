@@ -7,7 +7,7 @@ use skein_forge::forgejo::{
 use skein_lib::Secret;
 const TOKEN: &[u8] = b"admin-scope-token";
 fn harness(scopes: &[&[u8]]) -> Harness {
-    let mut h = fixtures::setup_harness();
+    let mut h = Harness::creating();
     h.service.setup_mut().org(b"work", b"kit-admin");
     h.service.setup_mut().token(fixtures::PERSON, b"delete-me", &[b"read:user"], Secret::new(boxed(b"delete-token")));
     h.service.setup_mut().token(fixtures::ADMIN, b"scoped", scopes, Secret::new(boxed(TOKEN)));
@@ -24,7 +24,7 @@ fn ask(h: &mut Harness, request: &Request) {
     };
     h.ask_as(method, &encoded.target, encoded.body.as_deref().unwrap_or(b""), TOKEN);
 }
-fn cases() -> [(Request, &'static [u8], u16); 8] {
+fn cases() -> [(Request, &'static [u8], u16); 9] {
     [
         (Request::UserOf { login: boxed(b"kit") }, b"read:user", 200),
         (
@@ -49,13 +49,27 @@ fn cases() -> [(Request, &'static [u8], u16); 8] {
             201,
         ),
         (Request::DeleteToken { login: boxed(b"kit"), id: 2 }, b"write:admin", 204),
+        (
+            Request::CreateFile {
+                at: fixtures::at(),
+                path: boxed(b"file"),
+                branch: boxed(b"main"),
+                content: boxed(b"bytes"),
+                message: boxed(b"Add file"),
+                author: skein_forge::forgejo::request::Author {
+                    name: boxed(b"kit"),
+                    email: boxed(b"kit@example.invalid"),
+                },
+            },
+            b"write:repository",
+            201,
+        ),
         (Request::Org { name: boxed(b"work") }, b"read:organization", 200),
         (Request::CreateOrg { person: boxed(b"kit-admin"), name: boxed(b"new-org") }, b"write:admin", 201),
-        // Creation is outside the fake's state model; an authorized call reaches its 501.
         (
             Request::CreateRepository { org: boxed(b"work"), name: boxed(b"starter"), private: true },
             b"write:organization",
-            501,
+            201,
         ),
     ]
 }
@@ -103,10 +117,12 @@ fn each_least_setup_scope_admits_its_route_and_write_implies_read() {
 #[test]
 fn read_scopes_are_refused_setup_writes() {
     for (request, scope, _) in cases() {
-        let read = if scope == b"write:admin" {
+        let read: &[u8] = if scope == b"write:admin" {
             b"read:admin".as_slice()
         } else if scope == b"write:organization" {
             b"read:organization"
+        } else if scope == b"write:repository" {
+            b"read:repository"
         } else {
             continue;
         };

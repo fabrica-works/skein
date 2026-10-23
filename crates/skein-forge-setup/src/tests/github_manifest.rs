@@ -75,6 +75,7 @@ fn page(given: &Given, target: &Target) -> Box<[u8]> {
         | Need::Stop(_)
         | Need::Done(
             Outcome::Nothing
+            | Outcome::Created { .. }
             | Outcome::Identity { .. }
             | Outcome::Reachable { .. }
             | Outcome::Lacking { .. }

@@ -167,7 +167,10 @@ fn make(
         None => true,
     };
     let message = if sole { copy_of(&head.message) } else { copy_of(&repository.item(entry.number)?.title) };
-    let commit = git::store(domain, Object { parent: Some(parent), merge_parent: None, tree, message })?;
+    let commit = git::store(
+        domain,
+        Object { parent: Some(parent), merge_parent: None, tree, message, author: None, committer: None },
+    )?;
     let repository = domain.repositories.get_mut(id).expect("queue repository");
     repository.has.insert(commit).expect("room for every store commit");
     repository.branches.insert(copy_of(&name), commit).expect("group branch room checked");

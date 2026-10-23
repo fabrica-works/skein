@@ -14,6 +14,12 @@ pub struct Repo {
     pub owner: Box<[u8]>,
     pub name: Box<[u8]>,
 }
+/// The name and email recorded in a file commit.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Author {
+    pub name: Box<[u8]>,
+    pub email: Box<[u8]>,
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Page {
     pub page: Option<u32>,
@@ -103,6 +109,15 @@ pub enum Request {
         org: Box<[u8]>,
         name: Box<[u8]>,
         private: bool,
+    },
+    /// Commits a missing file, using the author as committer too.
+    CreateFile {
+        at: Repo,
+        path: Box<[u8]>,
+        branch: Box<[u8]>,
+        content: Box<[u8]>,
+        message: Box<[u8]>,
+        author: Author,
     },
     /// Lists one page of an organization's teams.
     Teams {

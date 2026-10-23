@@ -72,6 +72,7 @@ pub(super) fn route(method: Method, bytes: &[u8], limits: &Limits) -> Result<Rou
         request,
         texts: List::with_capacity(limits.inner),
         terminal: false,
+        committer: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
     }))
 }
 pub(super) fn write(json: &mut Encoder, answer: &Answer) {
@@ -142,5 +143,6 @@ pub(super) fn repository_route(method: Method, bytes: &[u8], limits: &Limits) ->
         request,
         texts: List::with_capacity(limits.inner),
         terminal: false,
+        committer: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
     }))
 }

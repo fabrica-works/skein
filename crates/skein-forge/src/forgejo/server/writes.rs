@@ -29,6 +29,9 @@ pub(crate) enum WriteKind {
     HookConfig,
     NewOrg,
     NewRepository,
+    NewFile,
+    Author,
+    Committer,
     NewTeam,
     Pull,
     Comment,
@@ -52,6 +55,20 @@ pub(crate) fn fields(kind: WriteKind) -> &'static [Field] {
         WriteKind::NewHook => super::hooks::fields(),
         WriteKind::Collaborator => const { &[field(b"permission", Read::Text, true)] },
         WriteKind::HookConfig => super::hooks::config(),
+        WriteKind::NewFile => {
+            const {
+                &[
+                    field(b"content", Read::Body, true),
+                    field(b"branch", Read::Text, true),
+                    field(b"message", Read::Text, true),
+                    field(b"author", Read::Object(Kind::Write(WriteKind::Author)), true),
+                    field(b"committer", Read::Object(Kind::Write(WriteKind::Committer)), true),
+                ]
+            }
+        }
+        WriteKind::Author | WriteKind::Committer => {
+            const { &[field(b"name", Read::Text, true), field(b"email", Read::Text, true)] }
+        }
         WriteKind::NewRepository => {
             const {
                 &[
@@ -130,6 +147,9 @@ pub(crate) fn element(kind: WriteKind) -> Option<Kind> {
         | WriteKind::NewHook
         | WriteKind::NewToken
         | WriteKind::Scope
+        | WriteKind::NewFile
+        | WriteKind::Author
+        | WriteKind::Committer
         | WriteKind::NewRepository
         | WriteKind::NewOrg
         | WriteKind::NewTeam
@@ -171,6 +191,9 @@ fn route_tail(
     limits: &Limits,
 ) -> Result<Route, Unrouted> {
     let (required, kind, request) = match tail {
+        [contents, parts @ ..] if &**contents == b"contents" && !parts.is_empty() => {
+            (Method::Post, WriteKind::NewFile, new_file(at, parts))
+        }
         [issues] if &**issues == b"issues" => {
             (Method::Post, WriteKind::Issue, Request::CreateIssue { at, title: Box::from([]), body: Box::from([]) })
         }
@@ -264,6 +287,7 @@ fn route_tail(
         request,
         texts: List::with_capacity(limits.inner),
         terminal: false,
+        committer: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
     }))
 }
 #[derive(Debug)]
@@ -272,6 +296,7 @@ pub struct BodyDecoder {
     pub(super) request: Request,
     pub(super) texts: List<Box<[u8]>>,
     pub(super) terminal: bool,
+    pub(super) committer: crate::forgejo::request::Author,
 }
 #[must_use]
 pub fn body_first(_decoder: &BodyDecoder) -> tokenizer::Request {
@@ -301,13 +326,18 @@ pub fn body(decoder: &mut BodyDecoder, limits: &Limits, event: &tokenizer::Event
                 },
             );
         }
-        Move::Scalar { kind, key, value } => decoder.scalar(kind, key, value),
+        Move::Scalar { kind, key, value } => decoder.scalar(kind, key, value, limits),
         Move::End(kind) => {
             decoder.end(kind, limits);
             Ok(())
         }
         Move::Done => {
             decoder.terminal = true;
+            if let Request::CreateFile { author, .. } = &decoder.request
+                && *author != decoder.committer
+            {
+                return BodyStep::Malformed(Malformed::Value { field: b"committer" });
+            }
             return BodyStep::Decoded(core::mem::replace(&mut decoder.request, Request::User));
         }
     };
@@ -358,6 +388,7 @@ impl BodyDecoder {
                 | Request::UserOf { .. }
                 | Request::Org { .. }
                 | Request::CreateOrg { .. }
+                | Request::CreateFile { .. }
                 | Request::CreateRepository { .. }
                 | Request::Teams { .. }
                 | Request::CreateTeam { .. }
@@ -432,7 +463,7 @@ impl BodyDecoder {
         }
         Err(Malformed::Shape { field: key })
     }
-    fn scalar(&mut self, kind: Kind, key: &'static [u8], value: Value) -> Result<(), Malformed> {
+    fn scalar(&mut self, kind: Kind, key: &'static [u8], value: Value, limits: &Limits) -> Result<(), Malformed> {
         let text = match value {
             Value::Text(text) | Value::Body(crate::forgejo::document::Body::Kept(text)) => Some(text),
             Value::Body(crate::forgejo::document::Body::Long(_)) => return Err(Malformed::TooLong { field: key }),
@@ -449,6 +480,24 @@ impl BodyDecoder {
             || kind == Kind::Setup(crate::forgejo::client::setup::SetupKind::Event)
         {
             self.texts.push(text).ok().ok_or(Malformed::Bound { field: key })?;
+            return Ok(());
+        }
+        if let Request::CreateFile { branch, message, content, author, .. } = &mut self.request {
+            if kind == Kind::Write(WriteKind::Author) || kind == Kind::Write(WriteKind::Committer) {
+                let signature = if kind == Kind::Write(WriteKind::Author) { author } else { &mut self.committer };
+                if key == b"name" {
+                    signature.name = text;
+                } else {
+                    signature.email = text;
+                }
+            } else if key == b"branch" {
+                *branch = text;
+            } else if key == b"message" {
+                *message = text;
+            } else {
+                *content = skein_lib::base64::decode(skein_lib::base64::Alphabet::Standard, &text, limits.body_bytes)
+                    .or(Err(Malformed::Value { field: key }))?;
+            }
             return Ok(());
         }
         self.text(key, text)
@@ -568,6 +617,7 @@ impl BodyDecoder {
             | Request::CreateRepoHook { .. }
             | Request::EditRepoHook { .. }
             | Request::DeleteRepoHook { .. }
+            | Request::CreateFile { .. }
             | Request::DeleteBranch { .. } => unreachable!("body text selection"),
         }
         Ok(())
@@ -621,6 +671,7 @@ impl BodyDecoder {
             | Request::UserOf { .. }
             | Request::Org { .. }
             | Request::CreateOrg { .. }
+            | Request::CreateFile { .. }
             | Request::CreateRepository { .. }
             | Request::Teams { .. }
             | Request::CreateTeam { .. }
@@ -687,4 +738,30 @@ fn review_text(
     }
 
     Ok(())
+}
+
+fn file_path(parts: &[Box<[u8]>]) -> Box<[u8]> {
+    let mut length = parts.len().saturating_sub(1);
+    for part in parts {
+        length = length.saturating_add(part.len());
+    }
+    let mut out = skein_lib::Writer::new(length);
+    for (index, part) in parts.iter().enumerate() {
+        if index > 0 {
+            out.put(b"/").expect("path separators");
+        }
+        out.put(part).expect("path segments");
+    }
+    out.finish()
+}
+
+fn new_file(at: Repo, parts: &[Box<[u8]>]) -> Request {
+    Request::CreateFile {
+        at,
+        path: file_path(parts),
+        branch: Box::new([]),
+        content: Box::new([]),
+        message: Box::new([]),
+        author: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
+    }
 }

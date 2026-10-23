@@ -42,7 +42,9 @@ pub(crate) fn fields(kind: SetupKind) -> &'static [Field] {
             }
         }
         SetupKind::Teams => &[],
-        SetupKind::CreatedRepository
+        SetupKind::CreatedFile
+        | SetupKind::FileCommit
+        | SetupKind::CreatedRepository
         | SetupKind::Hook
         | SetupKind::Hooks
         | SetupKind::Config
@@ -170,7 +172,8 @@ fn target(request: &Request, out: &mut Target) -> Method {
             super::hooks::target(out, org, None, Some(*id));
             Method::Delete
         }
-        Request::User
+        Request::CreateFile { .. }
+        | Request::User
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
@@ -262,7 +265,8 @@ fn body(json: &mut Encoder, request: &Request) {
             specification(json, spec, false);
             json.object_end();
         }
-        Request::Org { .. }
+        Request::CreateFile { .. }
+        | Request::Org { .. }
         | Request::Teams { .. }
         | Request::TeamMembers { .. }
         | Request::AddMember { .. }
@@ -417,7 +421,9 @@ impl Orgs {
                     }
                     SetupKind::Team => Document::Team(core::mem::replace(&mut self.team, document::team())),
                     SetupKind::Teams => Document::Listed { skipped: 0 },
-                    SetupKind::CreatedRepository
+                    SetupKind::CreatedFile
+                    | SetupKind::FileCommit
+                    | SetupKind::CreatedRepository
                     | SetupKind::Hook
                     | SetupKind::Hooks
                     | SetupKind::Config

@@ -69,6 +69,7 @@ pub fn follow(request: &Request, answer: &Answer) -> Result<Option<(a::Read, Sel
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateFile { .. }
         | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
@@ -151,6 +152,7 @@ pub fn select(config: &Config, request: &Request, range: Option<Range>) -> Resul
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateFile { .. }
         | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }
@@ -237,6 +239,7 @@ fn status(request: &Request) -> u16 {
         | crate::Route::Git(_)
         | crate::Route::Org
         | crate::Route::CreateOrg
+        | crate::Route::CreateFile
         | crate::Route::CreateRepository
         | crate::Route::Teams
         | crate::Route::CreateTeam

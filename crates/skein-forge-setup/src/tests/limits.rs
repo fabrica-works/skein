@@ -79,6 +79,14 @@ fn zero_limits_are_refused_in_design_order() {
             | Place::OrgOwner
             | Place::Repositories
             | Place::Repository(_)
+            | Place::FilesLimit
+            | Place::FileBytesLimit
+            | Place::CreateOrg
+            | Place::CreateRepository
+            | Place::Files
+            | Place::FilePath(_)
+            | Place::FileContent(_)
+            | Place::Plan
             | Place::Page => unreachable!("limit rows"),
         }
     }

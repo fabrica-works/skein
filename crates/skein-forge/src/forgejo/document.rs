@@ -130,6 +130,10 @@ pub enum Document {
     ApiSettings(ApiSettings),
     Repository(Repository),
     CreatedRepository(CreatedRepository),
+    /// The commit made by the contents API.
+    CreatedFile {
+        commit: ObjectId,
+    },
     Search {
         ok: bool,
     },

@@ -28,6 +28,13 @@ use crate::{ci, issues};
 /// Files by their paths, with their content.
 pub type Tree = Map<Box<[u8]>, Box<[u8]>>;
 
+/// The author or committer retained for a contents API commit.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Signature {
+    pub name: Box<[u8]>,
+    pub email: Box<[u8]>,
+}
+
 /// A commit: its first parent, unless it is a repository's first, its
 /// optional merge parent, and its tree,
 /// files by their paths.
@@ -39,6 +46,8 @@ pub struct Object {
     pub tree: Tree,
     /// Opaque commit message bytes, bounded by the fixture.
     pub message: Box<[u8]>,
+    pub author: Option<Signature>,
+    pub committer: Option<Signature>,
 }
 
 /// Names `object` in the store, or refuses it when the store is full.

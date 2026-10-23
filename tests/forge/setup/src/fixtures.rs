@@ -25,6 +25,8 @@ pub fn given(owned: bool) -> Given {
             orgs: 8,
             repositories: 8,
             reachable: 4,
+            files: 1,
+            file_bytes: 4096,
             deadline: Duration::from_secs(120),
             backoff: Duration::from_millis(100),
             backoff_max: Duration::from_secs(5),

@@ -39,6 +39,14 @@ pub enum Place {
     OrgsLimit,
     RepositoriesLimit,
     ReachableLimit,
+    FilesLimit,
+    FileBytesLimit,
+    CreateOrg,
+    CreateRepository,
+    Files,
+    FilePath(u32),
+    FileContent(u32),
+    Plan,
     Page,
     Deadline,
     Backoff,
@@ -159,4 +167,75 @@ pub fn email(b: &[u8]) -> bool {
         }
     }
     ats == 1
+}
+
+/// Checks a creation plan before its owner sends it (forge-setup.md, 4.9).
+/// `string_bytes` is the host's admitted decoder string bound.
+pub fn check_create(limits: &Limits, string_bytes: u32, plan: &crate::host::Plan) -> Result<(), Refused> {
+    limits::check(limits)?;
+    let crate::host::Plan::Create { org, repository, files, .. } = plan else {
+        return Err(Refused { place: Place::Plan, other: None });
+    };
+    create_fields(limits, string_bytes, org, repository, files)
+}
+
+pub(crate) fn create_fields(
+    limits: &Limits,
+    string_bytes: u32,
+    org: &[u8],
+    repository: &[u8],
+    files: &[crate::host::File],
+) -> Result<(), Refused> {
+    let bound = usize::try_from(string_bytes).expect("u32 fits");
+    if !login(org) || org.len() > bound {
+        return Err(Refused { place: Place::CreateOrg, other: None });
+    }
+    if !repository_name(repository) || repository.len() > bound {
+        return Err(Refused { place: Place::CreateRepository, other: None });
+    }
+    if files.len() > usize::try_from(limits.files).expect("u32 fits") {
+        return Err(Refused { place: Place::Files, other: None });
+    }
+    for (at, file) in files.iter().enumerate() {
+        let at = u32::try_from(at).expect("bounded files");
+        if file.path.is_empty() || file.path.len() > 255 {
+            return Err(Refused { place: Place::FilePath(at), other: None });
+        }
+        if !relative(&file.path) {
+            return Err(Refused { place: Place::FilePath(at), other: None });
+        }
+        if file.content.len() > usize::try_from(limits.file_bytes).expect("u32 fits") {
+            return Err(Refused { place: Place::FileContent(at), other: None });
+        }
+    }
+    Ok(())
+}
+
+/// Forgejo repository names (forge-setup.md, 4.9).
+#[must_use]
+pub(crate) fn repository_name(name: &[u8]) -> bool {
+    if name.is_empty() || name.len() > 100 || name == b"." || name == b".." {
+        return false;
+    }
+    for byte in name {
+        if !byte.is_ascii_alphanumeric() && !b"._-".contains(byte) {
+            return false;
+        }
+    }
+    true
+}
+
+fn relative(path: &[u8]) -> bool {
+    let mut start = 0;
+    for (at, byte) in path.iter().enumerate() {
+        if *byte == b'/' {
+            let segment = path.get(start..at).expect("path segment");
+            if segment.is_empty() || segment == b"." || segment == b".." {
+                return false;
+            }
+            start = at.checked_add(1).expect("bounded path");
+        }
+    }
+    let segment = path.get(start..).expect("last path segment");
+    !segment.is_empty() && segment != b"." && segment != b".."
 }

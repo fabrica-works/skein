@@ -96,6 +96,7 @@ pub fn documents(seed: u64) -> Vec<Reply> {
         | Answer::Branch(_)
         | Answer::Org(_)
         | Answer::CreatedRepository(_)
+        | Answer::CreatedFile { .. }
         | Answer::Hook(_)
         | Answer::Error(_) => true,
         Answer::Token(_)
@@ -332,7 +333,7 @@ fn vary(answer: &mut Answer, seed: u64) {
                 value.id += seed;
             }
         }
-        Answer::Reachable(_) | Answer::RepoSearch { .. } | Answer::Error(_) => {}
+        Answer::Reachable(_) | Answer::RepoSearch { .. } | Answer::Error(_) | Answer::CreatedFile { .. } => {}
     }
 }
 
@@ -514,6 +515,7 @@ fn shorten(answer: &mut Answer) {
         | Answer::Branch(_)
         | Answer::Org(_)
         | Answer::CreatedRepository(_)
+        | Answer::CreatedFile { .. }
         | Answer::Team(_)
         | Answer::Error(_) => {}
     }

@@ -62,6 +62,7 @@ pub(super) fn route(method: Method, bytes: &[u8], limits: &Limits) -> Result<Rou
             request,
             texts: List::with_capacity(limits.inner),
             terminal: false,
+            committer: crate::forgejo::request::Author { name: Box::new([]), email: Box::new([]) },
         }),
         None => Route::Ready(request),
     })
@@ -91,7 +92,8 @@ pub(super) fn write(json: &mut Encoder, answer: &super::Answer) {
             }
             json.array_end();
         }
-        super::Answer::CreatedRepository(_)
+        super::Answer::CreatedFile { .. }
+        | super::Answer::CreatedRepository(_)
         | super::Answer::Hook(_)
         | super::Answer::Hooks(_)
         | super::Answer::Token(_)

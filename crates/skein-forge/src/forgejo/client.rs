@@ -11,6 +11,7 @@ use alloc::boxed::Box;
 use skein_json::tokenizer;
 pub(crate) mod actions;
 pub(crate) mod branches;
+mod create_file;
 pub mod delivery;
 pub(crate) mod files;
 pub(crate) mod items;
@@ -39,6 +40,7 @@ pub enum Refusal {
 }
 pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     match request {
+        Request::CreateFile { .. } => create_file::encode(request, limits),
         Request::AddCollaborator { .. }
         | Request::RepoHooks { .. }
         | Request::CreateRepoHook { .. }
@@ -115,6 +117,7 @@ enum DecoderState {
     Error(writes::Error),
     Start(start::Start),
     CreatedRepository(repositories::CreatedRepository),
+    CreatedFile(Option<crate::forgejo::id::ObjectId>),
     Reachable(reachable::Reachable),
     Setup(setup::Setup),
     Orgs(orgs::Orgs),
@@ -128,6 +131,7 @@ enum DecoderState {
 #[must_use]
 pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
     let kind = match request {
+        Request::CreateFile { .. } => Kind::Setup(setup::SetupKind::CreatedFile),
         Request::CreateRepository { .. } => Kind::Setup(setup::SetupKind::CreatedRepository),
         Request::Org { .. } | Request::CreateOrg { .. } => Kind::Setup(setup::SetupKind::Org),
         Request::CreateTeam { .. } | Request::EditTeam { .. } => Kind::Setup(setup::SetupKind::Team),
@@ -188,6 +192,7 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
         Kind::Setup(kind @ (setup::SetupKind::Hook | setup::SetupKind::Hooks)) => {
             DecoderState::Hooks(hooks::Hooks::new(kind, limits))
         }
+        Kind::Setup(setup::SetupKind::CreatedFile | setup::SetupKind::FileCommit) => DecoderState::CreatedFile(None),
         Kind::Setup(setup::SetupKind::CreatedRepository) => {
             DecoderState::CreatedRepository(repositories::CreatedRepository::new())
         }
@@ -228,6 +233,7 @@ pub fn step(decoder: &mut Decoder, limits: &Limits, event: &tokenizer::Event) ->
             DecoderState::Actions(state) => state.step(movement, &decoder.walk),
             DecoderState::Reachable(state) => state.step(movement, limits),
             DecoderState::CreatedRepository(state) => state.step(movement),
+            DecoderState::CreatedFile(commit) => create_file::step(commit, movement),
             DecoderState::Start(state) => state.step(movement, decoder.walk.parent()),
             DecoderState::Reviews(state) => state.step(movement, &decoder.walk),
             DecoderState::Branches(state) => state.step(movement, &decoder.walk, limits),
@@ -246,6 +252,7 @@ pub fn keep_after(decoder: &mut Decoder, after: u64) {
         | DecoderState::Error(_)
         | DecoderState::Files(_)
         | DecoderState::Actions(_)
+        | DecoderState::CreatedFile(_)
         | DecoderState::CreatedRepository(_)
         | DecoderState::Start(_)
         | DecoderState::Reviews(_)

@@ -20,7 +20,7 @@ pub(crate) fn copied(g: &Given) -> Option<u64> {
 }
 
 /// Reconcile's boxed record and copied configuration dominate the retained
-/// storage of `Check`, `TakeOver`, `Adopt` and `Reachable`. The picker additionally
+/// storage of `Check`, `TakeOver` and `Adopt`. Creation holds its files; the picker additionally
 /// builds its reached list while consuming a page. Charge the larger plan,
 /// then common credentials, decoded path/login and hook/request scratch.
 pub(crate) fn per_run(g: &Given, l: &Limits) -> Option<u64> {
@@ -29,6 +29,14 @@ pub(crate) fn per_run(g: &Given, l: &Limits) -> Option<u64> {
         .ok()?
         // given_for, constructor copies and retained child names overlap.
         .checked_add(copied(g)?.checked_mul(3)?)?;
+    let creation = u64::try_from(size_of::<crate::create::Create>())
+        .ok()?
+        .checked_add(copied(g)?)?
+        .checked_add(List::<crate::host::File>::worst_case(g.limits.files)?)?
+        .checked_add(u64::from(g.limits.files).checked_mul(255_u64.checked_add(u64::from(g.limits.file_bytes))?)?)?
+        // Names, repository path and pending file request may overlap the plan.
+        .checked_add(u64::from(l.string_bytes).checked_mul(8)?)?
+        .checked_add(u64::from(g.limits.file_bytes).checked_add(255)?.checked_mul(2)?)?;
     let picker = List::<crate::reachable::Reached>::worst_case(g.limits.reachable)?;
     let hook = match g.listener {
         Some(address) => match crate::reconcile::hook_url(address, g.forge) {
@@ -44,6 +52,7 @@ pub(crate) fn per_run(g: &Given, l: &Limits) -> Option<u64> {
     }
     reconcile
         .max(picker)
+        .max(creation)
         .checked_add(u64::from(l.token_bytes.max(l.string_bytes)).checked_mul(4)?)?
         .checked_add(u64::from(l.string_bytes).checked_mul(6)?)?
         .checked_add(hook.checked_mul(4)?)?

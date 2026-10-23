@@ -7,6 +7,7 @@ use crate::{
     adopt::{self, Adopt},
     call::{Auth, Call},
     check::{self, Check},
+    create::{self, Create},
     github::{
         accept::{self, Accept},
         convert::{self, Convert},
@@ -52,6 +53,9 @@ fn forgejo_machine(forge: &Forge, given: &Given, plan: Plan, bounds: &Bounds) ->
             };
             Machine::TakeOver(TakeOver::new(given, taken).expect("host checks the given"))
         }
+        Plan::Create { org, repository, files, .. } => Machine::Create(Box::new(
+            Create::new(given, org, repository, files).expect("the owner checks the creation plan"),
+        )),
         Plan::Adopt { repository, .. } => Machine::Adopt(
             Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
         ),
@@ -73,6 +77,7 @@ pub(crate) enum Machine {
     Check(Check),
     TakeOver(TakeOver),
     Adopt(Adopt),
+    Create(Box<Create>),
     Reachable(Reachable),
 }
 impl Machine {
@@ -88,6 +93,7 @@ impl Machine {
             Self::Check(machine) => check::step(machine, event, out),
             Self::TakeOver(machine) => take_over::step(machine, event, out),
             Self::Adopt(machine) => adopt::step(machine, event, out),
+            Self::Create(machine) => create::step(machine, event, out),
             Self::Reachable(machine) => reachable::step(machine, event, out),
         }
     }
@@ -95,6 +101,7 @@ impl Machine {
     pub(crate) fn halt(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
         match self {
             Self::Reconcile(machine) => reconcile::halt(machine, why, out),
+            Self::Create(machine) => create::halt(machine, why, out),
             Self::Convert(machine) => convert::halt(machine, why, out),
             Self::Paste(machine) => paste::halt(machine, why, out),
             Self::GitHubReconcile(machine) => github_reconcile::halt(machine, why, out),
@@ -237,7 +244,7 @@ impl Run {
                         github_reconcile::Reconcile::new(given, env.wall).expect("host checks the given"),
                     ))
                 }
-                Plan::Check { .. } | Plan::TakeOver { .. } | Plan::Adopt { .. } => {
+                Plan::Check { .. } | Plan::TakeOver { .. } | Plan::Adopt { .. } | Plan::Create { .. } => {
                     return Err(super::about(forge, &plan, Why::Unexpected));
                 }
             },

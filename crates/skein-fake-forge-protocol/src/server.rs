@@ -606,7 +606,7 @@ fn decoded(
         respond(server, response::failure(&env.limits, errors::Failure { status: 403, message, retry_after: None }));
         return;
     }
-    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, domain) {
+    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &mut service.config, env, domain) {
         respond(server, reply);
         return;
     }
@@ -658,7 +658,11 @@ fn decoded(
 }
 fn missing_scope(request: &Request, scopes: &Scopes) -> Option<&'static [u8]> {
     let (granted, read, write): (bool, &[u8], &[u8]) = match request {
-        Request::RepositoryById { .. }
+        Request::Repository { .. }
+        | Request::Branch { .. }
+        | Request::Raw { .. }
+        | Request::CreateFile { .. }
+        | Request::RepositoryById { .. }
         | Request::RepoSearch { .. }
         | Request::UserRepos { .. }
         | Request::Permission { .. }
@@ -692,7 +696,6 @@ fn missing_scope(request: &Request, scopes: &Scopes) -> Option<&'static [u8]> {
         ),
         Request::ApiSettings
         | Request::UserSearch { .. }
-        | Request::Repository { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
         | Request::Comments { .. }
@@ -702,14 +705,12 @@ fn missing_scope(request: &Request, scopes: &Scopes) -> Option<&'static [u8]> {
         | Request::CombinedStatus { .. }
         | Request::Reviews { .. }
         | Request::ReviewComments { .. }
-        | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::Protection { .. }
         | Request::Protections { .. }
         | Request::Collaborators { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }
-        | Request::Raw { .. }
         | Request::Runs { .. }
         | Request::Run { .. }
         | Request::Job { .. }
@@ -800,6 +801,7 @@ fn table(service: &Service, request: &Request, user: u64) -> Option<documents::A
         | Request::UserOf { .. }
         | Request::Org { .. }
         | Request::CreateOrg { .. }
+        | Request::CreateFile { .. }
         | Request::CreateRepository { .. }
         | Request::Teams { .. }
         | Request::CreateTeam { .. }

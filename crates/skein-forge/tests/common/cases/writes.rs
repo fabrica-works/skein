@@ -158,6 +158,7 @@ pub fn expected(answer: Answer) -> Document {
         | Answer::Permission(_)
         | Answer::Org(_)
         | Answer::CreatedRepository(_)
+        | Answer::CreatedFile { .. }
         | Answer::Team(_)
         | Answer::Teams(_)
         | Answer::Hook(_)
