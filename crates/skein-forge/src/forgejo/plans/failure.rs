@@ -6,6 +6,7 @@ use skein_lib::Duration;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Asked {
     Read,
+    Leaf,
     Job,
     Write,
     OpenPull,
@@ -27,7 +28,7 @@ pub struct Classified {
 }
 #[must_use]
 pub fn classify(asked: Asked, status: u16, refusal: Option<Refusal>, retry: Option<Duration>) -> Classified {
-    let read = asked == Asked::Read || asked == Asked::Job || asked == Asked::BeforeWrite;
+    let read = asked == Asked::Read || asked == Asked::Leaf || asked == Asked::Job || asked == Asked::BeforeWrite;
     let mut drop = Drop::Nothing;
     let error = match status {
         300..=399 => {
@@ -37,7 +38,9 @@ pub fn classify(asked: Asked, status: u16, refusal: Option<Refusal>, retry: Opti
         403 if asked == Asked::DeleteBranch => api::Error::Protected,
         401 | 403 | 423 => api::Error::Forbidden,
         404 => {
-            drop = Drop::Path;
+            if asked != Asked::Leaf {
+                drop = Drop::Path;
+            }
             if asked == Asked::Job { api::Error::MissingJob } else { api::Error::Missing }
         }
         413 => api::Error::Full,

@@ -580,3 +580,146 @@ fn writer_moves_require_forward_ancestry_and_authenticated_identity() {
         assert_eq!(h.news.as_slice(), &[Answer::Commit([1; 32])]);
     }
 }
+
+fn missing(h: &mut Harness, sent: super::Sent) {
+    h.event(Event::Answered { call: sent.call, cost: 1, free: 0, rate: None, result: Err(Error::Missing) });
+}
+
+#[test]
+fn missing_branch_rests_at_slow_and_reports_each_absence_once() {
+    for cached in [false, true] {
+        let mut h = Harness::new();
+        h.env.limits.poll = skein_lib::Duration::from_secs(1000);
+        h.env.limits.poll_max = h.env.limits.poll;
+        h.keep(Box::new([watch(branch(), false)]));
+        h.clock();
+        if cached {
+            h.event(Event::Pushed { resource: branch(), commit: [1; 32] });
+        }
+        let read = h.one();
+        missing(&mut h, read);
+        assert_eq!(h.failures.as_slice(), &[Error::Missing]);
+        assert_eq!(h.drift, u32::from(cached));
+        assert_eq!(h.record(&branch()).cached.tip, None);
+        for now in [160, 220, 280] {
+            h.fire(now - 1);
+            assert!(h.send().is_none(), "absence waits the whole slow rest");
+            h.fire(now);
+            let read = h.one();
+            assert_eq!(read.op, Op::Read(Read::Branch { branch: Box::from(&b"topic"[..]) }));
+            missing(&mut h, read);
+            assert_eq!(h.failures.as_slice(), &[Error::Missing]);
+            assert_eq!(h.drift, u32::from(cached));
+        }
+        h.fire(340);
+        let read = h.one();
+        h.answer(read, Answer::Commit([2; 32]));
+        assert_eq!(h.news.as_slice(), &[Answer::Commit([2; 32])]);
+        let drift = h.drift;
+        h.fire(400);
+        let read = h.one();
+        missing(&mut h, read);
+        assert_eq!(h.failures.as_slice(), &[Error::Missing, Error::Missing]);
+        assert_eq!(h.drift, drift + 1);
+        h.restart();
+        let read = h.one();
+        missing(&mut h, read);
+        assert_eq!(h.failures.as_slice(), &[Error::Missing, Error::Missing, Error::Missing]);
+        assert_eq!(h.drift, drift + 1, "cleared stored tip prevents deletion drift after restart");
+        assert_eq!(h.record(&branch()).cached.tip, None);
+    }
+}
+
+#[test]
+fn missing_issue_and_pull_rest_at_slow_and_suppress_repeated_news() {
+    for resource in [issue(), pull()] {
+        let mut h = Harness::new();
+        h.env.limits.poll = skein_lib::Duration::from_secs(1000);
+        h.env.limits.poll_max = h.env.limits.poll;
+        h.keep(Box::new([watch(resource.clone(), false)]));
+        h.clock();
+        let read = h.one();
+        missing(&mut h, read);
+        for now in [160, 220] {
+            h.fire(now - 1);
+            assert!(h.send().is_none());
+            h.fire(now);
+            let read = h.one();
+            missing(&mut h, read);
+            assert_eq!(h.failures.as_slice(), &[Error::Missing]);
+        }
+        // Finding the watched resource ends the absence.
+        h.fire(280);
+        let read = h.one();
+        h.answer(read, Answer::Item { item: summary(), comments: Box::new([]), more: false });
+        if resource == pull() {
+            let read = h.one();
+            h.answer(read, Answer::Pull(current()));
+        }
+        h.fire(340);
+        let read = h.one();
+        missing(&mut h, read);
+        assert_eq!(h.failures.as_slice(), &[Error::Missing, Error::Missing]);
+    }
+}
+
+#[test]
+fn missing_uses_hinted_rest_and_unavailable_keeps_backoff() {
+    let mut h = Harness::new();
+    h.keep(Box::new([watch(branch(), false)]));
+    h.clock();
+    let read = h.one();
+    h.event(Event::Hint {
+        hint: api::Hint { repository: REPO, change: Change::Branch(Box::from(&b"topic"[..])), key: None },
+    });
+    missing(&mut h, read);
+    h.fire(101);
+    let listing = h.one();
+    h.answer(listing, Answer::Items { items: Box::new([]), more: false, now: at(101) });
+    let read = h.one();
+    missing(&mut h, read);
+    assert_eq!(h.failures.as_slice(), &[Error::Missing]);
+
+    let mut h = Harness::new();
+    h.keep(Box::new([watch(branch(), false)]));
+    h.clock();
+    for now in [101, 102, 103] {
+        let read = h.one();
+        h.event(Event::Answered { call: read.call, cost: 1, free: 0, rate: None, result: Err(Error::Unavailable) });
+        assert!(h.send().is_none());
+        h.fire(now);
+    }
+    assert_eq!(h.failures.as_slice(), &[Error::Unavailable; 3]);
+    assert_eq!(h.one().op, Op::Read(Read::Branch { branch: Box::from(&b"topic"[..]) }));
+}
+
+#[test]
+fn missing_pull_stays_absent_across_successful_item_phases() {
+    let mut h = Harness::new();
+    h.env.limits.poll = skein_lib::Duration::from_secs(1000);
+    h.env.limits.poll_max = h.env.limits.poll;
+    h.keep(Box::new([watch(pull(), false)]));
+    h.clock();
+    for now in [100, 160, 220] {
+        h.fire(now);
+        let item = h.one();
+        h.answer(item, Answer::Item { item: summary(), comments: Box::new([]), more: false });
+        let read = h.one();
+        assert_eq!(read.op, Op::Read(Read::Pull { number: 9 }));
+        missing(&mut h, read);
+        assert_eq!(h.failures.as_slice(), &[Error::Missing]);
+        h.fire(now + 59);
+        assert!(h.send().is_none());
+    }
+    h.fire(280);
+    let item = h.one();
+    h.answer(item, Answer::Item { item: summary(), comments: Box::new([]), more: false });
+    let read = h.one();
+    h.answer(read, Answer::Pull(current()));
+    h.fire(340);
+    let item = h.one();
+    h.answer(item, Answer::Item { item: summary(), comments: Box::new([]), more: false });
+    let read = h.one();
+    missing(&mut h, read);
+    assert_eq!(h.failures.as_slice(), &[Error::Missing, Error::Missing]);
+}

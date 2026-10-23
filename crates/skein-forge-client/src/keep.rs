@@ -34,12 +34,20 @@ struct Live {
     active: bool,
     fresh: Fresh,
     writer: bool,
+    presence: Presence,
     pushed_by: Option<(Commit, u64)>,
     hinted: bool,
     state: State,
     interval: Duration,
     echo_capacity: u32,
     inbox: Inbox,
+}
+// Presence is live-only; a restart observes absence again.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Presence {
+    Unknown,
+    Present,
+    Missing,
 }
 #[derive(Debug)]
 struct Inbox {
@@ -181,6 +189,7 @@ fn live(record: LiveRecord, l: &Limits, alarm: u64) -> Live {
         active: true,
         fresh: Fresh::Complete,
         writer: false,
+        presence: Presence::Unknown,
         pushed_by: None,
         hinted: false,
         state: State::Due(phase, Priority::Keep),

@@ -135,12 +135,19 @@ impl Plan {
                 if self.missing {
                     return Ok(None);
                 }
-                if status == 404 || (300..400).contains(&status) {
-                    tables.drop_repository(repository);
-                }
                 let raw = self.stage == Stage::File || self.stage == Stage::Before || self.stage == Stage::After;
                 if status != 200 && !(raw && status == 206) {
-                    return Err(crate::forgejo::plans::failure::read(status, &fields));
+                    let asked = if self.stage == Stage::File {
+                        super::failure::Asked::Leaf
+                    } else {
+                        super::failure::Asked::Read
+                    };
+                    let classified = super::failure::classify(asked, status, None, fields.retry_after);
+                    match classified.drop {
+                        super::failure::Drop::Nothing => {}
+                        super::failure::Drop::Path | super::failure::Drop::Row => tables.drop_repository(repository),
+                    }
+                    return Err(classified.error);
                 }
                 if self.stage == Stage::Files {
                     self.more = fields.has_more;

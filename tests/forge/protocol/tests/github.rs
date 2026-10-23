@@ -111,3 +111,35 @@ fn github_delivery_log_reaches_owner_before_client_polling() {
     world.event(Event::Keep { owner: Token::new(1), watches: Box::from([]) });
     invariants(&mut world);
 }
+
+#[test]
+fn github_watched_absent_branch_resolves_repository_once() {
+    use skein_forge_client::{Event, Resource, Watch, What};
+    use skein_forge_machine_world::joint::REPO;
+    use skein_lib::Token;
+
+    let mut world = World::github(71, 0);
+    let branch = b"never-pushed";
+    // The repository's listing establishes its row before the branch joins.
+    world.event(Event::Keep {
+        owner: Token::new(1),
+        watches: Box::new([Watch {
+            resource: Resource { repository: REPO, what: What::Repository },
+            participating: false,
+        }]),
+    });
+    world.run_for(Duration::from_secs(1));
+    world.event(Event::Keep {
+        owner: Token::new(1),
+        watches: Box::new([Watch {
+            resource: Resource { repository: REPO, what: What::Branch(Box::from(branch.as_slice())) },
+            participating: false,
+        }]),
+    });
+    // Three slow rests cover stable absence while repository listings continue.
+    world.run_for(fixtures::LIMITS.slow.saturating_mul(3).saturating_add(Duration::from_secs(2)));
+    world.event(Event::Keep { owner: Token::new(2), watches: Box::new([]) });
+    invariants(&mut world);
+    assert_eq!(world.github_branch_reads(branch), 4);
+    assert_eq!(world.github_repository_reads(), 1);
+}

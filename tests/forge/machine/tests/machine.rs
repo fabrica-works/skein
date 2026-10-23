@@ -84,17 +84,17 @@ fn a_call_silent_past_its_deadline_is_a_timeout_and_aborts() {
     assert!(world.close());
 }
 #[test]
-fn a_path_dropped_on_404_is_resolved_again_by_id() {
+fn a_repository_level_404_is_resolved_again_by_id() {
     let mut world = Machine::ready(
         7,
         vec![
             Answer::case("GET /api/v1/repositories/1", "repository-by-id"),
-            Answer::case("GET /api/v1/repos/fixture/specimen/branches/gone", "missing-issue"),
+            Answer::case("GET /api/v1/repos/fixture/specimen/issues/999", "missing-issue"),
             Answer::case("GET /api/v1/repositories/1", "repository-by-id"),
             Answer::case("GET /api/v1/repos/fixture/specimen/branches/main", "branch"),
         ],
     );
-    world.call(1, fixtures::REPO, Op::Read(Read::Branch { branch: Box::from(*b"gone") }));
+    world.call(1, fixtures::REPO, Op::Read(Read::Item { number: 999, after: 0 }));
     world.run_for(SECOND);
     world.call(2, fixtures::REPO, fixtures::branch());
     world.run_for(SECOND);

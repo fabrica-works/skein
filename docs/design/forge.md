@@ -957,6 +957,7 @@ such a request costs nothing.
   may have been read: it is a `Timeout`. To make that rare, an idle
   connection is closed before the forge's keep-alive timeout would
   close it (`idle`, forge-connection.md, section 7).
+
 A repository gone or inaccessible loses its row at its next repository-level
 call. An absent branch or contents leaf alone keeps the row that answered.
 

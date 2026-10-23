@@ -12,13 +12,14 @@ use crate::{
 
 /// Classifies a read's status, applying the dialect's repository invalidation.
 pub fn read(
+    asked: Asked,
     status: u16,
     head: &Head,
     refusal: Option<&Refusal>,
     repository: api::Repository,
     tables: &mut Tables,
 ) -> api::Error {
-    match failure::classify(Asked::Read, status, head, refusal) {
+    match failure::classify(asked, status, head, refusal) {
         Verdict::Fail(error, invalidation) => {
             match invalidation {
                 Drop::Nothing => {}

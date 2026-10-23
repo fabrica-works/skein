@@ -56,10 +56,8 @@ fn answering_404_keeps_the_path() {
 
 #[test]
 fn terminal_404_drops_the_path() {
-    let file = Read::File { head: HEAD, path: Box::from(super::FILE_PATH), max_bytes: RAW_BYTES };
     let job = Read::Job { attempt: ATTEMPT, max_bytes: RAW_BYTES };
     for (name, read, answers, error) in [
-        ("file", file, &[][..], Error::Missing),
         ("run", job.clone(), &[][..], Error::MissingJob),
         ("job", job.clone(), &[(200, RUN)][..], Error::MissingJob),
         ("log", job, &[(200, RUN), (200, JOB)][..], Error::MissingJob),
@@ -156,4 +154,37 @@ fn explicit_last_pull_files_page_has_no_more() {
             more: false
         }))
     );
+}
+
+#[test]
+fn branch_and_contents_404_keep_the_row() {
+    for read in [
+        Read::Branch { branch: Box::from(&b"topic"[..]) },
+        Read::File { head: HEAD, path: Box::from(super::FILE_PATH), max_bytes: RAW_BYTES },
+    ] {
+        let mut run = Run::known(Op::Read(read));
+        run.begin();
+        assert_eq!(run.answer(404, MISSING), Step::Done(Err(Error::Missing)));
+        assert_eq!(run.tables().repository(REPO), Some(&fixtures::specimen()));
+    }
+}
+
+#[test]
+fn repository_404_drops_the_row() {
+    for read in [Read::Settings, Read::Branches, Read::Item { number: 1, after: 0 }] {
+        let mut run = Run::known(Op::Read(read));
+        run.begin();
+        assert_eq!(run.answer(404, MISSING), Step::Done(Err(Error::Missing)));
+        assert_eq!(run.tables().repository(REPO), None);
+    }
+    for read in [
+        Read::Branch { branch: Box::from(&b"topic"[..]) },
+        Read::File { head: HEAD, path: Box::from(super::FILE_PATH), max_bytes: RAW_BYTES },
+    ] {
+        let mut run = Run::new(Op::Read(read));
+        run.begin();
+        run.tables().keep_repository(REPO, fixtures::specimen());
+        assert_eq!(run.answer(404, MISSING), Step::Done(Err(Error::Missing)));
+        assert_eq!(run.tables().repository(REPO), None, "resolution is not a leaf");
+    }
 }

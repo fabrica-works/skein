@@ -194,6 +194,23 @@ impl World {
         self.joint.lines().iter().filter(|line| line.starts_with(b"GET /app/hook/deliveries")).count()
     }
 
+    /// Repository discovery request lines, independent of call costs.
+    #[must_use]
+    pub fn github_repository_reads(&self) -> usize {
+        self.joint.lines().iter().filter(|line| line.starts_with(b"GET /repositories/")).count()
+    }
+
+    /// Branch leaf request lines, independent of call costs.
+    #[must_use]
+    pub fn github_branch_reads(&self, branch: &[u8]) -> usize {
+        let mut prefix = b"GET /repos/".to_vec();
+        prefix.extend_from_slice(crate::github_fixture::PATH);
+        prefix.extend_from_slice(b"/branches/");
+        prefix.extend_from_slice(branch);
+        prefix.push(b' ');
+        self.joint.lines().iter().filter(|line| line.starts_with(&prefix)).count()
+    }
+
     #[must_use]
     pub fn github_mints(&self) -> u64 {
         self.joint.mints()

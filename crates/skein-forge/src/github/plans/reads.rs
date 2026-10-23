@@ -455,7 +455,13 @@ impl Plan {
         refusal: Option<&document::Refusal>,
         tables: &mut Tables,
     ) -> api::Error {
-        let error = failure::read(status, head, refusal, self.repository, tables);
+        let asked =
+            if let (Read::Branch { .. }, Stage::Read) | (Read::File { .. }, Stage::Raw) = (&self.read, self.stage) {
+                crate::github::failure::Asked::Leaf
+            } else {
+                crate::github::failure::Asked::Read
+            };
+        let error = failure::read(asked, status, head, refusal, self.repository, tables);
         if let Read::Job { .. } = self.read
             && error == api::Error::Missing
         {

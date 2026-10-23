@@ -272,10 +272,21 @@ impl Plan {
         match heard {
             Heard::Head { status, fields } => {
                 if status != 200 {
-                    if status == 404 || (300..400).contains(&status) {
-                        tables.drop_repository(self.repository);
+                    let asked = if self.stage == Stage::Read
+                        && let api::Read::Branch { .. } = self.read
+                    {
+                        super::failure::Asked::Leaf
+                    } else {
+                        super::failure::Asked::Read
+                    };
+                    let classified = super::failure::classify(asked, status, None, fields.retry_after);
+                    match classified.drop {
+                        super::failure::Drop::Nothing => {}
+                        super::failure::Drop::Path | super::failure::Drop::Row => {
+                            tables.drop_repository(self.repository);
+                        }
                     }
-                    return Err(crate::forgejo::plans::failure::read(status, &fields));
+                    return Err(classified.error);
                 }
                 if self.stage == Stage::Read
                     && let api::Read::Items { .. } = &self.read

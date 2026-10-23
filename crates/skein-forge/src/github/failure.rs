@@ -40,6 +40,7 @@ pub const REF_MISSING: &[u8] = b"Reference does not exist";
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Asked {
     Read,
+    Leaf,
     Job,
     Merge,
     Enqueue,
@@ -105,7 +106,7 @@ fn line_matches(line: &[u8], text: &[u8], mode: Match) -> bool {
 /// Classifies a status and refusal, after transport has answered.
 #[must_use]
 pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal>) -> Verdict {
-    let read = asked == Asked::Read || asked == Asked::Job;
+    let read = asked == Asked::Read || asked == Asked::Leaf || asked == Asked::Job;
     let unknown = if read { api::Error::InvalidAnswer } else { api::Error::Refused };
     if status == 301 || status == 307 {
         return Verdict::Fail(api::Error::Unavailable, Drop::Row);
@@ -113,7 +114,7 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
     if status == 404 || status == 410 {
         return Verdict::Fail(
             if asked == Asked::Job { api::Error::MissingJob } else { api::Error::Missing },
-            Drop::Row,
+            if asked == Asked::Leaf { Drop::Nothing } else { Drop::Row },
         );
     }
     if status == 403 || status == 429 {
@@ -137,6 +138,7 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
     let empty = match asked {
         Asked::Write { empty } | Asked::OpenPull { empty } | Asked::Review { empty } => empty,
         Asked::Read
+        | Asked::Leaf
         | Asked::Job
         | Asked::Merge
         | Asked::Enqueue
@@ -176,6 +178,7 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
             }
             Asked::OpenPull { .. } | Asked::Review { .. } | Asked::Write { .. } if empty => api::Error::Empty,
             Asked::Read
+            | Asked::Leaf
             | Asked::Job
             | Asked::Merge
             | Asked::Enqueue

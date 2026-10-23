@@ -324,13 +324,13 @@ fn repository_cases() -> [ReadCase; 5] {
             login: Some(b"seven"),
         },
         ReadCase {
-            name: "missing branch drops the row",
+            name: "missing branch keeps the row",
             read: Read::Branch { branch: Box::from(&b"gone"[..]) },
             replies: &[(200, REPOSITORY), (404, b"{}")],
             expected: Err(Error::Missing),
             sends: &["GET /api/v1/repositories/1", "GET /api/v1/repos/fixture/specimen/branches/gone"],
             range: None,
-            kept: false,
+            kept: true,
             login: None,
         },
     ]

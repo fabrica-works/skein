@@ -147,6 +147,7 @@ pub(crate) fn pushed(d: &mut Domain, env: &Env<Limits>, key: &Resource, commit: 
             What::Branch(_) => {}
             What::Repository | What::Pull(_) | What::Issue(_) => return,
         }
+        row.presence = super::Presence::Present;
         row.record.pushed = Some(commit);
         row.record.cached.tip = Some(commit);
         out.push(Request::Save { record: Stored::Live(row.record.clone()) });

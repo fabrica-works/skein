@@ -253,9 +253,57 @@ fn dropped(status: u16, error: api::Error) {
     assert_eq!(fresh.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
 }
 #[test]
-fn github_plans_missing_drops_the_row() {
-    dropped(404, api::Error::Missing);
-    dropped(410, api::Error::Missing);
+fn github_plans_branch_and_contents_missing_keep_the_row() {
+    for status in [404, 410] {
+        for read in [branch(), api::Read::File { head: [1; 32], path: Box::from(*b"file"), max_bytes: 16 }] {
+            let mut tables = Tables::new(2, 2);
+            keep(&mut tables);
+            let mut plan = read_plan(read);
+            plan.begin(bounds(), b"example-app", &mut tables).expect("leaf admitted");
+            assert_eq!(
+                plan.heard(Heard::Head { status, head: Head::new() }, bounds(), b"example-app", &mut tables),
+                ended(Err(api::Error::Missing))
+            );
+            assert!(tables.repository(KEY).is_some());
+            let mut fresh = read_plan(branch());
+            assert_eq!(fresh.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(branch_request())));
+        }
+    }
+}
+#[test]
+fn github_plans_repository_missing_drops_the_row() {
+    for status in [404, 410] {
+        for read in [api::Read::Settings, api::Read::Branches, api::Read::Item { number: 1, after: 0 }] {
+            let mut tables = Tables::new(2, 2);
+            keep(&mut tables);
+            let mut plan = read_plan(read);
+            plan.begin(bounds(), b"example-app", &mut tables).expect("read admitted");
+            assert_eq!(
+                plan.heard(Heard::Head { status, head: Head::new() }, bounds(), b"example-app", &mut tables),
+                ended(Err(api::Error::Missing))
+            );
+            assert_eq!(tables.repository(KEY), None);
+            let mut fresh = read_plan(branch());
+            assert_eq!(
+                fresh.begin(bounds(), b"example-app", &mut tables),
+                Ok(Step::send(Request::Repository { id: 7 }))
+            );
+        }
+        for read in [branch(), api::Read::File { head: [1; 32], path: Box::from(*b"file"), max_bytes: 16 }] {
+            let mut tables = Tables::new(2, 2);
+            let mut plan = read_plan(read);
+            assert_eq!(
+                plan.begin(bounds(), b"example-app", &mut tables),
+                Ok(Step::send(Request::Repository { id: 7 }))
+            );
+            keep(&mut tables);
+            assert_eq!(
+                plan.heard(Heard::Head { status, head: Head::new() }, bounds(), b"example-app", &mut tables),
+                ended(Err(api::Error::Missing))
+            );
+            assert_eq!(tables.repository(KEY), None, "resolution is not a leaf");
+        }
+    }
 }
 #[test]
 fn github_plans_moved_drops_the_row() {

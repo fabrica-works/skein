@@ -158,6 +158,7 @@ pub(crate) fn answered_resource(
         Answer::Item { item, comments, more } => item_answered(d, env, key, item, comments, more, out),
         Answer::Pull(pull) => {
             let row = d.keep.live.get_mut(key).expect("resource remains");
+            row.presence = super::Presence::Present;
             let changed = row.record.cached.pull.as_ref() != Some(&pull);
             row.record.cached.pull = Some(pull.clone());
             out.push(Request::Save { record: Stored::Live(row.record.clone()) });
@@ -244,6 +245,9 @@ fn item_answered(
         return;
     }
     let row = d.keep.live.get_mut(key).expect("resource remains");
+    if let What::Issue(_) = key.what {
+        row.presence = super::Presence::Present;
+    }
     let changed = row.record.cached.item.as_ref() != Some(&item);
     row.record.position.comment = row.record.position.comment.max(last);
     row.record.comment_after = if more && participating { last } else { row.record.position.comment };
@@ -446,6 +450,7 @@ fn branch_observed(
         Some(_) | None => false,
     };
     let row = d.keep.live.get_mut(key).expect("resource remains");
+    row.presence = super::Presence::Present;
     let changed = row.record.cached.tip != Some(commit);
     let expected = if row.writer { row.record.cached.tip } else { row.record.pushed };
     if (backwards || outside || !row.writer)
@@ -472,18 +477,22 @@ fn failed_resource(
     out: &mut Queue<Request>,
 ) {
     if error == Error::Missing {
-        let row = d.keep.live.get(key).expect("resource remains");
-        if let What::Branch(_) = key.what
-            && let Some(expected) = row.record.cached.tip
-        {
-            out.push(Request::Drift { resource: key.clone(), expected, observed: None });
+        let row = d.keep.live.get_mut(key).expect("resource remains");
+        if row.presence != super::Presence::Missing {
+            if let What::Branch(_) = key.what
+                && let Some(expected) = row.record.cached.tip.take()
+            {
+                out.push(Request::Drift { resource: key.clone(), expected, observed: None });
+                out.push(Request::Save { record: Stored::Live(row.record.clone()) });
+            }
+            out.push(Request::Changed { resource: key.clone(), result: Err(error) });
         }
+        row.presence = super::Presence::Missing;
+        rest_resource(d, env, key);
+        return;
     }
     out.push(Request::Changed { resource: key.clone(), result: Err(error) });
     let row = d.keep.live.get_mut(key).expect("resource remains");
-    if error == Error::Missing {
-        row.fresh = Fresh::Complete;
-    }
     row.state = State::Waiting(phase, Priority::Slow);
     d.alarms.arm(Alarm::Resource(row.alarm), env.now.saturating_add(env.limits.backoff)).expect("one resource alarm");
 }
@@ -492,6 +501,8 @@ fn rest_resource(d: &mut Domain, env: &Env<Limits>, key: &Resource) {
     row.fresh = Fresh::Complete;
     let interval = if row.hinted {
         env.limits.hinted
+    } else if row.presence == super::Presence::Missing {
+        env.limits.slow
     } else {
         match key.what {
             What::Pull(_) => {
@@ -505,6 +516,10 @@ fn rest_resource(d: &mut Domain, env: &Env<Limits>, key: &Resource) {
     row.hinted = false;
     row.state = State::Idle;
     let next = env.now.saturating_add(interval);
-    let next = if row.inbox.repair_at > env.now { next.min(row.inbox.repair_at) } else { next };
+    let next = if row.presence != super::Presence::Missing && row.inbox.repair_at > env.now {
+        next.min(row.inbox.repair_at)
+    } else {
+        next
+    };
     d.alarms.arm(Alarm::Resource(row.alarm), next).expect("one resource alarm");
 }
