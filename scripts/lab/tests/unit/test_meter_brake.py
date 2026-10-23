@@ -180,7 +180,7 @@ class Meter(unittest.TestCase):
         state, effects = event(state, 'meter_due', 999999)
         self.assertEqual(effects, [])
 
-    def test_null_driver_has_exactly_one_read_and_unknown_is_null(self):
+    def test_null_driver_has_exactly_one_read_and_no_line_fails(self):
         state, effects = drive(False)
         self.assertEqual(effects[-1]['group'], 'meter')
         self.assertTrue(state.data['meter']['final'])
@@ -190,7 +190,7 @@ class Meter(unittest.TestCase):
         self.assertEqual(state.data['phase'], 'collect')
         self.assertEqual(state.data['meter']['n'], 1)
         self.assertIsNone(state.data['meter']['spend'])
-        self.assertFalse(any(e['op'] == 'meter_failure' for e in effects))
+        self.assertIn(dict(op='meter_failure', signature='meter/reading'), effects)
 
     def test_bound_is_strict_stops_driver_and_keeps_last_good(self):
         state, _ = drive()
@@ -220,6 +220,14 @@ class Meter(unittest.TestCase):
                 self.assertEqual(effects[0], dict(op='meter_failure', signature=signature))
                 self.assertEqual(effects[1]['op'], 'stop_driver')
                 self.assertIsNone(state.data['meter']['spend'])
+
+    def test_a_reading_without_its_line_ends_the_drive_at_once(self):
+        state, _ = drive()
+        state, _ = event(state, 'meter_due', 1100)
+        state, effects = done(state, 1101)
+        self.assertEqual(effects[0], dict(op='meter_failure', signature='meter/reading'))
+        self.assertEqual(effects[1]['op'], 'stop_driver')
+        self.assertIsNone(state.data['meter']['spend'])
 
     def test_good_reading_resets_streak_and_failed_last_keeps_spend(self):
         state, _ = drive()

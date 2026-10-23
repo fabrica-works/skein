@@ -69,7 +69,8 @@ each completed reading adds a `meter` timeline event.
 
 The last stdout line must be `0` or decimal digits without a leading zero.
 Spend greater than `subject_spend` stops the driver and fails
-`bound/subject_spend`. One failed reading is tolerated; two consecutive ones
+`bound/subject_spend`. A reading that exits 0 without that line ends the drive at once,
+`meter/reading`. One other failed reading is tolerated; two consecutive ones
 end the drive with `meter/exit:STATUS`, `meter/signal:SIG`, `meter/reading`, or
 `bound/command_seconds/NAME` (kind `meter`). `usage.subject_spend` is the last
 good reading, or null. `longest_ms` includes the final reading as one command.

@@ -36,7 +36,8 @@ def fold(state, record, limit, name):
             signature = 'bound/subject_spend'
     else:
         state['failures'] += 1
-        if state['failures'] < 2:
+        # A failing command is tolerated once; a reading with no such line never (lab.md 6.5).
+        if state['failures'] < 2 and signature != 'meter/reading':
             signature = None
     if state['halted']:
         signature = None
