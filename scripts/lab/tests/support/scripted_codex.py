@@ -54,6 +54,8 @@ def event(method, **params):
 class Tools:
     def __init__(self):
         server = config['mcp_servers']['lab']
+        # Codex 0.162.1 refuses an unannotated MCP call under approval policy never otherwise.
+        assert server['default_tools_approval_mode'] == 'approve'
         self.process = subprocess.Popen([server['command'], *server['args']], env={},
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr)
         self.serial = 0

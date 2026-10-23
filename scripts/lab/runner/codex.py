@@ -56,6 +56,8 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
             + f'command = {json.dumps(python)}\n'
             + 'args = ' + json.dumps(['-I', '-B', runner + '/runner/launch.py', lab_root, 'tool', run]) + '\n'
             + 'env_vars = []\nrequired = true\nenabled_tools = ' + json.dumps(sorted(tools)) + '\n'
+            # The host's own MCP approval is pre-granted; the runner's broker admits each call (lab.md 6.3).
+            + 'default_tools_approval_mode = "approve"\n'
             + '[skills.bundled]\nenabled = false\n[tools.experimental_request_user_input]\nenabled = false\n'
             + '[model_providers.lab-openai]\n'
             + 'name = "OpenAI"\nwire_api = "responses"\n'
