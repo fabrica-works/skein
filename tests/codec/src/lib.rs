@@ -22,3 +22,7 @@ pub mod lints;
 #[rustfmt::skip]
 #[path = "secrets/v1.rs"]
 pub mod secrets;
+
+#[rustfmt::skip]
+#[path = "every/v1.rs"]
+pub mod every;

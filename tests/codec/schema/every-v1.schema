@@ -1,0 +1,63 @@
+family every 1
+
+# Every type of the language, with list and option nesting, for the
+# generic decoder's tests against the generated code (codec.md, 8.3).
+
+record Blank {}
+
+record Numbers {
+    small: u8
+    short: u16
+    word: u32
+    long: u64
+    flag: bool
+    wait: duration
+    tag: fixed 3
+}
+
+record Strings {
+    raw: bytes 6
+    key: secret 5
+    words: text 7
+}
+
+enum Light { red, amber, green }
+
+versioned record Stamp {
+    at: u64
+    note: option text 4
+}
+
+enum Shape {
+    dot
+    numbers: Numbers
+    strings: boxed Strings
+    stamp: Stamp
+}
+
+record Nest {
+    blanks: list 3 Blank
+    lights: list 3 Light
+    maybe_lights: list 2 option Light
+    grid: list 2 list 2 u16
+    maybe_list: option list 3 u8
+    maybe_numbers: option Numbers
+    shapes: list 2 Shape
+    secrets: list 2 secret 3
+    stamps: list 2 Stamp
+    pairs: list 2 fixed 2
+}
+
+versioned record Every {
+    numbers: Numbers
+    strings: Strings
+    light: Light
+    shape: Shape
+    stamp: Stamp
+    nest: Nest
+    empty: Blank
+    # Will hold a record of another family (codec.md 3, `holds`).
+    held: bytes 8
+    # Will hold pieces of Numbers (codec.md 3, `pieces`).
+    items: bytes 64
+}
