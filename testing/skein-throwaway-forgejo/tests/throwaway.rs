@@ -1,3 +1,6 @@
+// No owned Forgejo on macOS: the pinned binary releases are Linux's (shell.md, 9).
+#![cfg(target_os = "linux")]
+
 use skein_forge::forgejo::pin::VERSION;
 use skein_throwaway_forgejo::{Failure, Forgejo, Init, Outgoing, Refusal, Settings};
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};

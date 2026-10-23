@@ -52,7 +52,7 @@ pub use drive::{Host, drive};
 #[cfg(target_os = "linux")]
 pub(crate) use linux as system;
 
-pub use group::{child_id, group_live, signal_group};
+pub use group::{child_id, group_live, process_live, signal_group};
 pub use kernel::{Backend, Chosen, Config, Kernel, OpenError, Wait};
 pub use process::{
     HostedPipes, abandon_binary, close_keeper_fd, hosted_pipes, open_signal_pipe, open_termination_signals, poll_child,

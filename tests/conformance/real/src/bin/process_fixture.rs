@@ -4,6 +4,11 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, ExitCode, Stdio};
 
+#[cfg(target_os = "linux")]
+const DESCRIPTORS: &str = "/proc/self/fd";
+#[cfg(target_os = "macos")]
+const DESCRIPTORS: &str = "/dev/fd";
+
 #[expect(
     clippy::zombie_processes,
     reason = "the process-tree fixture deliberately leaves a descendant for the keeper to settle"
@@ -15,9 +20,9 @@ fn main() -> ExitCode {
         Some("echo") => {
             let input = args.next().expect("input descriptor");
             let output = args.next().expect("output descriptor");
-            let mut reader = File::open(format!("/proc/self/fd/{input}")).expect("child input pipe");
+            let mut reader = File::open(format!("{DESCRIPTORS}/{input}")).expect("child input pipe");
             let mut writer =
-                OpenOptions::new().write(true).open(format!("/proc/self/fd/{output}")).expect("child output pipe");
+                OpenOptions::new().write(true).open(format!("{DESCRIPTORS}/{output}")).expect("child output pipe");
             let mut bytes = [0_u8; 4096];
             loop {
                 let n = reader.read(&mut bytes).expect("read child input");

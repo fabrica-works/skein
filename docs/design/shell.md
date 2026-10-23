@@ -612,8 +612,10 @@ other module is safe Rust, the same on both systems.
   pid a child's handle names; `signal_group`, a signal to a process group
   by its ID (`kill` of its negative); and `group_live`, whether a process
   group still has a member (`kill` of its negative with no signal, `ESRCH`
-  for none). They name a group by number, as no record does, and are
-  for the harness alone.
+  for none). `process_live` probes a positive pid with no signal, counting
+  an unreaped zombie as live and refusing 0, 1 and values beyond `pid_t`.
+  These calls name processes and groups by number, as no record does,
+  and are for the harness alone.
 
 **Darwin's parts,** in `darwin`:
 - **Sockets** are made without blocking and closed on exec by `fcntl`
@@ -844,6 +846,8 @@ and changes no code above io:
 | `crates/skein-shell`: `kernel`'s `the_host_chooses_the_ring` and `forcing_a_backend_reports_it_and_refuses_zero_capacity` | each opens the ring |
 | `crates/skein-shell`: `readiness`'s `a_registration_error_completes_without_calling_or_adding_a_waiter` | its error is epoll's second add (`EEXIST`); kqueue's `EV_ADD` modifies instead |
 | `tests/world/tests/end_to_end.rs`: the cgroup's and the walk's tree tests, an escape from the group among them | a cgroup, the subreaper and `/proc` are Linux's (examples.md, 6) |
+| `tests/world/tests/end_to_end.rs`: `supervised_stderr_overflow_is_observed_before_the_referees_term_grace_and_whole_tree_kill` | its descendant leaves its session and group through `setsid`; a cgroup or the subreaper's walk follows it, Group does not (examples.md, 6) |
+| `testing/skein-throwaway-forgejo/tests/throwaway.rs` (`skein-throwaway-forgejo`) | starts the pinned Forgejo binary; no owned Forgejo on macOS, its releases are Linux's |
 
   The list grows with each test that a Darwin build shows to be
   Linux's, in the commit that marks it.

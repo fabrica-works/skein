@@ -9,6 +9,11 @@ use skein_shell::{Clock, open_root};
 use skein_world::{Host, HostedProgram, Inherited, Referee, real};
 use skein_world_tests::hosted::{Act, Script};
 
+#[cfg(target_os = "linux")]
+const DESCRIPTORS: &str = "/proc/self/fd";
+#[cfg(target_os = "macos")]
+const DESCRIPTORS: &str = "/dev/fd";
+
 #[derive(Debug)]
 struct Quiet;
 
@@ -267,7 +272,7 @@ fn opening(_spawn: &Spawn, _inherited: &Inherited) -> Proc {
 
 #[test]
 fn kill_closes_a_descriptor_returned_before_the_child_reaps_it() {
-    let before = std::fs::read_dir("/proc/self/fd").expect("descriptor table").count();
+    let before = std::fs::read_dir(DESCRIPTORS).expect("descriptor table").count();
     for _ in 0..16 {
         let mut world = real::World::new(Quiet);
         world.host(HostedProgram { program: Box::from(&b"hosted"[..]), make: opening, instances: 1, operations: 1 });
@@ -278,7 +283,7 @@ fn kill_closes_a_descriptor_returned_before_the_child_reaps_it() {
         let outcome = world.run(&Clock::new(), Duration::from_secs(2));
         assert_eq!(outcome.killed.len(), 1);
         assert_eq!(
-            std::fs::read_dir("/proc/self/fd").expect("descriptor table").count(),
+            std::fs::read_dir(DESCRIPTORS).expect("descriptor table").count(),
             before,
             "all inherited and completion-returned descriptors are closed after kill"
         );

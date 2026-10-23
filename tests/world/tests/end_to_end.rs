@@ -7,6 +7,11 @@ use skein_world::end_to_end::{Binary, Command, Containment, Mode, StartError};
 use skein_world::{Host, Referee, real};
 use skein_world_tests::hosted::{Act, Script};
 
+#[cfg(target_os = "linux")]
+const DESCRIPTORS: &str = "/proc/self/fd";
+#[cfg(target_os = "macos")]
+const DESCRIPTORS: &str = "/dev/fd";
+
 // A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
 #[cfg(target_os = "linux")]
 const ALL: [Containment; 3] = [Containment::Walk, Containment::Best, Containment::Group];
@@ -212,7 +217,7 @@ fn an_abandoned_binary_is_reaped_and_its_untransferred_descriptors_are_closed() 
     let descriptors = binary.descriptors();
     drop(binary);
     for descriptor in descriptors {
-        let path = format!("/proc/self/fd/{}", descriptor.raw());
+        let path = format!("{DESCRIPTORS}/{}", descriptor.raw());
         assert!(std::fs::metadata(path).is_err(), "abandonment closes every owned descriptor");
     }
 }
@@ -309,10 +314,7 @@ fn a_descendant_left_in_the_group_is_ended_and_counted() {
     for containment in ALL {
         let outcome = tree_run("fork-exit", containment, skein_world::end_to_end::Expectation::Measure);
         let child = tree_child(&outcome);
-        assert!(
-            !std::path::Path::new(&format!("/proc/{}", descendant(child.stderr()))).exists(),
-            "the descendant was reaped"
-        );
+        assert_eq!(skein_shell::process_live(descendant(child.stderr())), Ok(false), "the descendant was reaped");
         assert_tree_counted(child, containment);
     }
 }
@@ -325,8 +327,9 @@ fn a_descendant_that_leaves_its_group_and_session_is_still_settled() {
     for containment in [Containment::Walk, Containment::Best] {
         let outcome = tree_run("escape-exit", containment, skein_world::end_to_end::Expectation::Measure);
         let child = tree_child(&outcome);
-        assert!(
-            !std::path::Path::new(&format!("/proc/{}", descendant(child.stderr()))).exists(),
+        assert_eq!(
+            skein_shell::process_live(descendant(child.stderr())),
+            Ok(false),
             "the escaped descendant was reaped"
         );
         assert_tree_counted(child, containment);
@@ -362,8 +365,9 @@ fn an_already_exited_descendant_that_left_its_session_is_still_reaped() {
         let outcome = world.run(&clock, Duration::from_secs(2));
         let child = tree_child(&outcome);
         assert_tree_counted(child, containment);
-        assert!(
-            !std::path::Path::new(&format!("/proc/{}", descendant(child.stderr()))).exists(),
+        assert_eq!(
+            skein_shell::process_live(descendant(child.stderr())),
+            Ok(false),
             "an already-exited escaped descendant is reaped before tree settlement"
         );
     }
@@ -408,7 +412,7 @@ fn a_measured_binary_is_killed_and_counted() {
         let outcome = tree_run("fork-live", containment, skein_world::end_to_end::Expectation::Measure);
         let child = tree_child(&outcome);
         assert_eq!(child.exit_status(), Some(Exit::Signal(9)));
-        assert!(!std::path::Path::new(&format!("/proc/{}", descendant(child.stderr()))).exists());
+        assert_eq!(skein_shell::process_live(descendant(child.stderr())), Ok(false));
         assert_tree_counted(child, containment);
     }
 }
@@ -438,9 +442,9 @@ fn a_dropped_observer_ends_its_tree() {
         let pid = descendant(child.stderr());
         let descriptors = child.descriptors();
         drop(child);
-        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists(), "the abandoned descendant was reaped");
+        assert_eq!(skein_shell::process_live(pid), Ok(false), "the abandoned descendant was reaped");
         for fd in descriptors {
-            assert!(std::fs::metadata(format!("/proc/self/fd/{}", fd.raw())).is_err());
+            assert!(std::fs::metadata(format!("{DESCRIPTORS}/{}", fd.raw())).is_err());
         }
         let mut completions = Queue::with_capacity(8);
         while kernel.in_flight() > 0 {
@@ -592,6 +596,8 @@ enum SupervisedTrigger {
     // The detached-descendant cases use Linux's tree keeper (shell.md, 9).
     #[cfg(target_os = "linux")]
     Ready,
+    // The detached-descendant case uses Linux's tree keeper (shell.md, 9).
+    #[cfg(target_os = "linux")]
     StderrOverflow,
     // The detached-descendant cases use Linux's tree keeper (shell.md, 9).
     #[cfg(target_os = "linux")]
@@ -616,6 +622,7 @@ impl Referee<Process> for SupervisedJudge {
             let ready = match self.trigger {
                 #[cfg(target_os = "linux")]
                 SupervisedTrigger::Ready => ready_descendant(child.stderr()).is_some(),
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::StderrOverflow => child.stderr_overflowed(),
                 #[cfg(target_os = "linux")]
                 SupervisedTrigger::LeaderExit => child.exit_status().is_some(),
@@ -647,6 +654,8 @@ impl Referee<Process> for SupervisedJudge {
     }
 
     fn observe(&mut self, now: Time, procs: &[Process]) {
+        #[cfg(target_os = "macos")]
+        let _ = now;
         let Process::Child(child) = &procs[0] else { panic!("binary observer") };
         self.next = if child.counts().is_some() {
             None
@@ -656,6 +665,7 @@ impl Referee<Process> for SupervisedJudge {
             match self.trigger {
                 #[cfg(target_os = "linux")]
                 SupervisedTrigger::Ready => ready_descendant(child.stderr()).is_some().then_some(now),
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::StderrOverflow => child.stderr_overflowed().then_some(now),
                 #[cfg(target_os = "linux")]
                 SupervisedTrigger::LeaderExit => child.exit_status().is_some().then_some(now),
@@ -679,8 +689,8 @@ impl Referee<Process> for SupervisedJudge {
                 #[cfg(target_os = "linux")]
                 SupervisedTrigger::LeaderExit => self.saw_retained_exit,
                 #[cfg(target_os = "linux")]
-                SupervisedTrigger::Ready => true,
-                SupervisedTrigger::StderrOverflow | SupervisedTrigger::Bound | SupervisedTrigger::Never => true,
+                SupervisedTrigger::Ready | SupervisedTrigger::StderrOverflow => true,
+                SupervisedTrigger::Bound | SupervisedTrigger::Never => true,
             }
         }
     }
@@ -734,7 +744,7 @@ fn a_supervised_tree_retains_detached_descendants_after_natural_leader_exit() {
         assert_eq!(child.tree_status().cleanup(), Cleanup::Terminate);
         assert!(child.tree_status().terminated_pids.contains(&pid));
         assert!(child.tree_status().killed_pids.is_empty());
-        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+        assert_eq!(skein_shell::process_live(pid), Ok(false));
         assert_tree_counted(child, containment);
     }
 }
@@ -759,7 +769,7 @@ fn whole_tree_term_reaches_detached_descendants_before_the_leader_exits() {
                     .find_map(|line| line.strip_prefix("grandchild:")?.parse().ok())
                     .expect("the fixture reports a detached grandchild");
                 assert!(child.tree_status().terminated_pids.contains(&grandchild));
-                assert!(!std::path::Path::new(&format!("/proc/{grandchild}")).exists());
+                assert_eq!(skein_shell::process_live(grandchild), Ok(false));
             }
             assert_tree_counted(child, containment);
         }
@@ -779,7 +789,7 @@ fn a_supervised_tree_honors_grace_after_leader_exit_then_reports_forced_kill() {
         assert_eq!(child.tree_status().cleanup(), Cleanup::Kill);
         assert!(child.tree_status().terminated_pids.contains(&pid));
         assert_eq!(child.tree_status().killed_pids, vec![pid]);
-        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+        assert_eq!(skein_shell::process_live(pid), Ok(false));
         assert_tree_counted(child, containment);
     }
 }
@@ -920,6 +930,8 @@ fn supervised_stderr_limits_distinguish_exact_capture_empty_capture_and_overflow
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn supervised_stderr_overflow_is_observed_before_the_referees_term_grace_and_whole_tree_kill() {
     use skein_world::end_to_end::Cleanup;

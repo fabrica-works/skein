@@ -13,6 +13,11 @@ use skein_shell::{
     read_trust_roots,
 };
 
+#[cfg(target_os = "linux")]
+const DESCRIPTORS: &str = "/proc/self/fd";
+#[cfg(target_os = "macos")]
+const DESCRIPTORS: &str = "/dev/fd";
+
 const BOUNDS: RootBounds = RootBounds { bundle_bytes: 4_096, certificates: 8, certificate_bytes: 32 };
 
 #[test]
@@ -41,16 +46,24 @@ fn directory_access_answers_not_a_directory_for_a_file_in_the_path() {
     assert_eq!(directory_access(&path.join("child")), DirectoryAccess::NotDirectory);
 }
 
+#[cfg(target_os = "linux")]
 fn mode_checks_bypassed() -> bool {
     let status = fs::read_to_string("/proc/self/status").expect("read effective capabilities");
     let capabilities = status.lines().find_map(|line| line.strip_prefix("CapEff:")).expect("CapEff").trim();
     u64::from_str_radix(capabilities, 16).expect("hex capabilities") & (1_u64 << 1_u32) != 0
 }
 
+#[cfg(target_os = "macos")]
+fn mode_checks_bypassed() -> bool {
+    let scratch = Scratch::new("mode-owner");
+    let path = private_token(&scratch);
+    fs::metadata(path).expect("new file's effective owner").uid() == 0
+}
+
 #[test]
 fn directory_access_answers_denied_without_write_permission() {
     if mode_checks_bypassed() {
-        eprintln!("CAP_DAC_OVERRIDE bypasses directory modes; skipping the denied-write case");
+        eprintln!("effective privileges bypass directory modes; skipping the denied-write case");
         return;
     }
     let scratch = Scratch::new("access");
@@ -61,7 +74,7 @@ fn directory_access_answers_denied_without_write_permission() {
 #[test]
 fn directory_access_answers_denied_without_search_permission() {
     if mode_checks_bypassed() {
-        eprintln!("CAP_DAC_OVERRIDE bypasses directory modes; skipping the denied-search case");
+        eprintln!("effective privileges bypass directory modes; skipping the denied-search case");
         return;
     }
     let scratch = Scratch::new("access");
@@ -88,7 +101,7 @@ fn directory_access_creates_nothing_and_changes_no_entry() {
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o500)).expect("deny directory writes");
     let paths = [scratch.path().to_path_buf(), file.clone(), denied];
     let before = paths.each_ref().map(|path| entry_metadata(path));
-    let descriptors = fs::read_dir("/proc/self/fd").expect("descriptor observer").count();
+    let descriptors = fs::read_dir(DESCRIPTORS).expect("descriptor observer").count();
     for path in &paths {
         let _answer = directory_access(path);
     }
@@ -98,7 +111,7 @@ fn directory_access_creates_nothing_and_changes_no_entry() {
     assert_eq!(fs::read_dir(scratch.path()).expect("scratch entries").count(), 2, "no check file created");
     assert_eq!(paths.each_ref().map(|path| entry_metadata(path)), before, "modes, size and timestamps stay");
     assert_eq!(fs::read(&file).expect("file contents"), b"secret", "file contents stay");
-    assert_eq!(fs::read_dir("/proc/self/fd").expect("descriptor observer").count(), descriptors, "no descriptor kept");
+    assert_eq!(fs::read_dir(DESCRIPTORS).expect("descriptor observer").count(), descriptors, "no descriptor kept");
 }
 
 fn private_token(scratch: &Scratch) -> std::path::PathBuf {
@@ -176,10 +189,8 @@ fn a_file_owned_by_another_expected_user_is_refused_as_owner() {
 
 #[test]
 fn a_denied_own_file_is_named_by_its_path_only_stat() {
-    let status = fs::read_to_string("/proc/self/status").expect("read effective capabilities");
-    let capabilities = status.lines().find_map(|line| line.strip_prefix("CapEff:")).expect("CapEff").trim();
-    if u64::from_str_radix(capabilities, 16).expect("hex capabilities") & (1_u64 << 1_u32) != 0 {
-        eprintln!("CAP_DAC_OVERRIDE bypasses file modes; skipping the denied-open case");
+    if mode_checks_bypassed() {
+        eprintln!("effective privileges bypass file modes; skipping the denied-open case");
         return;
     }
     let scratch = Scratch::new("private");
@@ -193,7 +204,7 @@ fn private_reads_leave_no_descriptor_open() {
     let scratch = Scratch::new("private");
     let path = private_token(&scratch);
     let user = skein_shell::effective_user();
-    let descriptors = fs::read_dir("/proc/self/fd").expect("descriptor observer").count();
+    let descriptors = fs::read_dir(DESCRIPTORS).expect("descriptor observer").count();
     for _ in 0..8 {
         assert!(read_private_file(&path, 6, user).is_ok(), "safe file read");
         assert_eq!(read_private_file(&path, 5, user), Err(Unread::TooLarge { max: 5 }));
@@ -205,7 +216,7 @@ fn private_reads_leave_no_descriptor_open() {
         assert_eq!(read_private_file(&scratch.path().join("missing"), 64, user), Err(Unread::Absent));
         assert_eq!(read_private_file(Path::new("nul\0inside"), 64, user), Err(Unread::Kernel(Error::InvalidArgument)));
     }
-    assert_eq!(fs::read_dir("/proc/self/fd").expect("descriptor observer").count(), descriptors, "private reads close");
+    assert_eq!(fs::read_dir(DESCRIPTORS).expect("descriptor observer").count(), descriptors, "private reads close");
 }
 
 fn bundle(scratch: &Scratch, bytes: &[u8], bounds: RootBounds) -> Result<Roots, RootsRefusal> {
@@ -222,7 +233,7 @@ fn startup_reads_whole_regular_files_at_their_bound_and_closes_every_entry() {
     fs::write(&path, &text).expect("plant regular file");
     let fifo = scratch.path().join("fifo");
     assert!(Command::new("mkfifo").arg(&fifo).status().expect("mkfifo runs").success(), "plant a FIFO");
-    let descriptors = fs::read_dir("/proc/self/fd").expect("descriptor observer").count();
+    let descriptors = fs::read_dir(DESCRIPTORS).expect("descriptor observer").count();
     for _ in 0..8 {
         assert_eq!(read_file(&path, 16_384).expect("exact bound").as_ref(), text);
         assert_eq!(read_file(&path, 16_383), Err(Unread::TooLarge { max: 16_383 }));
@@ -231,7 +242,7 @@ fn startup_reads_whole_regular_files_at_their_bound_and_closes_every_entry() {
         assert_eq!(read_file(&scratch.path().join("missing"), 32), Err(Unread::Absent));
         assert_eq!(read_file(Path::new("nul\0inside"), 32), Err(Unread::Kernel(Error::InvalidArgument)));
     }
-    assert_eq!(fs::read_dir("/proc/self/fd").expect("descriptor observer").count(), descriptors, "all reads close");
+    assert_eq!(fs::read_dir(DESCRIPTORS).expect("descriptor observer").count(), descriptors, "all reads close");
     fs::write(&path, b"").expect("empty file");
     assert_eq!(read_file(&path, 0).expect("empty fits zero bytes").as_ref(), b"");
 }

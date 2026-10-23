@@ -21,3 +21,9 @@ pub fn signal_group(group: u32, signal: Signal) -> Result<(), Error> {
 pub fn group_live(group: u32) -> Result<bool, Error> {
     crate::system::group::group_live(group)
 }
+
+/// Whether process `pid` exists (shell.md, 7.5), including a zombie that
+/// has not been reaped. PIDs 0 and 1 and values beyond `pid_t` are refused.
+pub fn process_live(pid: u32) -> Result<bool, Error> {
+    crate::system::group::process_live(pid)
+}
