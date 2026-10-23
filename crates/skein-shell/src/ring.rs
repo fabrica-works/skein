@@ -70,7 +70,7 @@ pub(crate) mod process;
 mod startup;
 pub(crate) mod terminal;
 
-mod opens;
+pub(crate) mod opens;
 mod roots;
 use opens::open;
 pub use roots::make_root;
@@ -415,14 +415,17 @@ const NANOS_PER_SEC: u64 = 1_000_000_000;
 
 /// How many times an `Open` is submitted again after `EAGAIN` before its
 /// `Other(EAGAIN)` goes up.
-const AGAIN: u32 = 16;
+pub(crate) const AGAIN: u32 = 16;
 
 /// The bytes of `getdents64`'s buffer: many entries a call, and room for
 /// the largest one.
-const LISTING: usize = 32 << 10;
+pub(crate) const LISTING: usize = 32 << 10;
 
 /// The path a `Stat` names with `AT_EMPTY_PATH`: the descriptor itself.
 const EMPTY: &CStr = c"";
+
+pub(crate) const STAT_MASK: u32 =
+    libc::STATX_TYPE | libc::STATX_SIZE | libc::STATX_MODE | libc::STATX_UID | libc::STATX_NLINK;
 
 /// The new file's mode a `Create` that asks for none is made with, and a
 /// `MakeDirectory`'s, both less the umask (`skein_io::kernel`, backend
@@ -824,7 +827,7 @@ fn prepare(
         Op::Sync { fd } => opcode::Fsync::new(types::Fd(fd.raw())).build(),
         Op::Stat { fd } => opcode::Statx::new(types::Fd(fd.raw()), EMPTY.as_ptr(), statx.get().cast())
             .flags(libc::AT_EMPTY_PATH)
-            .mask(libc::STATX_TYPE | libc::STATX_SIZE | libc::STATX_MODE | libc::STATX_UID | libc::STATX_NLINK)
+            .mask(STAT_MASK)
             .build(),
         Op::Rename { from_dir, from, to_dir, to, no_replace } => {
             *path = c_path(from);
@@ -850,9 +853,8 @@ fn prepare(
             });
         }
         Op::Lock { fd } => {
-            // SAFETY: flock takes only the descriptor and integer flags.
-            let result = unsafe { libc::flock(fd.raw(), libc::LOCK_EX | libc::LOCK_NB) };
-            return Prepared::Done(if result == 0 { Ok(Done::Nothing) } else { Err(error(kind, last_errno(), false)) });
+            let locked = lock(*fd);
+            return Prepared::Done(locked.map(|()| Done::Nothing).map_err(|errno| error(kind, errno, false)));
         }
         Op::Spawn { spawn: command } => return Prepared::Done(spawn(command)),
         Op::Signal { pidfd, signal, to } => return Prepared::Done(signal_child(*pidfd, *signal, *to)),
@@ -939,39 +941,8 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
         Op::Open { how: OpenHow::PathNoFollow, .. } => Ok(Done::Fd(Fd::new(res))),
         Op::Open { .. } => opened(res),
         Op::Stat { .. } => Ok(Done::Stat(stat(statx.get_mut()))),
-        Op::Wait { .. } => {
-            let info = siginfo.get_mut();
-            // SAFETY: a successful waitid filled `info`; si_status reads
-            // the status union selected by si_code.
-            let status = unsafe { info.si_status() };
-            match info.si_code {
-                libc::CLD_EXITED => {
-                    Ok(Done::Exit(Exit::Code(u8::try_from(status).expect("a child exit code fits in a byte"))))
-                }
-                libc::CLD_KILLED | libc::CLD_DUMPED => {
-                    Ok(Done::Exit(Exit::Signal(u32::try_from(status).expect("a signal is positive"))))
-                }
-                _ => Err(Error::Other(libc::ECHILD)),
-            }
-        }
-        Op::ReadSignal { .. } => {
-            if usize::try_from(res).expect("non-negative result") != size_of::<libc::signalfd_siginfo>() {
-                return Err(Error::Other(libc::EIO));
-            }
-            let signal = match signal_info.get_mut().ssi_signo {
-                value if value == u32::try_from(libc::SIGINT).expect("positive signal") => {
-                    skein_io::kernel::Signalled::Termination(ServiceSignal::Interrupt)
-                }
-                value if value == u32::try_from(libc::SIGTERM).expect("positive signal") => {
-                    skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)
-                }
-                value if value == u32::try_from(libc::SIGWINCH).expect("positive signal") => {
-                    skein_io::kernel::Signalled::WindowChanged
-                }
-                _ => return Err(Error::Other(libc::EINVAL)),
-            };
-            Ok(Done::Signalled(signal))
-        }
+        Op::Wait { .. } => child_exit(siginfo.get_mut()).map(Done::Exit),
+        Op::ReadSignal { .. } => read_signal(signal_info.get_mut(), usize::try_from(res).expect("non-negative result")),
         Op::Listen { .. }
         | Op::Connect { .. }
         | Op::Shutdown { .. }
@@ -986,6 +957,45 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
             unreachable!("a synchronous operation completes at its submit")
         }
     }
+}
+
+/// Decodes the status union filled by a successful waitid.
+pub(crate) fn child_exit(info: &libc::siginfo_t) -> Result<Exit, Error> {
+    // SAFETY: callers pass a child-status record filled by successful waitid.
+    let status = unsafe { info.si_status() };
+    match info.si_code {
+        libc::CLD_EXITED => Ok(Exit::Code(u8::try_from(status).expect("a child exit code fits in a byte"))),
+        libc::CLD_KILLED | libc::CLD_DUMPED => Ok(Exit::Signal(u32::try_from(status).expect("a signal is positive"))),
+        _ => Err(Error::Other(libc::ECHILD)),
+    }
+}
+
+/// A signal read must contain exactly one signalfd record.
+pub(crate) fn read_signal(info: &libc::signalfd_siginfo, count: usize) -> Result<Done, Error> {
+    if count != size_of::<libc::signalfd_siginfo>() {
+        return Err(Error::Other(libc::EIO));
+    }
+    let signal = match info.ssi_signo {
+        value if value == u32::try_from(libc::SIGINT).expect("positive signal") => {
+            skein_io::kernel::Signalled::Termination(ServiceSignal::Interrupt)
+        }
+        value if value == u32::try_from(libc::SIGTERM).expect("positive signal") => {
+            skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)
+        }
+        value if value == u32::try_from(libc::SIGWINCH).expect("positive signal") => {
+            skein_io::kernel::Signalled::WindowChanged
+        }
+        _ => return Err(Error::Other(libc::EINVAL)),
+    };
+    Ok(Done::Signalled(signal))
+}
+
+pub(crate) fn lock(fd: Fd) -> Result<(), i32> {
+    crate::linux::retry(|| {
+        // SAFETY: flock takes only the descriptor and integer flags, and never waits.
+        let result = unsafe { libc::flock(fd.raw(), libc::LOCK_EX | libc::LOCK_NB) };
+        if result == 0 { Ok(()) } else { Err(last_errno()) }
+    })
 }
 
 /// The error number `errno` of `kind`, as `skein_io::kernel::Error`
@@ -1231,7 +1241,7 @@ fn open_entry(root: Fd, path: &[u8], open_how: &UnsafeCell<types::OpenHow>) -> s
 
 /// `bytes` and a NUL after them: the string the kernel reads for a path or
 /// a name, in which a valid record holds no NUL.
-fn c_path(bytes: &[u8]) -> Box<[u8]> {
+pub(crate) fn c_path(bytes: &[u8]) -> Box<[u8]> {
     let mut path = Vec::with_capacity(bytes.len().checked_add(1).expect("a path's length and one more fit a usize"));
     path.extend_from_slice(bytes);
     path.push(0);
@@ -1239,7 +1249,7 @@ fn c_path(bytes: &[u8]) -> Box<[u8]> {
 }
 
 /// Path-only descriptors never enter an operation other than Stat or Close (kernel.md, 6.1).
-fn check_path_access(operation: &Op) {
+pub(crate) fn check_path_access(operation: &Op) {
     let descriptors = match operation {
         Op::Stat { .. } | Op::Close { .. } | Op::Socket { .. } | Op::Usage | Op::Window { .. } | Op::Cancel { .. } => {
             return;
@@ -1278,7 +1288,7 @@ fn check_path_access(operation: &Op) {
 /// to: a file or a directory, or `NotAFile`, the descriptor closed. A file
 /// blocks again, so that io_uring sends a read it cannot do at once to its
 /// worker rather than answer `EAGAIN`.
-fn opened(fd: i32) -> Result<Done, Error> {
+pub(crate) fn opened(fd: i32) -> Result<Done, Error> {
     // SAFETY: `libc::stat` is a plain C struct of integers, for which all
     // zeroes is a valid value.
     let mut raw: libc::stat = unsafe { mem::zeroed() };
@@ -1324,7 +1334,7 @@ fn blocking(fd: i32) -> Result<(), Error> {
 }
 
 /// What a `Stat`'s `statx` found.
-fn stat(raw: &libc::statx) -> Stat {
+pub(crate) fn stat(raw: &libc::statx) -> Stat {
     let kind = if raw.stx_mask & libc::STATX_TYPE == 0 { Kind::Other } else { kind_of(u32::from(raw.stx_mode)) };
     let mode = if raw.stx_mask & libc::STATX_MODE == 0 { 0 } else { u32::from(raw.stx_mode) & PERMISSIONS };
     Stat { kind, size: raw.stx_size, mode, owner: raw.stx_uid, links: raw.stx_nlink }

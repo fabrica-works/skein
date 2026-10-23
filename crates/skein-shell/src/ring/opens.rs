@@ -1,9 +1,22 @@
 //! The opens of the kernel boundary (kernel.md, 6.1).
 use super::{FILE_MODE, OpenHow, types};
+
+/// The Linux openat2 fields shared by both backends.
+pub(crate) struct Fields {
+    pub flags: u64,
+    pub mode: u64,
+    pub resolve: u64,
+}
+
+pub(super) fn open(how: OpenHow) -> types::OpenHow {
+    let Fields { flags, mode, resolve } = fields(how);
+    types::OpenHow::new().flags(flags).mode(mode).resolve(resolve)
+}
+
 /// What `openat2` is told for each way io opens: close-on-exec always,
 /// without blocking or taking a controlling terminal, and resolved beneath
 /// the root, without magic links (kernel.md, 6.1).
-pub(super) fn open(how: OpenHow) -> types::OpenHow {
+pub(crate) fn fields(how: OpenHow) -> Fields {
     let no_follow = matches!(
         how,
         OpenHow::PathNoFollow
@@ -36,5 +49,5 @@ pub(super) fn open(how: OpenHow) -> types::OpenHow {
     } else {
         libc::RESOLVE_BENEATH | libc::RESOLVE_NO_MAGICLINKS
     };
-    types::OpenHow::new().flags(flags).mode(mode).resolve(resolve)
+    Fields { flags, mode, resolve }
 }

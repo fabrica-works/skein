@@ -1,4 +1,4 @@
-//! Terminal syscalls owned by the ring adapter (shell.md, section 6.3).
+//! Terminal syscalls shared by the Linux backends (shell.md, sections 6.3 and 7.5).
 use crate::terminal::{Input, Kept, Keys, Modes};
 use skein_io::kernel::{Error, Fd, Size};
 use std::{mem::MaybeUninit, ptr};

@@ -1,4 +1,4 @@
-//! Synchronous child creation and signalling for the ring adapter.
+//! Synchronous child creation, signalling and polling for both Linux backends.
 
 #![expect(
     clippy::disallowed_types,
@@ -43,7 +43,7 @@ fn action(rc: i32) -> Result<(), i32> {
 
 /// A pipe write after the child closes its read end returns EPIPE instead of
 /// terminating the service with SIGPIPE. The kernel is tied to this thread.
-pub(super) fn block_sigpipe() -> Result<(), i32> {
+pub(crate) fn block_sigpipe() -> Result<(), i32> {
     // SAFETY: sigset_t is a C signal set that sigemptyset initializes.
     let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
     // SAFETY: `set` is a valid writable signal set for both calls.
@@ -161,7 +161,7 @@ fn prepare(command: &Spawn) -> Result<PreparedPipes, i32> {
     Ok((dir, parents, children, nulls))
 }
 
-pub(super) fn spawn(command: &mut Spawn) -> Result<Done, Error> {
+pub(crate) fn spawn(command: &mut Spawn) -> Result<Done, Error> {
     spawn_inner(command).map_err(map_error)
 }
 
@@ -287,7 +287,7 @@ fn spawn_prepared(command: &mut Spawn, terminal: Option<&CString>, cgroup: Optio
     result
 }
 
-pub(super) fn signal_child(pidfd: Fd, signal: Signal, to: Target) -> Result<Done, Error> {
+pub(crate) fn signal_child(pidfd: Fd, signal: Signal, to: Target) -> Result<Done, Error> {
     let number = match signal {
         Signal::Interrupt => libc::SIGINT,
         Signal::Terminate => libc::SIGTERM,
@@ -472,7 +472,7 @@ pub(super) fn abandon_binary(pidfd: Option<Fd>, descriptors: &[Fd]) {
 }
 
 /// Reads the process and its reaped children at one submission (kernel.md, section 6.3).
-pub(super) fn usage() -> Result<Usage, Error> {
+pub(crate) fn usage() -> Result<Usage, Error> {
     Ok(Usage { own: resources(libc::RUSAGE_SELF)?, children: resources(libc::RUSAGE_CHILDREN)? })
 }
 
@@ -549,36 +549,29 @@ pub(super) fn open_cgroup(path: &std::path::Path) -> Result<Fd, Error> {
     if raw < 0 { Err(map_error(super::last_errno())) } else { Ok(Fd::new(raw)) }
 }
 
-/// Polls a known pidfd during failed-observer cleanup, without taking another owner's child.
-pub(super) fn poll_child(pidfd: Fd, reap: bool) -> Result<Option<skein_io::kernel::Exit>, Error> {
+/// Polls a known pidfd without blocking or taking another owner's child.
+pub(crate) fn poll_child(pidfd: Fd, reap: bool) -> Result<Option<skein_io::kernel::Exit>, Error> {
     // SAFETY: siginfo_t is initialized for waitid to fill.
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-    // SAFETY: the caller owns pidfd and info is writable for the whole call.
-    let result = unsafe {
-        libc::waitid(
-            libc::P_PIDFD,
-            u32::try_from(pidfd.raw()).expect("a descriptor is positive"),
-            ptr::from_mut(&mut info),
-            libc::WEXITED | libc::WNOHANG | if reap { 0 } else { libc::WNOWAIT },
-        )
-    };
-    if result < 0 {
-        return Err(Error::Other(super::last_errno()));
-    }
+    crate::linux::retry(|| {
+        // SAFETY: the caller owns pidfd and info is writable for the whole call.
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PIDFD,
+                u32::try_from(pidfd.raw()).expect("a descriptor is positive"),
+                ptr::from_mut(&mut info),
+                libc::WEXITED | libc::WNOHANG | if reap { 0 } else { libc::WNOWAIT },
+            )
+        };
+        if result < 0 { Err(super::last_errno()) } else { Ok(()) }
+    })
+    .map_err(Error::Other)?;
     // SAFETY: waitid filled the child-status union, or cleared the PID when no exit is ready.
     let pid = unsafe { info.si_pid() };
     if pid == 0 {
         return Ok(None);
     }
-    // SAFETY: a nonzero PID means waitid filled the status union.
-    let status = unsafe { info.si_status() };
-    Ok(Some(match info.si_code {
-        libc::CLD_EXITED => skein_io::kernel::Exit::Code(u8::try_from(status).expect("exit code fits")),
-        libc::CLD_KILLED | libc::CLD_DUMPED => {
-            skein_io::kernel::Exit::Signal(u32::try_from(status).expect("signal is positive"))
-        }
-        _ => return Err(Error::Other(libc::ECHILD)),
-    }))
+    super::child_exit(&info).map(Some)
 }
 
 /// Tests exit readiness without requiring the process to be this observer's child.

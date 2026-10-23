@@ -14,11 +14,17 @@
 //!   local `socklen_t`. The ring's setsockopt and getsockname wrappers share
 //!   their address and option checks with this backend.
 //! - Uname writes a whole local utsname, a plain C structure of byte arrays.
+//! - File calls' paths, offsets and buffers are documented in `files`.
+//! - Fcntl changes only the flags of a just-spawned parent pipe description;
+//!   it takes integers and retains no pointer.
+//! - A stream read/write borrows its slice for the call only. A signal read
+//!   writes one initialized local signalfd record, with its exact size passed.
 //! - Epoll's event pointers and ownership are documented in `epoll`.
 
 #![expect(unsafe_code, reason = "Linux calls borrow buffers only until they return (shell.md, 7.5)")]
 
 pub(crate) mod epoll;
+pub(crate) mod files;
 
 use std::{mem, ptr};
 
@@ -177,6 +183,46 @@ fn release_at_floor(release: &[u8]) -> Result<bool, i32> {
     let major = parts.next().and_then(number).ok_or(libc::EINVAL)?;
     let minor = parts.next().and_then(number).ok_or(libc::EINVAL)?;
     Ok((major, minor) >= (6, 12))
+}
+
+pub(crate) fn nonblocking(fd: Fd) -> Result<(), i32> {
+    let flags = retry(|| crate::ring::status_flags(fd.raw()))?;
+    retry(|| {
+        // SAFETY: fcntl takes integers and fd is the parent's fresh pipe end.
+        status(unsafe { libc::fcntl(fd.raw(), libc::F_SETFL, flags | libc::O_NONBLOCK) })
+    })
+}
+
+pub(crate) fn read(fd: Fd, buf: &mut [u8]) -> Result<u32, i32> {
+    retry(|| {
+        // SAFETY: buf is exclusively writable for its stated length during read.
+        let result = unsafe { libc::read(fd.raw(), buf.as_mut_ptr().cast(), buf.len()) };
+        count(result)
+    })
+}
+
+pub(crate) fn write(fd: Fd, bytes: &[u8]) -> Result<u32, i32> {
+    retry(|| {
+        // SAFETY: bytes remains readable for its stated length during write.
+        let result = unsafe { libc::write(fd.raw(), bytes.as_ptr().cast(), bytes.len()) };
+        count(result)
+    })
+}
+
+fn count(result: isize) -> Result<u32, i32> {
+    if result < 0 { Err(last_errno()) } else { Ok(u32::try_from(result).expect("a valid transfer's count fits u32")) }
+}
+
+pub(crate) fn read_signal(fd: Fd) -> Result<(libc::signalfd_siginfo, usize), i32> {
+    // SAFETY: signalfd_siginfo is an integer C record, valid when zeroed.
+    let mut info: libc::signalfd_siginfo = unsafe { mem::zeroed() };
+    let count = retry(|| {
+        // SAFETY: info is exclusively writable for exactly the size passed to read.
+        let result =
+            unsafe { libc::read(fd.raw(), ptr::from_mut(&mut info).cast(), size_of::<libc::signalfd_siginfo>()) };
+        if result < 0 { Err(last_errno()) } else { Ok(usize::try_from(result).expect("a nonnegative read count")) }
+    })?;
+    Ok((info, count))
 }
 
 #[cfg(test)]

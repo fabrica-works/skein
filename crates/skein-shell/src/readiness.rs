@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use skein_io::kernel::{Complete, Done, Error, Family, Fd, Op, Submit};
+use skein_io::kernel::{Complete, Done, Error, Family, Fd, Op, OpenHow, Submit};
 use skein_lib::{Queue, Token};
 
 use crate::linux::{self, epoll::Epoll};
@@ -19,6 +19,7 @@ pub(crate) struct Readiness {
     waiters: BTreeMap<Fd, Waiters>,
     nonblocking: BTreeSet<Fd>,
     epoll: Epoll,
+    listing: Box<[u8]>,
     resubmitted: u64,
 }
 
@@ -49,6 +50,7 @@ impl Readiness {
         if !linux::at_floor().map_err(OpenError::Setup)? {
             return Err(OpenError::BelowFloor);
         }
+        ring::process::block_sigpipe().map_err(OpenError::Setup)?;
         let epoll = Epoll::open(config.operations).map_err(OpenError::Setup)?;
         let capacity = usize::try_from(config.operations).expect("u32 fits usize");
         let slots = (0..config.operations).map(|_| Slot { generation: 0, record: None, result: None }).collect();
@@ -60,6 +62,7 @@ impl Readiness {
             waiters: BTreeMap::new(),
             nonblocking: BTreeSet::new(),
             epoll,
+            listing: vec![0; ring::LISTING].into_boxed_slice(),
             resubmitted: 0,
         })
     }
@@ -155,6 +158,7 @@ impl Readiness {
     fn start(&mut self, record: Submit) {
         assert!(record.kind.is_valid(), "io submits only valid records (skein_io::kernel, broken invariants)");
         assert!(!self.tokens.contains_key(&record.op), "io never reuses a token in flight (skein_io::kernel)");
+        ring::check_path_access(&record.kind);
         let side = side(&record.kind);
         if let Some((fd, side)) = side {
             self.assert_side_free(fd, side);
@@ -172,17 +176,11 @@ impl Readiness {
             self.finish(index, result);
             return;
         }
-        let attempt_now = match side {
-            None => true,
-            Some((fd, _)) => {
-                self.nonblocking.contains(&fd)
-                    || !matches!(
-                        self.slot(index).record.as_ref().expect("just inserted").kind,
-                        Op::Accept { .. } | Op::Connect { .. }
-                    )
-            }
-        };
-        if attempt_now && self.attempt(index, false) {
+        let kind = &self.slot(index).record.as_ref().expect("just inserted").kind;
+        let attempt_now = side.is_none()
+            || matches!(kind, Op::Recv { .. } | Op::Send { .. } | Op::Wait { .. })
+            || side.is_some_and(|(fd, _)| self.nonblocking.contains(&fd));
+        if attempt_now && self.attempt(index, false, true) {
             return;
         }
         let (fd, side) = side.expect("only a stream operation can wait");
@@ -201,12 +199,25 @@ impl Readiness {
 
     fn add_waiter(&mut self, fd: Fd, side: Side, index: u32) {
         let existed = self.waiters.contains_key(&fd);
-        let waiters = self.waiters.entry(fd).or_insert(Waiters { read: None, write: None });
+        let mut waiters = self.waiters.get(&fd).copied().unwrap_or(Waiters { read: None, write: None });
         match side {
             Side::Read => waiters.read = Some(index),
             Side::Write => waiters.write = Some(index),
         }
-        self.update(fd, existed);
+        match self.epoll.interest(fd, existed, waiters.read.is_some(), waiters.write.is_some()) {
+            Ok(()) => {
+                let _previous = self.waiters.insert(fd, waiters);
+            }
+            Err(libc::EPERM) => {
+                // A descriptor epoll cannot watch makes its call without registering.
+                assert!(self.attempt(index, false, false), "an unwatchable descriptor completes its one call");
+            }
+            Err(errno) => {
+                let kind = &self.slot(index).record.as_ref().expect("an in-flight record").kind;
+                let error = ring::error(kind, errno, false);
+                self.finish(index, Err(error));
+            }
+        }
     }
 
     fn remove_waiter(&mut self, fd: Fd, side: Side) {
@@ -222,14 +233,14 @@ impl Readiness {
         let waiters = self.waiters.get(&fd).expect("a descriptor's waiters");
         self.epoll
             .interest(fd, existed, waiters.read.is_some(), waiters.write.is_some())
-            .expect("epoll accepts a live pollable descriptor's interest");
+            .expect("removing a waiter preserves the live descriptor and its existing interest");
         if waiters.read.is_none() && waiters.write.is_none() {
             let _removed = self.waiters.remove(&fd);
         }
     }
 
     fn resume(&mut self, fd: Fd, side: Side, index: u32) {
-        if self.attempt(index, true) {
+        if self.attempt(index, true, true) {
             self.remove_waiter(fd, side);
         }
     }
@@ -250,21 +261,39 @@ impl Readiness {
     }
 
     /// True once complete; false when the record still needs readiness.
-    fn attempt(&mut self, index: u32, resumed: bool) -> bool {
-        let kind = &mut self.slot(index).record.as_mut().expect("an in-flight record").kind;
-        let result = perform(kind, resumed);
+    fn attempt(&mut self, index: u32, resumed: bool, waitable: bool) -> bool {
+        let record = self.slot(index).record.as_ref().expect("an in-flight record");
+        let nonblocking = side(&record.kind).is_some_and(|(fd, _)| self.nonblocking.contains(&fd));
+        let slot = self.slots.get_mut(usize::try_from(index).expect("u32 fits usize")).expect("an allocated slot");
+        let kind = &mut slot.record.as_mut().expect("an in-flight record").kind;
+        let mut again = 0;
+        let result = loop {
+            let result = perform(kind, resumed, nonblocking, &mut self.listing);
+            // Open retries at openat2, before the descriptor check; repeating a
+            // successful create after that check failed could meet its own file.
+            // Linux releases a closed descriptor even when close reports EINTR.
+            if result == Err(Error::Other(libc::EINTR)) && !matches!(kind, Op::Open { .. } | Op::Close { .. }) {
+                continue;
+            }
+            if matches!(kind, Op::Open { .. }) && result == Err(Error::Other(libc::EAGAIN)) && again < ring::AGAIN {
+                again = again.saturating_add(1);
+                self.resubmitted = self.resubmitted.saturating_add(1);
+            } else {
+                break result;
+            }
+        };
         match result {
-            Err(errno)
-                if side(kind).is_some()
+            Err(Error::Other(errno))
+                if waitable
+                    && side(kind).is_some()
                     && (errno == libc::EAGAIN
                         || errno == libc::EWOULDBLOCK
                         || (errno == libc::EINPROGRESS && matches!(kind, Op::Connect { .. }))) =>
             {
                 false
             }
-            result => {
-                let mut result = result.map_err(|errno| ring::error(kind, errno, false));
-                if let (Op::Socket { family }, Ok(Done::Fd(fd))) = (kind, &result) {
+            mut result => {
+                if let (Op::Socket { family }, Ok(Done::Fd(fd))) = (&*kind, &result) {
                     let configured = linux::retry(|| linux::setsockopt(fd.raw(), libc::IPPROTO_TCP, libc::TCP_NODELAY))
                         .and_then(|()| {
                             if *family == Family::Ipv6 {
@@ -278,22 +307,22 @@ impl Readiness {
                         result = Err(Error::Other(errno));
                     }
                 }
-                match result {
-                    Ok(Done::Fd(fd) | Done::Accepted { fd, .. }) => {
-                        let _inserted = self.nonblocking.insert(fd);
+                match (&*kind, &result) {
+                    (Op::Socket { .. }, Ok(Done::Fd(fd))) | (Op::Accept { .. }, Ok(Done::Accepted { fd, .. })) => {
+                        let _inserted = self.nonblocking.insert(*fd);
                     }
-                    Ok(
-                        Done::Nothing
-                        | Done::Bound(_)
-                        | Done::Count(_)
-                        | Done::Stat(_)
-                        | Done::Exit(_)
-                        | Done::Spawned { .. }
-                        | Done::Signalled(_)
-                        | Done::Usage(_)
-                        | Done::Window(_),
-                    )
-                    | Err(_) => {}
+                    (Op::Spawn { spawn }, Ok(Done::Spawned { .. })) => {
+                        for pipe in &spawn.pipes {
+                            let fd = pipe.parent.expect("a successful Spawn fills each parent end");
+                            let configured = linux::nonblocking(fd);
+                            assert!(
+                                configured.is_ok(),
+                                "O_NONBLOCK applies to each parent pipe end Spawn just made: {configured:?}"
+                            );
+                            let _inserted = self.nonblocking.insert(fd);
+                        }
+                    }
+                    _ => {}
                 }
                 self.finish(index, result);
                 true
@@ -334,7 +363,60 @@ fn side(kind: &Op) -> Option<(Fd, Side)> {
     }
 }
 
-fn perform(kind: &mut Op, resumed: bool) -> Result<Done, i32> {
+fn perform(kind: &mut Op, resumed: bool, nonblocking: bool, listing: &mut [u8]) -> Result<Done, Error> {
+    match kind {
+        Op::Open { root, path, how } => {
+            let raw = linux::files::open(*root, path, *how).map_err(|errno| ring::error(kind, errno, false))?;
+            if matches!(kind, Op::Open { how: OpenHow::PathNoFollow, .. }) {
+                Ok(Done::Fd(Fd::new(raw)))
+            } else {
+                ring::opened(raw)
+            }
+        }
+        Op::Spawn { spawn } => ring::process::spawn(spawn),
+        Op::Signal { pidfd, signal, to } => ring::process::signal_child(*pidfd, *signal, *to),
+        Op::Usage => ring::process::usage().map(Done::Usage),
+        Op::Window { fd } => ring::terminal::size(*fd).map(Done::Window),
+        Op::Wait { pidfd, reap } => {
+            let result = ring::process::poll_child(*pidfd, *reap);
+            if let Err(Error::Other(errno)) = &result {
+                return Err(ring::error(kind, *errno, false));
+            }
+            result.and_then(|exit| exit.map(Done::Exit).ok_or(Error::Other(libc::EAGAIN)))
+        }
+        Op::ReadSignal { fd } => {
+            let (info, count) = linux::read_signal(*fd).map_err(|errno| ring::error(kind, errno, false))?;
+            ring::read_signal(&info, count)
+        }
+        Op::Socket { .. }
+        | Op::Bind { .. }
+        | Op::Listen { .. }
+        | Op::Accept { .. }
+        | Op::Connect { .. }
+        | Op::Recv { .. }
+        | Op::Send { .. }
+        | Op::Shutdown { .. }
+        | Op::Close { .. }
+        | Op::Read { .. }
+        | Op::Write { .. }
+        | Op::Append { .. }
+        | Op::Truncate { .. }
+        | Op::Sync { .. }
+        | Op::Stat { .. }
+        | Op::Rename { .. }
+        | Op::Remove { .. }
+        | Op::MakeDirectory { .. }
+        | Op::List { .. }
+        | Op::Lock { .. }
+        | Op::PipeRead { .. }
+        | Op::PipeWrite { .. }
+        | Op::Cancel { .. } => {
+            perform_call(kind, resumed, nonblocking, listing).map_err(|errno| ring::error(kind, errno, false))
+        }
+    }
+}
+
+fn perform_call(kind: &mut Op, resumed: bool, nonblocking: bool, listing: &mut [u8]) -> Result<Done, i32> {
     match kind {
         Op::Socket { family } => linux::socket(*family).map(Done::Fd),
         Op::Bind { fd, addr } => {
@@ -370,29 +452,45 @@ fn perform(kind: &mut Op, resumed: bool) -> Result<Done, i32> {
         }
         Op::Shutdown { fd } => linux::shutdown(*fd).map(|()| Done::Nothing),
         Op::Close { fd } => linux::close(*fd).map(|()| Done::Nothing),
-        // transitional: M2's readiness task makes these (shell.md 7.3)
+        Op::Read { fd, buf, at } => linux::files::read(*fd, buf, *at).map(Done::Count),
+        Op::Write { fd, bytes, from, at } => linux::files::write(*fd, remaining(bytes, *from), *at).map(Done::Count),
+        Op::Append { fd, bytes, from } => linux::write(*fd, remaining(bytes, *from)).map(Done::Count),
+        Op::Truncate { fd, length } => linux::files::truncate(*fd, *length).map(|()| Done::Nothing),
+        Op::Sync { fd } => linux::files::sync(*fd).map(|()| Done::Nothing),
+        Op::Stat { fd } => linux::files::stat(*fd).map(|raw| Done::Stat(ring::stat(&raw))),
+        Op::Rename { from_dir, from, to_dir, to, no_replace } => {
+            linux::files::rename(*from_dir, from, *to_dir, to, *no_replace).map(|()| Done::Nothing)
+        }
+        Op::Remove { dir, name, directory } => linux::files::remove(*dir, name, *directory).map(|()| Done::Nothing),
+        Op::MakeDirectory { dir, name, mode } => linux::files::mkdir(*dir, name, *mode).map(|()| Done::Nothing),
+        Op::List { fd, entries, names } => {
+            linux::retry(|| ring::list(fd.raw(), entries, names, listing)).map(Done::Count)
+        }
+        Op::Lock { fd } => ring::lock(*fd).map(|()| Done::Nothing),
+        Op::PipeRead { fd, buf } => linux::read(*fd, buf).map(Done::Count),
+        Op::PipeWrite { fd, bytes, from } => {
+            let left = remaining(bytes, *from);
+            let left = if nonblocking {
+                left
+            } else {
+                let maximum = libc::PIPE_BUF;
+                left.get(..left.len().min(maximum)).expect("the capped write fits the remaining bytes")
+            };
+            linux::write(*fd, left).map(Done::Count)
+        }
         Op::Open { .. }
-        | Op::Read { .. }
-        | Op::Write { .. }
-        | Op::Append { .. }
-        | Op::Truncate { .. }
-        | Op::Sync { .. }
-        | Op::Lock { .. }
-        | Op::Stat { .. }
-        | Op::Rename { .. }
-        | Op::Remove { .. }
-        | Op::MakeDirectory { .. }
-        | Op::List { .. }
         | Op::Spawn { .. }
-        | Op::Signal { .. }
         | Op::Wait { .. }
-        | Op::Window { .. }
+        | Op::Signal { .. }
         | Op::Usage
-        | Op::PipeRead { .. }
-        | Op::PipeWrite { .. }
-        | Op::ReadSignal { .. } => Err(libc::ENOSYS),
+        | Op::Window { .. }
+        | Op::ReadSignal { .. } => unreachable!("shared decoding runs before raw calls"),
         Op::Cancel { .. } => unreachable!("cancel is settled against the table at submit"),
     }
+}
+
+fn remaining(bytes: &[u8], from: u32) -> &[u8] {
+    bytes.get(usize::try_from(from).expect("u32 fits usize")..).expect("a valid write has bytes left")
 }
 
 #[cfg(test)]
@@ -428,29 +526,130 @@ mod tests {
         assert_eq!((kernel.in_flight(), kernel.room()), (2, 0));
         let mut out = Queue::with_capacity(1);
         kernel.reap(&mut out);
-        assert_eq!(out.pop().expect("oldest ready completion").op, Token::new(1));
+        let complete = out.pop().expect("oldest ready completion");
+        assert_eq!(complete.op, Token::new(1));
+        assert!(matches!(complete.result, Ok(Done::Usage(_))));
         assert_eq!((kernel.in_flight(), kernel.room()), (1, 1));
         kernel.submit(&mut records, Wait::No);
         for token in 2..=3 {
             kernel.reap(&mut out);
             let complete = out.pop().expect("the next completion");
             assert_eq!(complete.op, Token::new(token));
-            assert_eq!(complete.result, Err(Error::Other(libc::ENOSYS)));
+            assert!(matches!(complete.result, Ok(Done::Usage(_))));
         }
         assert_eq!((kernel.in_flight(), kernel.room()), (0, 2));
     }
 
     #[test]
-    fn transitional_inherited_streams_complete_without_registering_interest() {
-        let mut kernel = Readiness::open(Config { operations: 2 }).expect("epoll is usable");
-        submit(&mut kernel, 1, Op::PipeRead { fd: Fd::new(0), buf: vec![0; 8].into_boxed_slice() });
-        submit(&mut kernel, 2, Op::ReadSignal { fd: Fd::new(0) });
-        assert!(kernel.waiters.is_empty(), "M2's calls are refused at submit");
-        let mut out = Queue::with_capacity(2);
+    fn an_inherited_blocking_pipe_waits_before_reading() {
+        use std::io::Write;
+        use std::os::fd::AsRawFd;
+        let (reader, mut writer) = std::io::pipe().expect("a blocking test pipe");
+        let fd = Fd::new(reader.as_raw_fd());
+        let mut kernel = Readiness::open(Config { operations: 1 }).expect("epoll is usable");
+        submit(&mut kernel, 1, Op::PipeRead { fd, buf: vec![0; 8].into_boxed_slice() });
+        assert_eq!(kernel.waiters.get(&fd).expect("read interest registered").read, Some(0));
+        assert!(kernel.ready.is_empty(), "an empty blocking pipe is not called at submit");
+        assert!(!kernel.nonblocking.contains(&fd), "an inherited pipe keeps its flags");
+        writer.write_all(b"pipe").expect("four bytes fit in an empty pipe");
+        kernel.submit(&mut Queue::with_capacity(0), Wait::Forever);
+        let mut out = Queue::with_capacity(1);
         kernel.reap(&mut out);
-        for _ in 0..2 {
-            assert_eq!(out.pop().expect("a transitional completion").result, Err(Error::Other(libc::ENOSYS)));
-        }
+        let complete = out.pop().expect("one pipe read completes");
+        assert_eq!(complete.result, Ok(Done::Count(4)));
+        let Op::PipeRead { buf, .. } = complete.kind else { unreachable!("the read record comes back") };
+        assert_eq!(buf.get(..4), Some(b"pipe".as_slice()));
+        assert!(kernel.waiters.is_empty(), "a completed read removes its interest");
+    }
+
+    #[test]
+    fn an_inherited_blocking_pipe_write_is_capped_at_pipe_buf() {
+        use std::io::Read;
+        use std::os::fd::AsRawFd;
+        let (mut reader, writer) = std::io::pipe().expect("a blocking test pipe");
+        let maximum = libc::PIPE_BUF;
+        let mut kernel = Readiness::open(Config { operations: 1 }).expect("epoll is usable");
+        submit(
+            &mut kernel,
+            1,
+            Op::PipeWrite {
+                fd: Fd::new(writer.as_raw_fd()),
+                bytes: vec![7; maximum.checked_mul(2).expect("two PIPE_BUFs fit")].into_boxed_slice(),
+                from: 0,
+            },
+        );
+        let mut out = Queue::with_capacity(1);
+        kernel.reap(&mut out);
+        let complete = out.pop().expect("the empty pipe is writable");
+        assert_eq!(complete.result, Ok(Done::Count(u32::try_from(maximum).expect("PIPE_BUF fits u32"))));
+        let mut buf = vec![0; maximum];
+        reader.read_exact(&mut buf).expect("the one write put PIPE_BUF bytes in the pipe");
+        assert!(buf.iter().all(|byte| *byte == 7));
+        assert!(kernel.waiters.is_empty());
+    }
+
+    #[test]
+    #[expect(clippy::disallowed_types, reason = "the inherited descriptor in this test is a std File (shell.md, 9)")]
+    fn a_regular_file_pipe_read_completes_without_interest() {
+        use std::io::{Seek, SeekFrom, Write};
+        use std::os::fd::AsRawFd;
+        let scratch = skein_scratch::Scratch::new("readiness");
+        let path = scratch.path().join("file");
+        let mut file =
+            std::fs::File::options().create_new(true).read(true).write(true).open(&path).expect("a scratch file");
+        std::fs::remove_file(path).expect("the open scratch file needs no name");
+        file.write_all(b"file").expect("four scratch bytes");
+        file.seek(SeekFrom::Start(0)).expect("read from the beginning");
+        let mut kernel = Readiness::open(Config { operations: 1 }).expect("epoll is usable");
+        submit(&mut kernel, 1, Op::PipeRead { fd: Fd::new(file.as_raw_fd()), buf: vec![0; 8].into_boxed_slice() });
+        assert!(kernel.waiters.is_empty(), "EPERM registers no interest");
+        assert!(kernel.nonblocking.is_empty(), "a file is not a backend stream");
+        let mut out = Queue::with_capacity(1);
+        kernel.reap(&mut out);
+        let complete = out.pop().expect("a file is always ready");
+        assert_eq!(complete.result, Ok(Done::Count(4)));
+        let Op::PipeRead { buf, .. } = complete.kind else { unreachable!("the read record comes back") };
+        assert_eq!(buf.get(..4), Some(b"file".as_slice()));
+    }
+
+    #[test]
+    fn a_blocking_signalfd_waits_then_reports_its_signal() {
+        use skein_io::kernel::{ServiceSignal, Signalled};
+        let fd = crate::ring::process::open_signals(crate::Watch::Termination).expect("block the termination signals");
+        let mut kernel = Readiness::open(Config { operations: 1 }).expect("epoll is usable");
+        submit(&mut kernel, 1, Op::ReadSignal { fd });
+        assert_eq!(kernel.waiters.get(&fd).expect("signalfd read interest").read, Some(0));
+        assert!(kernel.ready.is_empty(), "a blocking signalfd waits before its first call");
+        crate::signal_current_thread(ServiceSignal::Interrupt).expect("queue SIGINT on this thread");
+        kernel.submit(&mut Queue::with_capacity(0), Wait::Forever);
+        let mut out = Queue::with_capacity(1);
+        kernel.reap(&mut out);
+        assert_eq!(
+            out.pop().expect("one signal read").result,
+            Ok(Done::Signalled(Signalled::Termination(ServiceSignal::Interrupt)))
+        );
+        assert!(kernel.waiters.is_empty());
+        submit(&mut kernel, 2, Op::Close { fd });
+        kernel.reap(&mut out);
+        assert_eq!(out.pop().expect("the signalfd closes").result, Ok(Done::Nothing));
+    }
+
+    #[test]
+    fn a_registration_error_completes_without_calling_or_adding_a_waiter() {
+        use std::os::fd::AsRawFd;
+        let (reader, _writer) = std::io::pipe().expect("a blocking test pipe");
+        let fd = Fd::new(reader.as_raw_fd());
+        let mut kernel = Readiness::open(Config { operations: 1 }).expect("epoll is usable");
+        kernel.epoll.interest(fd, false, true, false).expect("pre-register the descriptor to provoke EEXIST");
+        submit(&mut kernel, 1, Op::PipeRead { fd, buf: vec![0; 8].into_boxed_slice() });
+        assert!(kernel.waiters.is_empty(), "failed registration preserves the waiter map");
+        let mut out = Queue::with_capacity(1);
+        kernel.reap(&mut out);
+        let complete = out.pop().expect("the registration error completes the record");
+        assert_eq!(complete.result, Err(Error::Other(libc::EEXIST)));
+        let Op::PipeRead { buf, .. } = complete.kind else { unreachable!("the record comes back") };
+        assert_eq!(&*buf, &[0; 8], "a registration error makes no read");
+        kernel.epoll.interest(fd, true, false, false).expect("remove the test's injected interest");
     }
 
     #[test]
