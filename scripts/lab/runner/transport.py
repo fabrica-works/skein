@@ -349,7 +349,8 @@ class AppServer:
             raise RuntimeError('app-server response lacks an object result')
         if method == 'initialize':
             self.send(dict(method='initialized', params={}))
-            self.request('thread/start', dict(cwd=self.work, permissions='lab', ephemeral=True,
+            # Raw response items carry every model call, including one no item answers (lab.md 6.1).
+            self.request('thread/start', dict(cwd=self.work, permissions='lab', ephemeral=True, experimentalRawEvents=True,
                                              approvalPolicy='never', config={}))
         elif method == 'thread/start':
             self.responses[method] = result

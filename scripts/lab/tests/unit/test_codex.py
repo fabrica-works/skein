@@ -182,6 +182,44 @@ class Codex(unittest.TestCase):
         with self.assertRaises(Refused):
             codex.item_kind(dict(type='mcpToolCall', server='other'))
 
+    def test_raw_calls_pair_with_items_and_unhandled_calls_are_counted(self):
+        def fold(*messages):
+            state = codex.initial()
+            for n, m in enumerate(messages):
+                state = codex.fold(state, m, n)
+            return state
+        call = lambda cid, name='exec_command', **more: message('rawResponseItem/completed', item=dict(
+            type='function_call', call_id=cid, name=name, arguments=more.pop('arguments', '{}'),
+            internal_chat_message_metadata_passthrough=dict(create_time=1.5), **more))
+        output = lambda cid: message('rawResponseItem/completed', item=dict(type='function_call_output', call_id=cid, output=''))
+        command = dict(type='commandExecution', id='a', processId='77')
+        done = message('turn/completed', turn=dict(id='t', status='completed'))
+        state = fold(message('rawResponseItem/completed', item=dict(type='message', role='user')),
+                     message('rawResponseItem/completed', item=dict(type='reasoning')),
+                     call('a'), message('item/started', item=command), output('a'),
+                     call('w', 'write_stdin', arguments='{"session_id":77,"chars":""}'), output('w'), done)
+        self.assertIsNone(state['unhandled'])
+        self.assertEqual([(a['kind'], a['item_id']) for a in state['actions']], [('commandExecution', 'a'), ('write_stdin', 'w')])
+        vectors = [
+            ((call('x', 'bogus'), output('x')), 'unhandled call: x', 1),
+            ((call('x', 'tool_search_tool', namespace='tool_search'), output('x')), 'unhandled call: x', 1),
+            ((call('a'), message('item/started', item=command), output('a'),
+              call('w', 'write_stdin', arguments='{"session_id":78}'), output('w')), 'unhandled call: w', 2),
+            ((call('w', 'write_stdin', arguments='not json'), output('w')), 'unhandled call: w', 1),
+            ((message('rawResponseItem/completed', item=dict(type='web_search_call', id='s')),), 'unhandled call kind: web_search_call', 1),
+            ((message('rawResponseItem/completed', item=dict(type='tool_search_call', call_id='s')),), 'unhandled call kind: tool_search_call', 1),
+            ((call('x'), call('x')), 'unhandled call kind: function_call', 1),
+            ((call('x'), done), 'unanswered call: x', 1),
+            ((message('item/started', item=command), done), 'actions without raw response items', 1),
+        ]
+        for messages, why, count in vectors:
+            with self.subTest(why=why, messages=messages):
+                state = fold(*messages)
+                self.assertEqual(state['unhandled'], why)
+                self.assertEqual(len(state['actions']), count)
+                self.assertEqual(state['actions'][-1]['kind'], 'commandExecution' if why.startswith('actions') else 'unhandled')
+                canonical.dumps(state)
+
     def test_codex_resource_tools_are_admitted_actions_that_reach_nothing(self):
         for tool in ('list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'):
             self.assertEqual(codex.item_kind(dict(type='mcpToolCall', server='codex', tool=tool)), 'action')

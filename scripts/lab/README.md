@@ -548,6 +548,10 @@ Codex's own `list_mcp_resources`, `list_mcp_resource_templates` and
 `read_mcp_resource` (server `codex`) are numbered actions, host-only; a listing
 that is not empty or a read that is not an error ends the drive in error
 (lab.md 6.1). The inventory's MCP and resources rows keep their reach empty.
+`thread/start` asks for raw response items: each raw `function_call` must be
+answered by an item with its call id, or be a `write_stdin` to a running command's
+`processId` (a counted `write_stdin` action). Any other raw call is a counted
+`unhandled` action and ends the drive in error, as do actions with no raw call.
 Time and action bounds stop the host as they pass. Usage replaces each turn's
 last counts and folds across turns: input includes cached, unknown stays null.
 Input past its bound records the overshoot and stops the host. `done:false`

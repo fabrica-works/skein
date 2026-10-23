@@ -40,7 +40,15 @@ def send(value):
 
 
 def event(method, **params):
+    item = params.get('item', {})
+    # Like the host, each call is a raw function_call before its item and a raw output after it.
+    raw = item.get('type') in ('commandExecution', 'mcpToolCall') and not script.get('no_raw')
+    if raw and method == 'item/started':
+        event('rawResponseItem/completed', item=dict(type='function_call', call_id=item['id'], arguments='{}',
+                                                     name=item.get('tool', 'exec_command')))
     send(dict(method=method, params=dict(threadId=thread, turnId=turn, **params)))
+    if raw and method == 'item/completed':
+        event('rawResponseItem/completed', item=dict(type='function_call_output', call_id=item['id'], output=''))
 
 
 class Tools:
@@ -124,6 +132,9 @@ def play():
         item.setdefault('id', 'item-' + str(number))
         if early:
             continue
+        if item['type'] == 'raw':
+            event('rawResponseItem/completed', item=item['item'])
+            continue
         if item['type'] == 'commandExecution':
             item.update(command=' '.join(argv or []), cwd=work, status='inProgress')
         if item['type'] == 'mcpToolCall' and item.get('server') == 'lab':
@@ -200,7 +211,8 @@ for line in sys.stdin:
         assert script.get('rate_read') and params == {}
         result = dict(rateLimits=script['rate_read'])
     elif method == 'thread/start':
-        assert params == dict(cwd=work, permissions='lab', ephemeral=True, approvalPolicy='never', config={})
+        assert params == dict(cwd=work, permissions='lab', ephemeral=True, experimentalRawEvents=True,
+                              approvalPolicy='never', config={})
         tools = Tools()
         for number, item in enumerate(script.get('items', [])):
             if item.get('early'):

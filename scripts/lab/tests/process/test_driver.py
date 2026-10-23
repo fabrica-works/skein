@@ -263,6 +263,26 @@ class Driver(unittest.TestCase):
                                              status='completed', result=listed)]), 4)
         self.assertTrue(any('list_mcp_resources returned content' in e['detail'] for e in record['errors']))
 
+    def test_unhandled_call_is_a_counted_action_and_an_error(self):
+        call = dict(type='function_call', id='fc', call_id='call-x', namespace='tool_search', name='tool_search_tool', arguments='{}')
+        record = self.story(dict(items=[
+            dict(type='commandExecution', argv=['/bin/true']),
+            dict(type='raw', item=call),
+            dict(type='raw', item=dict(type='function_call_output', call_id='call-x', output='unsupported call: tool_searchtool_search_tool'))],
+            usage=[dict(inputTokens=10, outputTokens=3)]), 4)
+        self.assertTrue(any(e['detail'] == 'driver/audit: unhandled call: call-x' for e in record['errors']), record['errors'])
+        self.assertEqual(record['usage']['driver']['actions'], 2)
+        transcript = [json.loads(line) for line in (self.root_run / 'driver/transcript.jsonl').read_text().splitlines()]
+        self.assertEqual([a['kind'] for a in transcript], ['commandExecution', 'unhandled'])
+        self.assertEqual(transcript[1]['start'], call)
+        self.assertEqual(transcript[1]['end']['output'], 'unsupported call: tool_searchtool_search_tool')
+        self.assertEqual(transcript[1]['sources'], ['raw'])
+
+    def test_actions_without_raw_items_are_an_error(self):
+        record = self.story(dict(no_raw=True, items=[dict(type='commandExecution', argv=['/bin/true'])],
+                                 usage=[dict(inputTokens=10, outputTokens=3)]), 4)
+        self.assertTrue(any('actions without raw response items' in e['detail'] for e in record['errors']), record['errors'])
+
     def test_another_mcp_server_never_starts_a_turn(self):
         lab = dict(name='lab', runtimeStatus='connected', toolsError=None, tools=dict(echo={}), resources=[], resourceTemplates=[])
         record = self.story(dict(inventory={'mcpServerStatus/list': dict(data=[lab, {**lab, 'name': 'other'}])}), 4)

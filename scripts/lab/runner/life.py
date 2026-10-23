@@ -372,6 +372,8 @@ def _driver_event(d, event, effects, ms):
             driver['call_number'] = action['n']
         else:
             driver['observed'] = codex.fold(driver['observed'], event['message'], ms)
+            if driver['observed']['unhandled'] is not None:
+                raise Refused('driver/audit', driver['observed']['unhandled'])
         _driver_limits(d, effects, ms)
         report = driver['observed']['report']
         if report is not None and not driver['ending']:

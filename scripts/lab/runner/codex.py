@@ -21,6 +21,9 @@ CATALOG_FIELDS = (('tool_mode', None), ('multi_agent_version', None),
 # or None for a read. The inventory holds lab's resources and templates empty (lab.md 6.1).
 RESOURCE_TOOLS = {'list_mcp_resources': 'resources', 'list_mcp_resource_templates': 'resourceTemplates',
                   'read_mcp_resource': None}
+# Raw response items (experimentalRawEvents): every other kind is a model call that an item must answer.
+RAW_MESSAGES = ('message', 'reasoning')
+RAW_OUTPUTS = ('function_call_output', 'custom_tool_call_output')
 INVENTORY_METHODS = ('mcpServerStatus/list', 'app/installed', 'plugin/list',
                      'hooks/list', 'skills/list', 'config/read')
 
@@ -177,7 +180,47 @@ def report(text: str) -> dict:
 
 def initial() -> dict:
     return dict(actions=[], turns=[], report=None, report_error=None, final_message=None,
-                tokens=dict(input=None, cached=None, output=None), overshoot=None, windows=None)
+                tokens=dict(input=None, cached=None, output=None), overshoot=None, windows=None,
+                calls=[], unhandled=None)
+
+
+def _unhandled(state: dict, call_id, start, ms: int, why: str, end: dict | None = None) -> None:
+    """A model call no item answers is still a counted action, and ends the run (lab.md 6.1)."""
+    state['actions'].append(dict(n=len(state['actions']) + 1, kind='unhandled', started_ms=ms,
+                                 completed_ms=None if end is None else ms, item_id=call_id,
+                                 sources=['raw'], start=start, end=None if end is None else _evidence(end)))
+    if state['unhandled'] is None:
+        state['unhandled'] = why
+
+
+def _answered(state: dict, call_id, unhandled: bool = False) -> bool:
+    return any(a.get('item_id') == call_id and (unhandled or a['kind'] != 'unhandled') for a in state['actions'])
+
+
+def raw_item(state: dict, item: dict, ms: int) -> None:
+    """Pair each raw model call with the item that answers it; write_stdin answers a running command."""
+    kind = item.get('type')
+    if kind in RAW_MESSAGES:
+        return
+    call_id = item.get('call_id')
+    calls = {c['call_id']: c for c in state['calls']}
+    if kind in RAW_OUTPUTS:
+        if call_id in calls and not _answered(state, call_id, True):
+            _unhandled(state, call_id, calls[call_id]['item'], ms, 'unhandled call: ' + str(call_id), item)
+        return
+    if kind != 'function_call' or type(call_id) is not str or not call_id or call_id in calls:
+        _unhandled(state, call_id if type(call_id) is str else None, _evidence(item), ms, 'unhandled call kind: ' + str(kind))
+        return
+    state['calls'].append(dict(call_id=call_id, item=_evidence(item)))
+    if item.get('name') == 'write_stdin' and item.get('namespace') is None:
+        try:
+            session = json.loads(item.get('arguments')).get('session_id')
+        except (TypeError, ValueError, AttributeError):
+            session = None
+        if type(session) is int and any(a['kind'] == 'commandExecution' and type(a['start']) is dict
+                                        and a['start'].get('processId') == str(session) for a in state['actions']):
+            state['actions'].append(dict(n=len(state['actions']) + 1, kind='write_stdin', started_ms=ms, completed_ms=None,
+                                         item_id=call_id, sources=['raw'], start=_evidence(item), end=None))
 
 
 def resource_refusal(item: dict) -> None:
@@ -248,6 +291,8 @@ def fold(state: dict, message: dict, ms: int) -> dict:
                 resource_refusal(item)
         elif method == 'item/completed' and item['type'] == 'agentMessage':
             state['final_message'] = item.get('text')
+    elif method == 'rawResponseItem/completed':
+        raw_item(state, params['item'], ms)
     elif method in ('turn/started', 'turn/completed', 'thread/tokenUsage/updated'):
         turn_id = params.get('turnId') if method == 'thread/tokenUsage/updated' else params['turn']['id']
         turn = next((t for t in state['turns'] if t['id'] == turn_id), None)
@@ -269,6 +314,11 @@ def fold(state: dict, message: dict, ms: int) -> dict:
                 state['tokens'][name] = sum(values) if all(v is not None for v in values) else None
         else:
             turn.update(completed_ms=ms, status=params['turn'].get('status'))
+            for call in state['calls']:
+                if not _answered(state, call['call_id'], True):
+                    _unhandled(state, call['call_id'], call['item'], ms, 'unanswered call: ' + call['call_id'])
+            if state['unhandled'] is None and any('raw' not in a['sources'] for a in state['actions']) and not state['calls']:
+                state['unhandled'] = 'actions without raw response items'
             if turn['status'] != 'completed':
                 raise Refused('driver/turn', 'turn did not complete: ' + str(turn['status']))
             try:
