@@ -180,9 +180,14 @@ def validate(experiment, subject, settings, facts):
     subject = subject if type(subject) is dict else {}
     artifacts = subject.get("artifacts")
     artifacts = artifacts if type(artifacts) is dict else {}
-    settings = shape(settings, ("format", "costs", "driver", "triager"), ("about", "browser", "programs"), "settings", out)
+    settings = shape(settings, ("format", "costs", "driver", "triager"), ("about", "browser", "programs", "codex_home"), "settings", out)
     if settings.get("format") != "lab-settings/1":
         out.append(Refusal("settings.format", "expected lab-settings/1"))
+    if 'codex_home' in settings and (type(settings['codex_home']) is not str
+            or not settings['codex_home'].startswith('/') or '\0' in settings['codex_home']):
+        out.append(Refusal('settings.codex_home', 'expected an absolute directory path'))
+    if settings.get('triager') is not None:
+        out.append(Refusal('settings.triager', 'unsupported by this runtime'))
     costs = settings.get("costs")
     cost_name = exp.get("cost")
     if type(cost_name) is not str or not NAME.fullmatch(cost_name):
@@ -370,21 +375,14 @@ def validate(experiment, subject, settings, facts):
         groups["tools"] = tools
         if facts.get("driver_host") is not True:
             out.append(Refusal("facts.driver_host", "driver host unavailable"))
-        # The driver's identity and configuration use the key's shape.
+        configured = shape(settings.get('driver'), ('program', 'model', 'effort'), (), 'settings.driver', out)
+        # The runner derives configuration; settings select only the host and model.
         placeholder_lab = {"runner": "sha256:" + "0" * 64, "python": "3.11", "programs": [],
-                           "driver": settings.get("driver"), "cost": {"name": "selected"}}
+                           "driver": {**configured, 'config': {}}, "cost": {"name": "selected"}}
         if settings.get("driver") is None:
             out.append(Refusal("settings.driver", "driver settings required"))
         out.extend(Refusal("settings" + r.member[3:], r.why) for r in lab_refusals(placeholder_lab)
                    if r.member.startswith("lab.driver"))
-        triager = settings.get("triager")
-        t = shape(triager, ("program", "model", "effort", "config", "triage_seconds", "triage_tokens"), (), "settings.triager", out)
-        for field in ("triage_seconds", "triage_tokens"):
-            if not positive(t.get(field)):
-                out.append(Refusal("settings.triager." + field, "expected positive safe integer"))
-        placeholder_lab["driver"] = {k: v for k, v in t.items() if k not in ("triage_seconds", "triage_tokens")}
-        out.extend(Refusal("settings.triager" + r.member[len("lab.driver"):], r.why)
-                   for r in lab_refusals(placeholder_lab) if r.member.startswith("lab.driver"))
     action_captures = {}
     for group, items in groups.items():
         for i, item in enumerate(items):
@@ -518,6 +516,7 @@ def validate(experiment, subject, settings, facts):
 
     for i, entry in enumerate(_list(exp.get("faults"), "faults", out)):
         m = f"faults.{i}"
+        out.append(Refusal(m, 'unsupported by this runtime'))
         fault = shape(entry, ("kill", "signal", "after_actions"), (), m, out)
         if type(fault.get("kill")) is not str or fault["kill"] not in processes:
             out.append(Refusal(m + ".kill", "unknown process"))

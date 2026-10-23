@@ -98,8 +98,8 @@ class BrowserSettings(unittest.TestCase):
         facts['experiment_files']['app.conf'] = '{runner} {browser.fonts}'
         exp['actions'][0]['stdin'] = '{browser.program} {browser.chromium} {browser.fonts}'
         host = {'program': {'path': '/codex', 'sha256': D, 'version': '1'},
-                'model': 'model', 'effort': 'medium', 'config': {}}
-        settings.update(driver=host, triager={**host, 'triage_seconds': 1, 'triage_tokens': 1})
+                'model': 'model', 'effort': 'medium'}
+        settings.update(driver=host, triager=None)
         exp['driver'] = {'charter': 'charter', 'tools': [dict(name='look', argv=['{browser.program}'],
             env={'RUNNER': '{runner}'}, reads=['{runner}/look', '{browser.fonts}'], writes=['{browser.fonts}'])]}
         facts['experiment_files']['charter'] = 'Inspect the page.'

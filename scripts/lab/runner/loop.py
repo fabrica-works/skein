@@ -4,11 +4,12 @@ import os
 import platform
 import signal
 import time
-from . import bootstrap, canonical, checks, evidence, judge, life, store
+from . import bootstrap, canonical, checks, driver, evidence, judge, life, store, transport
 from .host import CapabilityError, Host
+from .records import Refused
 
 
-FINISH_EFFECTS = ('cancel_command', 'unavailable', 'bound', 'bootstrap_received', 'bootstrap_delivered')
+FINISH_EFFECTS = ('cancel_command', 'stop_driver', 'unavailable', 'bound', 'driver_use', 'bootstrap_received', 'bootstrap_delivered')
 
 
 def utc():
@@ -34,6 +35,8 @@ class Run:
         self.started = utc()
         self.origin = time.monotonic_ns()
         self.host = None
+        self.driver = None
+        self.driver_record, self.driver_usage = None, None
         self.records, self.command_records = {}, []
         self.effects = []
         self.finishing = False
@@ -82,6 +85,9 @@ class Run:
         for path in paths:
             os.close(self.lab.directory(self.base + '/' + path, create=True))
         self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit=self.spec['unit'])))
+        if self.exp['driver'] is not None:
+            self.driver = driver.Driver(self)
+            self.driver.prepare()
         try:
             self.host = self.host_factory(self.spec['unit'], self.spec['systemctl'], self.cost)
         except (OSError, CapabilityError) as error:
@@ -190,6 +196,24 @@ class Run:
         data = self.lab.read(self.base + '/' + path)
         return dict(path=path, bytes=len(data), sha256=store.file_digest(data))
 
+    def spawn_driver(self, argv, env, stdin_fd, cwd):
+        record = dict(name='driver', group='driver', argv=argv, env=env, started_ms=self.ms(),
+                      exit=None, memory=dict(peak_bytes=None, source=None, tree_peak_bytes=None), output={})
+        outputs = {}
+        try:
+            for stream in ('stdout', 'stderr'):
+                path = 'driver/host.' + stream
+                outputs[stream] = dict(path=path, fd=self.lab.create_file(self.base + '/' + path), buffer=b'')
+            owned = self.host.spawn('driver', argv, env, stdin_fd, cwd=cwd)
+        except BaseException:
+            for output in outputs.values():
+                os.close(output['fd'])
+            raise
+        self.items['driver'] = dict(name='driver', group='driver', record=record, outputs=outputs,
+                                   cleanup=None, kill_deadline=None, timed_out=False, cancelled=False,
+                                   panic=[], panic_message=None)
+        self.timeline('start', name='driver', group='driver', argv=argv, env=env, pid=owned['pid'])
+
     def begin_cleanup(self, identity):
         item = self.items[identity]
         if item['cleanup'] is not None:
@@ -223,6 +247,19 @@ class Run:
             self.timeline('phase', phase=request['phase'])
         elif op == 'spawn':
             self.spawn(request)
+        elif op == 'start_driver':
+            if self.state.data['phase'] == 'drive' and not self.state.data['driver']['ending']:
+                self.driver.start()
+        elif op == 'driver_turn':
+            if self.driver is not None and self.driver.can_go():
+                self.driver.protocol.start_turn()
+        elif op == 'stop_driver':
+            if self.driver is not None:
+                self.driver.stop()
+        elif op == 'driver_use':
+            report = request['report']
+            reasons = ([] if report['done'] else ['charter not completed']) + [s['step'] for s in report['unseen']]
+            self.failures.extend(checks.failure('use/untriaged', 'use', reason, ['driver/report.json']) for reason in reasons)
         elif op in ('bootstrap_received', 'bootstrap_delivered'):
             field = 'received_ms' if op == 'bootstrap_received' else 'delivered_ms'
             self.records[request['process']]['bootstrap'][field] = request['ms']
@@ -234,7 +271,7 @@ class Run:
         elif op == 'awaited':
             record = next(c for c in self.command_records if c['group'] == 'actions' and c['name'] == request['name'])
             result = record['exit']
-            timed_out = any(b['name'] == 'command_seconds' and b['who'] == request['name'] for b in self.state.data['bounds'])
+            timed_out = any(b['name'] == 'command_seconds' and b.get('who') == request['name'] for b in self.state.data['bounds'])
             if not timed_out and (result is None or result.get('status') == 0 and not result['stopped'] and not result['killed']):
                 record['awaited'] = dict(ms=request['ms'], captures=request['captures'])
             self.timeline('awaited', ms=request['ms'], name=request['name'], captures=request['captures'])
@@ -252,15 +289,16 @@ class Run:
         elif op == 'cancel_command':
             self.cancel_command(request['name'])
         elif op == 'bound':
-            if request['name'] == 'command_seconds':
+            if request['name'] == 'command_seconds' and 'who' in request:
                 for item in self.items.values():
                     if item['group'] != 'processes' and item['name'] == request['who']:
                         item['timed_out'] = True
                 for record in self.command_records:
                     if record['group'] == 'actions' and record['name'] == request['who'] and 'awaited' in record:
                         record['awaited'] = None
-            self.failures.append(checks.failure(f"bound/{request['name']}/{request['who']}", 'bound', 'cost class bound passed'))
-            self.timeline('bound', name=request['name'], who=request['who'])
+            suffix = '/' + request['who'] if 'who' in request else ''
+            self.failures.append(checks.failure(f"bound/{request['name']}" + suffix, 'bound', 'cost class bound passed'))
+            self.timeline('bound', name=request['name'], **({'who': request['who']} if 'who' in request else {}))
         elif op == 'unavailable':
             self.undecided.append(dict(check=request['group'] + '/' + request['name'], reason=request['reason']))
             record = dict(group=request['group'], name=request['name'], skipped=request['reason'])
@@ -317,12 +355,22 @@ class Run:
             os.close(fd)
             del child['streams'][stream]
             os.fsync(output['fd'])
-            os.fchmod(output['fd'], 0o400)
+            os.fchmod(output['fd'], 0o600 if item['group'] == 'driver' else 0o400)
             os.close(output['fd'])
             output['fd'] = None
             item['record']['output'][stream] = self.file_record(output['path'])
 
     def output_line(self, item, stream, line, *, complete):
+        if item['group'] == 'driver':
+            if stream == 'stdout' and not self.driver.protocol_failed:
+                try:
+                    if not complete:
+                        raise RuntimeError('app-server ended with a partial message')
+                    self.driver.protocol.accept(line.decode('utf-8', 'strict'))
+                except (Refused, RuntimeError, ValueError, KeyError, TypeError, UnicodeError) as error:
+                    self.driver.protocol_failed = True
+                    self.feed('error', what='driver/transport', detail=str(error))
+            return
         text = line.decode('utf-8', 'replace')
         if stream == 'stderr':
             if item['panic_message'] is not None:
@@ -376,6 +424,9 @@ class Run:
                     self.timeline('exit', name=item['name'], group=item['group'], **record['exit'])
                     if item['group'] != 'processes':
                         self.begin_cleanup(identity)
+                        if item['group'] == 'driver':
+                            self.driver.poll()
+                            self.driver.close_channels()
         for identity, child in list(self.host.children.items()):
             item = self.items[identity]
             for stream in list(child['streams']):
@@ -416,7 +467,7 @@ class Run:
                 check = 'checks/' + name if record.get('cluster') == 'stopped' else name
                 self.undecided.append(dict(check=check, reason='check cut by process stop or interruption'))
             if group == 'actions':
-                timed_out = any(b['name'] == 'command_seconds' and b['who'] == name for b in self.state.data['bounds'])
+                timed_out = any(b['name'] == 'command_seconds' and b.get('who') == name for b in self.state.data['bounds'])
                 if 'awaited' in record and (result.get('status') != 0 or item['cancelled'] or result['killed'] or timed_out):
                     record['awaited'] = None
                 self.failures.extend(checks.action(name, record))
@@ -434,11 +485,16 @@ class Run:
                 except (OSError, ValueError) as error:
                     self.errors.append(dict(what='collection/' + name, detail=str(error)))
         self.host.remove(identity)
+        if group == 'driver':
+            self.feed('driver_closed', result=record['exit'], stopped=item['cancelled'])
+            self.driver_record, self.driver_usage = self.driver.finish()
+            self.driver_record['end'] = record['exit']
+            self.driver_record['files'].update(record['output'])
         del self.items[identity]
         self.timeline('tree_empty', name=name, group=group)
         if group == 'processes':
             self.feed('tree_empty', name=name)
-        else:
+        elif group != 'driver':
             self.feed('command_done', name=name, record=record)
         if group == 'collect' and len(self.errors) != error_start:
             self.feed('error', what='command/' + name, detail='command evidence could not be completed')
@@ -482,17 +538,22 @@ class Run:
             self.failures.extend(f for f in failures if f not in self.failures)
             self.undecided.extend(unknown)
         self.errors.extend(self.state.data['errors'])
-        outcome = judge.outcome(self.failures, self.errors, self.undecided, None, driver_required=False)
+        if self.driver is not None and self.driver_record is None:
+            self.driver_record, self.driver_usage = self.driver.finish()
+        observed = self.state.data['driver']
+        report = observed['observed']['report'] if observed is not None else None
+        required = self.exp['driver'] is not None
+        outcome = judge.outcome(self.failures, self.errors, self.undecided, report, driver_required=required)
         self.failures.extend(checks.planted(self.exp['planted'], self.failures, outcome))
-        outcome = judge.outcome(self.failures, self.errors, self.undecided, None, driver_required=False)
+        outcome = judge.outcome(self.failures, self.errors, self.undecided, report, driver_required=required)
         for i, failure in enumerate(self.failures):
             failure['id'] = 'failure-' + str(i + 1)
         record = dict(format='lab-run/1', run=self.spec['run'], key=self.spec['key'], experiment=self.exp['name'],
                       seed=self.spec['seed'], attempt=self.spec['attempt'], campaign=self.spec['campaign'],
                       started=self.started, ended=utc(), outcome=outcome, schedule=self.state.data['schedule'],
-                      processes=self.records, commands=self.command_records, driver=None,
+                      processes=self.records, commands=self.command_records, driver=self.driver_record,
                       failures=self.failures, undecided=self.undecided, errors=self.errors, bounds=self.cost,
-                      usage=dict(elapsed_ms=self.ms(), longest_ms=self.longest_ms(), driver=None, triage=[]),
+                      usage=dict(elapsed_ms=self.ms(), longest_ms=self.longest_ms(), driver=self.driver_usage, triage=[]),
                       about=dict(hostname=platform.node(), kernel=platform.release(), processors=os.cpu_count(),
                                  unit=self.spec['unit'], manager=self.spec.get('manager_version'),
                                  memory_bytes=os.sysconf('SC_PHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')))
@@ -504,6 +565,7 @@ class Run:
 
     def longest_ms(self):
         return (self.cost['command_seconds']
+                + (self.cost['driver_seconds'] + self.cost['stop_seconds'] if self.exp['driver'] is not None else 0)
                 + len(self.exp['processes']) * (self.cost['ready_seconds'] + 2 * self.cost['stop_seconds'])
                 + sum(len(self.exp[g]) for g in ('actions', 'collect', 'checks'))
                 * (self.cost['command_seconds'] + self.cost['stop_seconds'])) * 1000
@@ -534,6 +596,8 @@ class Run:
                         self.timeline('interrupted', signal=signal.Signals(self.interrupt).name)
                         self.feed('interrupt', signal=self.interrupt, detail=signal.Signals(self.interrupt).name)
                     self.observe()
+                    if self.driver is not None:
+                        self.driver.poll()
                     if self.effects:
                         request = self.effects.pop(0)
                         # Observation can invalidate a queued spawn.
@@ -549,8 +613,15 @@ class Run:
                                  if x[field] is not None]
                     if deadline is not None:
                         deadlines.append(deadline)
+                    if self.driver is not None:
+                        deadlines.extend(self.driver.command_deadlines.values())
+                    if self.driver is not None and self.driver.stop_deadline is not None:
+                        deadlines.append(self.driver.stop_deadline)
                     timeout = max(0, min(deadlines) - self.ms()) if deadlines else None
-                    self.host.poll(timeout, wake_r)
+                    if self.driver is not None:
+                        transport.driver_poll(self.host, timeout, wake_r, self.driver.descriptors())
+                    else:
+                        self.host.poll(timeout, wake_r)
                     try:
                         os.read(wake_r, 4096)
                     except BlockingIOError:
@@ -581,6 +652,8 @@ class Run:
                         return self.finish()
         finally:
             self.drop_bootstrap()
+            if self.driver is not None:
+                self.driver.close_channels()
             signal.set_wakeup_fd(old_wakeup)
             for sig, handler in handlers.items():
                 signal.signal(sig, handler)

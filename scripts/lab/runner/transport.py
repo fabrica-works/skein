@@ -37,9 +37,17 @@ def _admission(connection):
 
 def _runtime_known(lab, key):
     """Recheck requested host inputs before provisioning and supply their paths."""
-    from .cli import _browser_facts, _experiment_input, _program_facts, _runner_root
+    from .cli import _browser_facts, _experiment_input, _program, _program_facts, _runner_root
     from . import experiment
     known = {'runner': str(_runner_root())}
+    if key['lab']['driver'] is not None:
+        driver = key['lab']['driver']
+        settings = canonical.loads(lab.read('settings.json'))
+        if settings.get('driver') != {k: v for k, v in driver.items() if k != 'config'}:
+            raise Refused('settings.driver', 'driver changed before provision')
+        current = _program(driver['program']['path'])
+        if any(current[k] != driver['program'][k] for k in ('path', 'sha256')):
+            raise Refused('settings.driver.program', 'host identity differs before provision')
     if any('version' in p for p in key['lab']['programs']):
         settings = canonical.loads(lab.read('settings.json'))
         exp, files = _experiment_input(lab.root / 'store/experiments' / key['experiment'])
@@ -287,3 +295,122 @@ def launch(lab, lock_fd, key_path, seed, campaign):
             os.unlink(endpoint)
         except FileNotFoundError:
             pass
+
+
+class AppServer:
+    """One request sequence; the run loop owns all reads, writes and deadlines."""
+    def __init__(self, work, prompt, schema, received, inventory):
+        self.work, self.prompt, self.schema = work, prompt, schema
+        self.received, self.inventory = received, inventory
+        self.outgoing = b''
+        self.pending = None
+        self.serial = 0
+        self.responses = {}
+        self.thread = None
+        self.methods = []
+        self.cursors = set()
+        self.turn_sent = False
+        self.request('initialize', dict(clientInfo=dict(name='skein-lab', title='Lab', version='1'),
+                                       capabilities=dict(experimentalApi=True)))
+
+    def send(self, message):
+        # App-server accepts JSON numbers beyond the lab record format's integer subset.
+        self.outgoing += (json.dumps(message, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
+
+    def request(self, method, params):
+        if self.pending is not None:
+            raise RuntimeError('overlapping app-server inventory requests')
+        self.serial += 1
+        self.pending = (self.serial, method)
+        self.send(dict(id=self.serial, method=method, params=params))
+
+    def accept(self, line):
+        from . import codex
+        message = json.loads(line, object_pairs_hook=canonical._pairs, parse_constant=canonical._no_number)
+        if type(message) is not dict:
+            raise RuntimeError('app-server message is not an object')
+        self.received(message)
+        if 'id' not in message:
+            if 'method' not in message:
+                raise RuntimeError('app-server notification lacks method')
+            return
+        if 'method' in message:
+            raise RuntimeError('unadmitted app-server request: ' + str(message['method']))
+        if self.pending is None or message['id'] != self.pending[0]:
+            raise RuntimeError('app-server response id differs from request')
+        _, method = self.pending
+        self.pending = None
+        if 'error' in message:
+            raise RuntimeError('app-server ' + method + ': ' + str(message['error']))
+        result = message.get('result')
+        if type(result) is not dict:
+            raise RuntimeError('app-server response lacks an object result')
+        if method == 'initialize':
+            self.send(dict(method='initialized', params={}))
+            self.request('thread/start', dict(cwd=self.work, permissions='lab', ephemeral=True,
+                                             approvalPolicy='never', config={}))
+        elif method == 'thread/start':
+            self.responses[method] = result
+            self.thread = result['thread']['id']
+            if type(self.thread) is not str or not self.thread:
+                raise RuntimeError('thread/start lacks a thread id')
+            self.methods = list(codex.INVENTORY_METHODS)
+            self.next_inventory()
+        elif method == 'turn/start':
+            if type(result.get('turn')) is not dict or type(result['turn'].get('id')) is not str:
+                raise RuntimeError('turn/start lacks a turn id')
+        else:
+            if method == 'mcpServerStatus/list':
+                self.responses.setdefault(method, []).append(result)
+                if 'nextCursor' not in result:
+                    raise RuntimeError('incomplete MCP inventory page')
+                cursor = result['nextCursor']
+                if cursor is not None:
+                    if type(cursor) is not str or not cursor or cursor in self.cursors:
+                        raise RuntimeError('invalid MCP inventory cursor')
+                    self.cursors.add(cursor)
+                    self.request(method, dict(threadId=self.thread, detail='full', cursor=cursor))
+                    return
+            else:
+                self.responses[method] = result
+            self.next_inventory()
+
+    def next_inventory(self):
+        if not self.methods:
+            self.inventory(self.responses)
+            return
+        method = self.methods.pop(0)
+        params = {'threadId': self.thread} if method in ('mcpServerStatus/list', 'app/installed') else {}
+        if method == 'mcpServerStatus/list':
+            params['detail'] = 'full'
+        elif method in ('hooks/list', 'skills/list', 'plugin/list'):
+            params['cwds'] = [self.work]
+        elif method == 'config/read':
+            params.update(cwd=self.work, includeLayers=True)
+        self.request(method, params)
+
+    def start_turn(self):
+        if self.turn_sent:
+            raise RuntimeError('driver turn already started')
+        self.turn_sent = True
+        self.request('turn/start', dict(threadId=self.thread,
+            input=[dict(type='text', text=self.prompt, text_elements=[])], outputSchema=self.schema))
+
+
+def driver_poll(host, timeout_ms, wake_fd, descriptors):
+    """The host's trees plus the driver's control channels, on the same poll loop."""
+    poller = select.poll()
+    poller.register(wake_fd, select.POLLIN)
+    for child in host.children.values():
+        if not child['reaped']:
+            poller.register(child['pidfd'], select.POLLIN)
+        if child['exec_ack'] is not None:
+            poller.register(child['exec_ack'], select.POLLIN | select.POLLHUP)
+        os.lseek(child['events'], 0, os.SEEK_SET)
+        os.read(child['events'], 65536)
+        poller.register(child['events'], select.POLLPRI | select.POLLERR)
+        for fd in child['streams'].values():
+            poller.register(fd, select.POLLIN | select.POLLHUP)
+    for fd, events in descriptors:
+        poller.register(fd, events)
+    return poller.poll(timeout_ms)

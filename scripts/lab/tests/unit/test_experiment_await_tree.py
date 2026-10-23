@@ -80,8 +80,8 @@ class AwaitExperiment(unittest.TestCase):
 
     def test_tool_capture_and_await_are_refused(self):
         exp, subject, settings, facts = inputs()
-        host = dict(program=dict(path='/usr/bin/codex', sha256=D, version='1'), model='test', effort='medium', config={})
-        settings.update(driver=host, triager={**host, 'triage_seconds': 1, 'triage_tokens': 1})
+        host = dict(program=dict(path='/usr/bin/codex', sha256=D, version='1'), model='test', effort='medium')
+        settings.update(driver=host, triager=None)
         facts.update(driver_host=True)
         facts['experiment_files']['charter.md'] = 'Invented test only.'
         tool = dict(name='client', argv=['{artifact.app}'], env={}, reads=[], writes=[])

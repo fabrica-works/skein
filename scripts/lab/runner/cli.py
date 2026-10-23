@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timezone
 import errno
+import json
 import os
 from pathlib import Path
 import re
@@ -10,7 +11,7 @@ import secrets
 import subprocess
 import stat
 import sys
-from . import canonical, evidence, experiment, finding_store, judge, store
+from . import canonical, codex, evidence, experiment, finding_store, judge, store
 from .records import CLASSES, Refusal, Refused, cost_refusals, digest_value, relative, subject_refusals
 
 
@@ -286,6 +287,11 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
     out.extend(experiment.validate(exp, subject, settings, facts))
     if out:
         return None, out
+    if driver is not None:
+        driver = {**driver, 'config': codex.configuration(os.path.realpath(sys.executable), str(_runner_root()),
+                  driver['program']['path'], [t['name'] for t in exp['driver']['tools']],
+                  driver['model'], driver['effort'], subject['source'] is not None,
+                  json.loads((_runner_root() / 'schemas/report.json').read_text()))}
     lab_inputs = {"runner": _runner_digest(),
                   "python": sys.version.split()[0], "programs": sorted(system.values(), key=lambda p: p["path"]),
                   "driver": driver, "cost": {"name": exp["cost"]}}
@@ -311,8 +317,6 @@ def runtime_command(lab, lock_fd, args):
     inputs = _experiment_input(args.experiment)
     exp, _files = inputs
     identity, problems = validate_command(lab, args.experiment, args.subject, inputs=inputs)
-    if exp.get('driver') is not None:
-        problems.append(Refusal('driver', 'nonnull drivers are unsupported by this runtime'))
     problems.extend(seed_problems)
     if problems:
         for problem in problems:
@@ -378,6 +382,8 @@ def _artifact(text):
 def main(argv=None, *, lab_root=None, finding_time=None):
     parser = argparse.ArgumentParser(prog="lab", description="Capture, validate, run and judge lab experiments.")
     commands = parser.add_subparsers(dest="command", required=True)
+    tool = commands.add_parser("tool", help="serve the run’s tools over stdio MCP")
+    tool.add_argument("run")
     subject = commands.add_parser("subject", help="capture a commit tree and named artifacts")
     subject.add_argument("--repository", required=True)
     subject.add_argument("--commit", required=True)
@@ -405,7 +411,7 @@ def main(argv=None, *, lab_root=None, finding_time=None):
         elif action == 'close':
             command.add_argument('--recheck', required=True)
     for name in ('run', 'judge'):
-        runtime = commands.add_parser(name, help='run a null-driver experiment' if name == 'run' else 'judge exactly three seeds')
+        runtime = commands.add_parser(name, help='run an experiment' if name == 'run' else 'judge exactly three seeds')
         runtime.add_argument('experiment')
         runtime.add_argument('--subject', required=True)
         runtime.add_argument('--campaign')
@@ -417,6 +423,9 @@ def main(argv=None, *, lab_root=None, finding_time=None):
     previous_umask = os.umask(0o077)
     root = lab_root if lab_root is not None else Path.home() / "src/rust/tmp/lab"
     try:
+        if args.command == 'tool':
+            from .tool import main as tool_main
+            return tool_main(root, args.run)
         with store.open_lab(root) as lab, lab.lock() as lock_fd:
             evidence.require_recovered(lab)
             now = finding_time

@@ -1,0 +1,224 @@
+"""Codex 0.162.1 decisions over supplied configuration and events (lab.md, 6)."""
+import json
+from . import canonical, judge, views
+from .records import Refused
+
+
+DISABLED = ('apps', 'plugins', 'remote_plugin', 'recommended_plugins', 'hooks',
+            'browser_use', 'browser_use_external', 'browser_use_full_cdp_access',
+            'in_app_browser', 'computer_use', 'image_generation', 'view_image',
+            'multi_agent', 'multi_agent_v2', 'skill_mcp_dependency_install',
+            'skill_search', 'code_mode', 'code_mode_host', 'sleep_tool', 'goals',
+            'tool_suggest', 'shell_snapshot', 'api_key_model_discovery', 'workspace_dependencies')
+NON_ACTIONS = ('userMessage', 'agentMessage', 'reasoning', 'plan', 'contextCompaction')
+INVENTORY_METHODS = ('mcpServerStatus/list', 'app/installed', 'plugin/list',
+                     'hooks/list', 'skills/list', 'config/read')
+
+
+def _evidence(value):
+    try:
+        canonical.dumps(value)
+        return value
+    except Refused:
+        return {'json': json.dumps(value, ensure_ascii=True, allow_nan=False)}
+
+
+def _response(responses, method):
+    value = responses.get(method)
+    return value if type(value) is dict else {}
+
+
+def config_toml(python: str, runner: str, run: str, tools: list[str], model: str,
+                effort: str, profile: str, lab_root: str = '{lab.root}') -> str:
+    """Permission profile text is supplied by the view builder."""
+    # Root keys precede every TOML table, including the profile's tables.
+    return ('model_provider = "lab-openai"\n'
+            f'model = {json.dumps(model)}\nmodel_reasoning_effort = {json.dumps(effort)}\n'
+            'web_search = "disabled"\nallow_login_shell = false\nproject_doc_max_bytes = 0\n'
+            + profile + '\n[shell_environment_policy]\ninherit = "none"\n[features]\n'
+            + ''.join(f'{name} = false\n' for name in DISABLED)
+            + 'skip_host_skill_discovery = true\n[mcp_servers.lab]\n'
+            + f'command = {json.dumps(python)}\n'
+            + 'args = ' + json.dumps(['-I', '-B', runner + '/runner/launch.py', lab_root, 'tool', run]) + '\n'
+            + 'env_vars = []\nrequired = true\nenabled_tools = ' + json.dumps(sorted(tools)) + '\n'
+            + '[skills.bundled]\nenabled = false\n[model_providers.lab-openai]\n'
+            + 'name = "OpenAI"\nbase_url = "https://api.openai.com/v1"\nwire_api = "responses"\n'
+            + 'requires_openai_auth = true\nsupports_websockets = false\n')
+
+
+def configuration(python: str, runner: str, program: str, tools: list[str], model: str,
+                  effort: str, source: bool, schema: dict) -> dict:
+    """The key uses template names for every path belonging to a run."""
+    profile = views.profile_toml(program, '{source}' if source else None, '{driver.work}')
+    return dict(argv=['app-server', '--stdio', '--strict-config'],
+                toml=config_toml(python, runner, '{run.id}', tools, model, effort, profile),
+                inventory=expected_inventory(tools, '{codex.home}/config.toml'),
+                schema=schema)
+
+
+def expected_inventory(tools: list[str], config_path: str) -> dict:
+    return dict(permission_profile='lab', mcp_servers_and_tools={'lab': sorted(tools)},
+                resources=[], prompts=[], apps=[], plugins=[], hooks=[], skills=[],
+                configuration_layers=config_path, instruction_files=[], built_in_tools=['commandExecution'])
+
+
+def observe(responses: dict, expected: dict | None = None) -> dict:
+    """Missing/malformed observers mismatch; unavailable observers stay unobserved."""
+    expected = expected if expected is not None else responses['expected']
+    result = {}
+    def row(name, evidence, ok):
+        result[name] = dict(state='observed' if ok else 'mismatch', evidence=_evidence(evidence))
+    for name in ('prompts', 'plugins', 'built_in_tools'):
+        result[name] = dict(state='unobserved', evidence='no complete live observer in Codex 0.162.1')
+    thread = _response(responses, 'thread/start')
+    row('permission_profile', thread.get('activePermissionProfile'),
+        type(thread.get('activePermissionProfile')) is dict
+        and thread['activePermissionProfile'].get('id') == expected['permission_profile'])
+    row('instruction_files', thread.get('instructionSources'), thread.get('instructionSources') == [])
+    pages = responses.get('mcpServerStatus/list')
+    valid = (type(pages) is list and bool(pages)
+             and all(type(p) is dict and type(p.get('data')) is list and 'nextCursor' in p for p in pages)
+             and all(type(p['nextCursor']) is str and bool(p['nextCursor']) for p in pages[:-1])
+             and pages[-1]['nextCursor'] is None) if type(pages) is list else False
+    entries = [e for p in pages for e in p['data']] if valid else []
+    good = (valid and len(entries) == 1 and type(entries[0]) is dict
+            and entries[0].get('name') == 'lab' and entries[0].get('runtimeStatus') == 'connected'
+            and 'toolsError' in entries[0] and entries[0]['toolsError'] is None
+            and type(entries[0].get('tools')) is dict
+            and sorted(entries[0]['tools']) == expected['mcp_servers_and_tools']['lab'])
+    row('mcp_servers_and_tools', pages, good)
+    row('resources', pages, valid and bool(entries) and all(type(e) is dict
+        and e.get('resources') == [] and e.get('resourceTemplates') == [] for e in entries))
+    apps, plugins = _response(responses, 'app/installed'), _response(responses, 'plugin/list')
+    row('apps', apps, apps.get('apps') == [])
+    # The catalog is evidence of installed plugins, never a model-facing inventory.
+    result['plugins']['evidence'] = dict(observer=_evidence(plugins), limitation='model-facing capabilities unobserved')
+    if (plugins.get('marketplaces') != [] or plugins.get('marketplaceLoadErrors') != []):
+        result['plugins']['state'] = 'mismatch'
+    for name in ('hooks', 'skills'):
+        response = _response(responses, name + '/list')
+        entries = response.get('data')
+        good = (type(entries) is list and bool(entries) and all(type(e) is dict
+                and e.get(name) == [] and e.get('errors') == []
+                and (name != 'hooks' or e.get('warnings') == []) for e in entries))
+        row(name, response, good)
+    response = _response(responses, 'config/read')
+    layers = response.get('layers')
+    good, users = type(layers) is list and bool(layers), 0
+    for layer in layers if type(layers) is list else []:
+        if type(layer) is not dict or type(layer.get('name')) is not dict or type(layer.get('config')) is not dict:
+            good = False
+            continue
+        name = layer['name']
+        if name.get('type') == 'user' and name.get('file') == expected['configuration_layers']:
+            users += 1
+            good = good and bool(layer['config']) and not layer.get('disabledReason')
+        elif name.get('type') != 'system' or layer['config'] != {}:
+            good = False
+    row('configuration_layers', response, good and users == 1)
+    return result
+
+
+def item_kind(item: dict) -> str:
+    kind = item.get('type')
+    if kind == 'commandExecution' or kind == 'mcpToolCall' and item.get('server') == 'lab':
+        return 'action'
+    if kind in NON_ACTIONS:
+        return 'message'
+    raise Refused('driver/audit', 'unadmitted item kind: ' + str(kind))
+
+
+def report(text: str) -> dict:
+    """Validate the closed report shape in schemas/report.json (lab.md, 6.4)."""
+    try:
+        value = json.loads(text, object_pairs_hook=canonical._pairs, parse_constant=canonical._no_number)
+    except (ValueError, TypeError) as error:
+        raise Refused('driver/report', 'final agentMessage is not a report') from error
+    if judge._report_state(value) == 'incomplete':
+        raise Refused('driver/report', 'final agentMessage differs from report schema')
+    canonical.dumps(value)
+    return value
+
+
+def initial() -> dict:
+    return dict(actions=[], turns=[], report=None, report_error=None, final_message=None,
+                tokens=dict(input=None, cached=None, output=None), overshoot=None)
+
+
+def _call_key(item):
+    arguments = item.get('arguments', {})
+    if (type(arguments) is not dict or type(arguments.get('args', [])) is not list
+            or any(type(a) is not str for a in arguments.get('args', []))
+            or arguments.get('stdin') is not None and type(arguments['stdin']) is not str
+            or type(item.get('tool')) is not str):
+        raise Refused('driver/audit', 'invalid lab tool arguments')
+    return dict(tool=item['tool'], args=arguments.get('args', []), stdin=arguments.get('stdin') is not None)
+
+
+def action_start(state: dict, item: dict, ms: int, source: str = 'host') -> dict:
+    """Pair identical calls in FIFO order across host and broker observations."""
+    key = _call_key(item) if item['type'] == 'mcpToolCall' else None
+    if source == 'host':
+        existing = next((a for a in state['actions'] if a.get('item_id') == item.get('id')
+                         and a.get('item_id') is not None), None)
+        if existing is not None:
+            if existing['kind'] != item['type']:
+                raise Refused('driver/audit', 'item id reused for another action kind')
+            return existing
+    existing = next((a for a in state['actions'] if key is not None and a.get('call') == key
+                     and source not in a['sources']), None)
+    if existing is None:
+        existing = dict(n=len(state['actions']) + 1, kind=item['type'], started_ms=ms,
+                        completed_ms=None, item_id=None, sources=[], start=_evidence(item), end=None)
+        if key is not None:
+            existing['call'] = key
+        state['actions'].append(existing)
+    existing['sources'].append(source)
+    if source == 'host':
+        existing['item_id'] = item.get('id')
+    return existing
+
+
+def fold(state: dict, message: dict, ms: int) -> dict:
+    """Fold one app-server notification; repeated usage replaces that turn's counts."""
+    state = json.loads(canonical.dumps(state))
+    method, params = message.get('method'), message.get('params', {})
+    if method in ('item/started', 'item/completed'):
+        item = params['item']
+        category = item_kind(item)
+        if category == 'action':
+            action = action_start(state, item, ms)
+            if method == 'item/completed':
+                action.update(completed_ms=ms, end=_evidence(item))
+        elif method == 'item/completed' and item['type'] == 'agentMessage':
+            state['final_message'] = item.get('text')
+    elif method in ('turn/started', 'turn/completed', 'thread/tokenUsage/updated'):
+        turn_id = params.get('turnId') if method == 'thread/tokenUsage/updated' else params['turn']['id']
+        turn = next((t for t in state['turns'] if t['id'] == turn_id), None)
+        if turn is None:
+            turn = dict(id=turn_id, started_ms=None, completed_ms=None,
+                        tokens=dict(input=None, cached=None, output=None))
+            state['turns'].append(turn)
+        if method == 'turn/started':
+            turn['started_ms'] = ms
+        elif method == 'thread/tokenUsage/updated':
+            usage = params.get('tokenUsage', {}).get('last') or {}
+            for name, field in (('input', 'inputTokens'), ('cached', 'cachedInputTokens'), ('output', 'outputTokens')):
+                value = usage.get(field)
+                if value is not None and (type(value) is not int or value < 0):
+                    raise Refused('driver/usage', 'invalid token count')
+                turn['tokens'][name] = value
+            for name in state['tokens']:
+                values = [t['tokens'][name] for t in state['turns']]
+                state['tokens'][name] = sum(values) if all(v is not None for v in values) else None
+        else:
+            turn.update(completed_ms=ms, status=params['turn'].get('status'))
+            if turn['status'] != 'completed':
+                raise Refused('driver/turn', 'turn did not complete: ' + str(turn['status']))
+            try:
+                state['report'] = report(state['final_message'])
+            except Refused as error:
+                state['report_error'] = str(error)
+    elif method == 'error':
+        raise Refused('driver/host', str(params.get('error', params)))
+    return state

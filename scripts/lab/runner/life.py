@@ -1,7 +1,7 @@
-"""The null-driver life: supplied events in, ordered effects out (lab.md, 5)."""
+"""The run's life: supplied events in, ordered effects out (lab.md, 5)."""
 from dataclasses import dataclass
 import json
-from . import canonical, draws, experiment
+from . import canonical, codex, draws, experiment
 from .records import Refused
 
 
@@ -48,13 +48,13 @@ def _collection_inputs(item):
 
 
 def initial(exp, seed, cost, known, texts):
-    if exp['driver'] is not None:
-        raise Refused('driver', 'nonnull drivers are unsupported by this runtime')
+    if exp['faults']:
+        raise Refused('faults', 'unsupported by this runtime')
     canonical.u64(seed)
     return State(dict(exp=exp, seed=seed, cost=cost, known=known, texts=texts,
                       phase='validate', order=[], ready=[], closed=[], processes={}, commands=[],
                       current=None, index=0, deadline=None, awaiting=None, stop_queue=[], cut=False,
-                      started_commands=[], collections={},
+                      started_commands=[], collections={}, driver=None,
                       interrupted=None, errors=[], bounds=[], schedule=dict(draws={}, start_order=[], faults=[])))
 
 
@@ -160,6 +160,11 @@ def _advance(d, effects, ms):
                      'stopped-collect': 'stopped-check', 'stopped-check': 'judge'}[phase]
         _phase(d, following, effects)
         if following == 'drive':
+            if exp['driver'] is not None and not d['cut']:
+                d['driver'] = dict(observed=codex.initial(), inventory=None, started_ms=None,
+                                   ended_ms=None, ending=False)
+                effects.append(dict(op='start_driver'))
+                return
             _phase(d, 'collect', effects)
         if following == 'judge':
             effects.append(dict(op='judge'))
@@ -199,6 +204,9 @@ def _stop(d, effects, ms):
 def _cut(d, effects, ms):
     d['cut'] = True
     effects.append(dict(op='cut', phase=d['phase']))
+    if d['phase'] == 'drive' and d['driver'] is not None:
+        _end_driver(d, effects)
+        return
     if d['phase'] in ('start', 'seed', 'drive'):
         if d['phase'] == 'seed' and d['current'] is not None:
             effects.append(dict(op='cancel_command', name=d['current']))
@@ -207,6 +215,67 @@ def _cut(d, effects, ms):
         _advance(d, effects, ms)
     elif d['phase'] in ('collect', 'check') and d['current'] is not None:
         effects.append(dict(op='cancel_command', name=d['current']))
+
+
+def _end_driver(d, effects):
+    if d['driver'] is not None and not d['driver']['ending']:
+        d['driver']['ending'] = True
+        d['deadline'] = None
+        effects.append(dict(op='stop_driver'))
+
+
+def _driver_limits(d, effects, ms):
+    driver = d['driver']
+    if driver is None:
+        return
+    observed = driver['observed']
+    bound = None
+    if not driver['ending'] and driver['started_ms'] is not None and ms - driver['started_ms'] >= d['cost']['driver_seconds'] * 1000:
+        bound = 'driver_seconds'
+    elif not driver['ending'] and len(observed['actions']) > d['cost']['driver_actions']:
+        bound = 'driver_actions'
+    if observed['tokens']['input'] is not None and observed['tokens']['input'] > d['cost']['driver_input_tokens']:
+        observed['overshoot'] = observed['tokens']['input'] - d['cost']['driver_input_tokens']
+        if not any(b['name'] == 'driver_input_tokens' for b in d['bounds']):
+            # Late usage is retained even after another bound has stopped the host.
+            if bound is not None:
+                d['bounds'].append(dict(name=bound, ms=ms))
+                effects.append(dict(op='bound', name=bound))
+            bound = 'driver_input_tokens'
+    if bound is not None:
+        d['bounds'].append(dict(name=bound, ms=ms))
+        effects.append(dict(op='bound', name=bound))
+        _end_driver(d, effects)
+
+
+def _driver_event(d, event, effects, ms):
+    driver = d['driver']
+    if driver is None:
+        return
+    try:
+        _driver_limits(d, effects, ms)
+        if event['kind'] == 'driver_inventory':
+            driver['inventory'] = event['inventory']
+            if any(i['state'] == 'mismatch' for i in driver['inventory'].values()):
+                raise Refused('driver/inventory', 'incomplete or mismatched inventory')
+            if not driver['ending']:
+                effects.append(dict(op='driver_turn'))
+        elif event['kind'] == 'driver_call':
+            action = codex.action_start(driver['observed'], event['item'], ms, 'broker')
+            driver['call_number'] = action['n']
+        else:
+            driver['observed'] = codex.fold(driver['observed'], event['message'], ms)
+        _driver_limits(d, effects, ms)
+        report = driver['observed']['report']
+        if report is not None and not driver['ending']:
+            if not report['done'] or report['unseen']:
+                effects.append(dict(op='driver_use', report=report))
+            _end_driver(d, effects)
+        elif any(t['completed_ms'] is not None for t in driver['observed']['turns']):
+            _end_driver(d, effects)
+    except (Refused, KeyError, TypeError, ValueError) as error:
+        d['errors'].append(dict(what='driver', detail=str(error)))
+        _end_driver(d, effects)
 
 
 def step(state, event):
@@ -222,6 +291,26 @@ def step(state, event):
     elif kind == 'provisioned':
         _phase(d, 'start', effects)
         _advance(d, effects, ms)
+    elif kind == 'driver_spawned':
+        d['driver']['started_ms'] = ms
+        d['deadline'] = ms + d['cost']['driver_seconds'] * 1000
+    elif kind in ('driver_inventory', 'driver_event', 'driver_call'):
+        _driver_event(d, event, effects, ms)
+    elif kind == 'driver_command_bound':
+        if not d['driver']['ending']:
+            d['bounds'].append(dict(name='command_seconds', ms=ms))
+            effects.append(dict(op='bound', name='command_seconds'))
+            _end_driver(d, effects)
+    elif kind == 'driver_closed':
+        driver = d['driver']
+        _driver_limits(d, effects, ms)
+        driver['ended_ms'] = ms
+        if (driver['inventory'] is None
+                or event['result'].get('status') != 0 and not event.get('stopped')):
+            d['errors'].append(dict(what='driver/host', detail='host ended without completing its drive'))
+        if d['phase'] == 'drive':
+            _phase(d, 'collect', effects)
+            _advance(d, effects, ms)
     elif kind == 'spawned':
         name, group = event['name'], event['group']
         if group == 'processes':
@@ -340,6 +429,8 @@ def step(state, event):
             else:
                 d['commands'].append(record)
             _command_advance(d, effects, ms)
+    elif kind == 'tick' and d['phase'] == 'drive':
+        _driver_limits(d, effects, ms)
     elif kind == 'tick' and d['deadline'] is not None and ms >= d['deadline']:
         name = d['current']
         bound = dict(start='ready_seconds', seed='command_seconds', collect='command_seconds',
@@ -355,6 +446,7 @@ def step(state, event):
         else:
             effects.append(dict(op='kill_tree' if d['phase'] == 'stop' else 'cancel_command', name=name))
     elif kind in ('interrupt', 'error'):
+        _end_driver(d, effects)
         if kind == 'interrupt':
             d['interrupted'] = event['signal']
         d['errors'].append(dict(what='interrupted' if kind == 'interrupt' else event['what'], detail=event.get('detail', kind)))

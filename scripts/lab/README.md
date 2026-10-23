@@ -1,4 +1,4 @@
-# Lab null-driver runner and findings
+# Lab runner and findings
 
 Python 3.11+, standard library only. Run from any directory:
 
@@ -30,15 +30,16 @@ directories 0500. Existing content is verified before reuse.
 
 Create `settings.json` in the lab before validation, as **canonical JSON with
 one final newline**. Its `lab-settings/1` record has `costs`, `driver`, and
-`triager`, with optional `about`, `browser` and `programs`. `costs` maps experiment cost
+`triager`, with optional `about`, `browser`, `programs` and `codex_home`. `costs` maps experiment cost
 names to objects with exactly these positive integer fields: `ready_seconds`, `command_seconds`,
 `stop_seconds`, `driver_seconds`, `driver_actions`, `driver_input_tokens`.
 There are no default cost values. For experiments with `driver: null`, settings
 `driver` and `triager` can both be null; no driver host or report is needed.
-For agent experiments, `driver` is the key's driver object (lab.md, 2.3), and
-`triager` has the same fields plus positive `triage_seconds`, `triage_tokens`.
-This slice validates their input shapes and declared driver executable identity;
-it does not run a driver or check its effective inventory.
+For agent experiments, settings `driver` is `{program, model, effort}`; `program`
+is `{path, sha256, version}`. The runner derives the key's `driver.config`.
+`triager` must be null. `codex_home` optionally names a private absolute directory;
+its default is the lab's `codex/`. Only `config.toml` is written there; the runner
+never opens a credential file. The host owns its login.
 
 Optional `programs` maps names matching `[a-z][a-z0-9-]*` to `{"path",
 "sha256", "version"}`: a resolved absolute executable path, its digest and
@@ -129,12 +130,13 @@ the disk floor from `tmp/machine.env` (`PLAN_MIN_DISK_GB`, otherwise the
 40 GiB machine default in owners.md, 4.5). Runtime admission also contacts the user manager and runs an inert bubblewrap
 user/PID namespace probe, with no model. Each run provisions its delegated
 `memory` and `pids` controllers. Validation alone proves no native containment.
-Driver inventory and boundary probes belong to the driver slice.
+The driver runs its boundary probe before experiment processes start and reads
+its inventory before starting its turn.
 A valid experiment is copied atomically to `store/experiments/D`; the key
 record is written once to `keys/NAME/D/key.json`. No run is created.
 
 Pure modules accept records and supplied facts. `store`, `cli`, `host`,
-`transport` and `loop` own effects.
+`transport`, `driver` and `loop` own effects.
 Fixed vectors and the unit stories run from the repository root through:
 
 ```
@@ -143,14 +145,13 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/uni
 
 Unit tests start no child processes and use no clock or sleep. CLI stories
 call `main` with temporary inputs, explicit machine facts and supplied finding
-times; native Git export and machine checks need native validation. Driver
-runs, triage, campaigns, general recovery and pruning are later slices.
+times; native Git export and machine checks need native validation. Triage,
+campaigns, general recovery and pruning remain unsupported.
 
 
-`run` and `judge` support **`driver: null` only**. A nonnull driver and a supplied
-`--campaign` are explicitly refused. There is no model, transport to Codex,
-tool broker or triager in this slice. Judged failures publish finding
-candidates and occurrences from their retained signatures and evidence.
+`run` and `judge` support null drivers and the pinned Codex app-server adapter.
+Faults, nonnull triagers and `--campaign` are refused as unsupported. Judged
+failures publish finding candidates and occurrences from retained evidence.
 
 The lifecycle in `runner/life.py` consumes events and returns ordered requests.
 It selects the next ready dependency set using canonical u64 draws, renders a
@@ -378,3 +379,83 @@ Statuses are 0 answered, 1 refused or a wait missed, 2 usage error (usage on
 stderr), and 3 unreachable browser or unreadable answer.
 The endpoint must be `127.0.0.1:PORT` or `[::1]:PORT`; `go` accepts only a
 path starting with `/`, not `//`, with printable ASCII and no spaces.
+
+## Codex 0.162.1 adapter
+
+The Codex 0.162.1 adapter starts `app-server --stdio --strict-config` in the
+run's contained driver tree, initializes the experimental API, creates one
+ephemeral thread with permissions `lab` and approvals `never`, reads the
+inventory, then starts one turn with the preamble, verbatim charter and report
+schema. Its configuration disables websocket preconnection with a custom
+Responses provider. `views.profile_toml` supplies the same profile text to the
+key's configuration and the provisioning probe.
+
+| Inventory item | 0.162.1 observer and acceptance |
+|---|---|
+| permission profile | `thread/start.activePermissionProfile.id == lab` |
+| MCP servers and tools | all `mcpServerStatus/list` pages: only connected `lab`, exact tool names, no tools error |
+| resources | MCP resources and templates empty |
+| prompts | unobserved: no catalog observer |
+| apps | `app/installed.apps` empty |
+| plugins | installed catalog empty and no load errors; model-facing capabilities unobserved |
+| hooks and skills | lists for the working directory empty, no warnings or errors |
+| configuration layers | run user layer plus system layers with empty config |
+| instruction files | `thread/start.instructionSources` empty |
+| built-in tools | unobserved: no complete live inventory observer |
+
+An incomplete observer or mismatch ends the drive in error; unobserved items
+remain recorded. Commands and lab MCP calls are numbered actions. Calls seen by
+both the broker and host pair in FIFO order by tool, args and stdin presence.
+The audit admits user/agent messages, reasoning, plans and compaction; other
+item kinds, including calls to another MCP server, end the drive in error.
+Time and action bounds stop the host as they pass. Usage replaces each turn's
+last counts and folds across turns: input includes cached, unknown stays null.
+Input past its bound records the overshoot and stops the host. `done:false`
+and each unseen step produce `use/untriaged`; malformed or missing reports
+with clean host ends remain incomplete.
+
+`driver/tools.json` is canonical `lab-driver-tools/1`, with rendered tool roots,
+work, source and the absolute broker socket. The Unix address can exceed
+`sockaddr_un`: the runner binds through an opened directory descriptor; clients
+must likewise connect through the socket's opened parent when the path is long.
+Calls wait for completed inventory and admission before `go`. The runner writes
+`calls.jsonl`: starts reference the stdin path; ends include all present files'
+sizes and SHA-256 digests. A cut call retains its start with no end. Closing the
+broker tells the MCP server to end its calls. The runner enforces each call's
+`command_seconds` bound by ending the drive and closing the broker.
+
+`run.json.driver` holds `invocation`, `expected_inventory`, `inventory` (each
+item's state and evidence), numbered `actions`, observed `turns`, `end`,
+`started_ms`, `ended_ms`, `report_error`, `probe`, and `files`. `usage.driver` holds elapsed milliseconds,
+seconds rounded up, actions, turns, tokens by input/cached/output, and
+`input_tokens_overshoot`. `driver/events.jsonl` retains received app-server JSON
+with `t_ms`; `host.stdout` and `host.stderr` retain raw streams. The transcript
+joins actions, host outputs and broker call records. Config, manifest, report
+and transcript files have size and digest references. The scripted host in
+`tests/support/scripted_codex.py` executes commands and emits scripted events;
+it starts the config's `lab tool RUN` MCP server and makes scripted calls through
+it, with no model transport. Its process stories exercise pass, each driver bound,
+audit and inventory errors, use failures and incomplete reports.
+
+Late usage received during shutdown is retained. Host payloads outside the lab's
+canonical JSON subset are preserved as JSON text under `json` in their evidence.
+
+`lab tool RUN` is the driver's stdio MCP server (lab.md, 6.3). It reads
+`keys/*/*/runs/RUN/driver/tools.json` without taking the runner's writer lock.
+The runner supplies rendered tools, work/source paths and its broker socket,
+exactly the `lab-driver-tools/1` meeting-point record. The server offers
+only those tools; each call waits for `go` or `refuse` before starting. Its
+bubblewrap view exposes read-only system roots, the program, declared reads,
+declared writes, read-only work, private `/proc` and `/tmp`, declared environment
+and shared networking. Broker EOF kills active views, including descendants.
+The server writes private `driver/calls/N.{stdin,stdout,stderr}`; the runner
+alone numbers actions and writes `driver/calls.jsonl`.
+
+The runner uses `views.profile_toml(codex_executable, source, work)` for the host's
+permission profile and calls `probe.boundary_probe` at provisioning, before the
+containment tree or any experiment process starts. The probe takes explicit run/source/work/canary/home paths and the class's command
+bound, creates an inert run-local CODEX_HOME containing only config.toml, and
+checks the seven observations in lab.md, 6.2 through `codex sandbox -P lab`.
+It returns per-check evidence or raises `BoundaryError` carrying that evidence.
+It uses no login and starts no model turn. The native stories include a
+weakened profile that makes a throwaway home readable and must fail.

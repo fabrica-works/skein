@@ -9,7 +9,7 @@ COST_FIELDS = ("ready_seconds", "command_seconds", "stop_seconds", "driver_secon
                "driver_actions", "driver_input_tokens")
 FORMATS = {"lab-experiment/1", "lab-tree/1", "lab-subject/1", "lab-key/1",
            "lab-settings/1", "lab-run/1", "lab-evidence/1", "lab-verdict/1",
-           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1"}
+           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1"}
 
 
 @dataclass(frozen=True)

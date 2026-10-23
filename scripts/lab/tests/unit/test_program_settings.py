@@ -55,8 +55,8 @@ class Programs(unittest.TestCase):
         exp['processes'][0]['env']['SERVER'] = '{program.server}'
         exp['actions'][0]['stdin'] = '{program.server}'
         facts['experiment_files']['app.conf'] = '{program.server}'
-        host = dict(program=dict(path='/codex', sha256=D, version='1'), model='model', effort='medium', config={})
-        settings.update(driver=host, triager={**host, 'triage_seconds': 1, 'triage_tokens': 1})
+        host = dict(program=dict(path='/codex', sha256=D, version='1'), model='model', effort='medium')
+        settings.update(driver=host, triager=None)
         exp['driver'] = dict(charter='charter', tools=[dict(name='tool', argv=['{program.server}'], env={},
                                                          reads=['{program.server}'], writes=['{program.server}'])])
         facts['experiment_files']['charter'] = 'Inspect.'

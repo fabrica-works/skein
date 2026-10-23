@@ -173,11 +173,10 @@ class Life(unittest.TestCase):
         self.assertEqual(state.data['index'], 0)
         self.assertEqual(effects, [])
 
-    def test_missing_capture_is_explicitly_unjudged_and_nonnull_driver_refused(self):
+    def test_missing_capture_is_explicitly_unjudged_and_driver_admitted(self):
         state, _exp = world()
         state.data['exp']['driver'] = {'charter': 'charter.md', 'tools': []}
-        with self.assertRaises(Refused):
-            life.initial(state.data['exp'], '1', state.data['cost'], {}, {})
+        self.assertIsNone(life.initial(state.data['exp'], '1', state.data['cost'], {}, {}).data['driver'])
         state, _ = start()
         state.data['exp']['collect'][0]['argv'].append('{proc.app.ready.address}')
         state, _ = event(state, 'spawned', name='backend', group='processes')

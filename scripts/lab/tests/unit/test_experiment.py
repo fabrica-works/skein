@@ -94,13 +94,12 @@ class Experiment(unittest.TestCase):
     def test_driver_input_shapes_and_tool_templates(self):
         exp, subject, settings, facts, _ = fixture()
         host = {'program': {'path': '/usr/bin/codex', 'sha256': D, 'version': '1'},
-                'model': 'gpt-6.1-sol', 'effort': 'medium', 'config': {}}
+                'model': 'gpt-6.1-sol', 'effort': 'medium'}
         settings['driver'] = host
-        settings['triager'] = {**host, 'triage_seconds': 600, 'triage_tokens': 1000000}
+        settings['triager'] = None
         exp['driver'] = {'charter': 'charter.md', 'tools': [
             {'name': 'client', 'argv': ['{artifact.app}', '{proc.app.ready.address}'], 'env': {},
              'writes': ['{dir.client}'], 'reads': ['{source}']} ]}
-        exp['faults'] = [{'kill': 'backend', 'signal': 'SIGTERM', 'after_actions': [1, 2]}]
         facts['experiment_files']['charter.md'] = 'Exercise the client.'
         facts['driver_host'] = True
         self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
@@ -110,7 +109,7 @@ class Experiment(unittest.TestCase):
         facts['driver_host'] = False
         members = [r.member for r in experiment.validate(exp, subject, settings, facts)]
         for member in ['driver.tools.0.stdin', 'driver.tools.0.writes.0', 'settings.driver',
-                       'settings.triager', 'facts.driver_host']:
+                       'facts.driver_host']:
             self.assertIn(member, members)
 
     def test_key_identity(self):

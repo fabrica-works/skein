@@ -897,6 +897,8 @@ The evidence line (`lab-evidence/1`) is `{"run", "seed", "attempt",
 
 ### 6.1 The host
 
+A system layer whose configuration is empty counts as no configuration layer.
+
 The driver's boundary is provisional: Codex's permission profile for
 the agent's commands, and a stdio MCP server whose calls run in
 bubblewrap views for its tools. What it rests on is checked every run
