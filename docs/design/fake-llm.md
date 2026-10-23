@@ -96,8 +96,11 @@ answer ownership is checked before effects or payload copies.
   and the worlds that host it (the one-process world and the real loop:
   testing-strategy.md, 4 and 4.1) take the release as the domain's
   event, never from the wire. The peer as a process of its own has no
-  owner to release a hold, so it refuses a script with one at its
-  start. A world without a hold sees the peer as before.
+  owner to release a hold unless its host gives it one, a control of
+  the host's beside the provider's listener that takes the release as
+  the domain's event (`Peer::release`), so without one it refuses a
+  script with a hold at its start. A world without a hold sees the peer
+  as before.
 
 ### 2.3 Scripted failures
 
