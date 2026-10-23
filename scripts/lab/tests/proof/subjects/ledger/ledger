@@ -1,0 +1,147 @@
+#!/usr/bin/python3
+"""The squares proof's stand-in service and endpoint-fixed tool."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import socket
+import sys
+
+MAX_PROGRAM = 65536
+BUGGY = '''def odd_squares(numbers):
+    """Return the sum of the squares of the odd numbers."""
+    total = 0
+    for n in numbers:
+        if n % 2 == 0:
+            total += n * n
+    return total
+'''
+USAGE = 'usage: ledger client 127.0.0.1:PORT task|program|answer N'
+
+
+def numbers(seed):
+    if not re.fullmatch(r'0|[1-9][0-9]{0,19}', seed) or int(seed) > 18446744073709551615:
+        raise ValueError('expected canonical decimal u64 seed')
+    return [1 + int.from_bytes(hashlib.sha256(
+        b'ledger\0' + seed.encode('ascii') + b'\0' + str(i).encode('ascii')).digest()[:8], 'big') % 99
+        for i in range(12)]
+
+
+def expected(values):
+    return sum(n * n for n in values if n % 2 == 1)
+
+
+def address(text):
+    if not re.fullmatch(r'127\.0\.0\.1:[1-9][0-9]{0,4}', text):
+        raise ValueError('expected loopback address')
+    port = int(text.split(':')[1])
+    if port > 65535:
+        raise ValueError('invalid port')
+    return '127.0.0.1', port
+
+
+def integer(text):
+    if not re.fullmatch(r'[+-]?[0-9]+', text):
+        raise ValueError('expected decimal integer')
+    return int(text)
+
+
+def parse_client(args):
+    if len(args) not in (2, 3):
+        raise ValueError(USAGE)
+    endpoint = address(args[0])
+    verb = args[1]
+    if verb in ('task', 'program') and len(args) == 2:
+        return endpoint, verb, None
+    if verb == 'answer' and len(args) == 3:
+        return endpoint, verb, integer(args[2])
+    raise ValueError(USAGE)
+
+
+def exchange(endpoint, line, body=b''):
+    with socket.create_connection(endpoint) as connection:
+        connection.sendall(line.encode('ascii') + b'\n' + body)
+        connection.shutdown(socket.SHUT_WR)
+        with connection.makefile('rb') as stream:
+            return stream.read()
+
+
+def serve(seed, state):
+    values = numbers(seed)
+    state = Path(state)
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    calls = []
+    def stop(_signal, _frame):
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stop)
+    with (state / 'calls.jsonl').open('w', encoding='utf-8') as evidence, socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        print('ready %s:%d' % listener.getsockname(), flush=True)
+        while True:
+            connection, _ = listener.accept()
+            with connection, connection.makefile('rb') as stream:
+                line = stream.readline(4097)
+                record, reply = None, 'refused\n'
+                if line == b'task\n':
+                    record = dict(verb='task')
+                    reply = BUGGY + '\nnumbers: ' + ' '.join(map(str, values)) + '\n'
+                elif line == b'program\n':
+                    body = stream.read(MAX_PROGRAM + 1)
+                    if len(body) > MAX_PROGRAM:
+                        while stream.read(MAX_PROGRAM):
+                            pass
+                        reply = 'too large\n'
+                    else:
+                        (state / 'program').write_bytes(body)
+                        record = dict(verb='program', bytes=len(body))
+                        reply = f'received {len(body)} bytes\n'
+                elif line.startswith(b'answer ') and line.endswith(b'\n') and len(line) <= 4096:
+                    try:
+                        value = integer(line[7:-1].decode('ascii'))
+                    except (ValueError, UnicodeError):
+                        pass
+                    else:
+                        verdict = 'accepted' if value == expected(values) else 'wrong'
+                        record = dict(verb='answer', value=value, verdict=verdict)
+                        reply = verdict + '\n'
+                elif line == b'observations\n':
+                    reply = json.dumps(dict(numbers=values, expected=expected(values), calls=calls)) + '\n'
+                if record is not None:
+                    calls.append(record)
+                    evidence.write(json.dumps(record) + '\n')
+                    evidence.flush()
+                try:
+                    connection.sendall(reply.encode('utf-8'))
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+
+def main(args):
+    os.umask(0o077)
+    if args[:1] == ['client']:
+        try:
+            endpoint, verb, value = parse_client(args[1:])
+        except ValueError:
+            print(USAGE, file=sys.stderr)
+            return 2
+        body = sys.stdin.buffer.read() if verb == 'program' else b''
+        reply = exchange(endpoint, verb + (' ' + str(value) if value is not None else ''), body)
+        sys.stdout.buffer.write(reply)
+        return 1 if reply.strip() in (b'wrong', b'refused', b'too large') else 0
+    if len(args) == 5 and args[0] == 'serve' and args[1] == '--seed' and args[3] == '--state':
+        return serve(args[2], args[4])
+    if len(args) == 3 and args[0] == 'observations':
+        data = exchange(address(args[1]), 'observations')
+        with open(args[2], 'wb') as output:
+            os.fchmod(output.fileno(), 0o600)
+            output.write(data)
+        return 0
+    print('usage: ledger serve --seed S --state DIR | client ADDRESS VERB [N] | observations ADDRESS OUT', file=sys.stderr)
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

@@ -483,6 +483,31 @@ stderr), and 3 unreachable browser or unreadable answer.
 The endpoint must be `127.0.0.1:PORT` or `[::1]:PORT`; `go` accepts only a
 path starting with `/`, not `//`, with printable ASCII and no spaces.
 
+## Paid proof: squares
+
+`tests/proof/` holds the lab's paid proof, run by hand, never by a tier.
+Its directories have no `test*.py` or `__init__.py`; the unit and process
+stories exercise it through the scripted host, with no model or login.
+The `ledger` subject supplies the task through its one tool. The charter
+asks for a corrected program run through a heredoc, with no file edits.
+
+Configure the lab's canonical settings with a `squares` cost class and the
+Codex driver described below before validating or running. The experiment uses
+the resolved interpreter `/usr/bin/python3.13`; tool views refuse a symlink
+as their executable mount. From any directory:
+
+```sh
+umask 077
+lab=/path/to/skein/scripts/lab/lab
+proof=/path/to/skein/scripts/lab/tests/proof
+repository=/absolute/path/to/fresh-ledger-repository
+commit=$("$proof/subjects/ledger/repository" "$repository")
+subject=$("$lab" subject --repository "$repository" --commit "$commit" \
+  --artifact "ledger=$proof/subjects/ledger/ledger")
+"$lab" validate "$proof/squares" --subject "$subject"
+"$lab" run "$proof/squares" --subject "$subject" --seed 1
+```
+
 ## Codex 0.162.1 adapter
 
 The Codex 0.162.1 adapter starts `app-server --stdio --strict-config` in the
