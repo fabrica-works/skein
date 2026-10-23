@@ -193,6 +193,12 @@ inferring that incident's cause.
 
 ## 5. Events and compatibility
 
+Optional collection has one 60-second monotonic deadline for service readiness
+and the GC RPC together. Timeout or execution failure preserves the payload exit;
+only the operation's own client is killed and reaped, with output discarded.
+The existing GC end event records a fixed outcome and reason. Server-side GC may
+continue; release still requires the owned cgroup to be empty.
+
 `DEV_TMP/heavy/events.jsonl` records submit, wrapper start, admission,
 scope entry, phase begin/end for pause, drain, settle, payload, release
 and collection, task completion, refusal and recovery. Records include a

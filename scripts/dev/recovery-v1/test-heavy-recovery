@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import runpy
 from pathlib import Path
 import signal
 import shutil
@@ -15,6 +16,8 @@ import statistics
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
+from unittest.mock import patch
 
 os.umask(0o077)
 KIT = Path(__file__).resolve().parent
@@ -336,6 +339,131 @@ def normal(lab):
     assert 'payload-output' in (lab.path / 'failure.client.txt').read_text()
     assert lab.event('gate', 'wrapper_start')['time_ns'] < lab.event('gate', 'payload_begin')['time_ns']
     lab.done(lab.start('escaped-input', code='import os; assert os.environ["FIXTURE_ESCAPED"] == ' + repr(lab.env['FIXTURE_ESCAPED'])))
+
+
+
+def gc_clients(lab, plans):
+    # Fake only optional service readiness and RPC; all other systemctl is real.
+    real = shutil.which('systemctl')
+    common = ('import json,os,sys,time\nfrom pathlib import Path\n'
+              'root=Path(' + repr(str(lab.path)) + ')\n')
+    action = ('label=os.environ.get("HEAVY_LABEL", "")\n'
+              'plan=' + repr(plans) + '.get(label, {}).get(stage, {})\n'
+              '(root/("gc-client-"+str(os.getpid())+".json")).write_text(json.dumps('
+              '{"pid":os.getpid(),"stage":stage,"label":label,"start":time.monotonic()}))\n'
+              'print("discard-optional-output", flush=True)\n'
+              'time.sleep(plan.get("delay", 0))\nsys.exit(plan.get("code", 0))\n')
+    cache = lab.path / 'fixture-bin/kache'
+    cache.write_text('#!/usr/bin/env python3\n' + common + 'assert sys.argv[1:]==["gc"]\nstage="rpc"\n' + action)
+    control = lab.path / 'fixture-bin/systemctl'
+    control.write_text('#!/usr/bin/env python3\n' + common +
+        'if "kache.service" not in sys.argv: os.execv(' + repr(real) + ', [' + repr(real) + ']+sys.argv[1:])\n'
+        'assert sys.argv[1:]==["--user","is-active","--quiet","kache.service"]\nstage="readiness"\n' + action)
+    control.chmod(0o700)
+    lab.env.update(RUSTC_WRAPPER='', RUSTC_WORKSPACE_WRAPPER='')
+
+
+def gc_expired(lab, label, serial=0):
+    before = time.monotonic()
+    end = wait_for(lambda: lab.event(label, 'gc_end:' + str(serial)), 'GC expiry', seconds=75)
+    assert (end['outcome'], end['reason']) == ('timeout', 'rpc'), end
+    begin = lab.event(label, 'gc_begin:' + str(serial))
+    span = (end['time_ns'] - begin['time_ns']) / 1e9
+    assert 59 <= span < 70, span
+    clients = [json.loads(p.read_text()) for p in lab.path.glob('gc-client-*.json')]
+    assert all(not live(c['pid']) for c in clients if c['label'] == label)
+    with (lab.path / 'gc-expiries.jsonl').open('a') as out:
+        out.write(json.dumps({'label':label, 'serial':serial, 'phase_wall_s':span,
+                             'observed_wait_monotonic_s':time.monotonic()-before, 'clients':clients})+'\n')
+
+
+def gc_build(lab):
+    gc_clients(lab, {'stalled-build': {'readiness': {'delay': 5}, 'rpc': {'delay': 300}}})
+    build = lab.start('stalled-build', code='raise SystemExit(7)')
+    wait_for(lambda: lab.event('stalled-build', 'gc_begin:0'), 'completed build in GC')
+    gate = lab.start('progress-gate', gate=True)
+    wait_for(lambda: lab.event('progress-gate', 'drain_begin'), 'gate draining GC build')
+    assert lab.event('stalled-build', 'payload_end')['code'] == 7
+    assert not lab.event('progress-gate', 'scope_enter')
+    gc_expired(lab, 'stalled-build')
+    rpc = next(json.loads(p.read_text()) for p in lab.path.glob('gc-client-*.json')
+               if json.loads(p.read_text())['label'] == 'stalled-build' and json.loads(p.read_text())['stage'] == 'rpc')
+    assert 54 <= time.monotonic() - rpc['start'] < 59
+    lab.done(build, 7)
+    lab.done(gate)
+    assert lab.event('stalled-build', 'release_end')['time_ns'] < lab.event('progress-gate', 'scope_enter')['time_ns']
+
+
+def gc_budget(lab):
+    # Controlled clock/runner checks arithmetic; other GC cases enforce real time.
+    sys.path.insert(0, str(KIT))
+    try:
+        collect = runpy.run_path(str(KIT / 'heavy-recovery.py'))['gc']
+    finally:
+        sys.path.pop(0)
+    for spent, missing in ((25, False), (60, False), (0, True)):
+        now, calls, events = [100.0], [], []
+        def runner(args, **kw):
+            assert all(kw[k] == subprocess.DEVNULL for k in ('stdin', 'stdout', 'stderr'))
+            calls.append(kw['timeout'])
+            if len(calls) == 1:
+                now[0] += spent
+                return SimpleNamespace(returncode=0)
+            raise subprocess.TimeoutExpired(args, kw['timeout'])
+        with patch.dict(collect.__globals__, time=SimpleNamespace(monotonic=lambda: now[0]),
+                shutil=SimpleNamespace(which=lambda name: None if missing else '/fake/kache'),
+                subprocess=SimpleNamespace(run=runner, DEVNULL=subprocess.DEVNULL, TimeoutExpired=subprocess.TimeoutExpired),
+                phase=lambda token, name, **kw: events.append((name, kw))):
+            collect('owned', 3)
+        assert calls == ([] if missing else [60.0, 35.0] if spent == 25 else [60.0]), calls
+        assert events == [('gc_begin:3', {}), ('gc_end:3', {
+            'outcome': 'skipped' if missing else 'timeout',
+            'reason': 'client-missing' if missing else 'rpc'})], events
+    (lab.path / 'controlled-clock.json').write_text(json.dumps({'rows':'readiness 25 + RPC 35; readiness 60 skips RPC; missing client', 'passed':True})+'\n')
+    lab.done(lab.start('progress'))
+
+
+def gc_gate(lab):
+    gc_clients(lab, {'stalled-gate': {'rpc': {'delay': 300}}})
+    finish, pidfile = lab.path / 'finish-payload', lab.path / 'payload-pid'
+    code = ('import os,time\nfrom pathlib import Path\nPath(' + repr(str(pidfile)) + ').write_text(str(os.getpid()))\n'
+            'while not Path(' + repr(str(finish)) + ').exists(): time.sleep(.02)\nraise SystemExit(9)')
+    gate = lab.start('stalled-gate', gate=True, code=code)
+    wait_for(lambda: lab.event('stalled-gate', 'gc_begin:0'), 'periodic gate GC', seconds=145)
+    build = lab.start('progress-build')
+    gc_expired(lab, 'stalled-gate')
+    assert live(int(pidfile.read_text())) and not lab.event('stalled-gate', 'payload_end')
+    assert lab.task('stalled-gate')['state'] == 'active' and not lab.event('progress-build', 'scope_enter')
+    finish.touch()
+    wait_for(lambda: lab.event('stalled-gate', 'gc_begin:1'), 'final gate GC')
+    gc_expired(lab, 'stalled-gate', 1)
+    lab.done(gate, 9)
+    lab.done(build)
+    assert lab.event('stalled-gate', 'release_end')['time_ns'] < lab.event('progress-build', 'scope_enter')['time_ns']
+
+
+def gc_errors(lab):
+    rows = [(stage + str(code), stage, code, {'code': 13}, 'unavailable' if stage == 'readiness' else 'error')
+            for stage in ('readiness', 'rpc') for code in (0, 7)]
+    rows.append(('readiness-timeout', 'readiness', 0, {'delay': 300}, 'timeout'))
+    plans = {label: {stage: plan} for label, stage, code, plan, outcome in rows}
+    gc_clients(lab, plans)
+    for label, stage, code, plan, outcome in rows:
+        client = lab.start(label, code='raise SystemExit(' + str(code) + ')')
+        end = wait_for(lambda: lab.event(label, 'gc_end:0'), label + ' GC end', seconds=75)
+        lab.done(client, code)
+        assert (end['outcome'], end['reason']) == (outcome, stage)
+        clients = [json.loads(p.read_text()) for p in lab.path.glob('gc-client-*.json')]
+        assert not any(c['label'] == label and (live(c['pid']) or (stage == 'readiness' and c['stage'] == 'rpc')) for c in clients)
+        assert 'discard-optional-output' not in Path(lab.task(label)['log']).read_text()
+    # Isolate PATH: Python can continue searching after any exec failure.
+    assert shutil.which('kache', path='/usr/bin:/bin') is None
+    (lab.path / 'fixture-bin/pueue').symlink_to(shutil.which('pueue'))
+    lab.env['PATH'] = str(lab.path / 'fixture-bin') + ':/usr/bin:/bin'
+    (lab.path / 'fixture-bin/kache').write_text('invalid executable\n')
+    lab.done(lab.start('execution-error', code='raise SystemExit(7)'), 7)
+    end = lab.event('execution-error', 'gc_end:0')
+    assert (end['outcome'], end['reason']) == ('error', 'rpc'), end
 
 
 def unsupported(lab):
@@ -1205,7 +1333,8 @@ def main():
     opts = parser.parse_args()
     root = opts.evidence.resolve()
     root.mkdir(parents=True, exist_ok=False)
-    cases = [('normal', normal), ('unsupported', unsupported), ('configured-kache', configured_kache),
+    cases = [('gc-build', gc_build), ('gc-budget', gc_budget), ('gc-gate', gc_gate), ('gc-errors', gc_errors),
+             ('normal', normal), ('unsupported', unsupported), ('configured-kache', configured_kache),
              ('enospc-snapshot', lambda lab: storage_failure(lab, 'snapshot')),
              ('enospc-journal', lambda lab: storage_failure(lab, 'journal')),
              ('enospc-seal', lambda lab: storage_failure(lab, 'seal')),

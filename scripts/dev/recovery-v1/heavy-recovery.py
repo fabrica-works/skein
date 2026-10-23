@@ -914,11 +914,31 @@ def phase(token, name, **values):
 
 
 def gc(token, serial):
+    deadline = time.monotonic() + 60
     phase(token, 'gc_begin:' + str(serial))
     # Only connect to an existing shared service; never create a lazy daemon.
-    if shutil.which('kache') and run(['systemctl', '--user', 'is-active', '--quiet', 'kache.service']).returncode == 0:
-        run(['kache', 'gc'])
-    phase(token, 'gc_end:' + str(serial))
+    outcome, reason = 'skipped', 'client-missing'
+    try:
+        if shutil.which('kache'):
+            for reason, args in (
+                    ('readiness', ['systemctl', '--user', 'is-active', '--quiet', 'kache.service']),
+                    ('rpc', ['kache', 'gc'])):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(args, 0)
+                result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL, timeout=remaining)
+                if result.returncode:
+                    outcome = 'unavailable' if reason == 'readiness' else 'error'
+                    break
+            else:
+                outcome = 'completed'
+    except subprocess.TimeoutExpired:
+        # run() kills and reaps only its own client; no captured pipe can linger.
+        outcome = 'timeout'
+    except OSError:
+        outcome = 'error'
+    phase(token, 'gc_end:' + str(serial), outcome=outcome, reason=reason)
 
 
 def prepare_payload_policy(token):
