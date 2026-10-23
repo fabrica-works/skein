@@ -3,9 +3,11 @@
 use alloc::boxed::Box;
 use skein_lib::{List, Map, bytes};
 
+mod fingerprint;
 mod grammar;
 mod layout;
 mod tokens;
+pub use fingerprint::{Fingerprint, Fingerprints};
 
 #[cfg(test)]
 mod tests;
