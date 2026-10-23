@@ -23,6 +23,8 @@ struct Blocks {
     lists: Stack<ListLevel>,
     paragraph: bool,
     fence: Option<Fence>,
+    table: bool,
+    delimiter: bool,
 }
 
 /// At most two nodes per input byte, plus two block nodes.
@@ -41,8 +43,13 @@ pub fn max_text_bytes(bytes: u32) -> Option<u32> {
 pub fn read(input: &[u8], heading_base: u8, builder: &mut Builder) {
     assert!(heading_base <= 249, "six Markdown heading levels fit after the page levels");
     assert!(crate::tree::length(input) <= builder.limits.text_bytes, "Markdown input fits the declared byte bound");
-    let mut blocks =
-        Blocks { lists: Stack::with_capacity(builder.limits.markdown_depth), paragraph: false, fence: None };
+    let mut blocks = Blocks {
+        lists: Stack::with_capacity(builder.limits.markdown_depth),
+        paragraph: false,
+        fence: None,
+        table: false,
+        delimiter: false,
+    };
     let mut start = 0_usize;
     for (end, byte) in input.iter().enumerate() {
         if *byte == b'\n' {
@@ -59,6 +66,7 @@ pub fn read(input: &[u8], heading_base: u8, builder: &mut Builder) {
         builder.text(Run::Plain, input.get(fence.start..).expect("unclosed fence is in input"));
         builder.close();
     }
+    close_table(&mut blocks, builder);
     close_paragraph(&mut blocks, builder);
     close_lists(&mut blocks, builder);
 }
@@ -84,6 +92,22 @@ fn line(input: &[u8], start: usize, end: usize, next: usize, base: u8, blocks: &
         }
         return;
     }
+    if blocks.delimiter {
+        blocks.delimiter = false;
+        return;
+    }
+    if blocks.table {
+        if !raw.starts_with(b"```")
+            && heading(raw).is_none()
+            && !raw.starts_with(b"> ")
+            && list_item(raw).is_none()
+            && unescaped_pipe(raw)
+        {
+            row(raw, Role::Cell, builder);
+            return;
+        }
+        close_table(blocks, builder);
+    }
     if raw.is_empty() {
         close_paragraph(blocks, builder);
         close_lists(blocks, builder);
@@ -101,7 +125,7 @@ fn line(input: &[u8], start: usize, end: usize, next: usize, base: u8, blocks: &
         let level = base.checked_add(count).expect("heading base reserves six levels");
         builder.open(Role::Heading { level });
         let start = usize::from(count).checked_add(1).expect("heading prefix fits usize");
-        inline(raw.get(start..).expect("heading body exists"), builder);
+        inline(raw.get(start..).expect("heading body exists"), false, builder);
         builder.close();
         return;
     }
@@ -109,7 +133,7 @@ fn line(input: &[u8], start: usize, end: usize, next: usize, base: u8, blocks: &
         close_paragraph(blocks, builder);
         close_lists(blocks, builder);
         builder.open(Role::Quote);
-        inline(body, builder);
+        inline(body, false, builder);
         builder.close();
         return;
     }
@@ -119,7 +143,7 @@ fn line(input: &[u8], start: usize, end: usize, next: usize, base: u8, blocks: &
             if item.level.ordered {
                 builder.text(Run::Plain, raw.get(item.level.indent..item.body).expect("ordered marker exists"));
             }
-            inline(raw.get(item.body..).expect("list body exists"), builder);
+            inline(raw.get(item.body..).expect("list body exists"), false, builder);
         } else {
             close_lists(blocks, builder);
             builder.open(Role::Paragraph);
@@ -129,6 +153,14 @@ fn line(input: &[u8], start: usize, end: usize, next: usize, base: u8, blocks: &
         return;
     }
     close_lists(blocks, builder);
+    if table_header(raw, input.get(next..).expect("next line is in input")) {
+        close_paragraph(blocks, builder);
+        builder.open(Role::Table);
+        row(raw, Role::ColumnHeader, builder);
+        blocks.table = true;
+        blocks.delimiter = true;
+        return;
+    }
     if blocks.paragraph {
         builder.text(Run::Plain, b"\n");
     } else {
@@ -138,8 +170,144 @@ fn line(input: &[u8], start: usize, end: usize, next: usize, base: u8, blocks: &
     if raw.contains(&b'<') || raw.contains(&b'|') {
         builder.text(Run::Plain, raw);
     } else {
-        inline(raw, builder);
+        inline(raw, false, builder);
     }
+}
+
+fn table_header(line: &[u8], following: &[u8]) -> bool {
+    if !unescaped_pipe(line) {
+        return false;
+    }
+    let mut end = following.len();
+    for (at, byte) in following.iter().enumerate() {
+        if *byte == b'\n' {
+            end = at;
+            break;
+        }
+    }
+    let following = following.get(..end).expect("next line ends in input");
+    let following = following.strip_suffix(b"\r").unwrap_or(following);
+    unescaped_pipe(following) && cell_count(line, false) == cell_count(following, true)
+}
+
+// Tables keep only their open block and scan each line's cells (ui.md, 10).
+fn close_table(blocks: &mut Blocks, builder: &mut Builder) {
+    if blocks.table {
+        builder.close();
+        blocks.table = false;
+    }
+}
+fn unescaped_pipe(line: &[u8]) -> bool {
+    let mut previous = None;
+    for byte in line {
+        if *byte == b'|' && previous != Some(b'\\') {
+            return true;
+        }
+        previous = Some(*byte);
+    }
+    false
+}
+fn trim(line: &[u8]) -> &[u8] {
+    let mut start = 0_usize;
+    let mut end = line.len();
+    for byte in line {
+        if *byte != b' ' && *byte != b'\t' {
+            break;
+        }
+        start = start.checked_add(1).expect("cell offset fits");
+    }
+    for byte in line.get(start..).expect("trimmed start exists").iter().rev() {
+        if *byte != b' ' && *byte != b'\t' {
+            break;
+        }
+        end = end.checked_sub(1).expect("trimmed byte remains");
+    }
+    line.get(start..end).expect("trimmed cell exists")
+}
+fn cells(line: &[u8]) -> &[u8] {
+    let line = trim(line);
+    let line = line.strip_prefix(b"|").unwrap_or(line);
+    // A final pipe has no closing backtick after it, so is outside a pair (ui.md, 10).
+    if line.last() == Some(&b'|') && line.get(line.len().saturating_sub(2)) != Some(&b'\\') {
+        line.strip_suffix(b"|").expect("final pipe exists")
+    } else {
+        line
+    }
+}
+#[derive(Debug)]
+struct Cells {
+    next: Option<usize>,
+    ticks: usize,
+    code: bool,
+}
+impl Cells {
+    fn new(line: &[u8]) -> Self {
+        let mut ticks = 0_usize;
+        for byte in line {
+            if *byte == b'`' {
+                ticks = ticks.checked_add(1).expect("backticks fit the line");
+            }
+        }
+        Self { next: Some(0), ticks, code: false }
+    }
+    fn next(&mut self, line: &[u8]) -> Option<(usize, usize)> {
+        let start = self.next?;
+        for (offset, byte) in line.get(start..).expect("cell starts in line").iter().enumerate() {
+            let at = start.checked_add(offset).expect("cell offset fits");
+            if *byte == b'`' {
+                self.ticks = self.ticks.checked_sub(1).expect("counted backtick remains");
+                if self.code || self.ticks > 0 {
+                    self.code = !self.code;
+                }
+            }
+            if *byte == b'|' && !self.code && line.get(at.saturating_sub(1)) != Some(&b'\\') {
+                self.next = Some(at.checked_add(1).expect("cell offset fits"));
+                return Some((start, at));
+            }
+        }
+        self.next = None;
+        Some((start, line.len()))
+    }
+}
+fn cell_count(line: &[u8], delimiter: bool) -> Option<usize> {
+    let line = cells(line);
+    let mut scan = Cells::new(line);
+    let mut count = 0_usize;
+    for _cell in 0..=line.len() {
+        let Some((start, end)) = scan.next(line) else { break };
+        if delimiter {
+            let cell = trim(line.get(start..end).expect("cell is in line"));
+            let cell = cell.strip_prefix(b":").unwrap_or(cell);
+            let cell = cell.strip_suffix(b":").unwrap_or(cell);
+            if cell.is_empty() {
+                return None;
+            }
+            for byte in cell {
+                if *byte != b'-' {
+                    return None;
+                }
+            }
+        }
+        count = count.checked_add(1).expect("cell count fits");
+    }
+    Some(count)
+}
+fn row(line: &[u8], role: Role, builder: &mut Builder) {
+    let line = cells(line);
+    let mut scan = Cells::new(line);
+    builder.open(Role::Row);
+    for _cell in 0..=line.len() {
+        let Some((start, end)) = scan.next(line) else { break };
+        let cell = trim(line.get(start..end).expect("cell is in line"));
+        builder.open(role);
+        if cell.contains(&b'<') {
+            flush(cell, 0, cell.len(), Run::Plain, true, builder);
+        } else {
+            inline(cell, true, builder);
+        }
+        builder.close();
+    }
+    builder.close();
 }
 
 fn heading(line: &[u8]) -> Option<u8> {
@@ -454,7 +622,7 @@ fn markers(line: &[u8], ranges: &List<Range>, depth: u32) -> List<Marker> {
     markers
 }
 
-fn inline(line: &[u8], builder: &mut Builder) {
+fn inline(line: &[u8], cell: bool, builder: &mut Builder) {
     let ranges = ranges(line);
     let markers = markers(line, &ranges, builder.limits.markdown_depth);
     let mut active = Stack::with_capacity(builder.limits.markdown_depth);
@@ -470,21 +638,21 @@ fn inline(line: &[u8], builder: &mut Builder) {
         if let Some(link) = ranges.get(range)
             && index == link.start
         {
-            flush(line, plain, index, run, builder);
+            flush(line, plain, index, run, cell, builder);
             match link.kind {
                 RangeKind::Link => {
                     if run == Run::Code {
-                        flush(line, link.start, link.end, run, builder);
+                        flush(line, link.start, link.end, run, cell, builder);
                     } else {
                         builder.open(Role::Link);
                         builder.external(line.get(link.target..link.target_end).expect("link target exists"));
                         let label = line.get(link.label..link.label_end).expect("link label exists");
                         builder.name(label);
-                        builder.text(run, label);
+                        flush(label, 0, label.len(), run, cell, builder);
                         builder.close();
                     }
                 }
-                RangeKind::Literal => flush(line, link.start, link.end, run, builder),
+                RangeKind::Literal => flush(line, link.start, link.end, run, cell, builder),
             }
             plain = link.end;
             skip = link.end;
@@ -496,7 +664,7 @@ fn inline(line: &[u8], builder: &mut Builder) {
         {
             marker = marker.checked_add(1).expect("marker index fits");
             if mark.partner.is_some() {
-                flush(line, plain, index, run, builder);
+                flush(line, plain, index, run, cell, builder);
                 if mark.opening {
                     active.push(mark.run).expect("emphasis fits its nesting bound");
                 } else {
@@ -507,12 +675,25 @@ fn inline(line: &[u8], builder: &mut Builder) {
             }
         }
     }
-    flush(line, plain, line.len(), active.top().copied().unwrap_or(Run::Plain), builder);
+    flush(line, plain, line.len(), active.top().copied().unwrap_or(Run::Plain), cell, builder);
     assert!(active.is_empty(), "all emitted emphasis has a closing marker");
 }
-fn flush(line: &[u8], start: usize, end: usize, run: Run, builder: &mut Builder) {
-    if start < end {
-        builder.text(run, line.get(start..end).expect("text span is in line"));
+fn flush(line: &[u8], start: usize, end: usize, run: Run, cell: bool, builder: &mut Builder) {
+    let mut plain = start;
+    if cell {
+        // A cell drops the backslash at emission, without copying it (ui.md, 10).
+        for index in start..end {
+            let next = index.checked_add(1).expect("text offset fits");
+            if line.get(index) == Some(&b'\\') && next < end && line.get(next) == Some(&b'|') {
+                if plain < index {
+                    builder.text(run, line.get(plain..index).expect("text span is in line"));
+                }
+                plain = next;
+            }
+        }
+    }
+    if plain < end {
+        builder.text(run, line.get(plain..end).expect("text span is in line"));
     }
 }
 

@@ -68,6 +68,38 @@ fn an_insert_builds_the_golden_page() {
 }
 
 #[test]
+fn a_markdown_table_builds_the_golden_page() {
+    const INPUT: &[u8] = include_bytes!("../../../skein-ui/src/tests/markdown/13.md");
+    const PARENTS: u32 = 2; // page and main above the reader.
+    const DEPTH: u32 = 5 + PARENTS; // ui.md, 10: five reader levels.
+    let bytes = u32::try_from(INPUT.len()).unwrap();
+    let nodes = skein_ui::markdown::max_nodes(bytes).unwrap() + PARENTS;
+    let limits = skein_ui::Limits {
+        nodes,
+        depth: DEPTH,
+        text_per_node: skein_ui::markdown::max_text_bytes(bytes).unwrap(),
+        text_bytes: skein_ui::markdown::max_text_bytes(bytes).unwrap(),
+        patches: nodes * 4, // ui.md, 7: at most four patches per node.
+        markdown_depth: 1,
+        ..LIMITS
+    };
+    let mut page = Page::new(fixtures::look(), &limits, b"/bundle/digest/", Primary::Control);
+    let mut view = View::new(&limits);
+    let mut builder = view.builder();
+    main(&mut builder);
+    skein_ui::markdown::read(INPUT, 0, &mut builder);
+    end(&mut builder);
+    let mut out = skein_lib::Queue::with_capacity(limits.patches);
+    view.finish(builder, 0, &mut out);
+    let mut patches = Vec::new();
+    for _patch in 0..out.len() {
+        patches.push(out.pop().unwrap());
+    }
+    page.apply(&patches, &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/markdown-table.html").trim_end());
+}
+
+#[test]
 fn a_remove_takes_its_subtree() {
     let (mut page, mut view) = (page(), View::new(&LIMITS));
     page.apply(

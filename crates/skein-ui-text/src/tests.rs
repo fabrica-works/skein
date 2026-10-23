@@ -150,3 +150,27 @@ fn control_bytes_print_as_replacements_everywhere() {
     let expected = std::fs::read("src/tests/golden/bytes-everywhere.txt").expect("hand-written replacement characters");
     assert_eq!(print.text.as_slice(), expected.as_slice());
 }
+
+#[test]
+#[expect(clippy::disallowed_macros, reason = "the reader's report and hand-checked text golden are shared fixtures")]
+fn a_markdown_table_prints_each_row_with_its_cells() {
+    const INPUT: &[u8] = include_bytes!("../../skein-ui/src/tests/markdown/13.md");
+    const PAGE_DEPTH: u32 = 6; // ui.md, 10: five reader levels below the page.
+    let bytes = u32::try_from(INPUT.len()).unwrap();
+    let limits = skein_ui::Limits {
+        nodes: skein_ui::markdown::max_nodes(bytes).unwrap().checked_add(1).unwrap(),
+        depth: PAGE_DEPTH,
+        text_per_node: skein_ui::markdown::max_text_bytes(bytes).unwrap(),
+        text_bytes: skein_ui::markdown::max_text_bytes(bytes).unwrap(),
+        markdown_depth: 1,
+        ..fixtures::LIMITS
+    };
+    let mut builder = skein_ui::Builder::new(&limits);
+    builder.open(Role::Page);
+    skein_ui::markdown::read(INPUT, 0, &mut builder);
+    builder.close();
+    let tree = builder.finish();
+    let mut print = Print::new(&limits).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    assert_eq!(print.text.as_slice(), include_bytes!("tests/golden/markdown-table.txt"));
+}
