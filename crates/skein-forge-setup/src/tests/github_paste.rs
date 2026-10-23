@@ -3,6 +3,7 @@ use crate::{
     call::Auth,
     github::{
         checks,
+        given::Given,
         paste::{self, Paste},
     },
     item::Item,
@@ -10,7 +11,7 @@ use crate::{
 };
 use core::num::NonZeroU64;
 use skein_forge::github::{
-    document::{Document, Hook},
+    document::{App, Document, Hook},
     request::Request,
 };
 use skein_lib::{Queue, bytes};
@@ -63,11 +64,33 @@ fn script() -> [Event; 12] {
     ]
 }
 fn at(phase: usize) -> Paste {
-    let mut machine = new();
+    at_with_given(&fixtures::given(), phase)
+}
+fn at_with_given(given: &Given, phase: usize) -> Paste {
+    let mut machine = Paste::new(given, NonZeroU64::new(APP).expect("id")).expect("given");
     for event in script().into_iter().take(phase) {
         go(&mut machine, event);
     }
     machine
+}
+fn lacking_app() -> App {
+    let mut app = fixtures::app();
+    app.permissions = Box::new([]);
+    app.events = Box::new([]);
+    app
+}
+fn kept(machine: &mut Paste, mut need: Need, lacking: Box<[checks::Lacking]>) {
+    for (item, value) in [
+        (Item::AppId, APP.to_le_bytes().as_slice()),
+        (Item::AppSlug, b"kit-app"),
+        (Item::AppKey, fixtures::DER),
+        (Item::User, BOT.to_le_bytes().as_slice()),
+    ] {
+        assert_eq!(need, Need::Write { item, bytes: secret(value) });
+        need = go(machine, Event::Written);
+    }
+    assert_eq!(need, Need::Done(Outcome::Lacking { lacking }));
+    silent(machine);
 }
 fn silent(machine: &mut Paste) {
     for event in
@@ -130,35 +153,31 @@ fn a_paste_with_another_kept_bot_stops_other_user_before_mutation() {
 #[test]
 fn paste_repairs_the_hook_and_reports_lacking_access() {
     let mut machine = at(4);
-    let mut app = fixtures::app();
-    app.permissions = Box::new([]);
-    app.events = Box::new([]);
+    let app = lacking_app();
     let lacking = checks::lacks(&app);
     go(&mut machine, document(Document::App(app)));
     assert_eq!(go(&mut machine, document(Document::BotUser(BOT))), send(Request::HookConfig));
     assert_eq!(go(&mut machine, hook(b"wrong")), send(Request::SetHook { url: URL.into() }));
-    go(&mut machine, hook(URL));
-    for _ in 0_u8..3 {
-        go(&mut machine, Event::Written);
-    }
-    assert_eq!(go(&mut machine, Event::Written), Need::Done(Outcome::Lacking { lacking }));
-    silent(&mut machine);
+    let need = go(&mut machine, hook(URL));
+    kept(&mut machine, need, lacking);
 }
 #[test]
 fn paste_keeps_four_items_before_done_and_never_writes_pasted() {
     let mut machine = at(6);
-    let mut need = go(&mut machine, hook(URL)); // Matching hook requires no PATCH.
-    for (item, value) in [
-        (Item::AppId, APP.to_le_bytes().as_slice()),
-        (Item::AppSlug, b"kit-app"),
-        (Item::AppKey, fixtures::DER),
-        (Item::User, BOT.to_le_bytes().as_slice()),
-    ] {
-        assert_eq!(need, Need::Write { item, bytes: secret(value) });
-        need = go(&mut machine, Event::Written);
-    }
-    assert_eq!(need, Need::Done(Outcome::Lacking { lacking: Box::new([]) }));
-    silent(&mut machine);
+    let need = go(&mut machine, hook(URL)); // Matching hook requires no PATCH.
+    kept(&mut machine, need, Box::new([]));
+}
+#[test]
+fn read_only_paste_keeps_items_without_repairing_the_hook() {
+    let mut given = fixtures::given();
+    given.read_only = true;
+    let mut machine = at_with_given(&given, 4);
+    let app = lacking_app();
+    let lacking = checks::lacks(&app);
+    go(&mut machine, document(Document::App(app)));
+    assert_eq!(go(&mut machine, document(Document::BotUser(BOT))), send(Request::HookConfig));
+    let need = go(&mut machine, hook(b"https://elsewhere.test/"));
+    kept(&mut machine, need, lacking);
 }
 #[test]
 fn an_unsigned_refused_or_missing_paste_names_its_step() {

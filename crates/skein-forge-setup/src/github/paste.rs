@@ -174,7 +174,12 @@ impl Paste {
                         return self.stop(&slug, Why::OtherUser);
                     }
                     let checked = Checked { key, slug, bot: bot.get(), lacking };
-                    let child = Hook::new(self.given.forge, Kept::new(self.app, checked.key.clone()), &checked.slug);
+                    let child = Hook::new(
+                        self.given.forge,
+                        Kept::new(self.app, checked.key.clone()),
+                        &checked.slug,
+                        !self.given.read_only,
+                    );
                     self.hook(child, checked, Event::Begin)
                 }
                 Err(why) => self.stop(&slug, why),

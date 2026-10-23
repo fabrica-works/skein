@@ -287,6 +287,25 @@ fn a_crowded_sweep_with_no_stray_ends_crowded_at_once() {
 }
 
 #[test]
+fn a_read_only_sweep_leaves_strays_and_ends_crowded() {
+    for pages in [1, PAGES] {
+        let mut given = given();
+        given.read_only = true;
+        given.limits.pages = pages;
+        let mut machine = new(&given, &[1, 9]);
+        assert_eq!(go(&mut machine, Event::Begin), page(1));
+        for number in 1..pages {
+            assert_eq!(
+                go(&mut machine, rows(&[row(u64::from(number), Wall::EPOCH, false)])),
+                page(number.checked_add(1).expect("small page"))
+            );
+        }
+        assert_eq!(go(&mut machine, rows(&[row(7, Wall::EPOCH, true)])), listing_failure(Why::Crowded));
+        silent(&mut machine);
+    }
+}
+
+#[test]
 fn a_failed_delete_at_the_bound_names_its_installation() {
     for (reply, expected) in [
         (Reply::Status(403), failure(Stage::Installation, b"12345", Why::Refused(403))),

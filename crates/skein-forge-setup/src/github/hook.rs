@@ -30,13 +30,14 @@ pub(crate) enum Progress {
 pub(crate) struct Hook {
     forge: u16,
     slug: Box<[u8]>,
+    repair: bool,
     state: State,
 }
 impl Hook {
     /// Takes a slug already admitted by `item::app_slug`. The parent's admitted
     /// name bound bounds both the subject and the measured hook URL (5.5).
-    pub(crate) fn new(forge: u16, kept: Kept, slug: &[u8]) -> Self {
-        Self { forge, slug: bytes::copy_of(slug), state: State::Begin(kept) }
+    pub(crate) fn new(forge: u16, kept: Kept, slug: &[u8], repair: bool) -> Self {
+        Self { forge, slug: bytes::copy_of(slug), repair, state: State::Begin(kept) }
     }
     fn stop(&self, why: Why) -> Progress {
         let subject = if why == Why::KeyForm { b"key" } else { self.slug.as_ref() };
@@ -84,7 +85,7 @@ pub(crate) fn step(machine: &mut Hook, event: Event, out: &mut Queue<Progress>) 
         },
         State::Read { kept, url } => match config(event) {
             Ok(config) => {
-                if config.url == url {
+                if config.url == url || !machine.repair {
                     Progress::Complete
                 } else {
                     let auth = kept.auth();

@@ -49,6 +49,7 @@ pub(crate) enum Progress {
 #[derive(Debug)]
 pub(crate) struct Sweep {
     forge: u16,
+    read_only: bool,
     pages: u32,
     installations: u32,
     life: Duration,
@@ -60,6 +61,7 @@ impl Sweep {
     pub(crate) fn new(given: &Given, kept: Kept, accepted: Box<[u64]>, wall: Wall) -> Self {
         Self {
             forge: given.forge,
+            read_only: given.read_only,
             pages: given.limits.pages,
             installations: given.limits.installations,
             life: given.limits.state_life,
@@ -111,7 +113,7 @@ impl Sweep {
                 if read.live.insert(row.id).is_err() {
                     return self.stop(b"installations", Why::Unexpected);
                 }
-            } else {
+            } else if !self.read_only {
                 let age = self.wall.as_nanos().checked_sub(row.created.as_nanos());
                 if let Some(age) = age
                     && age > self.life.as_nanos()

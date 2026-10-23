@@ -5,6 +5,8 @@ use alloc::boxed::Box;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Given {
     pub forge: u16,
+    /// The App, its hook and its installations are another's: the plans change none of them (forge-setup.md, 5.10).
+    pub read_only: bool,
     /// Names the App: `<word>-<six hex>`.
     pub word: Box<[u8]>,
     /// GitHub's web origin, no trailing '/'.

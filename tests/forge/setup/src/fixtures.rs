@@ -234,6 +234,7 @@ pub fn github_given() -> skein_forge_setup::github::given::Given {
     use skein_forge_setup::github::{given::Given, limits::Limits};
     Given {
         forge: 4,
+        read_only: false,
         word: b"kit".as_slice().into(),
         web: b"https://github.test".as_slice().into(),
         url: b"https://kit.test/".as_slice().into(),

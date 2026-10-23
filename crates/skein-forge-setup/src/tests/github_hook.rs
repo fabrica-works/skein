@@ -22,7 +22,10 @@ const WRONG: &[u8] = b"https://elsewhere.test/";
 const KEY: &[u8] = b"sentinel-hook-app-key";
 
 fn new(slug: &[u8]) -> Hook {
-    Hook::new(fixtures::given().forge, Kept::new(NonZeroU64::new(APP).expect("nonzero App"), secret(KEY)), slug)
+    with_repair(slug, true)
+}
+fn with_repair(slug: &[u8], repair: bool) -> Hook {
+    Hook::new(fixtures::given().forge, Kept::new(NonZeroU64::new(APP).expect("nonzero App"), secret(KEY)), slug, repair)
 }
 fn config(url: &[u8]) -> Event {
     Event::Reply(Reply::GithubDocument(Document::HookConfig(Config { url: url.into() })))
@@ -73,6 +76,16 @@ fn a_correct_hook_is_read_without_a_patch() {
     assert_eq!(go(&mut machine, Event::Begin), send(Request::HookConfig));
     assert_eq!(go(&mut machine, config(URL)), Progress::Complete);
     silent(&mut machine);
+}
+
+#[test]
+fn a_read_only_hook_completes_whatever_its_url() {
+    for url in [URL, WRONG, b""] {
+        let mut machine = with_repair(SLUG, false);
+        assert_eq!(go(&mut machine, Event::Begin), send(Request::HookConfig));
+        assert_eq!(go(&mut machine, config(url)), Progress::Complete);
+        silent(&mut machine);
+    }
 }
 
 #[test]

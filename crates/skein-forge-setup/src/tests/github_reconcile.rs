@@ -78,12 +78,15 @@ fn silent(machine: &mut Reconcile) {
     }
 }
 fn at(phase: usize) -> Reconcile {
-    let mut machine = new();
+    at_with_given(&fixtures::given(), ACCEPTED, phase)
+}
+fn at_with_given(given: &Given, accepted: &[u64], phase: usize) -> Reconcile {
+    let mut machine = Reconcile::new(given, NOW).expect("checked given");
     for event in [
         Event::Begin,
         Event::Read(Some(secret(&APP.to_le_bytes()))),
         Event::Read(Some(secret(fixtures::DER))),
-        Event::Read(Some(item::accepted_item(ACCEPTED))),
+        Event::Read(Some(item::accepted_item(accepted))),
         document(fixtures::app()),
         hook(b"https://wrong.invalid/"),
         hook(URL),
@@ -98,6 +101,33 @@ fn at(phase: usize) -> Reconcile {
         go(&mut machine, event);
     }
     machine
+}
+fn read_only_listing(accepted: &[u64]) -> (Reconcile, Need) {
+    let mut given = fixtures::given();
+    given.read_only = true;
+    let mut machine = at_with_given(&given, accepted, 4);
+    let mut app = fixtures::app();
+    app.permissions = Box::new([]);
+    assert_eq!(go(&mut machine, document(app)), send(Request::HookConfig));
+    assert_eq!(go(&mut machine, hook(b"https://elsewhere.test/")), send(Request::Installations { page: 1 }));
+    // Id 3 is older than state_life; accepted id 9 is absent.
+    assert_eq!(go(&mut machine, rows(&[3, 1])), send(Request::Installations { page: 2 }));
+    let need = go(&mut machine, rows(&[]));
+    (machine, need)
+}
+
+#[test]
+fn read_only_reconcile_prunes_once_and_leaves_the_app_untouched() {
+    let mut app = fixtures::app();
+    app.permissions = Box::new([]);
+    let expected = done(crate::github::checks::lacks(&app));
+    let (mut first, need) = read_only_listing(ACCEPTED);
+    assert_eq!(need, Need::Write { item: Item::Accepted, bytes: item::accepted_item(&[1]) });
+    assert_eq!(go(&mut first, Event::Written), expected);
+    silent(&mut first);
+    let (mut second, need) = read_only_listing(&[1]);
+    assert_eq!(need, expected);
+    silent(&mut second);
 }
 
 #[test]

@@ -88,7 +88,11 @@ fn zero_limit(value: &mut Limits, place: Place) {
 
 #[test]
 fn a_well_formed_github_given_is_admitted() {
-    assert_eq!(given::check(&fixtures::given()), Ok(()));
+    for read_only in [false, true] {
+        let mut given = fixtures::given();
+        given.read_only = read_only;
+        assert_eq!(given::check(&given), Ok(()));
+    }
     assert_eq!(limits::check(&fixtures::limits()), Ok(()));
 }
 #[test]

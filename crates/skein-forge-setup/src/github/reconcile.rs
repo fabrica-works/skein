@@ -102,7 +102,7 @@ impl Reconcile {
             return self.stop(&app::decimal(kept.id()), Why::Unexpected);
         }
         let lacking = checks::lacks(&app);
-        let child = Hook::new(self.given.forge, kept.clone(), &app.slug);
+        let child = Hook::new(self.given.forge, kept.clone(), &app.slug, !self.given.read_only);
         let checked = Checked { kept, accepted, slug: app.slug, lacking };
         self.hook(child, checked, Event::Begin)
     }
