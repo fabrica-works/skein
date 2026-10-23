@@ -50,6 +50,19 @@ pub(super) fn change(fd: i32, mut change: libc::kevent) -> Result<(), i32> {
         if receipt.data == 0 { Ok(()) } else { Err(i32::try_from(receipt.data).unwrap_or(libc::EIO)) }
     })
 }
+/// The longest timeout kevent takes: XNU refuses one past `INT32_MAX`
+/// seconds with EINVAL (`timespec_is_valid`), where Linux's epoll takes any.
+const LONGEST_WAIT_SECONDS: u64 = 0x7fff_ffff;
+/// A relative timeout of `nanos`, cut to the longest kevent takes: some 68
+/// years, so a wait woken early by the cut finds its deadline unpassed and
+/// waits again.
+fn timeout(nanos: u64) -> libc::timespec {
+    libc::timespec {
+        tv_sec: libc::time_t::try_from((nanos / 1_000_000_000).min(LONGEST_WAIT_SECONDS))
+            .expect("the longest wait fits time_t"),
+        tv_nsec: libc::c_long::try_from(nanos % 1_000_000_000).expect("subsecond fits c_long"),
+    }
+}
 #[derive(Debug)]
 pub(crate) struct Poller {
     fd: OwnedFd,
@@ -103,10 +116,7 @@ impl Poller {
         Ok(())
     }
     pub(crate) fn wait(&mut self, nanos: Option<u64>) -> Result<usize, i32> {
-        let timeout = nanos.map(|nanos| libc::timespec {
-            tv_sec: libc::time_t::try_from(nanos / 1_000_000_000).expect("nanosecond seconds fit time_t"),
-            tv_nsec: libc::c_long::try_from(nanos % 1_000_000_000).expect("subsecond fits c_long"),
-        });
+        let timeout = nanos.map(timeout);
         // SAFETY: the event buffer has the supplied writable capacity and
         // the optional relative timeout lives until return; no changes supplied.
         let count = unsafe {
@@ -129,5 +139,20 @@ impl Poller {
             read: both || raw.filter == libc::EVFILT_READ,
             write: both || raw.filter == libc::EVFILT_WRITE,
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::{LONGEST_WAIT_SECONDS, timeout};
+
+    #[test]
+    fn a_timeout_keeps_its_nanoseconds_up_to_the_longest_kevent_takes() {
+        let seconds = |time: libc::timespec| (time.tv_sec, time.tv_nsec);
+        assert_eq!(seconds(timeout(0)), (0, 0));
+        assert_eq!(seconds(timeout(1_500_000_000)), (1, 500_000_000));
+        let longest = libc::time_t::try_from(LONGEST_WAIT_SECONDS).expect("fits time_t");
+        assert_eq!(seconds(timeout(LONGEST_WAIT_SECONDS * 1_000_000_000 + 7)), (longest, 7));
+        assert_eq!(seconds(timeout(u64::MAX)), (longest, 709_551_615));
+        assert_eq!(i64::from(i32::MAX), longest, "XNU's timespec_is_valid takes up to INT32_MAX seconds");
     }
 }

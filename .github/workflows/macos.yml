@@ -49,9 +49,10 @@ jobs:
           persist-credentials: false
 
       # Each check runs through $RUNNER_TEMP/run, which keeps its output and,
-      # when it fails, gives its failing tests or errors and the output's
-      # tail as error annotations, so that a failure reads through the
-      # public API without the logs.
+      # when it fails, gives as error annotations its failing tests, each
+      # with its panic, error or signal, or the compiler's messages, and the
+      # output's end, so that a failure reads through the public API without
+      # the logs, which need a token.
       # Every check runs once the tools are in, whatever an earlier one
       # gave, and each suite runs to its end, so that one run shows every
       # failure.
@@ -61,23 +62,89 @@ jobs:
           cat >"$RUNNER_TEMP/annotate.py" <<'EOF'
           import re, sys
           name, path = sys.argv[1:]
-          text = open(path, encoding="utf-8", errors="replace").read()
-          lines = text.splitlines()
+          lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+          # GitHub keeps 4096 characters of each annotation and ten of a step's errors.
+          SIZE, MOST = 4000, 9
           def escape(s):
               return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
           def error(title, body):
               title = escape(title).replace(":", "%3A").replace(",", "%2C")
-              print(f"::error title={title}::{escape(body)}")
-          failed = [l.strip() for l in lines
-                    if re.match(r"\s+(FAIL|SIGSEGV|SIGABRT|SIGKILL|TIMEOUT|LEAK-FAIL)\s+\[", l)]
-          headlines = [l for l in lines if re.match(r"(error(\[E\d+\])?|warning): ", l)]
-          found = failed or headlines
-          error(f"{name}: {len(found)} failed", "\n".join(dict.fromkeys(found))[-30000:] or "no test or error line found")
-          tail = "\n".join(lines[-1200:])
-          size = 30000
-          chunks = [tail[i:i + size] for i in range(0, len(tail), size)][-4:]
-          for i, chunk in enumerate(chunks, 1):
-              error(f"{name}: output's tail {i}/{len(chunks)}", chunk)
+              print(f"::error title={title}::{escape(body[:SIZE])}")
+          def chunks(entries):
+              out, chunk = [], ""
+              for entry in entries:
+                  if chunk and len(chunk) + len(entry) + 1 > SIZE:
+                      out.append(chunk)
+                      chunk = ""
+                  chunk += entry[:SIZE] + "\n"
+              return out + [chunk] if chunk else out
+          STATUS = re.compile(r"\s+([A-Z][A-Z-]+)\s+\[\s*[\d.]+s\]\s+(?:\(\s*\d+/\d+\)\s+)?(\S+)\s+(.+)$")
+          FAILED = {"FAIL", "SIGSEGV", "SIGABRT", "SIGKILL", "SIGBUS", "SIGTERM", "TIMEOUT", "LEAK-FAIL", "ABORT"}
+          BOILER = re.compile(r"(running \d+ tests?|test .* \.\.\. FAILED|failures:|test result: .*|note: run with .*|stdout ─+|stderr ─+|\S+)$")
+          # Each failed test with what its output says of why: the panic and the lines
+          # after it, an Error or a signal, or else the output's last lines.
+          failures, current, end = {}, None, len(lines)
+          for number, line in enumerate(lines):
+              match = STATUS.match(line)
+              if line.startswith("─") or line.strip().startswith("Summary ["):
+                  current = None
+                  if line.strip().startswith("Summary ["):
+                      end = number
+                      break
+                  continue
+              if match:
+                  current = None
+                  if match.group(1) in FAILED:
+                      key = f"{match.group(1)} {match.group(2)} {match.group(3)}"
+                      current = failures.setdefault(key, [])
+                  continue
+              if current is not None:
+                  current.append(line.strip())
+          def why(block):
+              kept, taking = [], 0
+              for line in block:
+                  if "panicked at" in line or line.startswith(("Error:", "(test ")) or "error:" in line.lower()[:12]:
+                      taking = 8
+                  if taking and line and not line.startswith("note: run with"):
+                      kept.append(line)
+                      taking -= 1
+                  elif not line:
+                      taking = 0
+              if not kept:
+                  kept = [l for l in block if l and not BOILER.fullmatch(l)][-6:]
+              kept = [l[:300] for l in kept]
+              # A panic quoted inside a longer line, as a child's report carries it.
+              for line in block:
+                  for match in re.finditer("panicked at", line):
+                      if match.start() > 40:
+                          kept.append("... " + line[match.start():match.start() + 300])
+              return "\n".join(dict.fromkeys(kept))[:1200]
+          if failures:
+              names = {}
+              for key in failures:
+                  status, binary, test = key.split(" ", 2)
+                  names.setdefault(binary, []).append(test if status == "FAIL" else f"{test} ({status})")
+              listing = [f"{binary}: " + ", ".join(tests) for binary, tests in names.items()]
+              reasons = {}
+              for key, block in failures.items():
+                  reasons.setdefault(why(block), []).append(key)
+              details = [("\n".join(keys) if len(keys) <= 3 else "\n".join(keys[:3]) + f"\n... and {len(keys) - 3} more")
+                         + "\n  " + reason.replace("\n", "\n  ") for reason, keys in reasons.items()]
+              found = chunks(listing)[:2] + chunks(details)
+              title = f"{name}: {len(failures)} failed"
+          else:
+              found = []
+              for number, line in enumerate(lines):
+                  if re.match(r"(error(\[E\d+\])?|warning): ", line):
+                      found.append("\n".join(lines[number:number + 4]))
+              title = f"{name}: {len(dict.fromkeys(found))} compiler messages" if found else f"{name}: failed"
+              found = chunks(dict.fromkeys(found))
+          # The summary's counts, and what the run said of its budget and its end.
+          said = [l.strip() for l in lines[:end] if re.search(r"timeout|timed out|cancell", l, re.I) and not STATUS.match(l)]
+          tail = "\n".join(lines[end:end + 1] + said[:10] + [l for l in lines[end + 1:] if l.strip() and not STATUS.match(l)])[-SIZE:]
+          for index, body in enumerate(found[:MOST - 1], 1):
+              error(f"{title} {index}/{min(len(found), MOST - 1)}", body)
+          error(f"{name}: the output's end", tail or "\n".join(lines[-40:]))
           EOF
           cat >"$RUNNER_TEMP/run" <<'EOF'
           #!/bin/bash

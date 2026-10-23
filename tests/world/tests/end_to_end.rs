@@ -149,11 +149,13 @@ fn observations(outcome: &real::Outcome<Process>) -> (&Binary, &Script) {
     (child, person)
 }
 
+// The directory is compared as the system resolves it: macOS's /tmp is a link
+// to /private/tmp, and the child's shell names its directory without links.
 #[test]
 fn binary_pipes_preserve_arguments_environment_directory_stderr_and_exit() {
     let outcome = run(
         command(
-            "test \"$PWD\" = /tmp || exit 90; test \"$1:$KEY\" = argument:value || exit 91; read value; printf 'answer:%s' \"$value\"; printf 'diagnostic' >&2; exit 17",
+            "test \"$(pwd -P)\" = \"$(cd /tmp && pwd -P)\" || exit 90; test \"$1:$KEY\" = argument:value || exit 91; read value; printf 'answer:%s' \"$value\"; printf 'diagnostic' >&2; exit 17",
         ),
         Mode::Pipes,
         &[Act::Write(0, b"hello\n"), Act::Close(0), Act::Read(0), Act::Read(0), Act::Read(0)],
