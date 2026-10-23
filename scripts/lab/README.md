@@ -529,7 +529,7 @@ key's configuration and the provisioning probe.
 | MCP servers and tools | all `mcpServerStatus/list` pages: only connected `lab`, exact tool names, no tools error |
 | resources | MCP resources and templates empty |
 | prompts | unobserved: no catalog observer |
-| apps | `app/installed.apps` empty |
+| apps | every `app/installed.apps` entry has `enabled` and `callable` both `false` (none, or only disabled ones); the entries are kept |
 | plugins | installed catalog empty and no load errors; model-facing capabilities unobserved |
 | hooks and skills | lists for the working directory empty, no warnings or errors |
 | configuration layers | run user layer plus system layers with empty config |

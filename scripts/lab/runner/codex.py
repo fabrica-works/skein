@@ -110,7 +110,9 @@ def observe(responses: dict, expected: dict | None = None) -> dict:
     row('resources', pages, valid and bool(entries) and all(type(e) is dict
         and e.get('resources') == [] and e.get('resourceTemplates') == [] for e in entries))
     apps, plugins = _response(responses, 'app/installed'), _response(responses, 'plugin/list')
-    row('apps', apps, apps.get('apps') == [])
+    # An app both disabled and not callable offers the model nothing; the entries stay as evidence.
+    row('apps', apps, type(apps.get('apps')) is list and all(
+        type(a) is dict and a.get('enabled') is False and a.get('callable') is False for a in apps['apps']))
     # The catalog is evidence of installed plugins, never a model-facing inventory.
     result['plugins']['evidence'] = dict(observer=_evidence(plugins), limitation='model-facing capabilities unobserved')
     if (plugins.get('marketplaces') != [] or plugins.get('marketplaceLoadErrors') != []):

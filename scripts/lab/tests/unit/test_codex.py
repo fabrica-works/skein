@@ -100,6 +100,21 @@ class Codex(unittest.TestCase):
             self.assertEqual(row['state'], 'unobserved' if name in ('prompts', 'plugins', 'built_in_tools') else 'observed', name)
         self.assertEqual(codex.observe(dict(expected=expected, **inventory())), observed)
 
+    def test_apps_pass_only_when_none_is_enabled_or_callable(self):
+        expected = codex.expected_inventory(['echo'], '/lab/codex/config.toml')
+        off = dict(id='connector_a', runtimeName='A', enabled=False, callable=False)
+        vectors = [([], 'observed'), ([off, {**off, 'id': 'connector_b'}], 'observed'),
+                   ([off, {**off, 'enabled': True}], 'mismatch'), ([{**off, 'callable': True}], 'mismatch'),
+                   ([{k: v for k, v in off.items() if k != 'callable'}], 'mismatch'),
+                   ([{**off, 'enabled': 0}], 'mismatch'), (['app'], 'mismatch'), (None, 'mismatch')]
+        for apps, state in vectors:
+            values = inventory()
+            values['app/installed'] = dict(apps=apps)
+            with self.subTest(apps=apps):
+                row = codex.observe(values, expected)['apps']
+                self.assertEqual(row['state'], state)
+                self.assertEqual(row['evidence'], dict(apps=apps))
+
     def test_each_observer_detects_missing_or_mismatched_fields(self):
         expected = codex.expected_inventory(['echo'], '/lab/codex/config.toml')
         vectors = [
