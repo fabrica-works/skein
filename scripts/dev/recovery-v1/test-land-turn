@@ -339,10 +339,10 @@ class TurnLab(Lab):
             self.clones[tag] = clone
         self.transports = []
 
-    def start_land(self, tag='a', extra=(), environment=None):
+    def start_land(self, tag='a', extra=(), environment=None, cwd=None):
         out = (self.path / (tag + '.land.txt')).open('w')
         process = subprocess.Popen([str(KIT / 'land'), '--gate', self.command, *extra],
-            cwd=self.clones[tag], env=environment or self.env, stdin=subprocess.DEVNULL,
+            cwd=cwd or self.clones[tag], env=environment or self.env, stdin=subprocess.DEVNULL,
             stdout=out, stderr=subprocess.STDOUT, close_fds=True)
         out.close()
         self.clients.append(process)
@@ -396,6 +396,25 @@ def serialization(lab):
     receipts = list((lab.base / 'receipts').glob('*.json'))
     assert len(receipts) == 4, 'both prebuilds and both gates must run'
     return {'layer': 'actual-land', 'serialized_before_hostlock_and_heavy': True, 'receipts': len(receipts)}
+
+
+def invocation_lock(lab):
+    rows = []
+    wrong = lab.path / 'locks/follow.lock'
+    wrong.parent.mkdir()
+    for tag, optin in (('a', '1'), ('b', '0')):
+        entry = lab.clones[tag] / 'invocation'
+        entry.mkdir()
+        expected = lab.path / tag / 'locks/follow.lock'
+        expected.parent.mkdir()
+        environment = dict(lab.env, LAND_TURN=optin, LAND_LOCK='../../locks/follow.lock')
+        client = lab.start_land(tag, environment=environment, cwd=entry)
+        lab.finish(client, tag)
+        assert expected.is_file(), 'relative LAND_LOCK changed after advisory re-entry'
+        assert not wrong.exists(), 'relative LAND_LOCK resolved from repository root'
+        rows.append({'optin': optin, 'caller_directory': str(entry),
+                     'resolved_lock': str(expected), 'ordinary_land_completed': True})
+    return {'layer': 'actual-land', 'relative_lock_preserved': True, 'callers': rows}
 
 
 def docs_mockups(lab, rejected=None):
@@ -676,7 +695,7 @@ def main():
     root = opts.evidence.resolve()
     root.mkdir(parents=True, exist_ok=False)
     results = []
-    cases = [('serialization', serialization), ('stale', stale), ('unavailable', unavailable),
+    cases = [('serialization', serialization), ('invocation-lock', invocation_lock), ('stale', stale), ('unavailable', unavailable),
              ('local-unavailable', lambda lab: unavailable(lab, True)),
              ('failed-gate', failure), ('after-landing', after_landing), ('terminated-client', terminated),
              ('missing-local-helper', missing_local_helper)]
