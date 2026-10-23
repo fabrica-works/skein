@@ -442,6 +442,15 @@ domain, and holds no clock of its own.
   layer's own bounded store, not the domain's (forge-setup.md, section 4).
   A repository read by id answers the domain's settings when the host
   lends the domain.
+- **A first repository is made in the domain** (forge-setup.md, 4.9).
+  The setup's `CreateRepository` in an org the setup store keeps makes
+  a domain repository owned by that org, private, whose `main` is one
+  commit holding `README.md`, `# NAME`; a name the domain has already is
+  `409`. `CreateFile` on a domain repository commits the file on its
+  branch, its author and committer the request's, and answers its
+  commit; a path already there is `422`. Its git serves both commits,
+  and its branch, raw and repository reads find them, as they find a
+  seeded repository's.
 - **A setup grant reaches the domain.** A collaborator grant made through
   the setup routes is kept in the setup store, and the domain grants the
   account's user number (section 5) the same permission on the

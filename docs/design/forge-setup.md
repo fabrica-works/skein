@@ -1,6 +1,6 @@
 # Setting up a forge
 
-Provisional, 2026-10-20. `skein-forge-setup` makes a code forge ready
+Provisional, 2026-10-20, revised 2026-10-23. `skein-forge-setup` makes a code forge ready
 for a service. It ends with an access: the identity the service acts as,
 its credentials, the repositories it may write and the hooks that
 deliver to its listener. Each making is a plan, a step machine that says
@@ -151,7 +151,8 @@ failures.
 
   The first owner's are temper's: the word its own name, the tokens
   `<word>-api` and `<word>-git`, the admin's name `<word>-admin`, and 8
-  orgs, 120 s, 100 ms and 5 s.
+  orgs, 120 s, 100 ms and 5 s; for `Create` (4.9), 1 file of at most
+  4 KiB.
 - **Asked of its host, as needs,** when a step reaches them: the admin's
   token, the API and git tokens, the bot's id as last kept, and the
   webhooks' secret. These are the items (6.4). Each is named by what it
@@ -268,8 +269,16 @@ writes the README. The answer is `Document::CreatedRepository`, with
 `id`, `full_name`, `default_branch`, `clone_url` and `ssh_url`, sufficient
 to adopt and clone the repository. The existing repository-read document
 carries settings rather than clone URLs, so creation has its own document.
-The owner grants the bot access with `AddCollaborator` and adopts the
-repository; a worker pushes the starter workflow through git.
+`Create` (4.9) sends it, grants the bot and puts the owner's files on
+`main`, and the owner adopts the repository it names.
+
+`CreateFile { owner, name, path, branch, content, message, author }`
+puts one file on a branch through Forgejo's contents API: `POST
+/api/v1/repos/{owner}/{name}/contents/{path}`, the path's segments each
+encoded, with `content` in base64, the branch, the message, and the
+author as both author and committer (a name and an email). It answers
+`201` with `Document::CreatedFile`, the new commit's id. A file already
+there is `422`, a missing repository or branch `404`.
 
 As with `CreateOrg`, refusal statuses are preserved for the caller:
 `409` names an existing repository, `422` an invalid name, `404` a missing
@@ -289,7 +298,8 @@ failures. The creation codec adds no retry or transport policy.
   `Unexpected`) and lowered to the host's `inner` when larger, a page
   shorter than that cap being the last; the run
   within `deadline`. The limits are `orgs`, `repositories`, `reachable`,
-  `deadline`, `backoff` and `backoff_max`, each at least 1, with
+  `files`, `file_bytes`, `deadline`, `backoff` and `backoff_max`, each
+  at least 1, with
   `backoff <= backoff_max < deadline`; the crate names the pair that
   breaks it.
 - **It waits for the forge.** The host makes the first request again on
@@ -299,11 +309,12 @@ failures. The creation codec adds no retry or transport policy.
   answer a `Down` stops the machine.
 - **A failure** is `{forge, step, subject, why}`, and shows no secret
   (lib.md, section 6). The step is `Admin`, `Bot` (its id included),
-  `Token`, `Org`, `Repository` (its collaborator and hook), and for
+  `Token`, `Org`, `Repository` (its collaborator and hook), `File`
+  (4.9), and for
   GitHub's plans `App`, `Installation` (a picker's too, 4.8) and `State`
   (section 5). The subject is the admin's given name, the bot's login,
   the token's name (`api` or `git` when connected, 4.6), the org's name,
-  the repository's path, or its id in decimal before its path is read,
+  the repository's path, a file's path, or its id in decimal before its path is read,
   the App's slug or id, an installation's id, or the plan whose state it
   is. The why is `Missing`, `Refused(status)`, `NotAdmin`, `BotIsAdmin`,
   `Unmarked`, `OtherUser`, `OtherApp`, `KeyForm`, `Unknown`, `Busy`,
@@ -438,6 +449,54 @@ Every picker's read is this plan's; the forge client has none.
   the next listing finds it.
 - **Bounded** by `reachable`, at least 1, the rows of one page, held in
   memory with the outcome.
+
+### 4.9 A first repository, made
+
+`Create { forge, org, repository, files }` makes a repository for the
+person on a managed or owned Forgejo, ready for the service: its org
+when missing, the repository with a README, the bot's access, and the
+files the owner gives, on `main`. The owner runs it by the admin's
+token, after reconcile (4.3). Each step reads first and writes only
+what is missing, so a run cut short, run again whole, finishes what the
+last one left, and a second run writes nothing.
+
+1. **The admin's token,** as step 1 (4.3).
+2. **The org,** `GET /api/v1/orgs/{org}`: absent (404), it is made as
+   step 5 makes one (4.3), private and owned by the orgs' owner (4.1).
+   With no owner given, as managed has none, an absent org stops the
+   run `Missing` at `Org`. A present org is left as it is, whoever
+   owns it.
+3. **The repository,** `GET /api/v1/repos/{org}/{name}`: absent, it is
+   made, `CreateRepository { org, name, private: true }` (4.3), which
+   writes a README on `main`. A `409` there, the repository made
+   between the read and the write, reads it again. A present one is
+   left as it is. Either way the plan holds its id and its default
+   branch. A failure stops at `Repository`, the subject `org/name`.
+4. **The bot's access,** as 4.5's steps 3 and 4: the bot a collaborator
+   with `write`, and its hook when the listener is on loopback.
+5. **Each file,** in the order given, on the default branch: its head
+   read once (`Branch`), then the file at that head (`Raw`); absent
+   (404), it is put there, `CreateFile` (4.3),
+   its message `Add <path>`, its author the bot by its login and email
+   (4.1), so the history names the service that wrote it. A file
+   present is left as it is, whatever it holds: after its first commit,
+   it is the person's. A failure stops at `File`, the subject the
+   path.
+6. **The outcome,** `Done(Created { id })`: the repository's id, which
+   the owner adopts (4.5).
+
+- **The files** are the owner's: a path and its bytes each, at most
+  `files` of them, each path a relative one of at most 255 bytes whose
+  segments are neither empty, `.` nor `..`, each content at most
+  `file_bytes`. The org and the name are Forgejo names, at most
+  `name_bytes` each. `given::check_create` checks a plan against them
+  and the owner checks first; a plan that fails it is the owner's bug,
+  which the host asserts, as for `Reconcile`'s `adopted` (6.3).
+- **Actions** are the forge's, not the plan's: a repository made on a
+  Forgejo whose Actions are enabled has them, and runs a workflow
+  among its files from that file's push (section 8). The plan sends no
+  setting.
+- **A writing run,** one per forge at once (6.3).
 
 ## 5. GitHub's plans
 
@@ -718,7 +777,7 @@ end.
 
 - **A run** is the owner's number for one plan:
   `Reconcile { forge, adopted }`, `Adopt { forge, repository }`,
-  `Check { forge }`, `TakeOver { forge, admin_token }`,
+  `Create { forge, org, repository, files }` (4.9), `Check { forge }`, `TakeOver { forge, admin_token }`,
   `Manifest { forge, target }`, `Convert { forge, code, state }`,
   `Install { forge }`, `Accept { forge, installation, state }`,
   `Reconcile { forge }` (GitHub's) or `Paste { forge, app }`, each of
@@ -787,7 +846,8 @@ The host's heap has a bound the owner admits before it starts
     list at `runs`, the plans' outgoing queue, and the states' table with
     each state's bytes (5.7);
   - **`runs` run slots,** each at the largest plan a configured forge may
-    run: Forgejo's reconcile, check, take-over, adoption or picker, bounded
+    run: Forgejo's reconcile, check, take-over, adoption, creation (its
+    files at `files` and `file_bytes`) or picker, bounded
     by its `Given`, or GitHub's, the per-run term of `github::worst_case`;
     with the run's record, its pending need, its send and the items it
     holds;
@@ -958,8 +1018,8 @@ pin (forge.md, section 4.3), and named by the fact's name.
   | `Org` | `read:organization` |
   | `CreateOrg` | `write:admin` |
   | `CreateRepository` | `write:organization` |
-  | `RepositoryById`, `Permission`, `RepoHooks`, `RepoSearch` | `read:repository` |
-  | `AddCollaborator`, `CreateRepoHook`, `EditRepoHook`, `DeleteRepoHook` | `write:repository` |
+  | `RepositoryById`, `Repository`, `Branch`, `Raw`, `Permission`, `RepoHooks`, `RepoSearch` | `read:repository` |
+  | `AddCollaborator`, `CreateRepoHook`, `EditRepoHook`, `DeleteRepoHook`, `CreateFile` | `write:repository` |
   | `ApiSettings` | none; the route also answers anonymously |
 
   The conformance runner's `--admin-scopes` mode records each grant and
@@ -967,8 +1027,20 @@ pin (forge.md, section 4.3), and named by the fact's name.
   every route; removing each category is refused at a request that needs
   it (`setup-admin-scopes-need-each-of-the-four-categories`). The fake enforces these scopes
   through its issued-token model; its configured tokens have unrestricted
-  scope. Repository creation is still outside the fake's state model:
-  a scoped call reaches its `501`, while a missing scope answers `403`.
+  scope.
+- **A first repository** (4.9): an admin's `CreateRepository` in a
+  person's private org answers 201 with a README commit on `main`; a
+  second answers 409; a repository made so on a Forgejo whose Actions
+  are enabled has them, with no setting sent; `CreateFile` answers 201
+  with its commit on the branch, whose head's raw read then finds it,
+  and 422 for a file already there; the raw read of a missing file is
+  404:
+  `setup-repository-made-in-an-org-is-201-with-a-readme-on-main`,
+  `setup-repository-made-again-is-409`,
+  `setup-repository-made-has-actions-when-the-forge-enables-them`,
+  `setup-file-put-is-201-and-read-back-on-its-branch`,
+  `setup-file-put-again-is-422`,
+  `setup-file-missing-reads-raw-404`.
 - **Orgs** (step 5): an org an admin makes for a user is private and
   takes `write:admin` alone; a missing org is a 404:
   `setup-org-made-for-a-user-by-an-admin-is-201-and-private`,
