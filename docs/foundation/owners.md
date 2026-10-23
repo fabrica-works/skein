@@ -5,14 +5,20 @@ Provisional, 2026-10-19, revised 2026-10-21. How a draft reaches
 part of it, that it takes there in a few milestones, each designed and
 then implemented.
 
-**What an owner reads:** its brief, this file, and section 1, "In one
-page", of [programming-model.md](programming-model.md) and
+**What an owner reads:** at its start, its whole brief, sections 1,
+3.1 and 5 of this file, and section 1, "In one page", of
+[programming-model.md](programming-model.md) and
 [testing-strategy.md](testing-strategy.md), the rules for the code's
-shape and its tests. That page is enough to start. A later section is
-read when the work touches it (a new protocol, a world's checks, a
-memory bound), and [notes.md](notes.md), the reasons and open questions
-behind the rules, when a rule's reason matters. The repository's
-`AGENTS.md` loads on its own.
+shape and its tests. That is enough to start. Each other section of
+this file is read before the work it governs: 3.2 and 3.3 before a
+design; 2 and 4.1 to 4.3 before starting a session or an agent; 4.4 and
+4.5 before landing or building; 4.6 before a QA pass; 6 before the
+closing note. A later section of the two rules is read when the work
+touches it (a new protocol, a world's checks, a memory bound), and
+[notes.md](notes.md), the reasons and open questions behind the rules,
+when a rule's reason matters. A read put off never puts off a rule: the
+brief's constraints, the security rules, the caps and the budgets bind
+from the start. The repository's `AGENTS.md` loads on its own.
 
 ## 1. In one page
 
