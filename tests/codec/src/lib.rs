@@ -26,3 +26,7 @@ pub mod secrets;
 #[rustfmt::skip]
 #[path = "every/v1.rs"]
 pub mod every;
+
+#[rustfmt::skip]
+#[path = "every/v2.rs"]
+pub mod every_v2;

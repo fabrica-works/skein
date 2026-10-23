@@ -59,8 +59,8 @@ mod tests {
                 count = count.checked_add(1).expect("golden count");
             }
         }
-        // Five generated families contribute 84, and the UI schema contributes 12.
-        assert_eq!(count, 96);
+        // Five generated families contribute 84, the UI schema contributes 12; every-v2 contributes 28.
+        assert_eq!(count, 124);
         assert_eq!(compared, 84);
     }
 }

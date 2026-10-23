@@ -7,7 +7,7 @@ mod tests {
 
     use skein_codegen::{generate, parse};
 
-    fn check(schema_path: &str, generated_path: &str) {
+    fn check(schema_path: &str, generated_path: &str, golden_directory: &str) {
         let source = fs::read_to_string(schema_path).expect("schema readable");
         let schema = parse(&source).expect("schema valid");
         let output = generate(&schema);
@@ -21,7 +21,7 @@ mod tests {
                 "run SKEIN_CODEGEN_WRITE=1 cargo nextest run -p skein-codec-tests --test drift"
             );
         }
-        let golden_directory = Path::new("golden/v1");
+        let golden_directory = Path::new(golden_directory);
         for golden in output.goldens {
             let path = golden_directory.join(golden.name);
             if write {
@@ -39,26 +39,31 @@ mod tests {
 
     #[test]
     fn every_schema_code_and_goldens_have_no_drift() {
-        check("schema/every-v1.schema", "src/every/v1.rs");
+        check("schema/every-v1.schema", "src/every/v1.rs", "golden/v1");
+    }
+
+    #[test]
+    fn every_v2_schema_code_and_goldens_have_no_drift() {
+        check("schema/every-v2.schema", "src/every/v2.rs", "golden/every-v2");
     }
 
     #[test]
     fn secret_schema_code_and_goldens_have_no_drift() {
-        check("schema/secrets-v1.schema", "src/secrets/v1.rs");
+        check("schema/secrets-v1.schema", "src/secrets/v1.rs", "golden/v1");
     }
 
     #[test]
     fn sample_schema_code_and_goldens_have_no_drift() {
-        check("schema/sample-v1.schema", "src/generated/v1.rs");
+        check("schema/sample-v1.schema", "src/generated/v1.rs", "golden/v1");
     }
 
     #[test]
     fn scalar_schema_code_and_goldens_have_no_drift() {
-        check("schema/scalars-v1.schema", "src/scalars/v1.rs");
+        check("schema/scalars-v1.schema", "src/scalars/v1.rs", "golden/v1");
     }
 
     #[test]
     fn lint_fixture_schema_code_and_goldens_have_no_drift() {
-        check("schema/lints-v1.schema", "src/lints/v1.rs");
+        check("schema/lints-v1.schema", "src/lints/v1.rs", "golden/v1");
     }
 }

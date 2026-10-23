@@ -1,0 +1,22 @@
+patch 1
+owner skein 1
+
+# every 1 to 2: every derived change, a written declaration (Shape) and a
+# written field (Every.score), for codec.md 11.8's story.
+family every 1 to 2
+versioned Blank
+rename Numbers.wait pause
+rename Strings Texts
+widen Texts.raw bytes 6 bytes 8
+add Light.off
+add Stamp.zone text 8 "utc"
+add Shape.blank
+drop Shape.dot
+written Shape
+widen Nest.grid list 2 list 2 u16 list 2 list 2 u32
+add Nest.label option text 8 some "nest"
+drop Nest.pairs
+wrap Every.light Light option Light
+add Every.score u32 written
+order Every numbers strings light shape stamp empty nest held items
+written Every.score
