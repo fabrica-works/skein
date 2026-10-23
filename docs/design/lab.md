@@ -936,6 +936,15 @@ documentation.
   closed, because calls inside it make no items: the audit and
   `driver_actions` would be blind to them. Admitting code mode is the
   user's call.
+- **Its built-in surface** comes from the pinned catalog and the
+  configuration, and is checked on them, since the host offers more
+  than the command tool by default. The driver-model entry must also
+  hold `multi_agent_version: null` (no collaboration tools),
+  `experimental_supported_tools: []` (no clock and no asynchronous
+  question) and `apply_patch_tool_type: null` (no patch tool); the
+  configuration turns the question tool off. The command tool's input
+  to a running command (`write_stdin`) stays, and its use is a command
+  execution.
 - **Three records of configuration:** the settings select the program,
   model and effort. The runner's version adapter derives the host's
   configuration and expected inventory from those settings and the
