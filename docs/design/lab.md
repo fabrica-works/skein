@@ -752,7 +752,9 @@ bubblewrap views for its tools. What it rests on is checked every run
 (the inventory below, the probe of 6.2), not assumed from the host's
 documentation.
 
-- **Codex,** `codex exec`, one per run, started in the drive phase. The
+- **Codex,** `codex app-server --stdio`, one host and one ephemeral
+  thread per run, started in the drive phase. The runner is its sole
+  client over stdio; no shared daemon owns any part of the run. The
   lab's settings name its program, model and effort; the key holds its
   version and digest, and its configuration (2.3).
 - **Three records of configuration:** the settings select the program,
@@ -766,9 +768,8 @@ documentation.
 - **Its prompt** is the runner's preamble (the tools, the boundary, the
   report's shape), then the experiment's charter, verbatim.
 - **Its configuration is the run's alone,** and is in the key. The
-  user's configuration and rules are ignored (`--ignore-user-config`,
-  `--ignore-rules`), and the run's is parsed strictly
-  (`--strict-config`): approvals never asked; the permission profile of
+  user's configuration and rules are ignored, and the run's is parsed
+  strictly (`--strict-config`): approvals never asked; the permission profile of
   6.2 as the default, with no legacy sandbox setting beside it; no
   login shell and no inherited environment for the agent's commands; the
   experiment's tools as its one MCP server, `lab`, required, with
@@ -776,9 +777,11 @@ documentation.
   other source of tools or configuration disabled by name: web search,
   apps, plugins, browsers, computer use, image tools, other agents,
   hooks, skills' installs, as the runner's list for the host's version
-  names them. No session is kept (`--ephemeral`); the report is held to
-  its schema (`--output-schema`); its events go as JSON lines (`--json`)
-  into `driver/events.jsonl`.
+  names them. The thread is ephemeral; the report is held to its
+  schema. The runner records the host's events as JSON lines in
+  `driver/events.jsonl`. The version adapter must establish how the
+  host applies this configuration and suppresses every other layer;
+  accepting a configuration does not establish that suppression.
 - **The inventory is checked every run.** Configuration accepted is not
   configuration in effect, so the runner reads what the host offers the
   agent once started: its shell under the profile, the one server `lab`
