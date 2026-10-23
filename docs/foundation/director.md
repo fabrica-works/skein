@@ -20,7 +20,8 @@ doing now is in its notes (section 3), never here.
 - **It starts the owners,** one per mission: which work, when, where, a
   Claude or a Codex owner, at what effort, with a brief (section 4).
   Then it answers them: their design reports, their questions, and the
-  order of what they share (section 6).
+  order of what they share (section 6). A sub-director may take one
+  roadmap's daily answers (section 11, a pilot).
 - **It decides most things itself,** and asks the user only what has
   long-term consequences that would be hard to change, what the user's
   rules keep theirs, or what it can't reasonably decide, with its
@@ -39,12 +40,18 @@ doing now is in its notes (section 3), never here.
 - **Started by the user** on hel8 in `~/src/rust`, as a background
   session with remote control, on the 1M window:
   `claude --bg --remote-control -n director --model 'claude-opus-5-5[1m]'
-  --effort xhigh --autocompact 282000 --dangerously-skip-permissions
+  --effort xhigh --autocompact 500000 --dangerously-skip-permissions
   "You are the director; read ~/src/rust/tmp/director/README.md and
   follow it."` Remote control lets it push to the user's phone. Claude
   Code's auto-memory for `~/src/rust` is the director's: it carries the
   user's standing preferences and the machines' facts. Owners run with
   it off (owners.md, 2).
+- **Its window** is 500k since 10-23, when the user raised it from 282k:
+  each compaction loses detail, and a larger window halves them, at up
+  to twice a turn's cost. A new window needs a new session. At the
+  first handover after the change, the director starts the next
+  session with the command above instead of clearing its context, and
+  the new session stops the old one once it has read the notes.
 - **Its timers** live in the session: a new session starts them, and
   they stop for a compaction or a fresh context (below):
   - a cron, `17 */2 * * *`, recurring, with the prompt "Director's
@@ -401,7 +408,41 @@ is mechanical, and Codex reads what needs reading.
     worktree, and `index_repository` and `delete_project` are the
     director's alone.
 
-## 11. Open questions
+## 11. Sub-directors (a pilot)
+
+A pilot from 10-23, on the user's word, on the second roadmap (real
+backends). One director had grown near its limit: owners waited behind
+its relays, and its compactions lost details. When the pilot ends, the
+director reports its measures to the user, and this section is kept,
+changed or dropped.
+
+- **A sub-director runs one roadmap's daily flow:** its owners'
+  milestone plans and design reports (section 6's check), their
+  questions within their briefs, the relays between them (landing
+  hashes, shared files, the order of their landings), the triage of
+  their findings into `notes/findings.md`, and their milestones' ends
+  and caps. It answers through section 5's channels. The owners keep
+  writing to their inbox files as before.
+- **The director keeps what crosses roadmaps:** the user and the
+  status page; machines and placement; the landing turn and the build
+  infrastructure; repins, API breaks and the version constants; spend;
+  security (section 10); and starting, pausing, resuming and closing
+  owners, with their briefs. A question in these, or one that touches
+  another roadmap's owner, the sub-director brings to the director with
+  its recommendation, as an owner would, and tells the owner so.
+- **One answer per question.** The director still reads the roadmap's
+  inbox entries, but answers its owners only on what the sub-director
+  brings, or through it.
+- **The session:** `d/roadmap-<n>` on hel8, a Claude session at high
+  effort, started by the director with a brief in `briefs/`. It has its
+  own cron and a watcher over its owners' inbox files only, and keeps
+  its notes and decisions in `tmp/director/roadmap-<n>/`.
+- **The pilot's measures:** the time from an owner's entry to its
+  answer; the director's wakes and compactions per hour, against the
+  day before; and the slips (a relay lost or late, a question answered
+  twice or in the wrong scope).
+
+## 12. Open questions
 
 - **The director's scripts** (`watch.sh`, `probe.sh`, `tell.sh`,
   `check-report.sh`, `session.sh`, `context.sh`, `codex-owner.sh` and
