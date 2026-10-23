@@ -1,6 +1,6 @@
 # lib
 
-Provisional, 2026-10-03, revised 2026-10-18. The design of `skein-lib`:
+Provisional, 2026-10-03, revised 2026-10-23. The design of `skein-lib`:
 the building blocks every step crate shares, in skein and in every
 service built on it. The mechanics are those of programming-model.md;
 this document says what lib holds and what each part promises.
@@ -123,7 +123,7 @@ where it holds it.
   | `Queue<T>`, `List<T>`, `Stack<T>` | the count, then each item: a queue front to back, a list in order, a stack bottom to top |
   | `Deadlines<K>` | the count, then each armed deadline, its time and its key, in the order `expire` takes them |
   | `Journal<W, O>`, `RequestTable<O, R>` | their entries in their own order, and the counters, keys and attempts that decide what they emit next |
-  | `Intake` | the bytes it holds, in order |
+  | `Intake`, `Buffer` | the bytes it holds, in order |
   | `Id<T>`, `Token`, `Time`, `Duration`, `Wall`, `Secret`, `Rng` | their value |
   | `CryptoRng` | its stream number and how many bytes it has drawn, never its key |
 
@@ -158,6 +158,16 @@ where it holds it.
   first: `Writer::new(len)`, `put` the fields, `finish()`. A write past
   the end is refused whole (`Overflow`), writing nothing; finishing short
   is an assertion.
+- **`Buffer`** builds bytes whose length is learnt as they are put, and
+  is reused from one to the next: `Buffer::with_capacity(n)` allocates
+  its n bytes once (`Buffer::worst_case(n)`), `put` appends or refuses
+  whole past the capacity (`Overflow`), writing nothing, and `set_u32`
+  back-patches a big-endian `u32` over four bytes already put, a count
+  or a length known only later (asserted in range). `len`, `room`,
+  `capacity`, `as_slice`; `truncate` and `clear` for reuse; `to_boxed`
+  copies the bytes out at their exact length, the buffer kept. Its
+  `Debug` shows its length and capacity, never its bytes. A patch builds
+  each record in one, a secret's bytes among them (codec.md, section 11).
 - **`Decimal`** holds the decimal digits of a count, for a step that
   writes a number as text without formatting: measure it, then put it.
 - **`Secret`** holds a secret's owned bytes: a credential, a token, a
