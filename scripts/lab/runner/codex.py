@@ -15,6 +15,10 @@ NON_ACTIONS = ('userMessage', 'agentMessage', 'reasoning', 'plan', 'contextCompa
 # clock and asynchronous questions; apply_patch_tool_type: apply_patch.
 CATALOG_FIELDS = (('tool_mode', None), ('multi_agent_version', None),
                   ('experimental_supported_tools', []), ('apply_patch_tool_type', None))
+# Codex adds these whenever an MCP server is configured; each maps to its listing's field,
+# or None for a read. The inventory holds lab's resources and templates empty (lab.md 6.1).
+RESOURCE_TOOLS = {'list_mcp_resources': 'resources', 'list_mcp_resource_templates': 'resourceTemplates',
+                  'read_mcp_resource': None}
 INVENTORY_METHODS = ('mcpServerStatus/list', 'app/installed', 'plugin/list',
                      'hooks/list', 'skills/list', 'config/read')
 
@@ -149,7 +153,8 @@ def observe(responses: dict, expected: dict | None = None) -> dict:
 
 def item_kind(item: dict) -> str:
     kind = item.get('type')
-    if kind == 'commandExecution' or kind == 'mcpToolCall' and item.get('server') == 'lab':
+    if kind == 'commandExecution' or kind == 'mcpToolCall' and (
+            item.get('server') == 'lab' or item.get('server') == 'codex' and item.get('tool') in RESOURCE_TOOLS):
         return 'action'
     if kind in NON_ACTIONS:
         return 'message'
@@ -173,6 +178,26 @@ def initial() -> dict:
                 tokens=dict(input=None, cached=None, output=None), overshoot=None, windows=None)
 
 
+def resource_refusal(item: dict) -> None:
+    """A completed resource call must reach nothing: an empty list, or an error (lab.md 6.1)."""
+    if item.get('server') != 'codex' or item['type'] != 'mcpToolCall':
+        return
+    if item.get('status') == 'failed':
+        return
+    field = RESOURCE_TOOLS[item['tool']]
+    result = item.get('result')
+    content = result.get('content') if type(result) is dict else None
+    try:
+        payload = json.loads(content[0]['text']) if (
+            item.get('status') == 'completed' and field is not None and type(content) is list and len(content) == 1
+            and type(content[0]) is dict and content[0].get('type') == 'text' and type(content[0].get('text')) is str) else None
+    except ValueError:
+        payload = None
+    if not (type(payload) is dict and payload.get(field) == [] and set(payload) <= {field, 'server', 'nextCursor'}
+            and payload.get('nextCursor') is None):
+        raise Refused('driver/audit', item['tool'] + ' returned content')
+
+
 def _call_key(item):
     arguments = item.get('arguments', {})
     if (type(arguments) is not dict or type(arguments.get('args', [])) is not list
@@ -185,7 +210,7 @@ def _call_key(item):
 
 def action_start(state: dict, item: dict, ms: int, source: str = 'host') -> dict:
     """Pair identical calls in FIFO order across host and broker observations."""
-    key = _call_key(item) if item['type'] == 'mcpToolCall' else None
+    key = _call_key(item) if item['type'] == 'mcpToolCall' and item.get('server') == 'lab' else None
     if source == 'host':
         existing = next((a for a in state['actions'] if a.get('item_id') == item.get('id')
                          and a.get('item_id') is not None), None)
@@ -218,6 +243,7 @@ def fold(state: dict, message: dict, ms: int) -> dict:
             action = action_start(state, item, ms)
             if method == 'item/completed':
                 action.update(completed_ms=ms, end=_evidence(item))
+                resource_refusal(item)
         elif method == 'item/completed' and item['type'] == 'agentMessage':
             state['final_message'] = item.get('text')
     elif method in ('turn/started', 'turn/completed', 'thread/tokenUsage/updated'):

@@ -543,6 +543,10 @@ remain recorded. Commands and lab MCP calls are numbered actions. Calls seen by
 both the broker and host pair in FIFO order by tool, args and stdin presence.
 The audit admits user/agent messages, reasoning, plans and compaction; other
 item kinds, including calls to another MCP server, end the drive in error.
+Codex's own `list_mcp_resources`, `list_mcp_resource_templates` and
+`read_mcp_resource` (server `codex`) are numbered actions, host-only; a listing
+that is not empty or a read that is not an error ends the drive in error
+(lab.md 6.1). The inventory's MCP and resources rows keep their reach empty.
 Time and action bounds stop the host as they pass. Usage replaces each turn's
 last counts and folds across turns: input includes cached, unknown stays null.
 Input past its bound records the overshoot and stops the host. `done:false`

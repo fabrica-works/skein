@@ -130,6 +130,10 @@ class Codex(unittest.TestCase):
             ('instruction_files', 'thread/start', dict(instructionSources=['AGENTS.md'])),
             ('mcp_servers_and_tools', 'mcpServerStatus/list', []),
             ('resources', 'mcpServerStatus/list', [dict(data=[dict(resources=['x'], resourceTemplates=[])], nextCursor=None)]),
+            ('resources', 'mcpServerStatus/list', [dict(data=[dict(resources=[], resourceTemplates=['x'])], nextCursor=None)]),
+            ('mcp_servers_and_tools', 'mcpServerStatus/list', [dict(data=[
+                inventory()['mcpServerStatus/list'][0]['data'][0], dict(name='other', resources=[], resourceTemplates=[])],
+                nextCursor=None)]),
             ('apps', 'app/installed', dict(apps=['app'])),
             ('plugins', 'plugin/list', dict(marketplaces=['plugin'])),
             ('hooks', 'hooks/list', dict(data=[dict(hooks=[], errors=[], warnings=['warning'])])),
@@ -176,6 +180,45 @@ class Codex(unittest.TestCase):
                 codex.item_kind(dict(type=kind))
         with self.assertRaises(Refused):
             codex.item_kind(dict(type='mcpToolCall', server='other'))
+
+    def test_codex_resource_tools_are_admitted_actions_that_reach_nothing(self):
+        for tool in ('list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'):
+            self.assertEqual(codex.item_kind(dict(type='mcpToolCall', server='codex', tool=tool)), 'action')
+        for tool in ('exec_command', 'apply_patch', 'spawn_agent', None):
+            with self.subTest(tool=tool), self.assertRaises(Refused):
+                codex.item_kind(dict(type='mcpToolCall', server='codex', tool=tool))
+
+        def run(tool, status, result=None, error=None):
+            call = dict(type='mcpToolCall', id='r', server='codex', tool=tool, arguments={})
+            state = codex.fold(codex.initial(), message('item/started', item=dict(call, status='inProgress')), 1)
+            state = codex.fold(state, message('item/completed', item=dict(call, status=status, result=result, error=error)), 2)
+            self.assertEqual(len(state['actions']), 1)
+            self.assertEqual((state['actions'][0]['kind'], state['actions'][0]['sources']), ('mcpToolCall', ['host']))
+            self.assertNotIn('call', state['actions'][0])
+            return state
+
+        def text(value):
+            return dict(content=[dict(type='text', text=value if type(value) is str else json.dumps(value))],
+                        structuredContent=None, _meta=None)
+        for tool, payload in (('list_mcp_resources', dict(resources=[])),
+                              ('list_mcp_resources', dict(resources=[], server='lab')),
+                              ('list_mcp_resource_templates', dict(resourceTemplates=[]))):
+            run(tool, 'completed', text(payload))
+        for tool in codex.RESOURCE_TOOLS:
+            run(tool, 'failed', None, dict(message='unknown MCP server'))
+        for tool, result in (('list_mcp_resources', text(dict(resources=[dict(uri='lab://x')]))),
+                             ('list_mcp_resources', text(dict(resources=[], nextCursor='more'))),
+                             ('list_mcp_resources', text(dict(resourceTemplates=[]))),
+                             ('list_mcp_resource_templates', text(dict(resourceTemplates=[dict(uriTemplate='lab://{x}')]))),
+                             ('list_mcp_resource_templates', text(dict(resourceTemplates=[], extra=1))),
+                             ('list_mcp_resources', text('not json')),
+                             ('list_mcp_resources', dict(content=[])),
+                             ('list_mcp_resources', None),
+                             ('read_mcp_resource', text(dict(contents=[dict(uri='lab://x', text='secret')]))),
+                             ('read_mcp_resource', text(dict(contents=[])))):
+            with self.subTest(tool=tool, result=result), self.assertRaises(Refused) as caught:
+                run(tool, 'completed', result)
+            self.assertIn(tool + ' returned content', str(caught.exception))
 
     def test_actions_numbered_and_broker_duplicates_pair_in_both_orders(self):
         for first, second in (('host', 'broker'), ('broker', 'host')):

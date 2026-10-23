@@ -244,6 +244,39 @@ class Driver(unittest.TestCase):
         self.assertEqual(record['errors'], [])
         self.assertNotIn('report.json', record['driver']['files'])
 
+    def test_codex_resource_calls_are_counted_actions(self):
+        empty = dict(content=[dict(type='text', text='{"resources":[]}')], structuredContent=None, _meta=None)
+        record = self.story(dict(items=[
+            dict(type='mcpToolCall', server='codex', tool='list_mcp_resources', arguments={}, status='completed', result=empty),
+            dict(type='mcpToolCall', server='codex', tool='read_mcp_resource', arguments=dict(server='lab', uri='lab://x'),
+                 status='failed', result=None, error=dict(message='resource not found'))],
+            usage=[dict(inputTokens=10, outputTokens=3)]), 0)
+        self.assertEqual(record['usage']['driver']['actions'], 2)
+        transcript = [json.loads(line) for line in (self.root_run / 'driver/transcript.jsonl').read_text().splitlines()]
+        self.assertEqual([(a['n'], a['kind'], a['sources'], a['end']['tool']) for a in transcript],
+                         [(1, 'mcpToolCall', ['host'], 'list_mcp_resources'), (2, 'mcpToolCall', ['host'], 'read_mcp_resource')])
+
+    def test_codex_resource_content_is_an_error(self):
+        listed = dict(content=[dict(type='text', text='{"resources":[{"uri":"lab://x"}]}')], structuredContent=None, _meta=None)
+        record = self.story(dict(items=[dict(type='mcpToolCall', server='codex', tool='list_mcp_resources', arguments={},
+                                             status='completed', result=listed)]), 4)
+        self.assertTrue(any('list_mcp_resources returned content' in e['detail'] for e in record['errors']))
+
+    def test_another_mcp_server_never_starts_a_turn(self):
+        lab = dict(name='lab', runtimeStatus='connected', toolsError=None, tools=dict(echo={}), resources=[], resourceTemplates=[])
+        record = self.story(dict(inventory={'mcpServerStatus/list': dict(data=[lab, {**lab, 'name': 'other'}])}), 4)
+        self.assertEqual(record['driver']['inventory']['mcp_servers_and_tools']['state'], 'mismatch')
+        self.assertFalse(self.program.with_suffix('.turn').exists())
+        self.assertEqual(record['usage']['driver']['turns'], 0)
+
+    def test_lab_resource_templates_never_start_a_turn(self):
+        lab = dict(name='lab', runtimeStatus='connected', toolsError=None, tools=dict(echo={}), resources=[],
+                   resourceTemplates=[dict(uriTemplate='lab://{x}', name='x')])
+        record = self.story(dict(inventory={'mcpServerStatus/list': dict(data=[lab])}), 4)
+        self.assertEqual(record['driver']['inventory']['resources']['state'], 'mismatch')
+        self.assertFalse(self.program.with_suffix('.turn').exists())
+        self.assertEqual(record['usage']['driver']['turns'], 0)
+
     def test_inventory_transport_error_stops_host_without_a_turn(self):
         record = self.story(dict(rpc_error='skills/list'), 4)
         self.assertTrue(any(e['what'] == 'driver/transport' for e in record['errors']))
