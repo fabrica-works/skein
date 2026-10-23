@@ -1493,7 +1493,7 @@ root:
     without `about`; a tree's manifest and its refusals;
   - the key: the same over seeds, addresses and directories, and changed
     by any byte of the experiment or an artifact, by the runner, a
-    helper, the driver's configuration, its model or a class's value
+    helper, the driver's configuration, its model or a class's name
     (2.3);
   - each refusal of `validate`, naming its member, all of them at once
     (4.7); the templates, and where each name is known (4.2);
