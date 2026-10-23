@@ -49,7 +49,7 @@ class Codex(unittest.TestCase):
         self.assertEqual(parsed['mcp_servers']['lab']['default_tools_approval_mode'], 'approve')
         self.assertFalse(parsed['model_providers']['lab-openai']['supports_websockets'])
         self.assertNotIn('base_url', parsed['model_providers']['lab-openai'])
-        self.assertEqual(parsed['shell_environment_policy']['inherit'], 'none')
+        self.assertEqual(parsed['shell_environment_policy'], {'inherit': 'none', 'set': {'PATH': '/usr/bin:/bin'}})
         self.assertEqual(parsed['features'], {**dict.fromkeys(codex.DISABLED, False), 'skip_host_skill_discovery': True})
         self.assertFalse(parsed['skills']['bundled']['enabled'])
         self.assertEqual(parsed['tools'], {'experimental_request_user_input': {'enabled': False}})

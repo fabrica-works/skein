@@ -50,7 +50,8 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
             + (f'model_catalog_json = {json.dumps(catalog)}\n' if catalog is not None else '')
             + f'model = {json.dumps(model)}\nmodel_reasoning_effort = {json.dumps(effort)}\n'
             'web_search = "disabled"\nallow_login_shell = false\nproject_doc_max_bytes = 0\n'
-            + profile + '\n[shell_environment_policy]\ninherit = "none"\n[features]\n'
+            # Codex 0.162.1 otherwise leaves only its helper directory on the commands' PATH.
+            + profile + '\n[shell_environment_policy]\ninherit = "none"\nset = { PATH = "/usr/bin:/bin" }\n[features]\n'
             + ''.join(f'{name} = false\n' for name in DISABLED)
             + 'skip_host_skill_discovery = true\n[mcp_servers.lab]\n'
             + f'command = {json.dumps(python)}\n'

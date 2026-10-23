@@ -550,7 +550,8 @@ that is not empty or a read that is not an error ends the drive in error
 (lab.md 6.1). The inventory's MCP and resources rows keep their reach empty.
 The lab server's `default_tools_approval_mode` is `approve`: Codex 0.162.1 otherwise
 refuses an unannotated MCP call under approval policy `never`; the broker admits each
-call. `thread/start` asks for raw response items: each raw `function_call` must be
+call. The agent's commands inherit no environment and get `PATH=/usr/bin:/bin`:
+without it Codex 0.162.1 leaves only its own helper directory on their `PATH`. `thread/start` asks for raw response items: each raw `function_call` must be
 answered by an item with its call id, or be a `write_stdin` to a running command's
 `processId` (a counted `write_stdin` action). Any other raw call is a counted
 `unhandled` action and ends the drive in error, as do actions with no raw call.
