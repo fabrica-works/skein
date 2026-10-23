@@ -42,8 +42,8 @@ pub enum Outcome {
     Nothing,
     /// The first repository, ready for adoption (4.9).
     Created { id: core::num::NonZeroU64 },
-    /// The browser page and the host-given state it was made for (5.1).
-    Manifest { state: Box<[u8]>, page: Box<[u8]> },
+    /// The form target, manifest JSON and the host-given state they were made for (5.1).
+    Manifest { state: Box<[u8]>, target: Box<[u8]>, manifest: Box<[u8]> },
     /// The App's missing wanted access, possibly empty (5.6 and 5.8).
     Lacking { lacking: Box<[crate::github::Lacking]> },
     /// The install link and its host-issued Accept state (5.4 and 5.7).

@@ -227,13 +227,6 @@ fn github_setup_pages() {
         setup::form_target(b"http://127.0.0.1:8080", &setup::Account::Person, b"s", 1024).unwrap().as_ref(),
         b"http://127.0.0.1:8080/settings/apps/new?state=s"
     );
-    let manifest = br#"{"value":"&<>'"}"#;
-    let expected = b"<!doctype html><meta charset=\"utf-8\"><title>GitHub App</title><form method=\"post\" action=\"https://h/?a=&quot;&amp;&lt;&gt;&#39;\"><input type=\"hidden\" name=\"manifest\" value=\"{&quot;value&quot;:&quot;&amp;&lt;&gt;&#39;&quot;}\"></form><script>document.forms[0].submit()</script>";
-    let target = b"https://h/?a=\"&<>'";
-    assert_eq!(setup::form_page(target, manifest, 1024).unwrap().as_ref(), expected);
-    let length = u32::try_from(expected.len()).unwrap();
-    assert!(setup::form_page(target, manifest, length).is_some());
-    assert!(setup::form_page(target, manifest, length.saturating_sub(1)).is_none());
     for (label, web, state) in [
         ("trailing slash", b"https://github.com/".as_slice(), b"s".as_slice()),
         ("state space", web, b"a b"),

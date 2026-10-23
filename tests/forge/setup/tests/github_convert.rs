@@ -133,18 +133,13 @@ struct Callback {
 fn created(world: &mut HostWorld, target: Target) -> Callback {
     world.run_plan(1, Plan::Manifest { forge: FORGE, target });
     world.settle();
-    let Some(Heard::Done { outcome: Outcome::Manifest { state, page }, .. }) = world.heard().last() else {
-        panic!("manifest page")
+    let Some(Heard::Done { outcome: Outcome::Manifest { state, target, manifest }, .. }) = world.heard().last() else {
+        panic!("manifest form")
     };
     let state = state.clone();
-    let html = core::str::from_utf8(page).expect("manifest page UTF-8");
-    let form = attributes(html, "form");
-    assert_eq!(form["method"], "post");
-    let field = attributes(html, "input");
-    assert_eq!(field["name"], "manifest");
-    assert_eq!(field["type"], "hidden");
-    let body = format!("manifest={}", encoded(field["value"].as_bytes()));
-    let bytes = world.github_page(&request("POST", &form["action"], body.as_bytes()));
+    let target = core::str::from_utf8(target).expect("form target UTF-8");
+    let body = format!("manifest={}", encoded(manifest));
+    let bytes = world.github_page(&request("POST", target, body.as_bytes()));
     let (head, html) = response(&bytes, 200);
     assert_eq!(header(head, "Content-Type"), Some("text/html; charset=utf-8"));
     let link = attributes(html, "a");
@@ -377,7 +372,7 @@ fn conversion_trace_and_failures_hold_no_secret() {
     convert(&mut world, 2, &callback);
     assert_eq!(world.heard().last(), Some(&done(2)));
     convert(&mut world, 3, &callback);
-    // Manifest's page/state is public; the conversion's trace and failure are not secrets.
+    // Manifest's form/state is public; the conversion's trace and failure are not secrets.
     write!(diagnostics, "{:?} {:?}", &world.heard()[1..], world.needs()).expect("String accepts text");
     // The fake draws twenty hex code bytes, then thirty-two webhook bytes, from its seed.
     let mut rng = Rng::new(SEED);

@@ -576,15 +576,14 @@ pub mod github_stories {
         }
         world.run_plan(1, Plan::Manifest { forge: FORGE, target: Target::Personal });
         world.settle();
-        let Some(Heard::Done { outcome: Outcome::Manifest { state, page }, .. }) = world.heard().last() else {
+        let Some(Heard::Done { outcome: Outcome::Manifest { state, target, manifest }, .. }) = world.heard().last()
+        else {
             panic!("manifest")
         };
         let state = state.clone();
-        let html = core::str::from_utf8(page).expect("page text");
-        let form = attributes(html, "form");
-        let field = attributes(html, "input");
-        let body = format!("manifest={}", encoded(field["value"].as_bytes()));
-        let reply = world.github_page(&request("POST", &form["action"], body.as_bytes()));
+        let target = core::str::from_utf8(target).expect("form target UTF-8");
+        let body = format!("manifest={}", encoded(manifest));
+        let reply = world.github_page(&request("POST", target, body.as_bytes()));
         let (_, html) = response(&reply, 200);
         let link = attributes(html, "a");
         let mut fields = query(&link["href"]);

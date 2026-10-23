@@ -158,32 +158,6 @@ pub fn form_target(web: &[u8], account: &Account<'_>, state: &[u8], max: u32) ->
     }
 }
 
-/// An HTML form posting the manifest to `target`, with only its submission
-/// script and no external resources. Both attribute values escape `&<>"'`.
-/// Refuses a document past `max` before allocating it.
-#[must_use]
-pub fn form_page(target: &[u8], manifest: &[u8], max: u32) -> Option<Box<[u8]>> {
-    let start = b"<!doctype html><meta charset=\"utf-8\"><title>GitHub App</title><form method=\"post\" action=\"";
-    let middle = b"\"><input type=\"hidden\" name=\"manifest\" value=\"";
-    let end = b"\"></form><script>document.forms[0].submit()</script>";
-    let length = start
-        .len()
-        .checked_add(attribute_length(target)?)?
-        .checked_add(middle.len())?
-        .checked_add(attribute_length(manifest)?)?
-        .checked_add(end.len())?;
-    if length > usize::try_from(max).ok()? {
-        return None;
-    }
-    let mut out = Writer::new(length);
-    out.put(start).ok()?;
-    put_attribute(&mut out, target)?;
-    out.put(middle).ok()?;
-    put_attribute(&mut out, manifest)?;
-    out.put(end).ok()?;
-    Some(out.finish())
-}
-
 /// The installation target, including state. `web` has no trailing slash;
 /// slug and state must be nonempty URI unreserved bytes.
 /// Refuses a result past `max`.
@@ -220,37 +194,4 @@ fn join(parts: &[&[u8]], max: u32) -> Option<Box<[u8]>> {
         out.put(part).ok()?;
     }
     Some(out.finish())
-}
-
-fn escaped(byte: u8) -> Option<&'static [u8]> {
-    match byte {
-        b'&' => Some(b"&amp;"),
-        b'<' => Some(b"&lt;"),
-        b'>' => Some(b"&gt;"),
-        b'"' => Some(b"&quot;"),
-        b'\'' => Some(b"&#39;"),
-        _ => None,
-    }
-}
-
-fn attribute_length(text: &[u8]) -> Option<usize> {
-    let mut length = 0_usize;
-    for &byte in text {
-        let width = match escaped(byte) {
-            Some(entity) => entity.len(),
-            None => 1,
-        };
-        length = length.checked_add(width)?;
-    }
-    Some(length)
-}
-
-fn put_attribute(out: &mut Writer, text: &[u8]) -> Option<()> {
-    for &byte in text {
-        match escaped(byte) {
-            Some(entity) => out.put(entity).ok()?,
-            None => out.put(&[byte]).ok()?,
-        }
-    }
-    Some(())
 }

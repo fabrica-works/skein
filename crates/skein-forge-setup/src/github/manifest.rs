@@ -1,4 +1,4 @@
-//! The bounded manifest page and its draw (forge-setup.md, 5.1 and 5.5).
+//! The bounded manifest form and its draw (forge-setup.md, 5.1 and 5.5).
 use super::{
     app,
     given::{self, Given, Place, Refused},
@@ -27,7 +27,7 @@ enum Phase {
     Draw(Inputs),
     Ended,
 }
-/// One manifest page; only the name's three random bytes are drawn here.
+/// One manifest form; only the name's three random bytes are drawn here.
 #[derive(Debug)]
 pub struct Manifest {
     phase: Phase,
@@ -56,9 +56,14 @@ impl Manifest {
     }
 }
 
-/// Pure page construction from checked inputs (forge-setup.md, 5.1 and 5.5).
-/// Every intermediate and the final page is measured and capped before allocation.
-fn page(given: &Given, target: &Target, state: &[u8], random: &[u8]) -> Option<Box<[u8]>> {
+struct Form {
+    target: Box<[u8]>,
+    manifest: Box<[u8]>,
+}
+
+/// Pure form construction from checked inputs (forge-setup.md, 5.1 and 5.5).
+/// Every intermediate and each form part is measured and capped before allocation.
+fn form(given: &Given, target: &Target, state: &[u8], random: &[u8]) -> Option<Form> {
     if random.len() != 3 {
         return None;
     }
@@ -99,7 +104,7 @@ fn page(given: &Given, target: &Target, state: &[u8], random: &[u8]) -> Option<B
         Target::Org(login) => dialect::setup::Account::Organization(login),
     };
     let target = dialect::setup::form_target(&given.web, &account, state, given.limits.page_bytes)?;
-    dialect::setup::form_page(&target, &json, given.limits.page_bytes)
+    Some(Form { target, manifest: json })
 }
 fn hex(value: u8) -> u8 {
     match value {
@@ -124,8 +129,10 @@ pub fn step(machine: &mut Manifest, event: Event, out: &mut Queue<Need>) {
             Event::Read(_) | Event::Reply(_) | Event::Written | Event::Drawn(_) => stop(inputs.given.forge),
         },
         Phase::Draw(inputs) => match event {
-            Event::Drawn(random) => match page(&inputs.given, &inputs.target, &inputs.state, random.expose()) {
-                Some(page) => Need::Done(Outcome::Manifest { state: inputs.state, page }),
+            Event::Drawn(random) => match form(&inputs.given, &inputs.target, &inputs.state, random.expose()) {
+                Some(Form { target, manifest }) => {
+                    Need::Done(Outcome::Manifest { state: inputs.state, target, manifest })
+                }
                 None => stop(inputs.given.forge),
             },
             Event::Begin | Event::Read(_) | Event::Reply(_) | Event::Written => stop(inputs.given.forge),

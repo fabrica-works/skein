@@ -6,7 +6,7 @@ use skein_lib::Duration;
 pub struct Limits {
     pub key_bytes: u32,        // The App's key, DER: at most.
     pub name_bytes: u32,       // The App's slug: at most.
-    pub page_bytes: u32,       // The manifest's page: at most.
+    pub page_bytes: u32,       // Each form target and manifest JSON: at most.
     pub installations: u32,    // Accepted installations: at most.
     pub reachable: u32,        // Rows of one picker page: at most.
     pub pages: u32,            // Pages of GET /app/installations a reconcile reads: at most.

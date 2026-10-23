@@ -77,10 +77,14 @@ impl World {
     fn page(&mut self, forge: u16) -> Box<[u8]> {
         self.run(manifest(forge));
         match self.one() {
-            Event::Done { run: RUN, outcome: Outcome::Manifest { state, page } } => {
+            Event::Done { run: RUN, outcome: Outcome::Manifest { state, target, manifest } } => {
                 assert_eq!(state.len(), 32);
-                assert!(bytes::find(&page, &state).is_some());
-                assert!(u32::try_from(page.len()).expect("bounded page") <= github_fixtures::limits().page_bytes);
+                assert!(bytes::find(&target, &state).is_some());
+                for part in [target, manifest] {
+                    assert!(
+                        u32::try_from(part.len()).expect("bounded form part") <= github_fixtures::limits().page_bytes
+                    );
+                }
                 assert_eq!(self.host.next_deadline(), None);
                 state
             }

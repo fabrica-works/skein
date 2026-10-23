@@ -30,8 +30,8 @@ use skein_lib::{
 ///
 /// Excludes the outer host's run/connection tables, HTTP/io/JSON stack, signing,
 /// caller-owned item store and reply documents, and handed-out output payloads
-/// (including minted bearer tokens). Owner-held manifest pages are separately
-/// bounded by `states * page_bytes` (5.7). This is not a bound for `Host`.
+/// (including minted bearer tokens). Owner-held form targets and manifests are separately
+/// bounded by `states * 2 * page_bytes` (5.1 and 5.7). This is not a bound for `Host`.
 /// Returns None for invalid Given or any capacity/byte arithmetic overflow.
 #[must_use]
 pub fn worst_case(given: &Given, runs: u32, states: u32) -> Option<u64> {
@@ -59,7 +59,7 @@ fn copied(given: &Given) -> Option<u64> {
 }
 fn manifest(given: &Given) -> Option<u64> {
     let name = u64::try_from(given.word.len()).ok()?.checked_add(7)?;
-    // Retained inputs, generated name/hook, JSON writer, target and final form.
+    // Retained inputs, generated name/hook, JSON writer and form target.
     u64::try_from(size_of::<Manifest>())
         .ok()?
         .checked_add(copied(given)?)?
@@ -68,7 +68,6 @@ fn manifest(given: &Given) -> Option<u64> {
         .checked_add(name)?
         .checked_add(name.checked_add(17)?)?
         .checked_add(writer::worst_case(&writer::Limits { depth: 2, length: given.limits.page_bytes })?)?
-        .checked_add(u64::from(given.limits.page_bytes))?
         .checked_add(u64::from(given.limits.page_bytes))
 }
 fn convert(given: &Given) -> Option<u64> {

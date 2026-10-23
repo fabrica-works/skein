@@ -8,7 +8,7 @@ use crate::{
 };
 use skein_json::{Token, tokenizer};
 use skein_lib::{
-    Env, Intake, List, Queue, Time, Wall, bytes,
+    Env, Intake, List, Queue, Time, Wall, Writer, bytes,
     stream::{Down, Up},
 };
 
@@ -16,8 +16,8 @@ const STATE: &[u8] = b"0123456789abcdef0123456789abcdef";
 const RANDOM: &[u8] = &[0x00, 0x8a, 0xff];
 const SECRET: &[u8] = b"hunter2-manifest-secret";
 const NAME_BYTES: u32 = 10;
-const PERSONAL_PAGE_BYTES: u32 = 1409;
-const ORG_PAGE_BYTES: u32 = 1428;
+// Compact JSON for the given fixture and kit-008aff name.
+const MANIFEST_BYTES: u32 = 665;
 
 #[expect(clippy::disallowed_macros, reason = "test checks Debug against secret byte spellings")]
 fn diagnostic(text: &str) {
@@ -62,11 +62,11 @@ fn make(given: &Given, target: &Target, random: &[u8]) -> Need {
     silent(&mut machine);
     need
 }
-fn page(given: &Given, target: &Target) -> Box<[u8]> {
+fn form(given: &Given, target: &Target) -> (Box<[u8]>, Box<[u8]>) {
     match make(given, target, RANDOM) {
-        Need::Done(Outcome::Manifest { state, page }) => {
+        Need::Done(Outcome::Manifest { state, target, manifest }) => {
             assert_eq!(state.as_ref(), STATE);
-            page
+            (target, manifest)
         }
         Need::Send { .. }
         | Need::Read(_)
@@ -89,36 +89,6 @@ fn stopped() -> Need {
     Need::Stop(Failure { forge: 4, step: Stage::App, subject: b"manifest".as_slice().into(), why: Why::Unexpected })
 }
 
-// Read the attribute independently, decoding exactly one layer of HTML entities.
-#[expect(
-    clippy::disallowed_types,
-    clippy::disallowed_methods,
-    reason = "test independently decodes bounded HTML attributes as text"
-)]
-fn attribute(page: &[u8], marker: &[u8]) -> Box<[u8]> {
-    let start = bytes::find(page, marker).expect("attribute marker").checked_add(marker.len()).expect("page offset");
-    let rest = page.get(start..).expect("after marker");
-    let end = bytes::find(rest, b"\"").expect("closing attribute quote");
-    let text = core::str::from_utf8(rest.get(..end).expect("attribute slice")).expect("ASCII HTML");
-    let mut decoded = String::new();
-    for (at, part) in text.split('&').enumerate() {
-        if at == 0 {
-            decoded.push_str(part);
-            continue;
-        }
-        let (entity, tail) = part.split_once(';').expect("whole HTML entity");
-        decoded.push(match entity {
-            "amp" => '&',
-            "lt" => '<',
-            "gt" => '>',
-            "quot" => '"',
-            "#39" => '\'',
-            _ => panic!("unknown HTML entity"),
-        });
-        decoded.push_str(tail);
-    }
-    decoded.into_bytes().into_boxed_slice()
-}
 fn tokens(input: &[u8]) -> List<Token> {
     let bound = u32::try_from(input.len()).expect("small document");
     let limits = tokenizer::Limits { depth: 4, string: bound, number: 20, chunk: bound, length: bound };
@@ -229,9 +199,8 @@ fn wanted(given: &Given) -> List<Token> {
     }
     wanted
 }
-fn check_json(page: &[u8], given: &Given) {
-    let json = attribute(page, b"name=\"manifest\" value=\"");
-    assert_eq!(tokens(&json).as_slice(), wanted(given).as_slice());
+fn check_json(json: &[u8], given: &Given) {
+    assert_eq!(tokens(json).as_slice(), wanted(given).as_slice());
 }
 
 #[test]
@@ -244,48 +213,74 @@ fn each_manifest_target_posts_the_wanted_fields() {
             b"https://github.test/organizations/acme/settings/apps/new?state=0123456789abcdef0123456789abcdef",
         ),
     ] {
-        let page = page(&given, &target);
-        assert_eq!(attribute(&page, b"action=\"").as_ref(), action);
-        assert!(bytes::find(&page, b"<form method=\"post\"").is_some());
-        check_json(&page, &given);
-        assert_eq!(page.as_ref(), self::page(&given, &target).as_ref());
+        let (url, manifest) = form(&given, &target);
+        assert_eq!(url.as_ref(), action);
+        check_json(&manifest, &given);
+        assert_eq!((url, manifest), form(&given, &target));
     }
 }
 #[test]
-fn manifest_attributes_escape_the_given_urls() {
+fn manifest_json_escapes_the_given_urls() {
     let mut given = fixtures::given();
     given.web = b"https://git\"&'<>.test".as_slice().into();
     given.url = b"https://kit.test/\"&'<>\\?x=1&y=2".as_slice().into();
     given.redirect_url = given.url.clone();
     given.setup_url = given.url.clone();
-    let page = page(&given, &Target::Personal);
-    assert_eq!(
-        attribute(&page, b"action=\"").as_ref(),
-        b"https://git\"&'<>.test/settings/apps/new?state=0123456789abcdef0123456789abcdef"
-    );
-    check_json(&page, &given);
+    let (target, manifest) = form(&given, &Target::Personal);
+    assert_eq!(target.as_ref(), b"https://git\"&'<>.test/settings/apps/new?state=0123456789abcdef0123456789abcdef");
+    check_json(&manifest, &given);
 }
 #[test]
-fn the_name_and_page_hold_at_the_bound() {
+fn the_name_and_manifest_hold_at_the_bound() {
     let mut given = fixtures::given();
     given.limits.name_bytes = NAME_BYTES;
-    for (target, length) in
-        [(Target::Personal, PERSONAL_PAGE_BYTES), (Target::Org(b"acme".as_slice().into()), ORG_PAGE_BYTES)]
-    {
-        given.limits.page_bytes = length;
-        let page = page(&given, &target);
-        assert_eq!(page.len(), usize::try_from(length).expect("page bound fits"));
-        check_json(&page, &given);
+    given.limits.page_bytes = MANIFEST_BYTES;
+    for target in [Target::Personal, Target::Org(b"acme".as_slice().into())] {
+        let (_, manifest) = form(&given, &target);
+        assert_eq!(manifest.len(), usize::try_from(MANIFEST_BYTES).expect("manifest bound fits"));
+        check_json(&manifest, &given);
     }
     let login = b"A0-bcdefgh";
     Manifest::new(&given, &Target::Org(login.as_slice().into()), STATE).expect("login at its bound");
 }
+// Make the personal target as long as the JSON, plus the requested excess.
+fn target_bound_given(excess: usize) -> Given {
+    let mut given = fixtures::given();
+    given.limits.page_bytes = MANIFEST_BYTES;
+    let suffix = b"/settings/apps/new?state=0123456789abcdef0123456789abcdef";
+    let length = usize::try_from(MANIFEST_BYTES)
+        .expect("small bound")
+        .checked_sub(suffix.len())
+        .expect("target includes its origin")
+        .checked_add(excess)
+        .expect("small excess");
+    let scheme = b"https://";
+    let mut web = Writer::new(length);
+    web.put(scheme).expect("scheme fits");
+    for _ in scheme.len()..length {
+        web.put(b"a").expect("host fits");
+    }
+    given.web = web.finish();
+    given
+}
 #[test]
-fn a_name_or_page_one_byte_past_stops_without_items() {
+fn the_target_holds_at_the_page_bytes_bound() {
+    let given = target_bound_given(0);
+    let (target, manifest) = form(&given, &Target::Personal);
+    assert_eq!(target.len(), usize::try_from(MANIFEST_BYTES).expect("target bound fits"));
+    check_json(&manifest, &given);
+}
+#[test]
+fn a_target_one_byte_past_the_bound_stops() {
+    let given = target_bound_given(1);
+    assert_eq!(make(&given, &Target::Personal, RANDOM), stopped());
+}
+#[test]
+fn a_name_or_manifest_one_byte_past_stops_without_items() {
     let given = fixtures::given();
     for (name_bytes, page_bytes) in [
         (NAME_BYTES.checked_sub(1).expect("positive name bound"), given.limits.page_bytes),
-        (given.limits.name_bytes, PERSONAL_PAGE_BYTES.checked_sub(1).expect("positive page bound")),
+        (given.limits.name_bytes, MANIFEST_BYTES.checked_sub(1).expect("positive page bound")),
         (given.limits.name_bytes, 1),
         (given.limits.name_bytes, 25),
         (given.limits.name_bytes, 100),
