@@ -42,8 +42,9 @@ holds their reasons and open questions.
   <crate>`. It queues every build on the machine, so that builds don't
   starve each other and gates run alone.
 - **`main` moves only through `land`,** which rebases, runs the
-  repository's gate and pushes; `land --docs` for Markdown alone. Don't
-  run the gate yourself before it.
+  repository's gate and pushes; `land --docs` for Markdown alone, and
+  for the mockups under `docs/design/`, which need no tests or builds.
+  Don't run the gate yourself before it.
 
 ## The code graph
 
