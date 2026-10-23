@@ -50,9 +50,10 @@ What is still open is in section 11.
   its work directory, no network. The product is reached only through
   the experiment's tools, trusted programs each call of which the runner
   runs in a view of its own and records. A probe checks what it names
-  before each start, and the host's tools are checked every run. A host
-  whose tools cannot all be observed runs as a user of its own, which
-  reaches none of the runner's files (section 6).
+  before each start, and the host's tools are checked every run, as far
+  as its version lets them be read: what cannot be is recorded as
+  unobserved, and the host's events are audited. So the lab runs only on
+  machines kept for it, never a person's computer (section 6).
 - **Checks are commands with three statuses** (passed, failed with
   signatures, could not judge) beside the runner's own: stops, panics,
   survivors, memory, bounds, seed actions and the agent's report
@@ -106,7 +107,7 @@ What is still open is in section 11.
 | verdict | the evidence judged by the policy (section 8) | `.../verdict.json`, derived |
 | finding | a failure with a signature, and its history (section 9) | `findings/<id>.jsonl`; `findings/index.json`, derived |
 | campaign | the runs of one campaign, and its note | `campaigns/<name>.jsonl`, `<name>.md` |
-| settings | the lab's own: the driver host and its user, the triager, the cost classes, the browser, the named programs, the brake | `settings.json` |
+| settings | the lab's own: the driver host, the triager, the cost classes, the browser, the named programs, the brake | `settings.json` |
 
 ### 2.2 Canonical JSON and digests
 
@@ -174,10 +175,10 @@ named by its digest.
     the run, so they are identity, not the machine's provenance;
   - `driver`, null for an experiment without one, or the host's
     `program` (`{"path", "sha256", "version"}`), its `model`, its
-    `effort`, its `user`, null unless it runs separated (6.1), and its
-    `config`, the configuration the runner gives it (6.1) as JSON: its
-    arguments, permission profile, disabled features, server and schema,
-    with each run's own paths left as their template names;
+    `effort`, and its `config`, the configuration the runner gives it
+    (6.1) as JSON: its arguments, permission profile, disabled features,
+    server and schema, with each run's own paths left as their template
+    names;
   - `cost`, the class's `name` alone: its values are each run's, in its
     `bounds` (5.6), so that a class tuned between runs keeps its keys
     (6.5);
@@ -646,9 +647,6 @@ run:
   has taken it, or a `{held.N}` naming a file the experiment does not
   hold (4.8); a `meter` whose class lacks `subject_spend` or
   `meter_seconds` (6.5);
-- for an experiment with a driver, a host version without an observer
-  for every item of the inventory, unless the settings name the host's
-  user (6.1);
 - by `lab run` alone, the brake's refusal, its line named (6.5);
 - a seed that is not a canonical decimal string (2.2); a seed new to a
   key that already has three (section 8);
@@ -881,8 +879,8 @@ and `dirs/<D>/`.
   Stopped commands name `cluster: "stopped"`; their skipped records
   and reasons follow 4.5. The timeline records `bootstrap_received`
   and `bootstrap_delivered` with the process and action only;
-- `driver`: its host's invocation and user, the inventory it was
-  checked against and what was found, each item observed or
+- `driver`: its host's invocation, the inventory it was checked
+  against and what was found, each item observed or
   `unobserved` (6.1), its actions and observed turns, its end, the
   report's and the transcript's files (6.3, 6.4);
 - `failures`, each `{"id", "signature", "kind", "summary", "evidence"}`;
@@ -941,17 +939,16 @@ documentation.
   offering exactly the experiment's tools, no resources and no prompts,
   and no other server, plugin, app or configuration layer. A host whose
   inventory differs ends the run in error, the driver ended at once. How
-  the inventory is read is the runner's, for each host version; no run
-  with a driver starts on a version it cannot read.
+  the inventory is read is the runner's, for each host version, as far
+  as the version lets it be read (below).
 
-  Every item below needs an observer for the host's version, or the
-  host's separation (below). Without separation, a missing observer
-  refuses the version; with it, the item is recorded `unobserved`, never
-  as absent. An incomplete observation or a mismatch of an observed item
-  ends the run in error. The version adapter names its observers and
-  the evidence they return. A list of configured capabilities, a
-  rendered prompt, or the lab server's own traffic is not the host's
-  live inventory.
+  An item below with no observer for the host's version is recorded
+  `unobserved`, never as absent, and does not refuse the version: the
+  version adapter names its observers and the evidence they return, and
+  the run's record names the items unobserved. An incomplete observation
+  or a mismatch of an observed item ends the run in error. A list of
+  configured capabilities, a rendered prompt, or the lab server's own
+  traffic is not the host's live inventory.
 
   | Item | Required observation |
   |---|---|
@@ -970,36 +967,22 @@ documentation.
   An action kind outside the admitted inventory ends the run in error.
   Detecting an unexpected action is an additional check; it does not
   establish that the action was confined.
-- **Separation:** the settings' `driver.user` names a user of the
-  machine's under which the host runs, so that the runner's files are
-  out of its reach by the machine's permissions, whatever the host's
-  own tools do. The machine's owner makes it once: the user, its home
-  private, its own Codex login (a person's sign-in, never the runner's),
-  and the right for the lab's user to start the host's program as it,
-  the host's tree contained in the run's cgroup as any is (5.2). Under
-  it:
-  - the host authenticates with its user's login, its own `CODEX_HOME`;
-  - that user is given the run's view alone, the source to read and the
-    work directory to write; the runner's home, the lab, the held files
-    and the cluster's files stay the runner's user's, private;
-  - `lab tool` (6.3), started by the host as its user, holds nothing and
-    runs nothing: it relays each call to the runner over a socket only
-    that user and the runner reach, the runner checking its peer's user,
-    and the runner runs the call as 6.2 says;
-  - the probe (6.2) runs as that user, through the profile and again
-    without it;
-  - the triager runs separated as well, its input given to its user
-    (9.2).
-
-  Separation bounds what an action can reach; it does not admit an
-  unexpected one: an action kind outside the admitted inventory still
-  ends the run in error. Without `driver.user`, the host runs as the
-  runner's user, as above.
+- **One user, on machines kept for the lab.** The runner, the cluster,
+  the host and its tools run as the lab's user, in the run's cgroups
+  (5.2), which bound what they use and end them whole but confine no
+  file. What confines is the profile, for the agent's commands (6.2),
+  and a view for each tool call (6.3). The host's own process is the
+  lab's user's, unconfined: a built-in tool that acts in it, unobserved,
+  reaches what that user reaches, the lab, its held files (4.8) and the
+  cluster's state among them. That is the lab's accepted risk, so it
+  runs only on machines kept for it, never a person's computer, and the
+  audit of the host's events ends a run at the first action of a kind
+  outside the admitted inventory, after the fact.
 - **The model's credential stays with the host.** Codex authenticates
   its model transport with the machine's Codex login under
-  `CODEX_HOME`, or, separated, its user's, the one credential in the
-  host's reach; the profile grants no part of it to the agent's
-  commands, and no tool's view or environment holds it (6.2, 6.3).
+  `CODEX_HOME`, the one credential in the host's reach; the profile
+  grants no part of it to the agent's commands, and no tool's view or
+  environment holds it (6.2, 6.3).
 
 ### 6.2 The boundary
 
@@ -1017,12 +1000,14 @@ What the agent's own commands may reach:
   executable by its exact resolved path (without which the sandbox
   cannot start it), of the source, and of the work directory; writes
   only to the work directory; the network disabled.
-- **Every agent action is confined.** A host's built-in tool may act
-  in the host's process rather than start a sandboxed command. A
-  command-profile probe says nothing about that tool's file or network
-  access. The inventory must show such a tool absent, or a probe of
-  that tool must establish the same boundary before admission. A tool
-  that the runner cannot observe or confine refuses the host version.
+- **Every agent action is confined, or recorded as not.** A host's
+  built-in tool may act in the host's process rather than start a
+  sandboxed command, and a command-profile probe says nothing about that
+  tool's file or network access. It is confined where the inventory
+  shows it absent, or a probe of it establishes the same boundary.
+  Where neither can be shown, it is `unobserved` (6.1): should the model
+  have it, it acts as the lab's user, and its first action ends the run
+  in error.
 - **The minimal roots are reviewed, not assumed safe.** They are what
   Codex's sandboxed programs need to start, and their list is Codex's:
   the lab's owner reviews it for each host version, whose change is a new
@@ -1059,11 +1044,7 @@ What the agent's own commands may reach:
   the runner starts, named by a token in its arguments, must not appear
   in the probe's `/proc`. Each must be refused or absent, and a write in
   the work directory must succeed; otherwise the run ends in error
-  before any process starts, having spent nothing. Separated (6.1), the
-  probe runs as the host's user, and its commands run once more without
-  the profile, as an unconfined tool of the host's would: each but the
-  socket, loopback being the host's, must be refused or absent all the
-  same, the runner's home directory unlisted.
+  before any process starts, having spent nothing.
 - **The preamble says the same** for the agent's sake; the boundary does
   not rest on it.
 
@@ -1073,8 +1054,7 @@ What the agent's own commands may reach:
   prefix (the program and its fixed arguments, a client directory among
   them) to which the agent's arguments are appended.
 - **One MCP server,** `lab tool`, which Codex starts over stdio as its
-  only server (separated, a relay to the runner, 6.1), with no
-  environment of the runner's, offers one MCP tool
+  only server, with no environment of the runner's, offers one MCP tool
   per experiment tool and no resources or prompts: a tool's input
   `{"args": [...], "stdin": TEXT | null}`, its result the call's status
   or signal, its stdout and its stderr, as text.
@@ -1635,11 +1615,12 @@ kinds (lab-browser.md, sections 4 and 5):
 - **A driver that replays a transcript** with no model, as a cheaper
   reproduction: another driver, so another key. This contract has none
   (5.4).
-- **The host's user on each machine** (6.1): how the lab's user starts
-  the host as it (a rule of `sudo`'s naming the program, or a user
-  manager's unit) and how its tree joins the run's cgroup are the
-  runner's for each machine; and whether a host whose inventory is
-  observed whole runs separated too, as a second wall.
+- **A wall around the host itself** (6.1): the host's process is the
+  lab's user's, unconfined. A view around it (the same user, the home,
+  the lab and the held files out of view, if Codex's own sandbox nests
+  within it) or a user of its own would bound what an unobserved tool
+  reaches; neither is needed while the lab runs only on machines kept
+  for it.
 - **A held file's settling after a crash** is its owner's alone (4.8): a
   product's recovery command, run by the runner on the kept state, could
   give it back unattended.
