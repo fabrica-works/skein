@@ -112,6 +112,37 @@ class Experiment(unittest.TestCase):
                        'facts.driver_host']:
             self.assertIn(member, members)
 
+    def test_tool_mounts_must_be_their_own_resolved_paths(self):
+        # Bubblewrap refuses a symlink as a mount ("Can't mount on symlink destination /usr/bin/python3").
+        def case():
+            exp, subject, settings, facts, _ = fixture()
+            settings['driver'] = {'program': {'path': '/usr/bin/codex', 'sha256': D, 'version': '1'},
+                                  'model': 'gpt-6.1-sol', 'effort': 'medium'}
+            exp['driver'] = {'charter': 'charter.md', 'tools': [
+                {'name': 'client', 'argv': ['/usr/bin/python3', '-I'], 'env': {},
+                 'writes': ['{dir.client}'], 'reads': ['{source}', '/usr/share/data']}]}
+            facts['experiment_files']['charter.md'] = 'Exercise the client.'
+            facts['driver_host'] = True
+            return exp, subject, settings, facts
+        for python, roots, expected in (
+                (dict(regular=True, exec=True, sha256=D), {}, []),
+                (dict(path='/usr/bin/python3', regular=True, exec=True, sha256=D), {'/usr/share/data': '/usr/share/data'}, []),
+                (dict(path='/usr/bin/python3.13', regular=True, exec=True, sha256=D), {},
+                 [('driver.tools.0.argv.0', 'expected a resolved path: /usr/bin/python3.13')]),
+                (dict(path='/usr/bin/python3', regular=True, exec=True, sha256=D),
+                 {'/immutable/source': '/elsewhere/source', '/usr/share/data': '/srv/data'},
+                 [('driver.tools.0.reads.0', 'expected a resolved path: /elsewhere/source'),
+                  ('driver.tools.0.reads.1', 'expected a resolved path: /srv/data')])):
+            exp, subject, settings, facts = case()
+            facts['executables']['/usr/bin/python3'] = python
+            facts['resolved_roots'] = roots
+            with self.subTest(python=python, roots=roots):
+                self.assertEqual([(r.member, r.why) for r in experiment.validate(exp, subject, settings, facts)], expected)
+        # A process's program is no mount: its resolved path is the key's alone.
+        exp, subject, settings, facts, _ = fixture()
+        facts['executables']['/usr/bin/helper']['path'] = '/usr/bin/helper-1'
+        self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
+
     def test_key_identity(self):
         exp, subject, settings, facts, lab = fixture()
         identity = canonical.digest(experiment.key(D, subject, lab))

@@ -186,8 +186,14 @@ class MeterBrake(unittest.TestCase):
         status, output, timed_out = brake.run([native.PYTHON, '-I', '-B', '-S', '-c', code], {}, 1)
         self.assertEqual((status, timed_out), (None, True))
         for pid in map(int, output['stdout'].splitlines()):
-            try:
-                state = Path('/proc/' + str(pid) + '/stat').read_text().split(') ', 1)[1].split()[0]
-            except (FileNotFoundError, ProcessLookupError):
-                continue
-            self.assertEqual(state, 'Z')
+            # The orphaned child takes the group's SIGKILL but is not ours to wait: it may still be exiting.
+            deadline = time.monotonic() + 2
+            while True:
+                try:
+                    state = Path('/proc/' + str(pid) + '/stat').read_text().split(') ', 1)[1].split()[0]
+                except (FileNotFoundError, ProcessLookupError):
+                    state = None
+                if state in (None, 'Z') or time.monotonic() > deadline:
+                    break
+                time.sleep(0.01)
+            self.assertIn(state, (None, 'Z'))

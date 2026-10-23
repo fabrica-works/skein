@@ -294,7 +294,7 @@ def brake_fold(response, five_hour, week):
         if row is None:
             return 1, 'refused: ' + name + ' window missing' + seen
         text = name + ' ' + str(row['used_percent']) + '%/' + str(share) + '%'
-        if row['used_percent'] >= share:
+        if row['used_percent'] > share:
             return 1, 'refused: ' + text + seen
         found.append(text)
     return 0, 'go: ' + ', '.join(found)

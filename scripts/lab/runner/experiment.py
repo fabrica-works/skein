@@ -253,6 +253,8 @@ def validate(experiment, subject, settings, facts):
     files = files if type(files) is dict else {}
     programs = facts.get("executables")
     programs = programs if type(programs) is dict else {}
+    resolved_roots = facts.get('resolved_roots')
+    resolved_roots = resolved_roots if type(resolved_roots) is dict else {}
     available_artifacts = facts.get("artifacts_available")
     available_artifacts = available_artifacts if type(available_artifacts) in (list, tuple, set) else ()
     known = facts.get("known")
@@ -590,10 +592,23 @@ def validate(experiment, subject, settings, facts):
                     or metadata.get("regular") is not True or metadata.get("exec") is not True
                     or not digest_value(metadata.get("sha256"))):
                 out.append(Refusal(member, "program must be an absolute executable regular file with known identity"))
+            elif member.startswith('driver.tools.'):
+                # A tool's program is a mount in its view: bubblewrap refuses a symlink there.
+                resolved = metadata.get('path', path)
+                if resolved != path:
+                    out.append(Refusal(member, 'expected a resolved path: ' + str(resolved)))
         if ".reads." in member or ".writes." in member:
             # These paths are roots in a tool's view, not shell expressions.
             if not text.startswith(("/", "{experiment}", "{runner}", "{browser.", "{program.", "{artifact.", "{source}", "{dir.", "{proc.")) or ".." in text.split("/"):
                 out.append(Refusal(member, "expected a contained absolute template path"))
+            else:
+                # A root known before the run is a mount too (bubblewrap refuses a symlink).
+                try:
+                    root = render(text, known)
+                except Refused:
+                    root = None
+                if type(resolved_roots.get(root)) is str and resolved_roots[root] != root:
+                    out.append(Refusal(member, 'expected a resolved path: ' + resolved_roots[root]))
 
     for i, entry in enumerate(_list(exp.get("faults"), "faults", out)):
         m = f"faults.{i}"

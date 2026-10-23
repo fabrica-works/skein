@@ -221,7 +221,16 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
             executables[known['browser.program']] = metadata
             system[metadata['path']] = {k: metadata[k] for k in ('path', 'sha256')}
     # Invalid or run-specific templates are left to the pure validator.
+    resolved_roots = {}
     for member, text, _, _, executable in experiment.template_uses(exp, texts):
+        if '.reads.' in member or '.writes.' in member:
+            try:
+                root = experiment.render(text, known)
+                if root.startswith('/'):
+                    resolved_roots[root] = os.path.realpath(root)
+            except (Refused, TypeError, ValueError):
+                pass
+            continue
         if not executable:
             continue
         try:
@@ -273,7 +282,8 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
              "source_available": subject_available and subject.get("source") is not None,
              "artifacts_available": list(subject.get("artifacts", {})), "experiment_files": texts,
              "executables": executables, "known": known, "driver_host": driver_available,
-             "browser": browser_facts, 'held': held.availability(lab, exp.get('held', []))}
+             "browser": browser_facts, 'held': held.availability(lab, exp.get('held', [])),
+             'resolved_roots': resolved_roots}
     facts['artifact_bytes'] = {}
     for i, process in enumerate(exp.get('processes', []) if type(exp.get('processes')) is list else []):
         if type(process) is not dict or type(process.get('files', [])) is not list:

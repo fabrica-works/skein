@@ -266,11 +266,15 @@ class Meter(unittest.TestCase):
 
 
 class Windows(unittest.TestCase):
-    def test_brake_admits_swapped_windows_and_refuses_each_at_share(self):
+    def test_brake_admits_swapped_windows_and_refuses_each_past_share(self):
         for swapped in (False, True):
             self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(swapped=swapped))), 50, 75),
                              (0, 'go: five-hour 12%/50%, week 3%/75%'))
-        for five, week, line in ((50, 3, 'five-hour 50%/50%'), (12, 75, 'week 75%/75%'), (12, 80, 'week 80%/75%')):
+        # "Past" its share is strictly greater: each share's own value still admits (lab.md 6.5).
+        for five, week in ((49, 3), (50, 3), (12, 74), (12, 75), (50, 75)):
+            self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(five, week))), 50, 75),
+                             (0, f'go: five-hour {five}%/50%, week {week}%/75%'))
+        for five, week, line in ((51, 3, 'five-hour 51%/50%'), (12, 76, 'week 76%/75%'), (12, 80, 'week 80%/75%')):
             seen = f' (seen: primary 300 min {five}% resets 100, secondary 10080 min {week}% resets ?)'
             self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(five, week))), 50, 75),
                              (1, 'refused: ' + line + seen))
@@ -281,9 +285,11 @@ class Windows(unittest.TestCase):
                     primary=dict(windowDurationMins=10080, usedPercent=1, resetsAt=1793382149), secondary=None)
         self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=week)), 50, 75), (0, 'go: five-hour none, week 1%/75%'))
         week['primary']['usedPercent'] = 75
+        self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=week)), 50, 75), (0, 'go: five-hour none, week 75%/75%'))
+        week['primary']['usedPercent'] = 76
         self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=week)), 50, 75),
-                         (1, 'refused: week 75%/75% (seen: limitId codex, planType promax, '
-                             'primary 10080 min 75% resets 1793382149, secondary none)'))
+                         (1, 'refused: week 76%/75% (seen: limitId codex, planType promax, '
+                             'primary 10080 min 76% resets 1793382149, secondary none)'))
         self.assertEqual(codex.brake_fold(dict(result=dict(rateLimits=snapshot(60, 3))), 50, 75),
                          (1, 'refused: five-hour 60%/50% (seen: primary 300 min 60% resets 100, '
                              'secondary 10080 min 3% resets ?)'))

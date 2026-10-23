@@ -103,7 +103,7 @@ Its effects are in `runner/brake_codex.py`; `codex.brake_fold` makes the pure
 decision. Windows are identified by duration, 300 and 10080 minutes,
 regardless of primary/secondary order. The week must be present, and the
 five-hour window when the account reports one (a plan may report the week
-alone); each strictly below its share, with no reached type, no window of
+alone); each not past its share (equal to it admits), with no reached type, no window of
 another or a null duration or use, and no RPC error. Its final line is
 `go: five-hour U%/S%, week U%/S%` (`five-hour none` when not reported) or
 `refused: WHY`. A refusal over an answer
@@ -576,6 +576,9 @@ only those tools; each call waits for `go` or `refuse` before starting. Its
 bubblewrap view exposes read-only system roots, the program, declared reads,
 declared writes, read-only work, private `/proc` and `/tmp`, declared environment
 and shared networking. Broker EOF kills active views, including descendants.
+Bubblewrap refuses a symlink as a mount, so validation refuses a tool's program,
+and a read or write rendered before the run, that is not its own resolved path:
+`expected a resolved path: REAL`, naming the member.
 The server writes private `driver/calls/N.{stdin,stdout,stderr}`; the runner
 alone numbers actions and writes `driver/calls.jsonl`.
 

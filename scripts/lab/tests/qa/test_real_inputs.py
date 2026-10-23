@@ -218,11 +218,11 @@ class MeterBrakeQA(RealCase):
         self.assertFalse(host.with_suffix('.turn').exists())
         self.assertFalse(list(self.store.glob('keys/*/*/runs/*')))
 
-    def test_codex_brake_reversed_windows_refuses_at_share(self):
+    def test_codex_brake_reversed_windows_refuses_past_share(self):
         # lab.md 6.5: the brake "refuses past the settings' share of each";
-        # README: "each strictly below its share", windows by duration.
+        # "past" is strictly greater (ruled 2026-10-23), windows by duration.
         host = self.host(dict(rate_read=dict(primary=dict(windowDurationMins=10080,
-            usedPercent=75, resetsAt=123), secondary=dict(windowDurationMins=300,
+            usedPercent=76, resetsAt=123), secondary=dict(windowDurationMins=300,
             usedPercent=1, resetsAt=456))), name='brake')
         codex_home = self.base / 'brake-codex'
         codex_home.mkdir(mode=0o700)
@@ -235,7 +235,7 @@ class MeterBrakeQA(RealCase):
         result = self.command([LAB, 'run', self.experiment, '--subject', subject, '--seed', '7'])
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn(b'brake:', result.stderr)
-        self.assertIn(b'75', result.stderr)
+        self.assertIn(b'week 76%/75%', result.stderr)
         requests = [json.loads(line)['method'] for line in host.with_suffix('.requests').read_text().splitlines()]
         self.assertEqual(requests, ['initialize', 'initialized', 'account/rateLimits/read'])
         self.assertFalse(list(self.store.glob('keys/*/*/runs/*')))

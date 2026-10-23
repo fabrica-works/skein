@@ -37,7 +37,7 @@ class Driver(unittest.TestCase):
         self.settings['costs']['smoke'].update(driver_seconds=2, driver_actions=5, driver_input_tokens=100)
         self.exp = dict(format='lab-experiment/1', name='native', cost='smoke', dirs=[], processes=[], actions=[],
                         collect=[], checks=[], driver=dict(charter='charter.md', tools=[
-                            dict(name='echo', argv=['/bin/echo'], env={}, reads=[], writes=[])]), faults=[], planted=[])
+                            dict(name='echo', argv=['/usr/bin/echo'], env={}, reads=[], writes=[])]), faults=[], planted=[])
         (self.directory / 'charter.md').write_text('This charter exercises the scripted driver.')
 
     tearDown = native.Runtime.tearDown
@@ -69,7 +69,7 @@ class Driver(unittest.TestCase):
         return record
 
     def test_pass_records_commands_calls_usage_inventory_and_report(self):
-        self.exp['driver']['tools'].append(dict(name='read', argv=['/bin/cat'], env={}, reads=[], writes=[]))
+        self.exp['driver']['tools'].append(dict(name='read', argv=['/usr/bin/cat'], env={}, reads=[], writes=[]))
         record = self.story(dict(pages=True, items=[
             dict(type='mcpToolCall', server='lab', tool='echo', arguments=dict(args=['early'], stdin='input'), early=True),
             dict(type='commandExecution', argv=['/bin/sh', '-c', 'printf observed > evidence; printf command-output']),
@@ -113,7 +113,7 @@ class Driver(unittest.TestCase):
         self.assertTrue(all(row['ok'] for row in driver['probe'].values()))
         tools = canonical.loads((self.root_run / 'driver/tools.json').read_bytes())
         self.assertEqual(tools['socket'], str(self.root_run / 'driver/broker.sock'))
-        self.assertEqual(tools['tools'][0]['argv'], ['/bin/echo'])
+        self.assertEqual(tools['tools'][0]['argv'], ['/usr/bin/echo'])
         self.assertFalse((self.root_run / 'driver/broker.sock').exists())
         self.assertTrue(self.program.with_suffix('.turn').exists())
         key = json.loads((self.root_run.parents[1] / 'key.json').read_bytes())
