@@ -411,7 +411,44 @@ named by `files`, is a template: `{name}` is replaced by its value, and
   an integer, or null for a program that declares none, whose peak is
   recorded and not judged. The lab adds no bound of its own.
 - **Its streams:** stdin is `/dev/null`; stdout and stderr are files of
-  the run's evidence, read by the runner as they grow.
+  the run's evidence, read by the runner as they grow, except for the
+  private bootstrap channel below.
+- **Private bootstrap,** optional `bootstrap`,
+  `{"stream": "stdout" | "stderr", "action": NAME}`: the whole named
+  stream is private input for exactly one trusted seed action. The
+  action must exist, no other process may name it as its recipient,
+  and it declares neither `stdin` nor `await`. No ready rule or
+  action's awaited rule may read the private stream. It creates no
+  capture or template value.
+  - The stream carries exactly one nonempty UTF-8 line terminated by
+    LF. The runner holds it in memory and pipes it, including LF, to
+    the recipient's stdin once. A partial line at EOF, malformed line,
+    or any output after its terminating LF ends the run in error
+    `bootstrap/PROCESS`, with a fixed reason and no private bytes.
+  - The process becomes ready only when both its public ready lines
+    and its private line have arrived, in either order, within its
+    one `ready_seconds` from spawn. No new deadline is added.
+  - No byte of the private stream is written to a file, hashed or
+    given to the run's life, a capture, a timeline, the driver or the
+    triager. The recipient's stdout and stderr are private too: an
+    authentication client may echo its input. Its stdin record and
+    its two output records are null, and none has a retained file.
+  - Its own process record gains `bootstrap`, with `stream`, `action`,
+    `received_ms` and `delivered_ms`; the latter two are null until
+    observed. Timeline events `bootstrap_received` and
+    `bootstrap_delivered` name only the process and action. The source
+    process's private output record is null, with no output file.
+  - The host owns the bytes outside the serializable run state. It
+    drops them after delivery or on cut, error or interruption; it
+    keeps draining every private stream without persisting its bytes.
+    Broken recipient stdin is an error with a fixed diagnosis.
+    The recipient's nonzero exit still fails as a seed action (7.1).
+    The trusted client validates the private input; the runner does
+    not publish a sign-in link to identify its public endpoint.
+  - Without `bootstrap`, streams, readiness, stdin and records follow
+    their ordinary contracts. The private channel is a deliberate
+    exception to output retention: authentication bytes must not
+    enter evidence, even when a client repeats them in a diagnostic.
 
 ### 4.4 Addresses
 
@@ -429,7 +466,9 @@ A command is `{"name", "argv", "env", "stdin"}`, and a collection or a
 check has `cluster` too; it is run once, contained as a process is
 (5.2), within `command_seconds`; its stdin is the rendered `stdin`, kept
 as a file of the run's, or `/dev/null`, and its stdout and stderr are
-kept.
+kept. A private bootstrap recipient (4.3) instead receives its memory-only
+pipe; the same command bound includes delivery, and none of its streams
+is persisted.
 
 - **Seed actions,** `actions`, in their order, once every process is
   ready: the state a story starts from (an account, a key, something
@@ -507,8 +546,13 @@ beside the backend's observations collected live, extends 4.1's example:
     "env": {"PATH": "/usr/bin:/bin"}}]}
 ```
 
-Post-stop collection and checks are not yet implemented in `scripts/lab/`.
-For the attended prototype, its host performs this ordering.
+A stopped command retains its ordinary `collect` or `checks` group; its
+command record also names `cluster: "stopped"`. The run's life distinguishes
+live collection/check from stopped collection/check phases. It records a
+collection's successful completion independently of its directory's
+existence. A stopped check may not start merely because an incomplete
+collection left files behind. After an interrupted or unconfirmed stop,
+every skipped stopped check is recorded in `undecided` with its reason.
 
 ### 4.6 Faults and planted failures
 
@@ -996,6 +1040,10 @@ evidence for the owner, not failures.
 - **A stop whose stderr holds a panic** is reported once, as the panic.
 - **No early exit is ignored,** one the runner's own fault caused
   included (9.4).
+- **Private bootstrap streams** (4.3) are excluded from panic-text
+  inspection, including the recipient's diagnostics: their bytes never
+  become evidence. A recipient that panics still fails by its nonzero
+  seed-action exit. The source's public streams retain the panic check.
 
 ### 7.2 A check command
 
@@ -1333,6 +1381,7 @@ host's carry out.
 | `experiment` | `experiment.json` validated against the subject, the settings and the machine's facts; its templates; the key (2.3, section 4) | pure |
 | `draws` | the draws, the start order, a fault's N (5.4) | pure |
 | `life` | the run's life, `step(state, event) -> (state, requests)` (section 5) | pure |
+| `bootstrap` | private line framing, receipt and one-time consumption; its byte state stays in the host, outside serializable run state (4.3) | pure |
 | `checks` | the runner's own checks, a check command's result, panic headers (section 7) | pure |
 | `judge` | the outcome (5.5) and the verdict (section 8) | pure |
 | `findings` | a finding's fold, its transitions and their refusals, matching (section 9) | pure |
