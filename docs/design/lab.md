@@ -39,7 +39,8 @@ What is still open is in section 11.
   each whole tree, however the run ends (section 5).
 - **Addresses are reported:** a process binds port 0 itself and prints
   its address on a ready line. The runner never picks, binds or passes
-  a port (4.4).
+  a port, but for a port the machine keeps for a program that cannot
+  report one, named in the lab's settings (4.4).
 - **Held files move, never copy:** a secret one holder may have at a
   time, such as an account's signed-in record, is kept by the lab, taken
   by a run, moved into the cluster by its seed, and given back by its
@@ -209,6 +210,12 @@ named by its digest.
   checks it again before it starts. A name no template uses is never
   read.
 
+  They name in `ports` each port the machine keeps for a program that
+  cannot report its address (4.4), by name, a port number: an
+  experiment names one by its template, `{port.N}` (4.2). It is an
+  address, so not in the key; validation refuses a `{port.N}` the
+  settings do not name.
+
   A runner whose checks change, a helper or a host updated, another
   model, a changed configuration or another cost class is a new key; a
   class's value changed is not (6.5).
@@ -247,7 +254,7 @@ named by its digest.
 
 ```
 ~/src/rust/tmp/lab/                 the lab, 0700
-├── settings.json                   the driver host, the triager, the cost classes, the browser, programs, the brake
+├── settings.json                   the driver host, the triager, the cost classes, the browser, programs, ports, the brake
 ├── browser/                        the browser's program and fonts/ (lab-browser.md, 7)
 ├── lock                            held by every command that writes
 ├── canary                          a file no driver or triager may read (6.2)
@@ -390,6 +397,7 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 | `{runner}` | the runner's own directory, `scripts/lab/` as it runs, as `{runner}/look/capture` | everything |
 | `{browser.program}`, `{browser.chromium}`, `{browser.fonts}` | the settings' browser: the program, Chromium and the fonts directory, by path (2.3) | everything |
 | `{program.N}` | the settings' named program N, by path (2.3) | everything |
+| `{port.N}` | the settings' kept port N, in decimal (2.3, 4.4) | everything |
 | `{held.N}` | held file N's place in the run (4.8) | seed actions and the release, in `argv` alone |
 | `{artifact.A}` | the subject's artifact A | everything |
 | `{source}` | the subject's source tree | everything |
@@ -500,7 +508,13 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 - **Nothing else.** The runner never chooses, binds, releases or passes
   a port, so no bind races its release, and an experiment cannot ask for
   a port number. A program that cannot report its address has no place
-  in a cluster until it can.
+  in a cluster until it can, with one exception:
+- **A kept port.** A program whose port is configured, not reported,
+  such as a forge's server, binds a port its machine keeps for it, named
+  in the lab's settings and by `{port.N}` (2.3): one outside the
+  machine's ephemeral range, so that no port-0 bind takes it, used by
+  one run at a time, under the lab's lock (3.2). A run that finds it
+  taken fails as its process does.
 
 ### 4.5 Commands: seed actions, collection and checks
 
@@ -642,6 +656,7 @@ run:
   when needed; for an experiment that names the browser by a template,
   and for it alone, the browser's settings missing, or its Chromium or
   fonts differing from them (2.3);
+- a `{port.N}` the settings do not name;
 - a `{program.N}` the settings do not name, or whose file differs from
   them (2.3); a `held` name the lab does not hold, naming the run that
   has taken it, or a `{held.N}` naming a file the experiment does not
@@ -1148,10 +1163,10 @@ evidence for the owner, not failures.
   account of its own, such as an LLM's that its agents use beside the
   driver, which the driver's bounds do not see. Its experiment names a
   `meter`, a command `{"name", "argv", "env"}` contained as any (4.5),
-  run every `meter_seconds` from the seed's end to the release's start,
-  and once more after the drive: its stdout's last line is the
-  subject's spend so far, a non-negative integer in the unit the
-  product's binding names. Past `subject_spend`, the driver is stopped
+  run every `meter_seconds` of the drive, and once more after it,
+  before the live collections, its last reading: its stdout's last
+  line is the subject's spend so far, a non-negative integer in the
+  unit the product's binding names. Past `subject_spend`, the driver is stopped
   as past its time, and the run fails `bound/subject_spend`. A meter
   that fails twice running, or prints no such line, ends the drive too,
   and fails the run `meter/exit:<status>` or `meter/reading`: no subject
