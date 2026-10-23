@@ -63,6 +63,20 @@ fn document_and_empty_requests_reserve_no_rows() {
     }
 }
 #[test]
+fn creations_reads_and_writes_are_documents_the_host_admits() {
+    // forge-setup.md 4.9: Create reads the repository, the branch's head and a file's bytes.
+    let at = fj::Repo { owner: b"work".as_slice().into(), name: b"hello".as_slice().into() };
+    let reference = skein_forge::forgejo::id::read(b"0123456789abcdef0123456789abcdef01234567").expect("object id");
+    for call in [
+        fj::Request::Repository { at: at.clone() }.into(),
+        fj::Request::Branch { at: at.clone(), name: b"main".as_slice().into() }.into(),
+        fj::Request::Raw { at, path: b".forgejo/workflows/ci.yml".as_slice().into(), reference }.into(),
+    ] {
+        assert_eq!(super::row_bound(&call), Some(0));
+        assert_eq!(capacity(&connection(&call)), 0);
+    }
+}
+#[test]
 fn row_requests_reserve_exactly_their_page_size() {
     let at = fj::Repo { owner: b"acme".as_slice().into(), name: b"specimen".as_slice().into() };
     for call in [

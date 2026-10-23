@@ -525,6 +525,9 @@ fn forgejo_row_bound(request: &request::Request) -> Option<u32> {
         | Request::CreateOrg { .. }
         | Request::CreateFile { .. }
         | Request::CreateRepository { .. }
+        | Request::Repository { .. }
+        | Request::Branch { .. }
+        | Request::Raw { .. }
         | Request::User
         | Request::ApiSettings
         | Request::RepositoryById { .. }
@@ -542,7 +545,6 @@ fn forgejo_row_bound(request: &request::Request) -> Option<u32> {
         | Request::EditTeam { .. }
         | Request::TeamMembers { .. }
         | Request::AddMember { .. }
-        | Request::Repository { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -552,7 +554,6 @@ fn forgejo_row_bound(request: &request::Request) -> Option<u32> {
         | Request::CombinedStatus { .. }
         | Request::Reviews { .. }
         | Request::ReviewComments { .. }
-        | Request::Branch { .. }
         | Request::Branches { .. }
         | Request::Protection { .. }
         | Request::Protections { .. }
@@ -560,7 +561,6 @@ fn forgejo_row_bound(request: &request::Request) -> Option<u32> {
         | Request::Pulls { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }
-        | Request::Raw { .. }
         | Request::Runs { .. }
         | Request::Run { .. }
         | Request::Jobs { .. }
