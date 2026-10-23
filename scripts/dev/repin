@@ -115,9 +115,9 @@ def stable(root, branch, head):
                              '--git-path', state)).exists(), 'merge/rebase state refused')
 
 
-def scope(root, branch, head, allowed, base=None):
+def scope(root, branch, head, allowed, base=None, local_main=None):
     stable(root, branch, head)
-    require(git(root, 'rev-parse', 'main') == (base or head) and
+    require(git(root, 'rev-parse', 'main') == (local_main or base or head) and
             git(root, 'rev-parse', 'origin/main') == (base or head), 'base refs moved')
     for path in allowed:
         regular(root, path)
@@ -207,8 +207,9 @@ def main():
     branch = git(root, 'symbolic-ref', '--quiet', 'HEAD')
     require(branch != 'refs/heads/main', 'consumer branch must not be main')
     stable(root, branch, base)
-    require(git(root, 'rev-parse', 'main') == base and
-            git(root, 'rev-parse', 'origin/main') == base, 'base must equal main and origin/main')
+    local_main = git(root, 'rev-parse', 'main')
+    require(git(root, 'rev-parse', 'origin/main') == base, 'base must equal origin/main')
+    run(root, ['git', 'merge-base', '--is-ancestor', local_main, base])
     require(not run(root, ['git', 'status', '--porcelain=v1', '--untracked-files=all',
                           '--ignore-submodules=none']), 'consumer must be clean')
     require(not any(line.startswith(b'160000 ') for line in
@@ -236,7 +237,7 @@ def main():
     def phase(label, argv):
         print('repin: ' + label + ' ' + json.dumps(['heavy', *argv]), flush=True)
         result = subprocess.run(['heavy', *argv], cwd=root, stdin=subprocess.DEVNULL)
-        scope(root, branch, base, allowed)
+        scope(root, branch, base, allowed, local_main=local_main)
         validate_lock(baseline, tomllib.loads((root / 'Cargo.lock').read_text()), completed)
         require(result.returncode == 0, f'{label} failed ({result.returncode})')
         print('repin: ' + label + ' passed', flush=True)
@@ -249,17 +250,17 @@ def main():
         phase('update', ['cargo', 'update', '--precise', revision, '-p', selector])
     for label, argv in commands:
         phase(label, argv)
-    scope(root, branch, base, allowed)
+    scope(root, branch, base, allowed, local_main=local_main)
     validate_lock(baseline, tomllib.loads((root / 'Cargo.lock').read_text()), selected)
     changed = run(root, ['git', 'status', '--porcelain=v1', '-z', '--untracked-files=all'])
     paths = [os.fsdecode(record[3:]) for record in changed.split(b'\0') if record]
     run(root, ['git', '--literal-pathspecs', 'add', '--', *paths])
-    scope(root, branch, base, allowed)
+    scope(root, branch, base, allowed, local_main=local_main)
     run(root, ['git', 'commit', '-m', 'Repin ' + ', '.join(
         name + '=' + revision for name, revision in pins.items())], capture=False)
     commit = git(root, 'rev-parse', 'HEAD')
     require(git(root, 'show', '-s', '--format=%P', commit) == base, 'commit parent changed')
-    scope(root, branch, commit, set(), base)
+    scope(root, branch, commit, set(), base, local_main)
     validate_lock(baseline, tomllib.loads(run(root, ['git', 'show', commit + ':Cargo.lock']).decode()), selected)
     committed_paths = run(root, ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', '-z', commit])
     require({os.fsdecode(path) for path in committed_paths.split(b'\0') if path} <= allowed,

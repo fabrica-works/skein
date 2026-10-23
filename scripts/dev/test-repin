@@ -254,6 +254,9 @@ def fixtures(root, evidence):
     assert {p['name'] for p in packages if 'skein.git' in p.get('source', '')} == {'skein-a', 'skein-b'}
     assert next(p['source'] for p in packages if p['name'] == 'smith-a').endswith('#' + lab.old['smith'])
     assert len(Path(env['FIXTURE_TRACE']).read_text().splitlines()) == 3
+    stale, stale_env = lab.case('stale-local-main', success=True, setup=lambda p, e:
+        git(p, e, 'update-ref', 'refs/heads/main', lab.base + '^'))
+    assert git(stale, stale_env, 'rev-parse', 'main') == git(stale, stale_env, 'rev-parse', lab.base + '^')
     lab.case('multiple-sources', success=True, pins=list(lab.new.items()))
     for label, pins in [('abbrev', [('skein', 'a' * 12)]), ('malformed', [('skein', 'z' * 40)]),
                         ('duplicate', [('skein', lab.new['skein'])] * 2),

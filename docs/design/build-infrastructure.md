@@ -486,8 +486,10 @@ absent and ambiguous names refuse. At least one pin must change and at least
 one focused check is required. The command prints base, tuple, phase argv,
 results and prepared commit; it does not print environments.
 
-The consumer must be on a named branch other than main, with HEAD, local main
-and origin/main at the explicit base. Staged, untracked, submodule and
+The consumer must be on a named branch other than main, with HEAD and
+origin/main at the explicit base. Local main may be an older ancestor;
+its initial identity is retained and must not move during preparation.
+Staged, untracked, submodule and
 merge/rebase state refuse. No fetch or policy lookup selects a base or tuple.
 Owners and the director choose their slot and pins; there is no timing,
 batching, scheduling, persistent job state or configuration file here.
