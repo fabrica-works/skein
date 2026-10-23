@@ -297,13 +297,7 @@ fn spawn_prepared(command: &mut Spawn, terminal: Option<&CString>, cgroup: Optio
 }
 
 pub(crate) fn signal_child(pidfd: Fd, signal: Signal, to: Target) -> Result<Done, Error> {
-    let number = match signal {
-        Signal::Interrupt => libc::SIGINT,
-        Signal::Terminate => libc::SIGTERM,
-        Signal::Kill => libc::SIGKILL,
-        Signal::Stop => libc::SIGSTOP,
-        Signal::Continue => libc::SIGCONT,
-    };
+    let number = signal_number(signal);
     // SAFETY: pidfd_send_signal takes no borrowed memory when siginfo is null.
     let sent = unsafe {
         libc::syscall(
@@ -320,7 +314,7 @@ pub(crate) fn signal_child(pidfd: Fd, signal: Signal, to: Target) -> Result<Done
     if sent == 0 { Ok(Done::Nothing) } else { Err(map_error(super::last_errno())) }
 }
 
-fn map_error(errno: i32) -> Error {
+pub(super) fn map_error(errno: i32) -> Error {
     match errno {
         libc::ENOENT => Error::NotFound,
         libc::EACCES | libc::EPERM => Error::Permission,
@@ -612,3 +606,15 @@ pub(crate) fn wait_cgroup_change(descriptor: Fd, millis: u32) -> Result<(), Erro
     };
     if result < 0 { Err(Error::Other(super::last_errno())) } else { Ok(()) }
 }
+
+pub(super) fn signal_number(signal: Signal) -> i32 {
+    match signal {
+        Signal::Interrupt => libc::SIGINT,
+        Signal::Terminate => libc::SIGTERM,
+        Signal::Kill => libc::SIGKILL,
+        Signal::Stop => libc::SIGSTOP,
+        Signal::Continue => libc::SIGCONT,
+    }
+}
+
+pub(crate) fn forget(_handle: Fd) {}

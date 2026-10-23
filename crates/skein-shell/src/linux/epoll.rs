@@ -47,7 +47,7 @@ impl Epoll {
         Ok(Self { fd, events: vec![libc::epoll_event { events: 0, u64: 0 }; capacity].into_boxed_slice() })
     }
 
-    pub(crate) fn interest(&self, fd: Fd, existed: bool, read: bool, write: bool) -> Result<(), i32> {
+    pub(crate) fn interest(&mut self, fd: Fd, existed: bool, read: bool, write: bool) -> Result<(), i32> {
         let bits = if read { libc::EPOLLIN } else { 0 } | if write { libc::EPOLLOUT } else { 0 };
         let op = if bits == 0 {
             libc::EPOLL_CTL_DEL

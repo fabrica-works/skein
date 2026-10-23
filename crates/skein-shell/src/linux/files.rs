@@ -71,7 +71,7 @@ pub(crate) fn sync(fd: Fd) -> Result<(), i32> {
     })
 }
 
-pub(crate) fn stat(fd: Fd) -> Result<libc::statx, i32> {
+pub(crate) fn stat(fd: Fd) -> Result<skein_io::kernel::Stat, i32> {
     // SAFETY: statx is a plain integer C record, valid when zeroed.
     let mut raw: libc::statx = unsafe { mem::zeroed() };
     retry(|| {
@@ -81,7 +81,7 @@ pub(crate) fn stat(fd: Fd) -> Result<libc::statx, i32> {
             libc::statx(fd.raw(), c"".as_ptr(), libc::AT_EMPTY_PATH, sync::STAT_MASK, ptr::from_mut(&mut raw))
         })
     })?;
-    Ok(raw)
+    Ok(sync::stat(&raw))
 }
 
 pub(crate) fn rename(from_dir: Fd, from: &[u8], to_dir: Fd, to: &[u8], no_replace: bool) -> Result<(), i32> {

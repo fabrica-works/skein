@@ -9,7 +9,7 @@
 
 use skein_io::kernel::{Error, Fd, Signal};
 
-use super::last_errno;
+use super::{last_errno, process::map_error};
 
 pub(crate) fn child_id(handle: Fd) -> Result<u32, Error> {
     let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{}", handle.raw()))
@@ -30,14 +30,7 @@ fn negative_group(group: u32) -> Result<libc::pid_t, Error> {
 
 pub(crate) fn signal_group(group: u32, signal: Signal) -> Result<(), Error> {
     let group = negative_group(group)?;
-    // transitional: task B (the platform split) shares this with process.rs
-    let number = match signal {
-        Signal::Interrupt => libc::SIGINT,
-        Signal::Terminate => libc::SIGTERM,
-        Signal::Kill => libc::SIGKILL,
-        Signal::Stop => libc::SIGSTOP,
-        Signal::Continue => libc::SIGCONT,
-    };
+    let number = super::process::signal_number(signal);
     // SAFETY: group is a checked negative ID; kill takes only integers.
     let sent = unsafe { libc::kill(group, number) };
     if sent == 0 { Ok(()) } else { Err(map_error(last_errno())) }
@@ -53,22 +46,6 @@ pub(crate) fn group_live(group: u32) -> Result<bool, Error> {
         libc::ESRCH => Ok(false),
         libc::EPERM => Ok(true),
         other => Err(map_error(other)),
-    }
-}
-
-// transitional: task B (the platform split) shares this with process.rs
-fn map_error(errno: i32) -> Error {
-    match errno {
-        libc::ENOENT => Error::NotFound,
-        libc::EACCES | libc::EPERM => Error::Permission,
-        libc::ENOTDIR => Error::NotADirectory,
-        libc::ELOOP => Error::TooManyLinks,
-        libc::ENAMETOOLONG => Error::NameTooLong,
-        libc::EXDEV => Error::Escape,
-        libc::EMFILE | libc::ENFILE => Error::TooManyOpenFiles,
-        libc::ENOMEM | libc::ENOBUFS => Error::NoBufferSpace,
-        libc::EINVAL => Error::InvalidArgument,
-        other => Error::Other(other),
     }
 }
 

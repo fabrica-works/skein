@@ -5,7 +5,9 @@ use std::{fmt, io};
 use skein_io::kernel::{Complete, Submit};
 use skein_lib::{Queue, Time};
 
-use crate::{linux::ring, readiness};
+#[cfg(target_os = "linux")]
+use crate::linux::ring;
+use crate::{readiness, system};
 
 /// How large a [`crate::Kernel`] is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -44,8 +46,10 @@ pub enum OpenError {
     Setup(i32),
     /// The kernel is below the floor, 6.12: its ring lacks this operation.
     Missing(&'static str),
-    /// The kernel's release is below the floor, 6.12 (shell.md, 4 and 7.6).
+    /// The kernel's release is below this system's floor (shell.md, 4 and 7.6).
     BelowFloor,
+    /// This system has no completion ring.
+    Unsupported,
 }
 
 impl fmt::Display for OpenError {
@@ -56,7 +60,10 @@ impl fmt::Display for OpenError {
                 write!(f, "io_uring could not be set up: {}", io::Error::from_raw_os_error(*errno))
             }
             OpenError::Missing(name) => write!(f, "the kernel is below 6.12: io_uring has no {name}"),
-            OpenError::BelowFloor => write!(f, "the kernel is below the floor, 6.12"),
+            OpenError::BelowFloor => {
+                write!(f, "the kernel is below the floor, {}.{}", system::FLOOR.0, system::FLOOR.1)
+            }
+            OpenError::Unsupported => f.write_str("the ring is not available on this system"),
         }
     }
 }
@@ -86,7 +93,10 @@ impl fmt::Display for Chosen {
         match self.backend {
             Backend::Ring => f.write_str("io_uring"),
             Backend::Readiness => {
+                #[cfg(target_os = "linux")]
                 f.write_str("readiness (epoll)")?;
+                #[cfg(target_os = "macos")]
+                f.write_str("readiness (kqueue)")?;
                 if let Some(errno) = self.ring_refused {
                     f.write_str(": io_uring refused (")?;
                     match errno {
@@ -110,29 +120,35 @@ pub struct Kernel {
 }
 
 #[derive(Debug)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "the startup choice holds the ring inline so its path adds no allocation or indirection (shell.md, 7.1)"
+#[cfg_attr(
+    target_os = "linux",
+    expect(
+        clippy::large_enum_variant,
+        reason = "the startup choice holds the ring inline so its path adds no allocation or indirection (shell.md, 7.1)"
+    )
 )]
 enum Running {
+    #[cfg(target_os = "linux")]
     Ring(ring::Ring),
     Readiness(readiness::Readiness),
 }
 
 /// The ring's refusal that falls back to readiness (shell.md, 7.1):
 /// `Setup(ENOSYS)` or `Setup(EPERM)`, its errno; anything else, None.
+#[cfg(any(target_os = "linux", test))]
 fn falls_back(refused: &OpenError) -> Option<i32> {
     match refused {
         OpenError::Setup(errno) => match *errno {
             libc::ENOSYS | libc::EPERM => Some(*errno),
             _ => None,
         },
-        OpenError::Missing(_) | OpenError::BelowFloor | OpenError::NoOperations => None,
+        OpenError::Missing(_) | OpenError::BelowFloor | OpenError::NoOperations | OpenError::Unsupported => None,
     }
 }
 
 impl Kernel {
     /// The host's backend (shell.md, 7.1).
+    #[cfg(target_os = "linux")]
     pub fn open(config: Config) -> Result<Self, OpenError> {
         match ring::Ring::open(config) {
             Ok(ring) => Ok(Self { running: Running::Ring(ring), ring_refused: None }),
@@ -146,10 +162,19 @@ impl Kernel {
         }
     }
 
+    /// The host's readiness backend (shell.md, 7.1).
+    #[cfg(target_os = "macos")]
+    pub fn open(config: Config) -> Result<Self, OpenError> {
+        Self::open_on(config, Backend::Readiness)
+    }
+
     /// Forces a backend, so its conformance cannot silently use another.
     pub fn open_on(config: Config, backend: Backend) -> Result<Self, OpenError> {
         let running = match backend {
+            #[cfg(target_os = "linux")]
             Backend::Ring => Running::Ring(ring::Ring::open(config)?),
+            #[cfg(target_os = "macos")]
+            Backend::Ring => return Err(OpenError::Unsupported),
             Backend::Readiness => Running::Readiness(readiness::Readiness::open(config)?),
         };
         Ok(Self { running, ring_refused: None })
@@ -159,6 +184,7 @@ impl Kernel {
     #[must_use]
     pub fn chosen(&self) -> Chosen {
         let backend = match &self.running {
+            #[cfg(target_os = "linux")]
             Running::Ring(_) => Backend::Ring,
             Running::Readiness(_) => Backend::Readiness,
         };
@@ -169,6 +195,7 @@ impl Kernel {
     #[must_use]
     pub fn in_flight(&self) -> u32 {
         match &self.running {
+            #[cfg(target_os = "linux")]
             Running::Ring(ring) => ring.in_flight(),
             Running::Readiness(readiness) => readiness.in_flight(),
         }
@@ -178,6 +205,7 @@ impl Kernel {
     #[must_use]
     pub fn room(&self) -> u32 {
         match &self.running {
+            #[cfg(target_os = "linux")]
             Running::Ring(ring) => ring.room(),
             Running::Readiness(readiness) => readiness.room(),
         }
@@ -186,6 +214,7 @@ impl Kernel {
     /// Takes records while there is room, then waits as requested.
     pub fn submit(&mut self, records: &mut Queue<Submit>, wait: Wait) {
         match &mut self.running {
+            #[cfg(target_os = "linux")]
             Running::Ring(ring) => ring.submit(records, wait),
             Running::Readiness(readiness) => readiness.submit(records, wait),
         }
@@ -194,6 +223,7 @@ impl Kernel {
     /// Hands back completions and their records while `out` has room.
     pub fn reap(&mut self, out: &mut Queue<Complete>) {
         match &mut self.running {
+            #[cfg(target_os = "linux")]
             Running::Ring(ring) => ring.reap(out),
             Running::Readiness(readiness) => readiness.reap(out),
         }
@@ -203,6 +233,7 @@ impl Kernel {
     #[must_use]
     pub const fn resubmitted(&self) -> u64 {
         match &self.running {
+            #[cfg(target_os = "linux")]
             Running::Ring(ring) => ring.resubmitted(),
             Running::Readiness(readiness) => readiness.resubmitted(),
         }
@@ -211,8 +242,10 @@ impl Kernel {
 
 #[cfg(test)]
 mod tests {
-    use super::{Backend, Chosen, Kernel, falls_back};
-    use crate::{Config, OpenError};
+    use super::falls_back;
+    use super::{Backend, Chosen, Kernel};
+    use crate::Config;
+    use crate::OpenError;
 
     #[test]
     fn only_setup_refusals_fall_back() {
@@ -224,11 +257,14 @@ mod tests {
             (OpenError::Missing("x"), None),
             (OpenError::BelowFloor, None),
             (OpenError::NoOperations, None),
+            (OpenError::Unsupported, None),
         ] {
             assert_eq!(falls_back(&refused), expected, "{refused:?}");
         }
     }
 
+    // This opens Linux's completion ring.
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_host_chooses_the_ring() {
         let kernel = Kernel::open(Config { operations: 2 }).expect("the host's ring is usable");
@@ -238,17 +274,23 @@ mod tests {
 
     #[test]
     fn chosen_names_the_backend_and_the_ring_refusal() {
+        #[cfg(target_os = "linux")]
+        let readiness = "readiness (epoll)";
+        #[cfg(target_os = "macos")]
+        let readiness = "readiness (kqueue)";
         for (backend, ring_refused, expected) in [
-            (Backend::Ring, None, "io_uring"),
-            (Backend::Readiness, None, "readiness (epoll)"),
-            (Backend::Readiness, Some(libc::EPERM), "readiness (epoll): io_uring refused (EPERM)"),
-            (Backend::Readiness, Some(libc::ENOSYS), "readiness (epoll): io_uring refused (ENOSYS)"),
-            (Backend::Readiness, Some(1234), "readiness (epoll): io_uring refused (1234)"),
+            (Backend::Ring, None, "io_uring".to_owned()),
+            (Backend::Readiness, None, readiness.to_owned()),
+            (Backend::Readiness, Some(libc::EPERM), format!("{readiness}: io_uring refused (EPERM)")),
+            (Backend::Readiness, Some(libc::ENOSYS), format!("{readiness}: io_uring refused (ENOSYS)")),
+            (Backend::Readiness, Some(1234), format!("{readiness}: io_uring refused (1234)")),
         ] {
             assert_eq!(Chosen { backend, ring_refused }.to_string(), expected);
         }
     }
 
+    // This opens Linux's completion ring.
+    #[cfg(target_os = "linux")]
     #[test]
     fn forcing_a_backend_reports_it_and_refuses_zero_capacity() {
         for backend in [Backend::Ring, Backend::Readiness] {
@@ -262,5 +304,26 @@ mod tests {
             assert_eq!(kernel.room(), 2);
             assert_eq!(kernel.resubmitted(), 0);
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn darwin_chooses_readiness_and_refuses_the_ring() {
+        let kernel = Kernel::open(Config { operations: 2 }).expect("kqueue is usable");
+        assert_eq!(kernel.chosen(), Chosen { backend: Backend::Readiness, ring_refused: None });
+        assert_eq!(kernel.chosen().to_string(), "readiness (kqueue)");
+        assert_eq!(kernel.room(), 2);
+        assert_eq!(
+            Kernel::open(Config { operations: 0 }).expect_err("zero capacity is refused"),
+            OpenError::NoOperations
+        );
+        for operations in [0, 2] {
+            assert_eq!(
+                Kernel::open_on(Config { operations }, Backend::Ring).expect_err("Darwin has no ring"),
+                OpenError::Unsupported
+            );
+        }
+        assert_eq!(OpenError::Unsupported.to_string(), "the ring is not available on this system");
+        assert_eq!(OpenError::BelowFloor.to_string(), "the kernel is below the floor, 24.0");
     }
 }

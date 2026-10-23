@@ -43,12 +43,9 @@ pub use roots::make_root;
 pub(crate) use startup::{read_file, read_private_file};
 use sync::encode;
 pub(crate) use sync::{
-    clock_nanos, decode_addr, domain, last_errno, list, lock, opened, random, socklen_of, stat, status_flags,
-    zeroed_storage,
+    clock_nanos, decode_addr, domain, last_errno, list, lock, opened, random, socklen_of, status_flags, zeroed_storage,
 };
-pub(crate) use sync::{
-    close as close_unchecked, local_addr as getsockname, read_signal as decode_signal, set_option as setsockopt,
-};
+pub(crate) use sync::{close as close_unchecked, local_addr as getsockname, set_option as setsockopt};
 pub use sync::{directory_access, effective_user, open_append, open_root, prepare_output, process_id};
 
 /// Interrupted calls have made no progress; retry without changing counts.
@@ -176,32 +173,20 @@ pub(crate) fn getsockopt(fd: Fd) -> Result<i32, i32> {
     })
 }
 
-pub(crate) fn at_floor() -> Result<bool, i32> {
+pub(crate) fn release() -> Result<Box<[u8]>, i32> {
     // SAFETY: utsname is a plain C structure of byte arrays, valid when zeroed.
     let mut name: libc::utsname = unsafe { mem::zeroed() };
     // SAFETY: name is exclusive and writable for one utsname throughout the call.
     status(unsafe { libc::uname(ptr::from_mut(&mut name)) })?;
     // SAFETY: uname wrote a NUL-terminated release in name, which lives across this borrow.
     let release = unsafe { std::ffi::CStr::from_ptr(name.release.as_ptr()) };
-    release_at_floor(release.to_bytes())
+    Ok(Box::from(release.to_bytes()))
 }
 
-fn release_at_floor(release: &[u8]) -> Result<bool, i32> {
-    let mut parts = release.split(|byte| *byte == b'.');
-    let number = |part: &[u8]| {
-        let mut digits = part.iter().copied().take_while(u8::is_ascii_digit).peekable();
-        digits.peek()?;
-        let mut value = 0_u32;
-        for byte in digits {
-            let digit = u32::from(byte.checked_sub(b'0')?);
-            value = value.checked_mul(10)?.checked_add(digit)?;
-        }
-        Some(value)
-    };
-    let major = parts.next().and_then(number).ok_or(libc::EINVAL)?;
-    let minor = parts.next().and_then(number).ok_or(libc::EINVAL)?;
-    Ok((major, minor) >= (6, 12))
-}
+pub(crate) const PATH_ONLY: i32 = libc::O_PATH;
+pub(crate) const FLOOR: (u32, u32) = (6, 12);
+pub(crate) const UNWATCHABLE: i32 = libc::EPERM;
+pub(crate) use epoll::{Epoll as Poller, Event};
 
 pub(crate) fn nonblocking(fd: Fd) -> Result<(), i32> {
     let flags = retry(|| status_flags(fd.raw()))?;
@@ -231,7 +216,7 @@ fn count(result: isize) -> Result<u32, i32> {
     if result < 0 { Err(last_errno()) } else { Ok(u32::try_from(result).expect("a valid transfer's count fits u32")) }
 }
 
-pub(crate) fn read_signal(fd: Fd) -> Result<(libc::signalfd_siginfo, usize), i32> {
+fn signal_record(fd: Fd) -> Result<(libc::signalfd_siginfo, usize), i32> {
     // SAFETY: signalfd_siginfo is an integer C record, valid when zeroed.
     let mut info: libc::signalfd_siginfo = unsafe { mem::zeroed() };
     let count = retry(|| {
@@ -243,27 +228,33 @@ pub(crate) fn read_signal(fd: Fd) -> Result<(libc::signalfd_siginfo, usize), i32
     Ok((info, count))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::release_at_floor;
+pub(crate) fn read_signal(fd: Fd) -> Result<skein_io::kernel::Done, skein_io::kernel::Error> {
+    let (info, count) = signal_record(fd)
+        .map_err(|errno| crate::calls::error(&skein_io::kernel::Op::ReadSignal { fd }, errno, false))?;
+    sync::read_signal(&info, count)
+}
 
-    #[test]
-    fn releases_at_above_below_and_without_the_floor() {
-        let cases: &[(&[u8], Result<bool, i32>)] = &[
-            (b"6.12", Ok(true)),
-            (b"6.12.107+deb13-cloud-amd64", Ok(true)),
-            (b"6.13-rc1", Ok(true)),
-            (b"7.0.0", Ok(true)),
-            (b"6.11.9", Ok(false)),
-            (b"5.15.0-91-generic", Ok(false)),
-            (b"10.1", Ok(true)),
-            (b"6", Err(libc::EINVAL)),
-            (b"", Err(libc::EINVAL)),
-            (b"six.12", Err(libc::EINVAL)),
-            (b"6.x", Err(libc::EINVAL)),
-        ];
-        for (release, expected) in cases {
-            assert_eq!(release_at_floor(release), *expected, "{release:?}");
-        }
+pub(crate) fn bound_addr(fd: Fd) -> Result<Addr, i32> {
+    let mut storage = zeroed_storage();
+    let mut len = 0;
+    retry(|| getsockname(fd.raw(), &mut storage, &mut len))?;
+    decode_addr(&storage, len).ok_or(libc::EAFNOSUPPORT)
+}
+
+#[derive(Debug)]
+pub(crate) struct Listings(Box<[u8]>);
+impl Listings {
+    pub(crate) fn new() -> Self {
+        Self(vec![0; crate::calls::LISTING].into_boxed_slice())
     }
+    pub(crate) fn list(
+        &mut self,
+        fd: Fd,
+        entries: &mut [skein_io::kernel::Entry],
+        names: &mut [u8],
+    ) -> Result<u32, i32> {
+        list(fd.raw(), entries, names, &mut self.0)
+    }
+    #[expect(clippy::unused_self, reason = "the listing face owns per-descriptor streams on Darwin")]
+    pub(crate) fn forget(&mut self, _fd: Fd) {}
 }

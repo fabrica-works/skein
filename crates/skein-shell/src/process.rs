@@ -1,5 +1,6 @@
 //! Startup and keeper process calls (shell.md, 7.5).
 
+#[cfg(target_os = "linux")]
 use std::path::Path;
 
 use skein_io::kernel::{Error, Exit, Fd, ServiceSignal};
@@ -9,7 +10,7 @@ use crate::system;
 /// Pipe descriptors for a spawned service hosted in the real loop (examples.md, section 6).
 pub use crate::system::process::HostedPipes;
 
-/// Blocks the service's termination signals and opens their signalfd for io
+/// Opens the service's termination signal source for io
 /// to adopt before the loop starts (shell.md, section 6; io.md, section 7).
 pub fn open_termination_signals() -> Result<Fd, i32> {
     system::process::open_termination_signals()
@@ -26,12 +27,12 @@ pub fn start_binary(command: &mut skein_io::kernel::Spawn, terminal: bool) -> Re
     system::process::start_binary(command, terminal, None)
 }
 
-/// Polls a pidfd during observer cleanup, observing or reaping only that child.
+/// Polls a child handle during observer cleanup, observing or reaping only that child.
 pub fn poll_child(pidfd: Fd, reap: bool) -> Result<Option<Exit>, Error> {
     system::process::poll_child(pidfd, reap)
 }
 
-/// Sends a keeper's signal through the owned pidfd, including its group.
+/// Sends a keeper's signal through its owned child handle, including its group.
 pub fn signal_kept_child(
     pidfd: Fd,
     signal: skein_io::kernel::Signal,
@@ -46,7 +47,7 @@ pub fn close_keeper_fd(descriptor: Fd) {
 }
 
 /// Reaps and releases an external child abandoned by a failing test. Normal
-/// end-to-end settlement uses the ring (testing-strategy.md, section 2.9).
+/// end-to-end settlement uses the kernel (testing-strategy.md, section 2.9).
 pub fn abandon_binary(pidfd: Option<Fd>, descriptors: &[Fd]) {
     system::process::abandon_binary(pidfd, descriptors);
 }
@@ -61,7 +62,7 @@ pub fn open_signal_pipe() -> Result<(Fd, Fd), Error> {
     system::process::signal_pipe()
 }
 
-/// Sends to this thread's blocked termination signalfd (io.md, section 7).
+/// Sends to this thread's termination signal source (io.md, section 7).
 /// Call only after `open_termination_signals` on the same thread.
 pub fn signal_current_thread(signal: ServiceSignal) -> Result<(), Error> {
     system::process::signal_current_thread(signal)
@@ -70,6 +71,7 @@ pub fn signal_current_thread(signal: ServiceSignal) -> Result<(), Error> {
 // Linux's own (shell.md, 7.5)
 
 /// Starts the binary in an already-open delegated cgroup, before its exec.
+#[cfg(target_os = "linux")]
 pub fn start_binary_in_cgroup(
     command: &mut skein_io::kernel::Spawn,
     terminal: bool,
@@ -79,36 +81,43 @@ pub fn start_binary_in_cgroup(
 }
 
 /// Makes the test process a subreaper for its binary's descendants.
+#[cfg(target_os = "linux")]
 pub fn make_subreaper() -> Result<(), Error> {
     system::process::make_subreaper()
 }
 
 /// Reads whether this test process adopts orphaned descendants.
+#[cfg(target_os = "linux")]
 pub fn subreaper() -> Result<bool, Error> {
     system::process::subreaper()
 }
 
 /// Restores or enables this test process's orphan adoption setting.
+#[cfg(target_os = "linux")]
 pub fn set_subreaper(enabled: bool) -> Result<(), Error> {
     system::process::set_subreaper(enabled)
 }
 
 /// Opens a discovered process's pidfd for the test keeper.
+#[cfg(target_os = "linux")]
 pub fn open_pidfd(pid: u32) -> Result<Fd, Error> {
     system::process::open_pidfd(pid)
 }
 
 /// Opens a cgroup directory for the binary's atomic placement at spawn.
+#[cfg(target_os = "linux")]
 pub fn open_cgroup(path: &Path) -> Result<Fd, Error> {
     system::process::open_cgroup(path)
 }
 
 /// Tests a keeper's pidfd for exit, including descendants not yet adopted.
+#[cfg(target_os = "linux")]
 pub fn pidfd_exited(pidfd: Fd) -> Result<bool, Error> {
     system::process::pidfd_exited(pidfd)
 }
 
 /// Waits for a keeper's cgroup event file to change, within the given milliseconds.
+#[cfg(target_os = "linux")]
 pub fn wait_cgroup_change(descriptor: Fd, millis: u32) -> Result<(), Error> {
     system::process::wait_cgroup_change(descriptor, millis)
 }

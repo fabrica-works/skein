@@ -11,23 +11,31 @@
 //! - [`process_id`]: the startup process ID for the service's report.
 //! - [`read_file`] and [`read_trust_roots`]: startup reads within configured bounds.
 //! - [`resolve`] and [`help`]: a command's settings, their sources and help (shell.md, 6.5).
-//! - [`open_termination_signals`]: the blocked SIGINT/SIGTERM source io adopts.
+//! - [`open_termination_signals`]: the SIGINT/SIGTERM source io adopts.
 //! - [`Clock`]: monotonic and wall time, read together once per iteration.
-//! - [`seed`]: the random seed, from `getrandom`, once at startup.
+//! - [`seed`]: the random seed, drawn from the system once at startup.
 //!
 //! [`Host`] adapts the service; [`drive`] runs it until settlement (shell.md, 12 and 13).
 //!
-//! This is ordinary Rust (programming-model.md, 10.2), and the only `unsafe`
-//! in skein that a service runs lives here, in `linux`, including its ring adapter:
-//! the crate's lints deny it everywhere else. (The counting allocator,
-//! test-only, has the other: testing.md, 6.)
+//! This is ordinary Rust (programming-model.md, 10.2). System calls live
+//! in `linux`, including its ring adapter, and `darwin`. The crate's
+//! lints confine the audited boundary to these modules (testing.md, 6).
 
 mod calls;
 mod clock;
+#[cfg(target_os = "macos")]
+mod darwin;
 mod drive;
 mod group;
 mod kernel;
+// Linux's calls, ring adapter and their unit tests are Linux's alone.
+#[cfg(target_os = "linux")]
 mod linux;
+
+#[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+compile_error!("Apple Silicon only: aarch64-apple-darwin; supported systems are Linux and aarch64-apple-darwin");
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+compile_error!("skein-shell supports Linux and aarch64-apple-darwin");
 mod process;
 mod readiness;
 mod seed;
@@ -38,15 +46,17 @@ mod terminal;
 mod tests;
 
 pub use clock::{Clock, Now};
+#[cfg(target_os = "macos")]
+pub(crate) use darwin as system;
 pub use drive::{Host, drive};
+#[cfg(target_os = "linux")]
 pub(crate) use linux as system;
 
 pub use group::{child_id, group_live, signal_group};
 pub use kernel::{Backend, Chosen, Config, Kernel, OpenError, Wait};
 pub use process::{
-    HostedPipes, abandon_binary, close_keeper_fd, hosted_pipes, make_subreaper, open_cgroup, open_pidfd,
-    open_signal_pipe, open_termination_signals, pidfd_exited, poll_child, set_subreaper, signal_current_thread,
-    signal_kept_child, start_binary, start_binary_in_cgroup, subreaper, wait_cgroup_change, write_service_signal,
+    HostedPipes, abandon_binary, close_keeper_fd, hosted_pipes, open_signal_pipe, open_termination_signals, poll_child,
+    signal_current_thread, signal_kept_child, start_binary, write_service_signal,
 };
 pub use seed::{crypto_seed, seed};
 pub use settings::{
@@ -58,3 +68,9 @@ pub use startup::{
 };
 
 pub use terminal::{Input, Kept, Keys, Modes, Watch, open_signals, raw_input, resize_terminal, terminal_modes};
+
+#[cfg(target_os = "linux")]
+pub use process::{
+    make_subreaper, open_cgroup, open_pidfd, pidfd_exited, set_subreaper, start_binary_in_cgroup, subreaper,
+    wait_cgroup_change,
+};

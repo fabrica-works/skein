@@ -2,7 +2,7 @@
 
 use skein_io::kernel::{Error, Op};
 
-use crate::system::status_flags;
+use crate::system::{self, status_flags};
 
 /// How many times an `Open` is submitted again after `EAGAIN` before its
 /// `Other(EAGAIN)` goes up.
@@ -10,6 +10,8 @@ pub(crate) const AGAIN: u32 = 16;
 
 /// The bytes of `getdents64`'s buffer: many entries a call, and room for
 /// the largest one.
+// Only Linux uses a getdents buffer; Darwin owns directory streams.
+#[cfg(target_os = "linux")]
 pub(crate) const LISTING: usize = 32 << 10;
 
 /// The error number `errno` of `kind`, as `skein_io::kernel::Error`
@@ -279,7 +281,7 @@ pub(crate) fn check_path_access(operation: &Op) {
     };
     for descriptor in descriptors.into_iter().flatten() {
         if let Ok(flags) = status_flags(descriptor.raw()) {
-            assert_eq!(flags & libc::O_PATH, 0, "only Stat and Close may use a path-only descriptor");
+            assert_eq!(flags & system::PATH_ONLY, 0, "only Stat and Close may use a path-only descriptor");
         }
     }
 }
@@ -291,5 +293,60 @@ fn stream_error(errno: i32) -> Option<Error> {
         libc::ENETUNREACH | libc::EHOSTUNREACH => Some(Error::Unreachable),
         libc::ETIMEDOUT => Some(Error::TimedOut),
         _ => None,
+    }
+}
+
+pub(crate) fn release_at_floor(release: &[u8], floor: (u32, u32)) -> Result<bool, i32> {
+    let mut parts = release.split(|byte| *byte == b'.');
+    let number = |part: &[u8]| {
+        let mut digits = part.iter().copied().take_while(u8::is_ascii_digit).peekable();
+        digits.peek()?;
+        let mut value = 0_u32;
+        for byte in digits {
+            let digit = u32::from(byte.checked_sub(b'0')?);
+            value = value.checked_mul(10)?.checked_add(digit)?;
+        }
+        Some(value)
+    };
+    let major = parts.next().and_then(number).ok_or(libc::EINVAL)?;
+    let minor = parts.next().and_then(number).ok_or(libc::EINVAL)?;
+    Ok((major, minor) >= floor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::release_at_floor;
+
+    #[test]
+    fn darwin_releases() {
+        for (release, expected) in [
+            (b"24.0.0".as_slice(), Ok(true)),
+            (b"24.6.0", Ok(true)),
+            (b"25.1.0", Ok(true)),
+            (b"23.6.0", Ok(false)),
+            (b"24", Err(libc::EINVAL)),
+        ] {
+            assert_eq!(release_at_floor(release, (24, 0)), expected);
+        }
+    }
+
+    #[test]
+    fn releases_at_above_below_and_without_the_floor() {
+        let cases: &[(&[u8], Result<bool, i32>)] = &[
+            (b"6.12", Ok(true)),
+            (b"6.12.107+deb13-cloud-amd64", Ok(true)),
+            (b"6.13-rc1", Ok(true)),
+            (b"7.0.0", Ok(true)),
+            (b"6.11.9", Ok(false)),
+            (b"5.15.0-91-generic", Ok(false)),
+            (b"10.1", Ok(true)),
+            (b"6", Err(libc::EINVAL)),
+            (b"", Err(libc::EINVAL)),
+            (b"six.12", Err(libc::EINVAL)),
+            (b"6.x", Err(libc::EINVAL)),
+        ];
+        for (release, expected) in cases {
+            assert_eq!(release_at_floor(release, (6, 12)), *expected, "{release:?}");
+        }
     }
 }
