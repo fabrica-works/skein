@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from runner import canonical, cli, evidence, judge, records, store
 from runner.records import Refused
-from .fixtures import D
+from .fixtures import D, fixture
 
 
 class Timeline(unittest.TestCase):
@@ -55,6 +55,43 @@ class Timeline(unittest.TestCase):
         run.effect(dict(op='awaited', name='refresh', ms=18, captures={'word': 'late'}))
         self.assertIsNone(command['awaited'])
         self.assertNotIn('awaited', ordinary)
+
+
+class Completion(unittest.TestCase):
+    def test_malformed_check_keeps_later_check_scheduled_and_recorded(self):
+        from types import SimpleNamespace
+        from runner import life
+        from runner.loop import Run
+        exp, _subject, settings, _facts, _lab = fixture()
+        exp.update(processes=[], actions=[], collect=[], checks=[
+            dict(name=name, argv=['/check'], env={}) for name in ('a', 'b')])
+        written, removed = [], []
+        outputs = {'run/a.stdout': b'{}\n', 'run/b.stdout': b''}
+        run = Run.__new__(Run)
+        run.base = 'run'
+        run.lab = SimpleNamespace(read=outputs.__getitem__, append_line=lambda path, value: written.append(value))
+        run.host = SimpleNamespace(remove=removed.append)
+        run.ms = lambda: 17
+        run.state = life.initial(exp, '1', settings['costs']['smoke'], {}, {})
+        run.failures, run.undecided, run.errors = [], [], []
+        run.effects, run.items, run.bootstrap_states = [], {}, {}
+        with patch.object(run, 'feed', wraps=run.feed) as fed:
+            run.feed('provisioned')
+            for name in ('a', 'b'):
+                identity = 'checks-' + name
+                run.feed('spawned', group='checks', name=name)
+                record = dict(group='checks', name=name, exit=dict(status=0),
+                              output=dict(stdout=dict(path=name + '.stdout')))
+                run.items[identity] = dict(name=name, group='checks', record=record,
+                                          panic=[], cancelled=False, timed_out=False)
+                run.complete(identity)
+            self.assertNotIn('error', [call.args[0] for call in fed.call_args_list])
+        self.assertEqual([e['name'] for e in run.effects if e['op'] == 'spawn'], ['a', 'b'])
+        self.assertEqual([c['name'] for c in run.state.data['commands']], ['a', 'b'])
+        self.assertEqual([e['what'] for e in run.errors], ['check/a'])
+        self.assertEqual(run.state.data['commands'][0]['check']['errors'], run.errors)
+        self.assertEqual(run.state.data['commands'][1]['check'], dict(failures=[], undecided=[], errors=[]))
+        self.assertEqual(removed, ['checks-a', 'checks-b'])
 
 
 def run_record(number, seed, outcome='pass', attempt=1):

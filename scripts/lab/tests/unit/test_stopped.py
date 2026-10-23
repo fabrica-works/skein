@@ -93,7 +93,8 @@ class Stopped(unittest.TestCase):
         state, effects = send(state, 'exit', name='backend', result={'status': 0})
         self.assertEqual(effects, [dict(op='reap_tree', name='backend')])
         state, effects = send(state, 'closed')
-        self.assertEqual(effects, [])
+        self.assertEqual(effects, [dict(op='reap_tree', name='backend')])
+        self.assertEqual(state.data['phase'], 'stop')
         state, effects = send(state, 'tree_empty', name='backend')
         self.assertEqual(state.data['phase'], 'stop')
         self.assertFalse(any(e['op'] == 'spawn' for e in effects))
@@ -189,9 +190,26 @@ class Stopped(unittest.TestCase):
                 state, _ = send(state, 'exit', name='backend', result=dict(status=0))
                 state, _ = send(state, 'tree_empty', name='backend')
                 state, effects = send(state, 'closed')
+                self.assertEqual(state.data['phase'], 'judge')
                 self.assertFalse(any(e['op'] == 'spawn' for e in effects))
                 state, effects = send(state, kind, signal=2, what='runner')
                 self.assertFalse(any(e['op'] == 'unavailable' for e in effects))
+
+    def test_error_or_interrupt_after_empty_stop_advances_to_judge(self):
+        for kind in ('error', 'interrupt'):
+            with self.subTest(kind=kind):
+                state, _ = boot()
+                state, _ = send(state, 'exit', name='backend', result=dict(status=17))
+                state, _ = send(state, 'tree_empty', name='backend')
+                state, _ = done(state, 'collect', 'obs')
+                state, _ = done(state, 'checks', 'end')
+                state, effects = send(state, kind, signal=2, what='runner')
+                state, closing = send(state, 'closed')
+                self.assertEqual(state.data['phase'], 'judge')
+                self.assertFalse(any(e['op'] == 'spawn' for e in effects + closing))
+                self.assertEqual([(c['group'], c['name']) for c in state.data['commands'] if 'skipped' in c],
+                                 [('collect', 'copy'), ('checks', 'state'), ('checks', 'independent')])
+                self.assertIn(dict(op='judge'), closing)
 
     def test_active_stopped_command_is_cancelled_and_not_recorded_as_unstarted(self):
         for group, name in (('collect', 'copy'), ('checks', 'state')):

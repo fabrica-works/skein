@@ -440,7 +440,7 @@ class Run:
             self.feed('tree_empty', name=name)
         else:
             self.feed('command_done', name=name, record=record)
-        if len(self.errors) != error_start:
+        if group == 'collect' and len(self.errors) != error_start:
             self.feed('error', what='command/' + name, detail='command evidence could not be completed')
 
     def freeze_collections(self):

@@ -303,6 +303,8 @@ def step(state, event):
                 and not d['errors'] and d['interrupted'] is None):
             _phase(d, 'stopped-collect', effects)
             _advance(d, effects, ms)
+        else:
+            _stop(d, effects, ms)
     elif kind == 'command_done':
         if (d['current'] == event['name'] and d['phase'] in COMMAND_GROUP
                 and event['record']['group'] == COMMAND_GROUP[d['phase']]):
