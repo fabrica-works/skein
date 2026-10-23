@@ -755,6 +755,14 @@ documentation.
 - **Codex,** `codex exec`, one per run, started in the drive phase. The
   lab's settings name its program, model and effort; the key holds its
   version and digest, and its configuration (2.3).
+- **Three records of configuration:** the settings select the program,
+  model and effort. The runner's version adapter derives the host's
+  configuration and expected inventory from those settings and the
+  experiment, with run paths left as templates in the key. The
+  inventory observed from the running host is evidence in the run's
+  driver record (5.6), separate from the expected inventory. A
+  configuration supplied in settings is not evidence of what was
+  given to the host or what it offered the model.
 - **Its prompt** is the runner's preamble (the tools, the boundary, the
   report's shape), then the experiment's charter, verbatim.
 - **Its configuration is the run's alone,** and is in the key. The
@@ -779,6 +787,31 @@ documentation.
   inventory differs ends the run in error, the driver ended at once. How
   the inventory is read is the runner's, for each host version; no run
   with a driver starts on a version it cannot read.
+
+  Every item below needs an observer for the host's version. A missing
+  observer refuses the version; an incomplete observation or a mismatch
+  ends the run in error. The version adapter names its observers and
+  the evidence they return. A list of configured capabilities, a
+  rendered prompt, or the lab server's own traffic is not the host's
+  live inventory.
+
+  | Item | Required observation |
+  |---|---|
+  | permission profile | the run's profile is selected for the agent's commands |
+  | MCP servers and tools | only `lab`, offering exactly the experiment's tools |
+  | resources and prompts | none, including resource templates |
+  | apps and plugins | none offering a capability to the model |
+  | hooks and skills | none loaded or active |
+  | configuration layers | only the run's configuration |
+  | instruction files | none loaded from the user or the subject |
+  | built-in tools | only the sandboxed command tool, under the run's profile |
+
+  Calls to the lab's tools are held until the observation is complete.
+  Commands that start before it completes still count as actions; a
+  failed inventory check stops the driver and every outstanding call.
+  An action kind outside the admitted inventory ends the run in error.
+  Detecting an unexpected action is an additional check; it does not
+  establish that the action was confined.
 - **The model's credential stays with the host.** Codex authenticates
   its model transport with the machine's Codex login under
   `CODEX_HOME`, the one credential in the host's reach; the profile
@@ -801,6 +834,12 @@ What the agent's own commands may reach:
   executable by its exact resolved path (without which the sandbox
   cannot start it), of the source, and of the work directory; writes
   only to the work directory; the network disabled.
+- **Every agent action is confined.** A host's built-in tool may act
+  in the host's process rather than start a sandboxed command. A
+  command-profile probe says nothing about that tool's file or network
+  access. The inventory must show such a tool absent, or a probe of
+  that tool must establish the same boundary before admission. A tool
+  that the runner cannot observe or confine refuses the host version.
 - **The minimal roots are reviewed, not assumed safe.** They are what
   Codex's sandboxed programs need to start, and their list is Codex's:
   the lab's owner reviews it for each host version, whose change is a new
@@ -852,7 +891,12 @@ What the agent's own commands may reach:
   `{"args": [...], "stdin": TEXT | null}`, its result the call's status
   or signal, its stdout and its stderr, as text.
 - **An action** is one command the agent runs in its sandbox, or one
-  tool call (6.5). Codex's own turns are not actions.
+  tool call (6.5). Codex's own turns are not actions. The runner gives
+  each action a number in the order its loop receives starts from the
+  host and the tool server together; a tool call observed in both is
+  one action. It records the start and its completion against that
+  number. A fault waits for the completion of its selected action N
+  (4.6), even when actions complete in a different order.
 - **Every call is recorded** before its result reaches the agent:
   `driver/calls.jsonl` gets a `start` line (`n`, the tool, `args`, the
   stdin's file, `t_ms`) and an `end` line (`n`, `t_ms`, `status` or
