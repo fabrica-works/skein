@@ -396,6 +396,11 @@ kernel with `io_uring_disabled` set, or macOS (Apple Silicon, from macOS
   seccomp profile's); on macOS always the readiness backend. Any other
   refusal of the ring stops the service, as before (section 4): a kernel
   below the floor is below it for both backends.
+- **The ring's refusal alone decides.** `OpenError::Setup` with `ENOSYS`
+  or `EPERM` falls back; every other error of the ring's open (another
+  `Setup`, `Missing`, `BelowFloor`, `NoOperations`) is returned as it
+  is. The readiness backend then opens as `open_on` would, and its own
+  refusal, below the floor among them, is the one returned.
 - **`Kernel::open_on` forces one,** `Backend::Ring` or
   `Backend::Readiness`, for tests: the ring's own tests and its
   conformance take `Ring`, so that a machine without io_uring fails them,
@@ -413,7 +418,10 @@ kernel with `io_uring_disabled` set, or macOS (Apple Silicon, from macOS
   example, `readiness (epoll): io_uring refused (EPERM)`. A service says
   it once on standard error at startup when it is not the ring, beside
   the trust roots' counts (6.2), so that a slower host is never a
-  mystery.
+  mystery. The line is the service's `main`'s, as the counts are, never
+  the kit's, which prints nothing: `<service>: kernel: <chosen>`. In
+  skein, the echo's and the UI server's `main` say it; a service
+  downstream adds it when it next takes skein.
 
 ### 7.2 The table
 
@@ -464,6 +472,11 @@ kernel with `io_uring_disabled` set, or macOS (Apple Silicon, from macOS
   which a writable pipe takes whole, and completes short as the
   contract allows. A terminal's flow control may still hold such a
   write, as a stalled disk holds a file's.
+- **A descriptor the wait cannot watch is always ready.** epoll refuses
+  a regular file or `/dev/null` (`EPERM`), which an inherited standard
+  stream may be redirected from; their reads and writes never wait, so
+  a record on one makes its call at once, as an operation on files does,
+  and registers no interest.
 - **A known limit: an inherited listener.** An `Accept` has no per-call
   flag, so on a blocking listener shared with another process, one that
   the other takes the connection from between the readiness and the
@@ -482,6 +495,17 @@ kernel with `io_uring_disabled` set, or macOS (Apple Silicon, from macOS
   pipe's write and a connect, whose result is then the socket's pending
   error (`SO_ERROR`). An error or a hang-up the wait reports wakes both
   sides: the call says what it is.
+- **A child and a signal, step by step.** A `Wait` makes `waitid` on the
+  pidfd with `WNOHANG` at submit (and `WNOWAIT` to observe); no exit yet
+  (no child reported) waits for the pidfd to be readable, and the call
+  is made again. A `Wait` that reaps follows the one that observed, so it
+  completes at submit. A `ReadSignal` reads one record from the
+  signalfd startup opened, which is blocking: it waits for readable
+  first, and a readable signalfd holds a whole record. A pipe's read or
+  write on a `Spawn`'s parent end is attempted at submit, as a socket's
+  is; once every holder of the child's end has closed it (the child and
+  what it started), the parent's read sees the end of the stream and its
+  write `EPIPE`, as with the ring.
 
 ### 7.4 Counts, retries, cancels and closes
 
@@ -554,7 +578,10 @@ synchronous operations, the error tables, what decodes a `statx` or a
 - **Linux's floor is section 4's,** 6.12, for both backends. Without a
   ring the opcode probe cannot confirm it, so the readiness backend reads
   the kernel's release (`uname`) and refuses below it
-  (`OpenError::BelowFloor`).
+  (`OpenError::BelowFloor`, whose message names the floor, not the
+  ring). The release's first two numbers are compared, whatever follows
+  them (`6.12.107+deb13-cloud-amd64` is 6.12); a release without them is
+  refused (`OpenError::Setup(EINVAL)`).
 - **macOS's floor is 15, Darwin 24,** the first with `O_RESOLVE_BENEATH`,
   which an open beneath a root needs: confirmed the same way, by the
   release, and refused below it. No feature checks, on either.
@@ -620,12 +647,24 @@ and changes no code above io:
   transfer through short sends; a blocking pipe it did not make, read
   once readable and written in `PIPE_BUF` bytes at most; a descriptor
   shared with a child, closed, and its number reused, with no readiness
-  of the old one reported; a cancel of a waiter and one too late; a
-  deadline met without waking early again and again; the choice at
-  startup and what `chosen` says; and dropping it with records waiting.
+  of the old one reported; a descriptor the wait cannot watch, its call
+  made at once; a signal read through a blocking signalfd; a cancel of a
+  waiter and one too late; a deadline met without waking early again
+  and again; and dropping it with records waiting.
+- **The choice at startup,** in the shell's own tests, below the kernel:
+  each refusal of the ring's open, as a table, falling back or returned
+  (7.1); each release, as a table, at the floor, above it, below it and
+  unreadable (7.6); and `chosen`'s line for each. On a host with
+  io_uring, `Kernel::open` takes the ring and says so. A host that
+  refuses io_uring is not made here: a seccomp profile or
+  `io_uring_disabled` takes privileges, or `unsafe` outside the shell.
+  macOS takes the readiness backend through `Kernel::open` itself.
 - **The real loop** exercises the rest: the probe at startup, the signal
   path, and the ring adapter's `unsafe` under a sanitizer
-  (testing-strategy.md, 2.8).
+  (testing-strategy.md, 2.8). The real world opens the host's backend,
+  or the one a test forces (`skein_world::real`), and the echo's
+  real-loop story runs on each: its smoke on the readiness backend,
+  forced, beside the ring's.
 - **`drive`'s own tests,** in the real loop, over scripted hosts: one that
   ends by itself returns its exit at once; one that waits on a keep time
   after its last word fails the teardown check (testing-strategy.md, 6);
