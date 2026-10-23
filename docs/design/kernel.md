@@ -41,10 +41,10 @@ of the contract exactly; this document is the design behind it.
                     io (step code)
            Submit ↓              ↑ Complete
    ┌───────────────┬────────────────┬───────────────────────────────┐
-   │ ring          │ sim            │ readiness (later)             │
+   │ ring          │ sim            │ readiness                     │
    │ io_uring      │ the simulated  │ wait for readiness, make the  │
    │               │ kernel         │ syscall, complete             │
-   │ production    │ tests          │ hosts without io_uring        │
+   │ production    │ tests          │ hosts without io_uring, macOS │
    └───────────────┴────────────────┴───────────────────────────────┘
 ```
 
@@ -263,7 +263,8 @@ error means the operation did nothing usable: a failed `Socket` or
   ioctls commit a transaction, and `SyncFilesystem` lasts until the
   filesystem's dirty data is written (6.5). A service that must not
   stall makes them in a process of its own, and talks to it as to any
-  child.
+  child. On the readiness backend every operation on files is
+  synchronous so (shell.md, 7.7).
 - **Timers are not operations.** The shell waits for completions with one
   timeout: the earliest deadline over every layer.
 
@@ -866,9 +867,10 @@ The conformance suite is the contract's executable form
 (testing-strategy.md, 5). It is a crate of its own,
 `testing/skein-conformance`, over a small backend interface (open a
 process, submit, reap, enter, let time pass), and runs against the
-simulator (`tests/conformance/sim`) and against the ring on the real
-kernel (`tests/conformance/ring`), each of which implements the interface
-for its backend.
+simulator (`tests/conformance/sim`) and against each backend on the real
+kernel (`tests/conformance/real`: the ring, and the readiness backend
+through epoll on Linux and kqueue on macOS), each of which implements the
+interface for its backend.
 
 - **Each scenario is a scripted sequence of records** that returns what it
   saw, and its check names the rule of the contract behind each
@@ -883,7 +885,10 @@ for its backend.
   must appear over the fuzzy suite's seeds, and a calm world must pair
   each race as the ring does.
 - **On the ring,** each scenario runs once, and fails, saying so, if
-  io_uring is not usable.
+  io_uring is not usable. **On the readiness backend,** forced on Linux
+  (shell.md, 7.1), each runs once too, and a check that only the ring
+  can meet says so: a cancel of a file's operation, made at submit, is
+  always too late there.
 - What no record can observe (close-on-exec, `TCP_NODELAY`, the modes of
   new files) is not checked; `SO_REUSEADDR` and `IPV6_V6ONLY` are, by
   their effects.

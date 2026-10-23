@@ -18,9 +18,9 @@ this design.
 - **io_uring is the kernel interface.** io talks to the kernel in owned
   records: an operation goes down carrying its memory, and its completion
   comes back carrying the same memory. The ring backend maps each record
-  onto one submission; the simulator implements the same records; a
-  readiness backend (epoll, kqueue) may later implement them a third
-  time. Nothing above the records changes.
+  onto one submission; the simulator implements the same records; the
+  readiness backend (epoll, kqueue), for hosts without io_uring and
+  macOS, implements them a third time. Nothing above the records changes.
 - **Counted and bounded throughout.** Every part exports its `Limits` and
   its `worst_case`, and a service adds them up.
 - **Built when pulled.** A part is built when its first user needs it,

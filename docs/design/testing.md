@@ -261,8 +261,9 @@ tests/lib                       lib's comparisons with naive functions, run long
 tests/sim                       the simulator's own tests, skein-sim-tests
 tests/world                     the world harness's own tests, over scripted processes of raw records, skein-world-tests
 tests/ring                      the ring adapter's own tests, skein-ring-tests
+tests/readiness                 the readiness backend's own tests, on each system, skein-readiness-tests
 tests/conformance/sim           the suite against the simulator, skein-conformance-sim
-tests/conformance/ring          the suite against the ring, skein-conformance-ring
+tests/conformance/real          the suite against the real kernel's backends, the ring and the readiness backend, skein-conformance-real
 tests/json                      the JSON tokenizer's machine worlds, the writer against it, and their worst cases against the counting allocator, skein-json-world
 tests/json/transcripts          its transcripts, each with what it must decode to
 tests/http                      the HTTP client's and server's and the event stream reader's and writer's machine worlds, a reference reader of each, the client and the reader stacked with JSON, and their worst cases against the counting allocator, skein-http-world

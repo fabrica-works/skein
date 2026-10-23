@@ -1,14 +1,15 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-19. The design of
+Provisional, 2026-10-03, revised 2026-10-23. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
-io_uring backend of the kernel boundary, kernel.md), the clock and the
+io_uring backend of the kernel boundary, kernel.md, and the readiness
+backend for hosts without it, macOS among them), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
-startup reads, trust roots among it, and a terminal's modes; later, the
-readiness backend. It is
+startup reads, trust roots among it, and a terminal's modes. It is
 ordinary Rust, and the only `unsafe` in skein that a service runs lives
-here, in one module, the ring adapter. (The counting allocator,
-test-only, has the other: testing.md, 6.)
+here, in each system's module, `linux` (the ring adapter among it) or
+`darwin` (7.5). (The counting allocator, test-only, has the other:
+testing.md, 6.)
 
 ## 1. In one page
 
@@ -28,16 +29,22 @@ test-only, has the other: testing.md, 6.)
 - **One thread, one kernel floor.** The ring is set up for a single
   issuer, and assumes a kernel at or above one floor, with no checking for
   individual features; a probe at startup confirms the floor.
+- **Two backends, one chosen at startup.** Linux takes the ring, and
+  the readiness backend when io_uring is refused; macOS takes the
+  readiness backend, which waits for readiness (epoll, kqueue) and makes
+  each call without blocking. Step code never knows which runs
+  (section 7).
 - **Startup refuses rather than degrades:** a worst case past the
-  configured memory, or a ring that cannot be set up, stops the service
-  before its loop runs.
+  configured memory, or a kernel below the floor, stops the service
+  before its loop runs. The one fallback, to the readiness backend, is
+  said on standard error (7.1).
 - **Optimisations stay behind the records.** None changes code above io.
 
 ## 2. In skein
 
 `skein-shell` depends on lib, io (for the records), and the only crates
-from outside: `io-uring` and `libc`. A service's `main` depends on it and
-on the service's own `iterate`.
+from outside: `io-uring`, on Linux alone, and `libc`. A service's `main`
+depends on it and on the service's own `iterate`.
 
 - **`Host` and `drive` are here** (section 12), moved from `skein-world`,
   which re-exports both. A service's shell then links no testing crate,
@@ -103,8 +110,9 @@ on the service's own `iterate`.
   confirms the floor; it does not choose between features. If an
   operation is missing, or the ring cannot be set up at all (io_uring
   missing, disabled, or refused by a seccomp profile), the shell refuses
-  to start. Once the readiness backend exists, it takes that backend
-  instead.
+  to start, unless io_uring was refused outright: then it takes the
+  readiness backend (7.1), which confirms the floor from the kernel's
+  release (7.6).
 
 ## 5. The clock and the seed
 
@@ -353,28 +361,204 @@ alike, before startup's step 1:
 - **A test never relies on a default under `$HOME`:** it gives every
   directory as a flag.
 
-## 7. The readiness backend (later)
+## 7. The readiness backend
 
 This backend is for hosts where io_uring is not available: a container
 whose seccomp profile refuses io_uring (Docker's default profile does), a
-kernel with `io_uring_disabled` set, a kernel below the floor, or macOS.
+kernel with `io_uring_disabled` set, or macOS (Apple Silicon, from macOS
+15, Darwin 24: 7.6).
 
-- **It emulates completions.** It waits for readiness (epoll or kqueue),
-  makes the syscall without blocking, and completes the record. Regular
-  files are always ready, so file operations run synchronously. epoll and
-  kqueue differ only in the wait call.
-- **It costs nothing on the ring path.** The shell picks a backend at
-  startup and holds it in an enum, matched once per submit and once per
-  reap. Step code never knows which backend runs.
+- **It emulates completions.** It makes each record's call without
+  blocking, and completes the record; a call that would block waits for
+  its descriptor's readiness (epoll on Linux, kqueue on macOS) and is
+  made again. Regular files are always ready, so file operations run at
+  submit, as the ring's synchronous operations do.
+- **One shared part, and each system's parts beside it.** The table, the
+  waits on descriptors, retries, cancels and closes are written once, in
+  safe Rust, the same over either wait; the calls themselves and the
+  wait are each system's (7.5).
+- **It costs nothing on the ring path.** `Kernel` holds one backend in an
+  enum, matched once per submit and once per reap (7.1). Step code never
+  knows which backend runs.
 - **The kernel boundary keeps it cheap:** records that carry their own
   memory and plain values, single-shot operations, and synchronous
   operations already in the vocabulary. A feature only io_uring has is
   always an optimisation, never something io's behaviour relies on.
 - **It meets the conformance suite** as the ring does, each scenario
-  once (kernel.md, 8).
-- **macOS would only be a convenience for development.** Processes there
-  are not pidfds (kqueue's process filter stands in), and containment is
-  Linux-only.
+  once (kernel.md, 8), on our Linux machines through epoll and on macOS
+  through kqueue.
+
+### 7.1 The choice at startup
+
+- **`Kernel::open` takes the host's backend:** on Linux the ring, or the
+  readiness backend when the ring cannot be set up because io_uring is
+  refused (`ENOSYS` or `EPERM` from its setup: missing, disabled, or a
+  seccomp profile's); on macOS always the readiness backend. Any other
+  refusal of the ring stops the service, as before (section 4): a kernel
+  below the floor is below it for both backends.
+- **`Kernel::open_on` forces one,** `Backend::Ring` or
+  `Backend::Readiness`, for tests: the ring's own tests and its
+  conformance take `Ring`, so that a machine without io_uring fails them,
+  saying so, rather than running them on the other backend; the readiness
+  backend's take `Readiness`. `Ring` on macOS refuses
+  (`OpenError::Unsupported`).
+- **`Config` is unchanged,** so no caller of `Kernel::open` changes.
+- **No setting of its own.** A service takes `Kernel::open`; nothing in a
+  binary's command line or environment chooses the backend, and the
+  settings of 6.5 gain none. The tests that need the readiness backend on
+  Linux open it themselves. A binary whose own tests need it forced adds
+  a setting of its own then, under 6.5.
+- **What runs is said:** `Kernel::chosen()` answers the backend and, when
+  the ring was refused, its error number; its `Display` reads, for
+  example, `readiness (epoll): io_uring refused (EPERM)`. A service says
+  it once on standard error at startup when it is not the ring, beside
+  the trust roots' counts (6.2), so that a slower host is never a
+  mystery.
+
+### 7.2 The table
+
+- **One slot per operation,** as the ring's (section 3): allocated once at
+  `Config`'s size, an operation's slot named by its index and generation,
+  a map from token to slot that finds a cancel's target and catches a
+  token already in flight. No slot holds memory the kernel writes later:
+  every call is made by the backend, on its own thread, and returns
+  before the record moves again.
+- **The ready list** holds the slots whose record has its result, oldest
+  first; `reap` hands them up as far as the completion queue has room.
+  `room` and `in_flight` answer as the ring's.
+- **The waiters.** The contract allows a descriptor at most one
+  operation that reads (`Recv`, `Accept`, `PipeRead`, `ReadSignal`, a
+  `Wait`) and one that writes (`Send`, `PipeWrite`, `Connect`) in flight
+  at once (`skein_io::kernel`, broken invariants), so each descriptor
+  has at most two waiters, one for each side. The backend keeps a map
+  from descriptor to its waiters.
+- **Interest is level-triggered,** and registered only while a
+  descriptor has a waiter: added with its first, changed when the sides
+  change, removed with its last. A readiness never seen is never lost,
+  and a descriptor with no waiter costs the wait nothing.
+
+### 7.3 A record's path
+
+- **Made at submit:** every operation on files (`Open`, `Read`, `Write`,
+  `Append`, `Truncate`, `Sync`, `Stat`, `Rename`, `Remove`,
+  `MakeDirectory`, `List`, `Lock`), the sockets' `Socket`, `Bind`,
+  `Listen` and `Shutdown`, `Close`, `Spawn`, `Signal`, `Usage` and
+  `Window`. Each makes its one call, and its result waits in the ready
+  list.
+- **Attempted at submit, then waited for:** the operations that read or
+  write a stream, accept, connect, read a signal or wait for a child.
+  The call is made at once where it cannot block: on a descriptor the
+  backend made non-blocking (below), and a child's wait, which asks not
+  to hang (`WNOHANG`). If it would block (`EAGAIN`, a
+  connect's `EINPROGRESS`), the record waits on its descriptor's side.
+  When the wait reports the side ready, the call is made again, and the
+  record completes, or waits again if it would still block: a readiness
+  that another reader took first is no failure.
+- **A descriptor the backend did not make** (an inherited standard
+  stream, the signalfd startup opened) keeps its flags: changing them
+  would change them for every process that shares it. A record on it
+  waits for readiness first, then makes its one call; a write on it is
+  capped at `PIPE_BUF` bytes, which a writable pipe takes whole, and
+  completes short as the contract allows. A terminal's flow control may
+  still hold such a write, as a stalled disk holds a file's.
+- **The backend's own descriptors are non-blocking:** every socket it
+  makes (`SOCK_NONBLOCK`), every one it accepts, and the parent's end of
+  each pipe a `Spawn` makes, which is a description of its own, so the
+  child's end stays blocking. It remembers which descriptors it made so,
+  from the call that made one to its `Close`.
+- **Each side's readiness** is the one its call needs: readable for a
+  receive, an accept, a pipe's read, a signal and a child's exit (a
+  pidfd is readable once the child has exited); writable for a send, a
+  pipe's write and a connect, whose result is then the socket's pending
+  error (`SO_ERROR`). An error or a hang-up the wait reports wakes both
+  sides: the call says what it is.
+
+### 7.4 Counts, retries, cancels and closes
+
+- **One call, one count.** A transfer completes with the count of the one
+  call that made progress, never continued by the backend: a short send,
+  write or read goes up as it is, and io continues it from `from + n`,
+  as with the ring (`skein_io::kernel`, the counts).
+- **Retries are the ring's:** a call interrupted (`EINTR`) is made again
+  at once; an `Open` whose `..` raced a rename or a mount (`EAGAIN`) is
+  made again, up to 16 times, then fails with `Other(EAGAIN)`.
+- **Errors map as the ring's do,** per operation, by the same functions
+  (7.5): an error number means what it means to the ring.
+- **A cancel** of a record that waits takes it off its side, completes
+  it `Cancelled`, then completes itself `Nothing`. Every other target is
+  too late (`TooLate`), and completes with its own result: it was made at
+  submit, or made again on a readiness, before the cancel came. A cancel
+  of an operation on files is therefore always too late (kernel.md, 6).
+- **A close** removes its descriptor's interest, if it has any, before
+  the call, so that a description another process still holds never
+  reports a readiness for a number reused since. A waiter beside a
+  `Close` is a broken invariant of the contract, which the backend
+  asserts.
+- **The wait** blocks as `Wait` says: not at all while the ready list
+  holds anything or `Wait::No` asks; until the deadline, read against
+  the monotonic clock just before the call and rounded up to the wait's
+  resolution, for `Wait::Until`; or for a readiness, for
+  `Wait::Forever`, which asserts that something waits. An interrupted
+  wait returns to the loop, as the ring's does. Its event buffer is
+  allocated once, a slot's worth per operation.
+- **Dropping it** with operations in flight drops their records: no
+  memory of theirs is the kernel's, so nothing is leaked. Their
+  descriptors stay open until the process ends, as the contract says.
+
+### 7.5 Each system's parts
+
+The calls, the error numbers and the wait are each system's, in a module
+of its own, `linux` or `darwin`, which holds that system's `unsafe` and
+says why it is sound, case by case (section 1). On Linux, the ring adapter
+and the readiness backend share every call they both make (the
+synchronous operations, the error tables, what decodes a `statx` or a
+`siginfo`).
+
+| Part | Linux | macOS |
+|---|---|---|
+| The wait | `epoll_wait` | `kevent` |
+| Open beneath a root | `openat2`, `RESOLVE_BENEATH` | `openat`, `O_RESOLVE_BENEATH`, `O_NOFOLLOW_ANY` |
+| Listing a directory | `getdents64` | section 10 |
+| Rename, never replacing | `renameat2`, `RENAME_NOREPLACE` | `renameatx_np`, `RENAME_EXCL` |
+| Stat | `statx` | `fstat` |
+| Spawn | `pidfd_spawn` | `posix_spawn`: the same file actions, process group, and session for a terminal |
+| A child's handle | its pidfd | a kqueue of the child's own, its `EVFILT_PROC` exit registered: a descriptor that is readable once the child has exited |
+| A child's exit | `waitid` on the pidfd | `waitid` on the child's pid, `WNOWAIT` to observe |
+| Signalling a child | `pidfd_send_signal` | `kill`, `killpg`, by the pid its handle names |
+| Signals to the service | `signalfd` | a kqueue of the service's own, its `EVFILT_SIGNAL`s registered, the signals ignored |
+| The seed | `getrandom` | `getentropy` |
+| Usage's resident size | KiB | bytes |
+
+- **A child stays unreaped until io closes it,** on macOS as with
+  pidfds, so its pid is never another process's while io can still
+  signal it, and its handle names it alone.
+- **Only the shell's own direct children are watched:** macOS has no
+  subreaper.
+- **The handles are descriptors,** so io, its records and the
+  conformance suite are the same on both systems: a `Wait` waits for its
+  handle to be readable, a `Signal` finds the pid its handle names, and
+  a `Close` of the handle forgets it.
+
+### 7.6 The floor on each system
+
+- **Linux's floor is section 4's,** 6.12, for both backends. Without a
+  ring the opcode probe cannot confirm it, so the readiness backend reads
+  the kernel's release (`uname`) and refuses below it
+  (`OpenError::BelowFloor`).
+- **macOS's floor is 15, Darwin 24,** the first with `O_RESOLVE_BENEATH`,
+  which an open beneath a root needs: confirmed the same way, by the
+  release, and refused below it. No feature checks, on either.
+- **Apple Silicon only:** `aarch64-apple-darwin`. The shell does not
+  compile for Intel Macs.
+
+### 7.7 What is weaker without the ring
+
+- **A stalled filesystem holds the loop.** File operations run at submit,
+  so an NFS or FUSE mount that stalls stalls the service, and a cancel of
+  a file operation always comes too late (kernel.md, 6).
+- **Processes are groups, as they are with the ring:** a descendant that
+  leaves its group escapes the close's kill. A cgroup or a contained
+  tree (kernel.md, 6.6) is refused on macOS as unsupported.
 
 ## 8. Deferred optimisations
 
@@ -399,7 +583,11 @@ and changes no code above io:
   and a ring syscall only when there is something to submit or the kernel
   has completions to flush, and reaping every round keeps one peer's
   backlog from holding up other connections' completions and timers;
-- kernel TLS (tls.md).
+- kernel TLS (tls.md);
+- in the readiness backend, a descriptor's interest kept for its life,
+  edge-triggered (`EPOLLET`, `EV_CLEAR`), rather than registered and
+  removed with each waiter (7.2): it saves two calls a wait, and asks
+  every record to be attempted before it waits.
 
 ## 9. Testing
 
@@ -410,8 +598,21 @@ and changes no code above io:
   position handed from one `List` to the next across its own buffer, a
   root opened at startup, the invariants it asserts, and dropping it with
   operations in flight.
-- **The conformance suite** runs against the ring, each scenario once
-  (`tests/conformance/ring`; kernel.md, 8).
+- **The conformance suite** runs against each backend the host has,
+  each scenario once (`tests/conformance/real`; kernel.md, 8): one test
+  binary, a module for each backend over one list of cases, `ring`
+  (Linux only, opened with `Backend::Ring`) and `readiness` (opened with
+  `Backend::Readiness`, so epoll on Linux and kqueue on macOS).
+- **The readiness backend's own tests** (`tests/readiness`), on each
+  system, on loopback, pipes and a scratch directory: a record made at
+  submit and one that waits, then completes on its readiness; a
+  readiness another reader took first, which waits again; a large
+  transfer through short sends; a blocking pipe it did not make, read
+  once readable and written in `PIPE_BUF` bytes at most; a descriptor
+  shared with a child, closed, and its number reused, with no readiness
+  of the old one reported; a cancel of a waiter and one too late; a
+  deadline met without waking early again and again; the choice at
+  startup and what `chosen` says; and dropping it with records waiting.
 - **The real loop** exercises the rest: the probe at startup, the signal
   path, and the ring adapter's `unsafe` under a sanitizer
   (testing-strategy.md, 2.8).
@@ -442,8 +643,13 @@ and changes no code above io:
   the CI's container profile.
 - **Sanitizers on the ring adapter:** Miri cannot run the ring, so which of
   the address and leak sanitizers the real loop runs under.
-- **Processes in the readiness backend on macOS,** which has no pidfd and
-  no `clone3`, if that backend is ever built.
+- **A path held without following its last link on macOS**
+  (`PathNoFollow`): Linux opens it `O_PATH | O_NOFOLLOW`, and macOS has
+  no `O_PATH`. Default: `O_SYMLINK` with `O_EVTONLY`, held to the same
+  conformance.
+- **A directory listing's position on macOS** (7.5): `getdirentries`'s
+  cookies, or `readdir`'s positions. Default: whichever passes the
+  listing scenarios with a position handed from one `List` to the next.
 - **A hashed certificate directory** (`SSL_CERT_DIR`) as the machine's
   trust roots, on a machine with no bundle file: read it, or refuse to
   start as today (6.2).

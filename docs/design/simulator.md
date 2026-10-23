@@ -321,7 +321,7 @@ was metered as its own, which also finds a leak.
   sync.
 - **The conformance suite** (kernel.md, 8) is `testing/skein-conformance`,
   over a small backend interface the simulator implements in
-  `tests/conformance/sim` and the ring in `tests/conformance/ring`. Where
+  `tests/conformance/sim` and the real kernel's backends in `tests/conformance/real`. Where
   the simulator draws among outcomes the kernel allows, every one of them
   must appear over the fuzzy suite's seeds; where the kernel answers one
   way, the simulator must too. A behaviour found in the kernel that the
