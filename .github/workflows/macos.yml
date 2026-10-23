@@ -1,0 +1,230 @@
+# skein's suites on macOS (temper's draft macos.md, 5.1): what
+# scripts/check.sh runs, where it applies to macOS, on Apple Silicon.
+# Left out: the Python lab (draft 5.2: Linux's), and the source scans
+# (check-contracts, recovery-shape, taste.sh), which read the tree alone,
+# answer as on Linux, and hold before every landing in the gate.
+# A red run blocks nothing; it goes to the director (draft 5.1).
+name: macos
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time on main; a push while one runs waits, and a later push
+# takes the waiting one's place.
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_VERSION: "1.95"
+  NEXTEST_VERSION: 0.9.148
+  NEXTEST_SHA256: 6c23b7fb4ca82c571fc8dfedbab45bfa773d45918f933170c85d21cd7f4b852b
+  CHROME_VERSION: 147.0.7727.101
+  CHROME_SHA256: de197188cf1b928e43d87145155f329bc4239087a86468e2546df9c2577a9515
+  DEJAVU_SHA256: fa9ca4d13871dd122f61258a80d01751d603b4d3ee14095d65453b4e846e17d7
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  # The runner's disk is small (14 GB documented): line tables keep
+  # backtraces' places at a fraction of full debug information's size.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  # testing-strategy.md, section 8: nextest starts each test directly.
+  NEXTEST_DOUBLE_SPAWN: "0"
+
+jobs:
+  suites:
+    runs-on: macos-26
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Each check runs through $RUNNER_TEMP/run, which keeps its output and,
+      # when it fails, gives its failing tests or errors and the output's
+      # tail as error annotations, so that a failure reads through the
+      # public API without the logs.
+      # Every check runs once the tools are in, whatever an earlier one
+      # gave, and each suite runs to its end, so that one run shows every
+      # failure.
+      - name: The runner of each check
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          cat >"$RUNNER_TEMP/annotate.py" <<'EOF'
+          import re, sys
+          name, path = sys.argv[1:]
+          text = open(path, encoding="utf-8", errors="replace").read()
+          lines = text.splitlines()
+          def escape(s):
+              return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          def error(title, body):
+              title = escape(title).replace(":", "%3A").replace(",", "%2C")
+              print(f"::error title={title}::{escape(body)}")
+          failed = [l.strip() for l in lines
+                    if re.match(r"\s+(FAIL|SIGSEGV|SIGABRT|SIGKILL|TIMEOUT|LEAK-FAIL)\s+\[", l)]
+          headlines = [l for l in lines if re.match(r"(error(\[E\d+\])?|warning): ", l)]
+          found = failed or headlines
+          error(f"{name}: {len(found)} failed", "\n".join(dict.fromkeys(found))[-30000:] or "no test or error line found")
+          tail = "\n".join(lines[-1200:])
+          size = 30000
+          chunks = [tail[i:i + size] for i in range(0, len(tail), size)][-4:]
+          for i, chunk in enumerate(chunks, 1):
+              error(f"{name}: output's tail {i}/{len(chunks)}", chunk)
+          EOF
+          cat >"$RUNNER_TEMP/run" <<'EOF'
+          #!/bin/bash
+          # run NAME COMMAND...
+          name=$1
+          shift
+          log="$RUNNER_TEMP/logs/$name.log"
+          "$@" 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+              python3 -I "$RUNNER_TEMP/annotate.py" "$name" "$log"
+          fi
+          exit "$status"
+          EOF
+          chmod +x "$RUNNER_TEMP/run"
+          echo "RUN=$RUNNER_TEMP/run" >>"$GITHUB_ENV"
+
+      - name: Rust at the workspace's rust-version, and cargo-nextest
+        id: rust
+        run: |
+          # rustup is on the image; no installer script runs here.
+          if ! command -v rustup >/dev/null; then
+              echo "::error title=rustup::rustup is not on the macos-26 image"
+              exit 1
+          fi
+          rustup toolchain install "$RUST_VERSION" --profile minimal \
+              --component clippy,rustfmt --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+          curl -sSfL -o "$RUNNER_TEMP/nextest.tar.gz" \
+              "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$NEXTEST_VERSION/cargo-nextest-$NEXTEST_VERSION-universal-apple-darwin.tar.gz"
+          echo "$NEXTEST_SHA256  $RUNNER_TEMP/nextest.tar.gz" | shasum -a 256 -c -
+          mkdir -p "$HOME/.cargo/bin"
+          tar -xzf "$RUNNER_TEMP/nextest.tar.gz" -C "$HOME/.cargo/bin"
+          rustc --version
+          cargo nextest --version
+          uname -a
+
+      - name: Chrome for Testing
+        id: chrome
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/chrome.zip" \
+              "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/mac-arm64/chrome-mac-arm64.zip"
+          echo "$CHROME_SHA256  $RUNNER_TEMP/chrome.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/chrome"
+          chrome="$RUNNER_TEMP/chrome/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+          test -x "$chrome"
+          echo "SKEIN_TEST_CHROMIUM=$chrome" >>"$GITHUB_ENV"
+
+      # The browser tier's fonts, as Debian's fonts-dejavu-core gives them on Linux.
+      - name: DejaVu fonts
+        id: fonts
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/dejavu.tar.bz2" \
+              https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.tar.bz2
+          echo "$DEJAVU_SHA256  $RUNNER_TEMP/dejavu.tar.bz2" | shasum -a 256 -c -
+          tar -xjf "$RUNNER_TEMP/dejavu.tar.bz2" -C "$RUNNER_TEMP"
+          test -f "$RUNNER_TEMP/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
+          echo "SKEIN_TEST_FONTS=$RUNNER_TEMP/dejavu-fonts-ttf-2.37/ttf" >>"$GITHUB_ENV"
+
+      # The registry by the lock; the target by the lock and the toolchain,
+      # saved once per key: the dependencies stay built, and the workspace's
+      # own crates build again in each run.
+      - name: Restore the registry
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-home-macos-26-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-home-macos-26-
+      - name: Restore the target
+        id: target
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: target
+          key: target-macos-26-rust-${{ env.RUST_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: target-macos-26-rust-${{ env.RUST_VERSION }}-
+
+      - name: Formatting
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: $RUN fmt cargo fmt --all --check
+
+      - name: Clippy over every target of the whole workspace
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: $RUN clippy cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: The portable libraries and the browser-only halves on their target
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: |
+          $RUN wasm-check cargo check --target wasm32-unknown-unknown -p skein-lib -p skein-codec -p skein-http
+          $RUN wasm-clippy cargo clippy --target wasm32-unknown-unknown -p skein-ui -p skein-ui-web \
+              -p skein-ui-example-view -p skein-ui-example-shell-web -- -D warnings
+
+      - name: The TLS machine on its own
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: $RUN tls cargo check -p skein-tls
+
+      - name: Build the tests
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: $RUN build-tests cargo nextest run --workspace --no-run
+
+      - name: Save the registry
+        if: always()
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-home-macos-26-${{ hashFiles('Cargo.lock') }}
+        continue-on-error: true
+      - name: Save the target
+        if: always() && steps.target.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: target
+          key: target-macos-26-rust-${{ env.RUST_VERSION }}-${{ hashFiles('Cargo.lock') }}
+        continue-on-error: true
+
+      - name: The focused suite
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: $RUN default cargo nextest run --workspace --no-fail-fast
+
+      - name: The fuzzy suite
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: $RUN fuzzy cargo nextest run --workspace --profile fuzzy --no-fail-fast
+
+      # The browser tier uses a dev-profile module under the server's strict policy.
+      - name: The bundle
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: |
+          $RUN wasm-build cargo build --target wasm32-unknown-unknown -p skein-ui-example-shell-web
+          $RUN bundle cargo run -p skein-ui-bundle -- \
+              --module target/wasm32-unknown-unknown/debug/skein_ui_example_shell_web.wasm \
+              --name skein_ui_example_shell_web --prefix /bundle/ --stylesheet examples/ui/shell-web/notes.css --out target/ui-example-bundle \
+              --noscript 'Notes needs WebAssembly and scripts.'
+          $RUN server cargo build -p skein-ui-example-server
+
+      - name: The browser tier
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' && steps.chrome.outcome == 'success' && steps.fonts.outcome == 'success' }}
+        run: |
+          export SKEIN_UI_EXAMPLE_BUNDLE="$PWD/target/ui-example-bundle"
+          $RUN browser cargo nextest run --workspace --profile browser --no-fail-fast
+
+      - name: The disk
+        if: always()
+        run: |
+          echo "::notice title=disk::$(df -h / | tail -1 | tr -s ' ')"
+          echo "::notice title=target::$(du -sh target 2>/dev/null | cut -f1)"

@@ -26,10 +26,16 @@ pub struct Scratch {
 
 impl Scratch {
     /// A new, empty directory, `skein-<label>-<pid>-<n>` beneath the
-    /// system's temporary directory, `n` the first not taken.
+    /// system's temporary directory, `n` the first not taken. Its path is
+    /// canonical, no link on its way: the shell's startup reads refuse links
+    /// there (shell.md, 7.5), and macOS's temporary directory is under
+    /// `/var`, a link to `/private/var`.
     #[must_use]
     pub fn new(label: &str) -> Scratch {
-        Scratch::new_in(&std::env::temp_dir(), label)
+        let base = std::env::temp_dir();
+        let base = fs::canonicalize(&base)
+            .unwrap_or_else(|error| fail(&format!("the temporary directory {}: {error}", base.display())));
+        Scratch::new_in(&base, label)
     }
 
     /// A new, empty directory, as [`Scratch::new`] makes, beneath `base`:
@@ -86,4 +92,15 @@ fn reopen(dir: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scratch;
+
+    #[test]
+    fn a_scratch_directory_has_no_link_on_its_way() {
+        let scratch = Scratch::new("canonical");
+        assert_eq!(std::fs::canonicalize(scratch.path()).expect("the scratch directory"), scratch.path());
+    }
 }

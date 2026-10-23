@@ -159,10 +159,8 @@ fn check_png(answer: &Value, out: &Path, file: &str, size: (i64, i64)) {
     );
     assert_eq!((integer(field(shot, "width")), integer(field(shot, "height"))), size);
     assert_eq!(integer(field(shot, "bytes")), i64::try_from(png.len()).expect("PNG length fits i64"));
-    let digest = Command::new("sha256sum").arg(out.join(file)).output().expect("run sha256sum for shot evidence");
-    assert!(digest.status.success());
-    let digest = String::from_utf8(digest.stdout).expect("sha256sum emits UTF-8");
-    assert_eq!(text(field(shot, "sha256")), digest.split_whitespace().next().expect("sha256sum emits a digest"));
+    let digest = skein_lib::sha256::digest(&png).iter().fold(String::new(), |hex, byte| hex + &format!("{byte:02x}"));
+    assert_eq!(text(field(shot, "sha256")), digest);
 }
 fn look_reads(client: &mut Client, out: &Path) {
     let focused = object([("focus", object([("role", string("textbox")), ("name", string("Message"))]))]);
