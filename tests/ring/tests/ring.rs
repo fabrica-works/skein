@@ -1,3 +1,6 @@
+// The ring adapter's own (shell.md, 9).
+#![cfg(target_os = "linux")]
+
 //! The ring adapter against the real kernel, on loopback (shell.md,
 //! 9): records submitted directly, as io will, and every
 //! completion checked against the contract of `skein_io::kernel` as it

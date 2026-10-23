@@ -232,6 +232,8 @@ impl Tree {
         }
     }
 
+    // Cgroups are Linux's (shell.md, 7.5).
+    #[cfg(target_os = "linux")]
     pub(crate) fn cgroup(&self) -> Option<Fd> {
         match self {
             #[cfg(target_os = "linux")]

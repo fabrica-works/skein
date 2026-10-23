@@ -1,3 +1,6 @@
+// The ring adapter's own (shell.md, 9).
+#![cfg(target_os = "linux")]
+
 //! The ring adapter's own tests (shell.md, 9), against the real kernel on
 //! loopback: [`World`], a kernel driven by hand, whose records go down one
 //! at a time and whose completions are checked against the contract of

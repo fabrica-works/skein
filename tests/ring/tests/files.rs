@@ -1,3 +1,6 @@
+// The ring adapter's own (shell.md, 9).
+#![cfg(target_os = "linux")]
+
 //! The ring adapter's own part in files, against the real kernel, in a
 //! scratch directory (shell.md, 9): a root opened at startup, a `List` it
 //! runs itself at submit, the position it hands from one `List` to the next
@@ -6,9 +9,6 @@
 //! suite's, in `tests/conformance/real`.
 //!
 //! A machine without `io_uring` fails every test here, saying so.
-
-#[path = "files/startup.rs"]
-mod startup;
 
 use std::collections::BTreeSet;
 use std::fs;

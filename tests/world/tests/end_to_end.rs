@@ -7,6 +7,12 @@ use skein_world::end_to_end::{Binary, Command, Containment, Mode, StartError};
 use skein_world::{Host, Referee, real};
 use skein_world_tests::hosted::{Act, Script};
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
+const ALL: [Containment; 3] = [Containment::Walk, Containment::Best, Containment::Group];
+#[cfg(not(target_os = "linux"))]
+const ALL: [Containment; 1] = [Containment::Group];
+
 #[derive(Debug)]
 enum Process {
     Child(Binary),
@@ -300,7 +306,7 @@ fn assert_tree_counted(child: &Binary, containment: Containment) {
 
 #[test]
 fn a_descendant_left_in_the_group_is_ended_and_counted() {
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         let outcome = tree_run("fork-exit", containment, skein_world::end_to_end::Expectation::Measure);
         let child = tree_child(&outcome);
         assert!(
@@ -311,6 +317,8 @@ fn a_descendant_left_in_the_group_is_ended_and_counted() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_descendant_that_leaves_its_group_and_session_is_still_settled() {
     // A group cannot see a descendant that leaves it (examples.md, 6; shell.md, 9).
@@ -325,6 +333,8 @@ fn a_descendant_that_leaves_its_group_and_session_is_still_settled() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn an_already_exited_descendant_that_left_its_session_is_still_reaped() {
     use skein_world::end_to_end::Expectation;
@@ -361,7 +371,7 @@ fn an_already_exited_descendant_that_left_its_session_is_still_reaped() {
 
 #[test]
 fn a_binary_that_exits_at_once_settles_with_counts_above_zero() {
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         let outcome = tree_run("exit", containment, skein_world::end_to_end::Expectation::EndsWithBinary);
         assert_tree_counted(tree_child(&outcome), containment);
     }
@@ -369,7 +379,7 @@ fn a_binary_that_exits_at_once_settles_with_counts_above_zero() {
 
 #[test]
 fn an_expected_end_fails_naming_a_process_still_running() {
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         let binary = Binary::start_contained(
             fixture("fork-exit"),
             Mode::Pipes,
@@ -394,7 +404,7 @@ fn an_expected_end_fails_naming_a_process_still_running() {
 
 #[test]
 fn a_measured_binary_is_killed_and_counted() {
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         let outcome = tree_run("fork-live", containment, skein_world::end_to_end::Expectation::Measure);
         let child = tree_child(&outcome);
         assert_eq!(child.exit_status(), Some(Exit::Signal(9)));
@@ -406,7 +416,7 @@ fn a_measured_binary_is_killed_and_counted() {
 #[test]
 fn a_dropped_observer_ends_its_tree() {
     use skein_shell::{Config, Kernel, Wait};
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         let mut child = Binary::start_contained(
             fixture("fork-live"),
             Mode::Pipes,
@@ -444,6 +454,8 @@ fn a_dropped_observer_ends_its_tree() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_walk_keeps_an_existing_parts_child_untouched() {
     let mut other = std::process::Command::new("/bin/sleep").arg("60").spawn().expect("another part starts its child");
@@ -454,6 +466,8 @@ fn a_walk_keeps_an_existing_parts_child_untouched() {
     other.wait().expect("the other part reaps its child");
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_walk_refuses_another_observer_during_its_accounting_interval() {
     let child = Binary::start_with_tree(
@@ -477,6 +491,8 @@ fn a_walk_refuses_another_observer_during_its_accounting_interval() {
     assert_tree_counted(tree_child(&outcome), Containment::Walk);
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn delegated_cgroups_keep_two_binaries_separate_until_both_are_removed() {
     use skein_world::end_to_end::{Expectation, Method};
@@ -500,6 +516,8 @@ fn delegated_cgroups_keep_two_binaries_separate_until_both_are_removed() {
     assert_tree_counted(tree_child(&outcome), Containment::Best);
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn the_last_observer_restores_the_original_subreaper_setting() {
     let original = skein_shell::subreaper().expect("the test's subreaper setting");
@@ -529,6 +547,8 @@ fn the_last_observer_restores_the_original_subreaper_setting() {
     skein_shell::set_subreaper(original).expect("the test restores its initial adoption policy");
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn concurrent_observers_keep_adoption_enabled_until_the_last_one_ends() {
     use skein_world::end_to_end::Expectation;
@@ -556,6 +576,8 @@ fn concurrent_observers_keep_adoption_enabled_until_the_last_one_ends() {
     skein_shell::set_subreaper(original).expect("the test restores its initial policy");
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_failed_binary_start_restores_the_original_subreaper_setting() {
     let original = skein_shell::subreaper().expect("the test's subreaper setting");
@@ -567,8 +589,12 @@ fn a_failed_binary_start_restores_the_original_subreaper_setting() {
 
 #[derive(Clone, Copy)]
 enum SupervisedTrigger {
+    // The detached-descendant cases use Linux's tree keeper (shell.md, 9).
+    #[cfg(target_os = "linux")]
     Ready,
     StderrOverflow,
+    // The detached-descendant cases use Linux's tree keeper (shell.md, 9).
+    #[cfg(target_os = "linux")]
     LeaderExit,
     Bound,
     Never,
@@ -588,8 +614,10 @@ impl Referee<Process> for SupervisedJudge {
         let Process::Child(child) = &mut procs[0] else { panic!("binary observer") };
         if self.term_at.is_none() {
             let ready = match self.trigger {
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::Ready => ready_descendant(child.stderr()).is_some(),
                 SupervisedTrigger::StderrOverflow => child.stderr_overflowed(),
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::LeaderExit => child.exit_status().is_some(),
                 SupervisedTrigger::Bound => now >= Time::ZERO.saturating_add(Duration::from_millis(10)),
                 SupervisedTrigger::Never => false,
@@ -626,8 +654,10 @@ impl Referee<Process> for SupervisedJudge {
             self.kill_at.is_none().then_some(term_at.saturating_add(Duration::from_millis(20)))
         } else {
             match self.trigger {
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::Ready => ready_descendant(child.stderr()).is_some().then_some(now),
                 SupervisedTrigger::StderrOverflow => child.stderr_overflowed().then_some(now),
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::LeaderExit => child.exit_status().is_some().then_some(now),
                 SupervisedTrigger::Bound => Some(Time::ZERO.saturating_add(Duration::from_millis(10))),
                 SupervisedTrigger::Never => None,
@@ -646,11 +676,11 @@ impl Referee<Process> for SupervisedJudge {
             self.saw_grace && self.saw_retained_exit
         } else {
             match self.trigger {
+                #[cfg(target_os = "linux")]
                 SupervisedTrigger::LeaderExit => self.saw_retained_exit,
-                SupervisedTrigger::Ready
-                | SupervisedTrigger::StderrOverflow
-                | SupervisedTrigger::Bound
-                | SupervisedTrigger::Never => true,
+                #[cfg(target_os = "linux")]
+                SupervisedTrigger::Ready => true,
+                SupervisedTrigger::StderrOverflow | SupervisedTrigger::Bound | SupervisedTrigger::Never => true,
             }
         }
     }
@@ -676,7 +706,7 @@ fn supervised_run(mode: &str, containment: Containment, trigger: SupervisedTrigg
 #[test]
 fn a_supervised_natural_tree_settles_without_cleanup() {
     use skein_world::end_to_end::Cleanup;
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         // A group cannot see escaped descendants (examples.md, 6; shell.md, 9).
         let modes: &[&str] =
             if containment == Containment::Group { &["exit"] } else { &["exit", "escape-zombie-exit"] };
@@ -691,6 +721,8 @@ fn a_supervised_natural_tree_settles_without_cleanup() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_supervised_tree_retains_detached_descendants_after_natural_leader_exit() {
     use skein_world::end_to_end::Cleanup;
@@ -707,6 +739,8 @@ fn a_supervised_tree_retains_detached_descendants_after_natural_leader_exit() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn whole_tree_term_reaches_detached_descendants_before_the_leader_exits() {
     use skein_world::end_to_end::Cleanup;
@@ -732,6 +766,8 @@ fn whole_tree_term_reaches_detached_descendants_before_the_leader_exits() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_supervised_tree_honors_grace_after_leader_exit_then_reports_forced_kill() {
     use skein_world::end_to_end::Cleanup;
@@ -751,7 +787,7 @@ fn a_supervised_tree_honors_grace_after_leader_exit_then_reports_forced_kill() {
 #[test]
 fn a_supervised_never_ending_leader_receives_the_referees_term_bound() {
     use skein_world::end_to_end::Cleanup;
-    for containment in [Containment::Walk, Containment::Best, Containment::Group] {
+    for containment in ALL {
         let outcome = supervised_run("never", containment, SupervisedTrigger::Bound);
         let child = tree_child(&outcome);
         assert_eq!(child.exit_status(), Some(Exit::Signal(15)));
@@ -760,6 +796,8 @@ fn a_supervised_never_ending_leader_receives_the_referees_term_bound() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn supervised_tree_signals_leave_an_existing_unrelated_child_running() {
     for containment in [Containment::Walk, Containment::Best] {
@@ -773,6 +811,8 @@ fn supervised_tree_signals_leave_an_existing_unrelated_child_running() {
     }
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn supervised_tree_signals_stay_inside_their_own_delegated_cgroup() {
     use skein_world::end_to_end::{Expectation, Method};
@@ -969,6 +1009,8 @@ fn a_size_change_is_heard() {
     assert_eq!(child.exit_status(), Some(Exit::Code(0)));
 }
 
+// A cgroup, the subreaper and `/proc` are Linux's (examples.md, 6; shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn a_group_refuses_beside_a_subreaper() {
     use skein_world::end_to_end::Expectation;

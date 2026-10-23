@@ -195,10 +195,14 @@ impl Binary {
                 .collect(),
             pipes: pipes.into_boxed_slice(),
         };
+        // Cgroups are Linux's (shell.md, 7.5).
+        #[cfg(target_os = "linux")]
         let child = match tree.cgroup() {
             Some(cgroup) => skein_shell::start_binary_in_cgroup(&mut spawn, terminal, cgroup),
             None => skein_shell::start_binary(&mut spawn, terminal),
         };
+        #[cfg(not(target_os = "linux"))]
+        let child = skein_shell::start_binary(&mut spawn, terminal);
         let mut submits = Queue::with_capacity(1);
         let mut completes = Queue::with_capacity(1);
         submits.push(Submit { op: Token::new(1), kind: Op::Close { fd: root } });

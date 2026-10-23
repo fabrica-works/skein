@@ -11,9 +11,12 @@
 //! A machine without `io_uring` fails the ring module's tests, saying so;
 //! a run as root fails the scenario on permissions, whom no mode stops.
 
-#![expect(
-    clippy::duplicate_mod,
-    reason = "one case list for files, processes and sockets runs in each backend's test namespace (shell.md, 9)"
+#![cfg_attr(
+    target_os = "linux",
+    expect(
+        clippy::duplicate_mod,
+        reason = "one case list for files, processes and sockets runs in each backend's test namespace (shell.md, 9)"
+    )
 )]
 
 use skein_conformance::Check;
@@ -24,6 +27,8 @@ fn on<S: Check>(backend: Backend, scenario: fn(&mut Real) -> S) {
     scenario(&mut Real::new(backend)).check();
 }
 
+// The conformance on the ring (shell.md, 9).
+#[cfg(target_os = "linux")]
 #[path = "cases"]
 mod ring {
     const BACKEND: skein_shell::Backend = skein_shell::Backend::Ring;

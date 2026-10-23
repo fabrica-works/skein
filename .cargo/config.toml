@@ -1,0 +1,34 @@
+# The Darwin check (shell.md, 9): clippy, and so check, over every target for
+# Apple Silicon, warnings denied. The excluded members reach rustls, whose
+# `ring` crate compiles C against Apple's headers; the macOS runner checks
+# them.
+[alias]
+darwin = [
+    "clippy", "--workspace", "--all-targets", "--target", "aarch64-apple-darwin",
+    "--exclude", "forgejo-conformance",
+    "--exclude", "github-conformance",
+    "--exclude", "skein-browser-world",
+    "--exclude", "skein-fake-forge-github",
+    "--exclude", "skein-fake-forge-tests",
+    "--exclude", "skein-fake-oauth",
+    "--exclude", "skein-fake-peers",
+    "--exclude", "skein-fake-peers-tests",
+    "--exclude", "skein-fake-person-browser",
+    "--exclude", "skein-forge-connection",
+    "--exclude", "skein-forge-machine-world",
+    "--exclude", "skein-forge-protocol-world",
+    "--exclude", "skein-forge-setup",
+    "--exclude", "skein-forge-setup-world",
+    "--exclude", "skein-lab-browser",
+    "--exclude", "skein-llm-connection",
+    "--exclude", "skein-llm-connection-world",
+    "--exclude", "skein-llm-world",
+    "--exclude", "skein-oauth",
+    "--exclude", "skein-oauth-accounts",
+    "--exclude", "skein-oauth-accounts-world",
+    "--exclude", "skein-oauth-world",
+    "--exclude", "skein-tls",
+    "--exclude", "skein-tls-world",
+    "--exclude", "skein-ui-web-tests",
+    "--", "-D", "warnings",
+]

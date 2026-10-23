@@ -21,6 +21,8 @@ use skein_world::real;
 /// The echo's idle deadline here: short, so that the test is quick.
 const IDLE: Duration = Duration::from_millis(200);
 
+// The echo's real loop on the ring (shell.md, 9).
+#[cfg(target_os = "linux")]
 #[test]
 fn the_echo_serves_refuses_and_idles_out_its_clients_on_the_real_ring() {
     serves_refuses_and_idles(Backend::Ring);

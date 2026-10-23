@@ -1,3 +1,6 @@
+// io's real-kernel files on the ring (shell.md, 9).
+#![cfg(target_os = "linux")]
+
 //! One exchange through io over the real ring (testing-strategy.md, 2.8, the
 //! real loop's first step): io and its scripted owner in one process, whose
 //! loop reaps from the shell's kernel, runs io's stages, and submits back,
