@@ -1130,6 +1130,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-readiness-tests"
+version = "0.0.0"
+dependencies = [
+ "skein-io",
+ "skein-lib",
+ "skein-shell",
+]
+
+[[package]]
 name = "skein-ring-tests"
 version = "0.0.0"
 dependencies = [

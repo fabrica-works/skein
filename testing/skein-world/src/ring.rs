@@ -5,7 +5,7 @@ use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
 use skein_io::kernel::{Complete, Op, Submit};
 use skein_lib::{Queue, Token};
-use skein_shell::{Config, Kernel, OpenError, Wait};
+use skein_shell::{Backend, Config, Kernel, OpenError, Wait};
 
 /// One host's original operation identity, including a cancel's target.
 #[derive(Debug)]
@@ -37,7 +37,17 @@ impl Ring {
     /// The total also covers any direct cleanup operations owned by the loop.
     pub fn new(operations: u32, limits: Vec<u32>) -> Result<Self, OpenError> {
         let kernel = Kernel::open(Config { operations })?;
-        Ok(Self {
+        Ok(Self::with_kernel(operations, limits, kernel))
+    }
+
+    /// Opens the shared kernel on the backend a test forces (shell.md, 7.1).
+    pub fn new_on(operations: u32, limits: Vec<u32>, backend: Backend) -> Result<Self, OpenError> {
+        let kernel = Kernel::open_on(Config { operations }, backend)?;
+        Ok(Self::with_kernel(operations, limits, kernel))
+    }
+
+    fn with_kernel(operations: u32, limits: Vec<u32>, kernel: Kernel) -> Self {
+        Self {
             kernel,
             next: 0,
             counts: vec![0; limits.len()],
@@ -47,7 +57,7 @@ impl Ring {
             tokens: BTreeMap::new(),
             submits: Queue::with_capacity(operations),
             arrived: Queue::with_capacity(operations),
-        })
+        }
     }
 
     /// Reaps raw kernel records, for loops that intercept operations themselves.

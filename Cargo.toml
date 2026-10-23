@@ -61,6 +61,7 @@ members = [
     "tests/oauth-accounts",
     "tests/protocol",
     "tests/ring",
+    "tests/readiness",
     "tests/sim",
     "tests/tls",
     "tests/ui-text",

@@ -1,6 +1,6 @@
 //! The real loop (testing-strategy.md, 2.8): the same processes and referee
 //! as a simulated world, in one thread and one loop, whose calls go to the
-//! real kernel through one ring, on loopback, with deadlines on the real
+//! real kernel through one backend, on loopback, with deadlines on the real
 //! clock (examples.md, section 6). It keeps token bindings, operation limits,
 //! hosted factories, descriptor ownership and queued referee signals; it
 //! never inspects service state. `World::host` selects a spawn's factory,
@@ -22,7 +22,7 @@ use crate::ring::Ring;
 use skein_heap::Span;
 use skein_io::kernel::{Complete, Done, Error, Exit, Fd, Op, ServiceSignal, Signal, Spawn, Submit};
 use skein_lib::{Duration, Queue, Time, Token};
-use skein_shell::{Clock, Now, Wait};
+use skein_shell::{Backend, Clock, Now, Wait};
 
 use crate::Host;
 use crate::heap::Heap;
@@ -98,14 +98,14 @@ impl<P, R> DerefMut for CheckedWorld<P, R> {
 }
 
 impl<P: Host, R: Referee<P>> CheckedWorld<P, R> {
-    /// Runs on one ring and retains final ownership checking in the outcome.
+    /// Runs on one kernel and retains final ownership checking in the outcome.
     #[must_use]
     pub fn run(self, clock: &Clock, patience: Duration) -> CheckedOutcome<P> {
         CheckedOutcome(self.0.run(clock, patience))
     }
 }
 
-/// Runs unhosted processes on the shared real ring; `World` also hosts spawns.
+/// Runs unhosted processes on the shared real kernel; `World` also hosts spawns.
 #[must_use]
 pub fn run<P: Host, R: Referee<P>>(procs: Vec<P>, referee: R, clock: &Clock, patience: Duration) -> Outcome<P> {
     let mut world = World::new(referee);
@@ -142,6 +142,7 @@ pub struct World<P, R> {
     signals: BTreeMap<usize, SignalSource>,
     signalfd: bool,
     heap: Option<Heap>,
+    backend: Option<Backend>,
 }
 
 impl<P: Host, R: Referee<P>> World<P, R> {
@@ -166,7 +167,15 @@ impl<P: Host, R: Referee<P>> World<P, R> {
             signals: BTreeMap::new(),
             signalfd: false,
             heap: None,
+            backend: None,
         }
+    }
+
+    /// Runs on `backend` rather than the host's (shell.md, 7.1 and 9).
+    #[must_use]
+    pub fn on(mut self, backend: Backend) -> Self {
+        self.backend = Some(backend);
+        self
     }
 
     /// Starts a checked world under skein's counting allocator. Build every
@@ -239,7 +248,7 @@ impl<P: Host, R: Referee<P>> World<P, R> {
         host
     }
 
-    /// Opens one ring with room for every root, hosted instance and teardown operation.
+    /// Opens one kernel with room for every root, hosted instance and teardown operation.
     #[must_use]
     pub fn run(self, clock: &Clock, patience: Duration) -> Outcome<P> {
         assert!(!self.procs.is_empty(), "a real loop runs at least one process");
@@ -256,9 +265,16 @@ impl<P: Host, R: Referee<P>> World<P, R> {
             .checked_add(hosted.checked_mul(2).expect("cleanup operations fit"))
             .and_then(|sum| sum.checked_add(1))
             .expect("world operations fit");
-        let ring = Ring::new(operations, limits).unwrap_or_else(|error| {
-            crate::fail(&format!("io_uring is not usable here, so the real loop cannot run: {error}"))
-        });
+        let ring = match self.backend {
+            Some(backend) => Ring::new_on(operations, limits, backend).unwrap_or_else(|error| {
+                crate::fail(&format!(
+                    "forced backend {backend:?} is not usable here, so the real loop cannot run: {error}"
+                ))
+            }),
+            None => Ring::new(operations, limits).unwrap_or_else(|error| {
+                crate::fail(&format!("the host's backend is not usable here, so the real loop cannot run: {error}"))
+            }),
+        };
         let ids: Vec<usize> = (0..self.procs.len()).collect();
         let processes = self
             .inherited

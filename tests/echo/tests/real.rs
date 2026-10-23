@@ -1,13 +1,13 @@
 //! The echo on the real loop (testing-strategy.md, 2.8; examples.md, 7): the
-//! echo as it ships and its fake clients, on one shared ring, in one
+//! echo as it ships and its fake clients, on one shared kernel, in one
 //! thread and one loop over the shell's kernel, on loopback, with the
 //! referee's deadlines on the real clock. It shows what only the real
-//! kernel can: the ring adapter under the whole service, and real sockets
+//! kernel can: each backend under the whole service, and real sockets
 //! between real processes' worth of io. It does not replay; what fails here
 //! is rerun in the simulated worlds, where it does.
 //!
-//! A machine where `io_uring` cannot be used fails here, saying so, as the
-//! ring's own tests do.
+//! The forced ring story fails on a machine where `io_uring` cannot be used,
+//! saying so, as the ring's own tests do.
 
 use skein_echo_client::{Plan, Then};
 use skein_echo_world::proc::Proc;
@@ -15,7 +15,7 @@ use skein_echo_world::referee::{EchoReferee, Expect, Shutdown};
 use skein_echo_world::scenarios::{LINE, client_limits, plan, server};
 use skein_io::Addr;
 use skein_lib::{Duration, Rng};
-use skein_shell::Clock;
+use skein_shell::{Backend, Clock};
 use skein_world::real;
 
 /// The echo's idle deadline here: short, so that the test is quick.
@@ -23,6 +23,15 @@ const IDLE: Duration = Duration::from_millis(200);
 
 #[test]
 fn the_echo_serves_refuses_and_idles_out_its_clients_on_the_real_ring() {
+    serves_refuses_and_idles(Backend::Ring);
+}
+
+#[test]
+fn the_echo_serves_refuses_and_idles_out_its_clients_on_the_readiness_backend() {
+    serves_refuses_and_idles(Backend::Readiness);
+}
+
+fn serves_refuses_and_idles(backend: Backend) {
     let clock = Clock::new();
     let start = clock.now().now;
     let at = |ms: u64| start.saturating_add(Duration::from_millis(ms));
@@ -69,7 +78,8 @@ fn the_echo_serves_refuses_and_idles_out_its_clients_on_the_real_ring() {
     expect.push(Expect::Finished { at: 2, conn: 0, by });
     expect.push(Expect::Finished { at: 2, conn: 1, by });
 
-    let mut world = real::World::new_controlled(|controls| EchoReferee::new(7, expect, Shutdown::WhenDone, controls));
+    let mut world =
+        real::World::new_controlled(|controls| EchoReferee::new(7, expect, Shutdown::WhenDone, controls)).on(backend);
     world.spawn_signals(|signal| {
         let mut proc = Proc::echo(limits, listen, rng.next_u64());
         match &mut proc {
