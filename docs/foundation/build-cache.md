@@ -4,7 +4,8 @@ Provisional, 2026-10-24. How builds reuse compiled crates across
 worktrees, pins and machines: kache, our patch to it, and the fleet's
 shared store, with the reasons for each choice and what they measured.
 The landing flow built on it is [landing-flow.md](landing-flow.md);
-`heavy` and `land` are [build-infrastructure.md](build-infrastructure.md).
+`heavy` and `land` are
+[build-infrastructure.md](../design/build-infrastructure.md).
 
 ## 1. In one page
 
