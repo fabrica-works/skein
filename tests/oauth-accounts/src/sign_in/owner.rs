@@ -3,7 +3,7 @@ use super::{Client, Env, Fact, List, Story, accounts, bytes, registration};
 impl Client {
     fn visited(&mut self, env: &Env<accounts::Limits>) {
         match self.story {
-            Story::CloseWaiting | Story::CloseConfidential => {
+            Story::CloseWaiting | Story::CloseConfidential | Story::PasteClose => {
                 self.close(env);
                 assert!(!self.closed);
             }
@@ -15,7 +15,16 @@ impl Client {
                 self.close(env);
                 self.ask(env, accounts::Request::Abort);
             }
-            Story::Return(_)
+            Story::Paste
+            | Story::PasteThenListener
+            | Story::ListenerThenPaste
+            | Story::PasteTwice
+            | Story::PasteWrong
+            | Story::StateRefusals
+            | Story::ListenerWrongState
+            | Story::PasteExpired
+            | Story::PasteCancelled
+            | Story::Return(_)
             | Story::OpenIdAgain
             | Story::IssuedClientId
             | Story::AnotherSubject
@@ -112,7 +121,17 @@ impl Client {
             Story::Return(super::Return::After) => {
                 self.return_to(env, bytes::copy_of(b"https://application.example/first"));
             }
-            Story::Return(
+            Story::Paste
+            | Story::PasteThenListener
+            | Story::ListenerThenPaste
+            | Story::PasteTwice
+            | Story::PasteWrong
+            | Story::StateRefusals
+            | Story::ListenerWrongState
+            | Story::PasteExpired
+            | Story::PasteCancelled
+            | Story::PasteClose
+            | Story::Return(
                 super::Return::Back | super::Return::Before | super::Return::Bound | super::Return::WrongPath,
             )
             | Story::OpenIdAgain
@@ -142,6 +161,11 @@ impl Client {
         self.ask(env, accounts::Request::Return { account: 0, location });
     }
     pub(super) fn restart(&mut self, env: &Env<accounts::Limits>) {
+        if self.callback == super::paste::Callback::Finished
+            && let Some((account, generation)) = self.pending_keep.take()
+        {
+            self.kept(env, account, generation, true);
+        }
         if self.again_at.is_some_and(|at| env.now >= at) {
             self.again_at = None;
             self.contracts[0] = super::Contracts::new();
@@ -170,6 +194,14 @@ impl Client {
         let yes = self.story != Story::NotKept;
         let size = if self.large { 256 } else { 16 };
         assert_eq!(record.access_token.as_ref(), vec![if generation == 1 { b'a' } else { b'b' }; size]);
+        self.records.push(record);
+        if self.story == Story::PasteThenListener && self.callback != super::paste::Callback::Finished {
+            self.pending_keep = Some((account, generation));
+        } else {
+            self.kept(env, account, generation, yes);
+        }
+    }
+    fn kept(&mut self, env: &Env<accounts::Limits>, account: u32, generation: u64, yes: bool) {
         self.contracts[usize::try_from(account).expect("account index")].kept(generation, yes);
         self.ask(
             env,
@@ -179,7 +211,6 @@ impl Client {
                 keeping: if yes { accounts::Keeping::Kept } else { accounts::Keeping::NotKept },
             },
         );
-        self.records.push(record);
     }
     fn signed_in(&mut self, env: &Env<accounts::Limits>, account: u32, generation: u64, missing: Box<[u8]>) {
         self.contracts[usize::try_from(account).expect("account index")].signed_in(generation);
@@ -234,6 +265,8 @@ impl Client {
                         self.again_at = Some(env.now.saturating_add(skein_lib::Duration::from_secs(1)));
                     } else if generation == 1 && self.story == Story::Public {
                         self.ask(env, accounts::Request::Rejected { account, generation });
+                    } else if self.story == Story::ListenerThenPaste {
+                        // The browser receives its page before the person pastes.
                     } else if self.story != Story::TwoPorts
                         || self.facts.iter().filter(|fact| matches!(fact, Fact::Granted(_))).count() == 2
                     {
@@ -251,13 +284,17 @@ impl Client {
                         self.contracts[usize::try_from(account).expect("account index")].failed();
                     }
                     self.facts.push(Fact::Failed(failure));
+                    if let Some(uri) = self.expired_paste.take() {
+                        self.ask(env, accounts::Request::Redirected { account: 0, uri });
+                    }
                     self.close(env);
                 }
-                accounts::Event::Refused {
-                    asked: accounts::Asked::Redirected,
-                    why: accounts::Refusal::NotWaiting,
-                    ..
-                } => self.facts.push(Fact::Late),
+                accounts::Event::Refused { asked: accounts::Asked::Redirected, why, .. } => {
+                    self.facts.push(Fact::Refused(why));
+                    if self.story == Story::ListenerThenPaste {
+                        self.close(env);
+                    }
+                }
                 accounts::Event::Closed => {
                     for contracts in &mut self.contracts {
                         contracts.closed();

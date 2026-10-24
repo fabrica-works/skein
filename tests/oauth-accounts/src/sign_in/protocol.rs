@@ -99,6 +99,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     let mut callback_count = 0;
     let mut scripted = 0;
     let mut callback_pending = false;
+    let mut pasted = false;
     let mut trace = Vec::new();
 
     for _ in 0..200_000 {
@@ -130,6 +131,22 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     location.extend_from_slice(&client_id);
                 }
                 redirect = Some(location.into_boxed_slice());
+            }
+        }
+        if !pasted
+            && matches!(story, Story::Paste | Story::PasteThenListener | Story::ListenerThenPaste)
+            && super::paste::delivery_ready(
+                story,
+                client.callback,
+                callback_count > 0 && !callback_pending,
+                &client.facts,
+            )
+            && let Some(uri) = &redirect
+        {
+            client.paste(&env, uri.clone());
+            pasted = true;
+            if story == Story::Paste {
+                redirect = None;
             }
         }
         if !callback_pending
@@ -265,6 +282,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 io::Request::Bind { owner: identity, socket } => {
                     assert_eq!(socket, Token::new(11));
                     assert!(callback.replace(identity).is_none());
+                    client.callback = super::paste::Callback::Accepted;
                 }
                 io::Request::Stream { stream, down } if stream == Token::new(11) => {
                     if let Down::Send(bytes) = &down {
@@ -296,7 +314,10 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                             } else if callback_count == 1
                                 && matches!(
                                     story,
-                                    Story::WrongPath | Story::WrongHost | Story::Return(super::Return::WrongPath)
+                                    Story::WrongPath
+                                        | Story::WrongHost
+                                        | Story::Return(super::Return::WrongPath)
+                                        | Story::PasteThenListener
                                 )
                             {
                                 b"HTTP/1.1 404"
@@ -310,6 +331,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                         }
                         trace.append(&mut callback_wire.trace);
                         callback_pending = false;
+                        client.callback = super::paste::Callback::Finished;
                         callback.take().expect("callback owner")
                     };
                     client.component.as_mut().expect("component").up(
@@ -328,7 +350,8 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 | io::Request::Usage { .. } => panic!("only admitted sockets"),
             }
         }
-        if let Some(identity) = callback
+        if (story != Story::PasteThenListener || pasted)
+            && let Some(identity) = callback
             && let Some(up) = callback_wire.answer()
         {
             client.component.as_mut().expect("component").up(

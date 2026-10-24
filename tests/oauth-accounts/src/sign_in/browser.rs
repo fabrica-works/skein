@@ -1,5 +1,5 @@
 //! A scripted HTTP browser; it knows no OAuth machine, keeper or listener.
-use super::{ROOM, Story, confidential, io_limits};
+use super::{ROOM, Story, io_limits, paste};
 use skein_http::{Header, Method, client as http};
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{Down, Read, Up};
@@ -33,6 +33,9 @@ fn check_return(story: Story, returns: usize, response: &http::Response, receive
 }
 
 fn callback_url(story: Story, redirect: &[u8]) -> Vec<u8> {
+    if story == Story::ListenerWrongState {
+        return paste::wrong_state(redirect).into_vec();
+    }
     let mut url = redirect.to_vec();
     match story {
         Story::WrongPath | Story::Return(super::Return::WrongPath) => {
@@ -47,7 +50,17 @@ fn callback_url(story: Story, redirect: &[u8]) -> Vec<u8> {
             url.extend_from_slice(b"&padding=");
             url.resize(3000, b'x');
         }
-        Story::Return(_)
+        Story::Paste
+        | Story::PasteThenListener
+        | Story::ListenerThenPaste
+        | Story::PasteTwice
+        | Story::PasteWrong
+        | Story::StateRefusals
+        | Story::ListenerWrongState
+        | Story::PasteExpired
+        | Story::PasteCancelled
+        | Story::PasteClose
+        | Story::Return(_)
         | Story::OpenIdAgain
         | Story::IssuedClientId
         | Story::AnotherSubject
@@ -205,6 +218,7 @@ pub struct Browser {
     exchange: Option<Exchange>,
     socket: Option<Token>,
     connected: bool,
+    pub(super) callback_permitted: bool,
     pub(super) inbox: [u8; 1024],
     pub(super) inbox_len: usize,
     pub(super) redirect: Option<Box<[u8]>>,
@@ -230,6 +244,7 @@ impl Browser {
             exchange: None,
             socket: None,
             connected: false,
+            callback_permitted: paste::callback_permitted(story, &[]),
             inbox: [0; 1024],
             inbox_len: 0,
             redirect: None,
@@ -247,7 +262,9 @@ impl Browser {
     }
     fn progress(&mut self, now: Time, wall: Wall) {
         if let Some(exchange) = &mut self.exchange {
-            if let Some(socket) = self.socket {
+            if (self.stage != 5 || self.story != Story::PasteThenListener || self.callback_permitted)
+                && let Some(socket) = self.socket
+            {
                 exchange.progress(socket, self.connected, now, wall, &mut self.requests);
             }
             if exchange.done
@@ -258,7 +275,7 @@ impl Browser {
                         assert_eq!(response.status, 302);
                         self.redirect = Some(bytes::copy_of(response.header(b"location").expect("issuer redirect")));
                         self.stage = 2;
-                        if confidential(self.story) {
+                        if paste::stops_at_issuer(self.story) {
                             self.done = true;
                         }
                     }
@@ -268,7 +285,12 @@ impl Browser {
                         self.stage = 4;
                     }
                     5 => {
-                        check_return(self.story, self.returns, &response, &exchange.received);
+                        if self.story == Story::PasteThenListener {
+                            assert_eq!(response.status, 404);
+                            assert!(response.header(b"location").is_none());
+                        } else {
+                            check_return(self.story, self.returns, &response, &exchange.received);
+                        }
                         self.returns += 1;
                         self.done = true;
                         self.stage = 6;
@@ -297,12 +319,18 @@ impl Browser {
                     self.open(&url);
                     self.stage = 1;
                 }
-                2 if !confidential(self.story) => {
+                2 if !paste::stops_at_issuer(self.story)
+                    && (self.story != Story::StateRefusals || self.callback_permitted) =>
+                {
                     let url = callback_url(self.story, self.redirect.as_ref().expect("redirect"));
                     self.open(&url);
                     self.stage = if matches!(
                         self.story,
-                        Story::WrongPath | Story::WrongHost | Story::LongHead | Story::Return(super::Return::WrongPath)
+                        Story::WrongPath
+                            | Story::WrongHost
+                            | Story::LongHead
+                            | Story::Return(super::Return::WrongPath)
+                            | Story::ListenerWrongState
                     ) {
                         3
                     } else {
@@ -388,8 +416,13 @@ impl Host for Browser {
             || !self.requests.is_empty()
             || !self.completions.is_empty()
             || self.inbox_len > 0
-            || (self.exchange.is_none() && matches!(self.stage, 2 | 4) && !confidential(self.story))
-            || (self.connected && self.exchange.as_ref().is_some_and(Exchange::has_work))
+            || (self.exchange.is_none()
+                && matches!(self.stage, 2 | 4)
+                && !paste::stops_at_issuer(self.story)
+                && (self.story != Story::StateRefusals || self.callback_permitted))
+            || (self.connected
+                && self.exchange.as_ref().is_some_and(Exchange::has_work)
+                && (self.stage != 5 || self.story != Story::PasteThenListener || self.callback_permitted))
     }
     fn next_deadline(&self) -> Option<Time> {
         self.io.next_deadline()

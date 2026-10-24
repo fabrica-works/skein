@@ -12,10 +12,10 @@ impl Judge {
             assert!(client.visits.is_empty(), "unsafe loading fails before Visit");
         } else {
             match self.story {
-                Story::Cancel | Story::Abort => assert!(
+                Story::Cancel | Story::Abort | Story::PasteCancelled => assert!(
                     client.facts.contains(&Fact::Failed(accounts::Failure::Exchange(oauth::Failure::Cancelled)))
                 ),
-                Story::Timeout => {
+                Story::Timeout | Story::PasteExpired => {
                     assert!(
                         client.facts.contains(&Fact::Failed(accounts::Failure::Exchange(oauth::Failure::TimedOut)))
                     );
@@ -73,9 +73,17 @@ impl Judge {
                 Story::Confidential => {
                     assert!(client.facts.contains(&Fact::Taken));
                     assert!(client.facts.contains(&Fact::SignedIn(1)));
-                    assert!(client.facts.contains(&Fact::Late));
+                    assert!(client.facts.contains(&Fact::Refused(accounts::Refusal::NotWaiting)));
                 }
-                Story::Return(_)
+                Story::Paste
+                | Story::PasteThenListener
+                | Story::ListenerThenPaste
+                | Story::PasteTwice
+                | Story::PasteWrong
+                | Story::StateRefusals
+                | Story::ListenerWrongState
+                | Story::PasteClose
+                | Story::Return(_)
                 | Story::VaryingTaken
                 | Story::TwoPorts
                 | Story::WrongPath

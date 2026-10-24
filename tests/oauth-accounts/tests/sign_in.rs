@@ -51,6 +51,9 @@ fn full_issuer_tokens_plans_codes_and_rotations_fit_the_process_heap() {
 #[test]
 fn protocol_streams_cover_the_owner_redirect_cancel_close_and_keep_terminals() {
     for story in [
+        Story::Paste,
+        Story::PasteThenListener,
+        Story::ListenerThenPaste,
         Story::Public,
         Story::VaryingTaken,
         Story::TwoPorts,
@@ -216,4 +219,143 @@ fn a_return_past_its_bounds_is_dropped() {
 #[test]
 fn a_refused_redirect_never_gets_the_return() {
     return_story(sign_in::Return::WrongPath);
+}
+
+// oauth.md, 6.5 bounds owner pastes refused for state.
+const STATE_REFUSAL_BOUND: u32 = 4;
+
+const PASTED_AND_GRANTED: &[sign_in::Fact] = &[
+    sign_in::Fact::Visit,
+    sign_in::Fact::Taken,
+    sign_in::Fact::Keep(1),
+    sign_in::Fact::SignedIn(1),
+    sign_in::Fact::Granted(1),
+    sign_in::Fact::Closed,
+];
+
+fn assert_paste_story(story: Story, both_tiers: bool, expected: &[sign_in::Fact]) {
+    const PASTE_SEED: u64 = 97;
+    let outcome = sign_in::run(PASTE_SEED, story, false, false, Memory::Checked);
+    assert_eq!(sign_in::facts(&outcome.procs), expected);
+    if both_tiers {
+        assert_eq!(sign_in::protocol(PASTE_SEED, story).0, expected);
+    }
+}
+
+#[test]
+fn a_public_client_signs_in_with_a_pasted_redirect() {
+    assert_paste_story(Story::Paste, true, PASTED_AND_GRANTED);
+}
+
+#[test]
+fn a_paste_wins_and_the_listener_answers_404() {
+    assert_paste_story(Story::PasteThenListener, true, PASTED_AND_GRANTED);
+}
+
+#[test]
+fn the_listener_wins_and_a_paste_is_not_waiting() {
+    use sign_in::Fact::{Closed, Granted, Keep, Refused, SignedIn, Visit};
+    assert_paste_story(
+        Story::ListenerThenPaste,
+        true,
+        &[Visit, Keep(1), SignedIn(1), Granted(1), Refused(skein_oauth_accounts::Refusal::NotWaiting), Closed],
+    );
+}
+
+#[test]
+fn a_second_identical_paste_is_refused_as_not_waiting() {
+    use sign_in::Fact::{Closed, Granted, Keep, Refused, SignedIn, Taken, Visit};
+    assert_paste_story(
+        Story::PasteTwice,
+        false,
+        &[Visit, Taken, Refused(skein_oauth_accounts::Refusal::NotWaiting), Keep(1), SignedIn(1), Granted(1), Closed],
+    );
+}
+
+#[test]
+fn wrong_pasted_addresses_leave_the_sign_in_waiting() {
+    use sign_in::Fact::{Closed, Granted, Keep, Refused, SignedIn, Taken, Visit};
+    use skein_oauth_accounts::Refusal::Redirect;
+    assert_paste_story(
+        Story::PasteWrong,
+        false,
+        &[
+            Visit,
+            Refused(Redirect), // Host.
+            Refused(Redirect), // Port.
+            Refused(Redirect), // Path.
+            Refused(Redirect), // Fragment.
+            Refused(Redirect), // Duplicate state.
+            Refused(Redirect), // Past url_bytes.
+            Taken,
+            Keep(1),
+            SignedIn(1),
+            Granted(1),
+            Closed,
+        ],
+    );
+}
+
+#[test]
+fn exhausted_paste_state_refusals_still_let_the_listener_sign_in() {
+    use sign_in::Fact::{Closed, Granted, Keep, Refused, SignedIn, Visit};
+    use skein_oauth_accounts::Refusal::{Full, State};
+    assert_paste_story(
+        Story::StateRefusals,
+        false,
+        &[
+            Visit,
+            Refused(State),
+            Refused(State),
+            Refused(State),
+            Refused(State),
+            Refused(Full { bound: STATE_REFUSAL_BOUND }),
+            Keep(1),
+            SignedIn(1),
+            Granted(1),
+            Closed,
+        ],
+    );
+}
+
+#[test]
+fn another_listener_state_gets_404_then_the_right_one_signs_in() {
+    use sign_in::Fact::{Closed, Granted, Keep, SignedIn, Visit};
+    assert_paste_story(Story::ListenerWrongState, false, &[Visit, Keep(1), SignedIn(1), Granted(1), Closed]);
+}
+
+#[test]
+fn an_expired_sign_in_refuses_the_paste_as_not_waiting() {
+    use sign_in::Fact::{Closed, Failed, Refused, Visit};
+    assert_paste_story(
+        Story::PasteExpired,
+        false,
+        &[
+            Visit,
+            Failed(skein_oauth_accounts::Failure::Exchange(skein_oauth::Failure::TimedOut)),
+            Refused(skein_oauth_accounts::Refusal::NotWaiting),
+            Closed,
+        ],
+    );
+}
+
+#[test]
+fn a_cancelled_sign_in_refuses_the_paste_as_not_waiting() {
+    use sign_in::Fact::{Closed, Failed, Refused, Visit};
+    assert_paste_story(
+        Story::PasteCancelled,
+        false,
+        &[
+            Visit,
+            Failed(skein_oauth_accounts::Failure::Exchange(skein_oauth::Failure::Cancelled)),
+            Refused(skein_oauth_accounts::Refusal::NotWaiting),
+            Closed,
+        ],
+    );
+}
+
+#[test]
+fn a_paste_completes_a_public_sign_in_through_close() {
+    use sign_in::Fact::{Closed, Keep, SignedIn, Taken, Visit};
+    assert_paste_story(Story::PasteClose, false, &[Visit, Taken, Keep(1), SignedIn(1), Closed]);
 }

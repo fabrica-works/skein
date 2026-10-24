@@ -15,6 +15,7 @@ mod cuts;
 mod expected;
 mod issuer;
 mod owner;
+mod paste;
 mod protocol;
 pub use browser::Browser;
 use issuer::issuer;
@@ -38,6 +39,26 @@ pub enum Story {
     AnotherSubject,
     /// Sign-in keeps declined scopes, then its grant is refused.
     RequiredScopes,
+    /// The person pastes the public client's redirect.
+    Paste,
+    /// An accepted browser connection sends its redirect after the paste wins.
+    PasteThenListener,
+    /// The browser receives its callback page before the person pastes.
+    ListenerThenPaste,
+    /// A second identical paste is refused.
+    PasteTwice,
+    /// Malformed and mismatched pastes leave the sign-in waiting.
+    PasteWrong,
+    /// Exhausted paste state refusals leave the listener available.
+    StateRefusals,
+    /// A listener request with another state leaves the sign-in waiting.
+    ListenerWrongState,
+    /// A paste after the deadline is refused.
+    PasteExpired,
+    /// A paste after cancellation is refused.
+    PasteCancelled,
+    /// A paste completes a public sign-in through the owner's close.
+    PasteClose,
     /// Public sign-in followed by a rotating refresh.
     Public,
     /// The preferred loopback port is held by another listener.
@@ -105,7 +126,17 @@ pub(super) fn return_location(story: Story) -> Option<Box<[u8]>> {
             location.resize(accounts::RETURN_BYTES, b'x');
             Some(location.into_boxed_slice())
         }
-        Story::Return(
+        Story::Paste
+        | Story::PasteThenListener
+        | Story::ListenerThenPaste
+        | Story::PasteTwice
+        | Story::PasteWrong
+        | Story::StateRefusals
+        | Story::ListenerWrongState
+        | Story::PasteExpired
+        | Story::PasteCancelled
+        | Story::PasteClose
+        | Story::Return(
             Return::Before
             | Return::After
             | Return::Long
@@ -141,6 +172,9 @@ fn confidential(story: Story) -> bool {
 #[must_use]
 pub fn registration(story: Story) -> oauth::Registration {
     let mut registration = super::world::registration(Transport::Plaintext);
+    if paste::story(story) || story == Story::ListenerWrongState {
+        registration.redirect_uri = bytes::copy_of(b"http://127.0.0.1:31234/callback");
+    }
     if confidential(story) {
         registration.client_secret = Some(bytes::copy_of(b"fake-secret"));
         registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
@@ -188,8 +222,8 @@ pub enum Fact {
     Granted(u64),
     /// An admitted request failed.
     Failed(accounts::Failure),
-    /// A late owner redirect was refused.
-    Late,
+    /// The owner heard a redirect refusal.
+    Refused(accounts::Refusal),
     /// The component settled all children.
     Closed,
 }
@@ -272,6 +306,9 @@ pub struct Client {
     redirected: [u8; 1024],
     redirected_len: usize,
     again_at: Option<Time>,
+    callback: paste::Callback,
+    pending_keep: Option<(u32, u64)>,
+    expired_paste: Option<Box<[u8]>>,
 }
 impl Client {
     fn new(story: Story, large: bool) -> Self {
@@ -312,6 +349,9 @@ impl Client {
             redirected: [0; 1024],
             redirected_len: 0,
             again_at: None,
+            callback: paste::Callback::Waiting,
+            pending_keep: None,
+            expired_paste: None,
         }
     }
     fn private_io(&mut self, env: &Env<accounts::Limits>) {
@@ -378,7 +418,7 @@ impl Host for Client {
         if self.redirected_len > 0 {
             let uri = bytes::copy_of(&self.redirected[..self.redirected_len]);
             self.redirected_len = 0;
-            self.ask(&env, accounts::Request::Redirected { account: 0, uri });
+            self.paste(&env, uri);
         }
         let io_env = Env { now, wall, limits: self.limits.io };
         self.private_io(&env);
@@ -410,6 +450,9 @@ impl Host for Client {
                 break;
             }
             let Some(event) = self.events.pop() else { break };
+            if matches!(event, io::Event::Accepted { .. }) {
+                self.callback = paste::Callback::Accepted;
+            }
             self.component.as_mut().expect("io follows started component").up(
                 &env,
                 event,
@@ -456,6 +499,7 @@ impl Host for Client {
             || !self.above.is_empty()
             || !self.completions.is_empty()
             || self.redirected_len > 0
+            || (self.pending_keep.is_some() && self.callback == paste::Callback::Finished)
             || (self.component.is_none() && self.address.is_some())
             || self.component.as_ref().is_some_and(|component| {
                 component.has_work() || component.next_deadline().is_some_and(|due| due <= now)
@@ -595,6 +639,17 @@ impl Referee<Process> for Judge {
         });
         let holder_ready =
             processes.iter().any(|process| matches!(process, Process::Browser(browser) if browser.holder.is_some()));
+        let browser_done = processes.iter().any(|process| matches!(process, Process::Browser(browser) if browser.done));
+        let (paste_ready, callback_permitted) = processes
+            .iter()
+            .find_map(|process| match process {
+                Process::Client(client) => Some((
+                    paste::delivery_ready(self.story, client.callback, browser_done, &client.facts),
+                    paste::callback_permitted(self.story, &client.facts),
+                )),
+                Process::Browser(_) | Process::Issuer(_) => None,
+            })
+            .expect("owner");
         let mut visit = [0; 1024];
         let mut visit_len = 0;
         let mut redirect = [0; 1024];
@@ -623,13 +678,21 @@ impl Referee<Process> for Judge {
                     if self.story != Story::VaryingTaken || holder_ready {
                         client.address = address;
                     }
-                    if confidential(self.story) && !self.redirected && redirect_len > 0 {
+                    if browser_done {
+                        client.callback = paste::Callback::Finished;
+                    }
+                    if (confidential(self.story) || paste::story(self.story))
+                        && paste_ready
+                        && !self.redirected
+                        && redirect_len > 0
+                    {
                         client.redirected[..redirect_len].copy_from_slice(&redirect[..redirect_len]);
                         client.redirected_len = redirect_len;
                         self.redirected = true;
                     }
                 }
                 Process::Browser(browser) => {
+                    browser.callback_permitted = callback_permitted;
                     if !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout) && visit_len > 0 {
                         browser.inbox[..visit_len].copy_from_slice(&visit[..visit_len]);
                         browser.inbox_len = visit_len;
@@ -672,7 +735,12 @@ impl Referee<Process> for Judge {
             && (self.story != Story::VaryingTaken || browser.holder.is_some()))
             || (client.visits.len() > self.delivered
                 && !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout))
-            || (confidential(self.story) && !self.redirected && browser.redirect.is_some())
+            || ((confidential(self.story) || paste::story(self.story))
+                && paste::delivery_ready(self.story, client.callback, browser.done, &client.facts)
+                && !self.redirected
+                && browser.redirect.is_some())
+            || browser.callback_permitted != paste::callback_permitted(self.story, &client.facts)
+            || (browser.done && client.pending_keep.is_some())
             || (!self.shutdown && client.is_empty() && browser.is_empty()))
         .then_some(now);
         if client.closed {
@@ -708,7 +776,7 @@ impl Referee<Process> for Judge {
                 ) {
                     2
                 } else {
-                    1
+                    usize::from(!matches!(self.story, Story::PasteExpired | Story::PasteCancelled))
                 }
             );
         }
