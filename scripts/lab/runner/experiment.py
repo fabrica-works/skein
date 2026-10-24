@@ -215,6 +215,16 @@ def browser_settings_refusals(value):
     return out
 
 
+def host_settings_refusals(value, member):
+    out = []
+    configured = shape(value, ('program', 'model', 'effort'), ('catalog',), member, out)
+    placeholder = dict(runner='sha256:' + '0' * 64, python='3.11', programs=[],
+                       driver={**configured, 'config': {}}, cost=dict(name='selected'))
+    out.extend(Refusal(member + r.member[len('lab.driver'):], r.why) for r in lab_refusals(placeholder)
+               if r.member.startswith('lab.driver'))
+    return out
+
+
 def validate(experiment, subject, settings, facts):
     out = []
     exp = shape(experiment, ("format", "name", "cost", "dirs", "processes", "actions", "driver",
@@ -234,7 +244,7 @@ def validate(experiment, subject, settings, facts):
             or not settings['codex_home'].startswith('/') or '\0' in settings['codex_home']):
         out.append(Refusal('settings.codex_home', 'expected an absolute directory path'))
     if settings.get('triager') is not None:
-        out.append(Refusal('settings.triager', 'unsupported by this runtime'))
+        out.extend(host_settings_refusals(settings['triager'], 'settings.triager'))
     costs = settings.get("costs")
     cost_name = exp.get("cost")
     if type(cost_name) is not str or not NAME.fullmatch(cost_name):
@@ -449,14 +459,9 @@ def validate(experiment, subject, settings, facts):
         groups["tools"] = tools
         if facts.get("driver_host") is not True:
             out.append(Refusal("facts.driver_host", "driver host unavailable"))
-        configured = shape(settings.get('driver'), ('program', 'model', 'effort'), ('catalog',), 'settings.driver', out)
-        # The runner derives configuration; settings select only the host and model.
-        placeholder_lab = {"runner": "sha256:" + "0" * 64, "python": "3.11", "programs": [],
-                           "driver": {**configured, 'config': {}}, "cost": {"name": "selected"}}
         if settings.get("driver") is None:
             out.append(Refusal("settings.driver", "driver settings required"))
-        out.extend(Refusal("settings" + r.member[3:], r.why) for r in lab_refusals(placeholder_lab)
-                   if r.member.startswith("lab.driver"))
+        out.extend(host_settings_refusals(settings.get('driver'), 'settings.driver'))
     action_captures = {}
     for group, items in groups.items():
         for i, item in enumerate(items):

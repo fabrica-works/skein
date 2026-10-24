@@ -108,3 +108,12 @@ def require_recovered(lab):
                     os.close(directory)
                 if 'live.json' in files or 'run.json' not in files or run not in published:
                     raise Refused('recovery', path + ': unfinished run retained; owner recovery required')
+                for triage in sorted((lab.root / path / 'triage').glob('*')):
+                    triage_path = triage.relative_to(lab.root).as_posix()
+                    fd = lab.directory(triage_path)
+                    try:
+                        retained = os.listdir(fd)
+                    finally:
+                        os.close(fd)
+                    if 'live.json' in retained or 'triage.json' not in retained:
+                        raise Refused('recovery', triage_path + ': unfinished triage retained; owner recovery required')

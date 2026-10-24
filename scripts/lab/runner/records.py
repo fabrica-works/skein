@@ -8,9 +8,10 @@ SAFE = (1 << 53) - 1
 COST_FIELDS = ("ready_seconds", "command_seconds", "stop_seconds", "driver_seconds",
                "driver_actions", "driver_input_tokens")
 METER_COST_FIELDS = ("subject_spend", "meter_seconds")
+TRIAGE_COST_FIELDS = ('triage_seconds', 'triage_tokens')
 FORMATS = {"lab-experiment/1", "lab-tree/1", "lab-subject/1", "lab-key/1",
            "lab-settings/1", "lab-run/1", "lab-evidence/1", "lab-verdict/1",
-           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1", "lab-held/1", "lab-script/1"}
+           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1", "lab-driver-tools/1", "lab-held/1", "lab-script/1", "lab-triage/1"}
 
 
 @dataclass(frozen=True)
@@ -144,10 +145,11 @@ def lab_refusals(value):
 
 def cost_refusals(value, member, *, named=False):
     out = []
-    cost = shape(value, (('name',) if named else ()) + COST_FIELDS, METER_COST_FIELDS, member, out)
+    optional = METER_COST_FIELDS + TRIAGE_COST_FIELDS
+    cost = shape(value, (('name',) if named else ()) + COST_FIELDS, optional, member, out)
     if named and (type(cost.get('name')) is not str or not NAME.fullmatch(cost['name'])):
         out.append(Refusal(member + '.name', 'expected a cost class name'))
-    for field in COST_FIELDS + tuple(f for f in METER_COST_FIELDS if f in cost):
+    for field in COST_FIELDS + tuple(f for f in optional if f in cost):
         if not positive(cost.get(field)):
             out.append(Refusal(member + '.' + field, 'expected a positive safe integer'))
     return out
@@ -433,6 +435,80 @@ def finding_refusals(value):
 
 def text_value(value):
     return type(value) is str and bool(value.strip()) and '\x00' not in value
+
+
+def triage_refusals(value):
+    out = []
+    fields = ('format', 'run', 'key', 'n', 'started', 'ended', 'outcome', 'invocation',
+              'expected_inventory', 'inventory', 'probe', 'input', 'output', 'bounds', 'usage',
+              'errors', 'finding_events', 'brake')
+    obj = shape(value, fields, (), 'triage', out)
+    if obj.get('format') != 'lab-triage/1':
+        out.append(Refusal('triage.format', 'expected lab-triage/1'))
+    if type(obj.get('run')) is not str or not RUN_ID.fullmatch(obj['run']):
+        out.append(Refusal('triage.run', 'invalid run id'))
+    if not digest_value(obj.get('key')) or not positive(obj.get('n')):
+        out.append(Refusal('triage', 'expected key digest and positive invocation number'))
+    for field in ('started', 'ended'):
+        if not utc_value(obj.get(field)):
+            out.append(Refusal('triage.' + field, 'expected UTC time with milliseconds'))
+    if obj.get('outcome') not in ('proposed', 'error', 'bound'):
+        out.append(Refusal('triage.outcome', 'unknown outcome'))
+    for field in ('invocation', 'expected_inventory', 'inventory', 'probe', 'brake'):
+        if obj.get(field) is not None and type(obj[field]) is not dict:
+            out.append(Refusal('triage.' + field, 'expected object or null'))
+    invocation = obj.get('invocation')
+    if type(invocation) is dict:
+        inv = shape(invocation, ('argv', 'env', 'cwd'), (), 'triage.invocation', out)
+        if type(inv.get('argv')) is not list or not inv['argv'] or any(type(v) is not str for v in inv['argv']):
+            out.append(Refusal('triage.invocation.argv', 'expected invocation arguments'))
+        if type(inv.get('env')) is not dict or any(type(v) is not str for v in inv['env'].values()):
+            out.append(Refusal('triage.invocation.env', 'expected environment strings'))
+        if type(inv.get('cwd')) is not str or not inv['cwd'].startswith('/'):
+            out.append(Refusal('triage.invocation.cwd', 'expected absolute directory'))
+    for field in ('input', 'output'):
+        if obj.get(field) is None:
+            continue
+        ref = shape(obj[field], ('path', 'bytes', 'sha256'), (), 'triage.' + field, out)
+        if ref.get('path') != field + '.json' or not digest_value(ref.get('sha256')):
+            out.append(Refusal('triage.' + field, 'invalid file reference'))
+        if type(ref.get('bytes')) is not int or not 0 <= ref['bytes'] <= SAFE:
+            out.append(Refusal('triage.' + field + '.bytes', 'expected byte count'))
+    out.extend(cost_refusals(obj.get('bounds'), 'triage.bounds', named=True))
+    if type(obj.get('bounds')) is dict:
+        for field in TRIAGE_COST_FIELDS:
+            if not positive(obj['bounds'].get(field)):
+                out.append(Refusal('triage.bounds.' + field, 'expected positive bound'))
+    usage = shape(obj.get('usage'), ('seconds', 'turns', 'tokens', 'tokens_overshoot'), (), 'triage.usage', out)
+    tokens = shape(usage.get('tokens'), ('input', 'cached', 'output'), (), 'triage.usage.tokens', out)
+    for member, source, fields in (('triage.usage', usage, ('seconds', 'turns', 'tokens_overshoot')),
+                                  ('triage.usage.tokens', tokens, ('input', 'cached', 'output'))):
+        for field in fields:
+            number = source.get(field)
+            if number is not None and (type(number) is not int or not 0 <= number <= SAFE):
+                out.append(Refusal(member + '.' + field, 'expected nonnegative safe integer or null'))
+    errors = obj.get('errors')
+    if type(errors) is not list:
+        out.append(Refusal('triage.errors', 'expected list'))
+    else:
+        for error in errors:
+            row = shape(error, ('what', 'detail'), (), 'triage.errors', out)
+            if any(type(row.get(f)) is not str for f in ('what', 'detail')):
+                out.append(Refusal('triage.errors', 'expected error text'))
+    events = obj.get('finding_events')
+    if type(events) is not list:
+        out.append(Refusal('triage.finding_events', 'expected list'))
+    else:
+        for entry in events:
+            row = shape(entry, ('id', 'value'), (), 'triage.finding_events', out)
+            if type(row.get('id')) is not str or not FINDING_ID.fullmatch(row['id']):
+                out.append(Refusal('triage.finding_events.id', 'invalid finding id'))
+            out.extend(finding_refusals(row.get('value')))
+            if type(row.get('value')) is dict and row['value'].get('by') != 'triager':
+                out.append(Refusal('triage.finding_events', 'triager actor required'))
+    if obj.get('outcome') != 'proposed' and events:
+        out.append(Refusal('triage.finding_events', 'unsuccessful triage must append nothing'))
+    return out
 
 
 def commit_value(value):

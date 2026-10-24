@@ -7,16 +7,16 @@ from . import canonical
 SYSTEM_ROOTS = ('/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc')
 
 
-def profile_toml(codex_executable: str, source: str | None, work: str) -> str:
+def profile_toml(codex_executable: str, source: str | None, work: str, *, name='lab') -> str:
     roots = {':minimal': 'read', codex_executable: 'read'}
     if source is not None:
         roots[source] = 'read'
     roots[work] = 'write'
-    return ('default_permissions = "lab"\napproval_policy = "never"\n'
-            '[permissions.lab.filesystem]\n'
+    return (f'default_permissions = "{name}"\napproval_policy = "never"\n'
+            f'[permissions.{name}.filesystem]\n'
             + ''.join(json.dumps(path, ensure_ascii=False) + ' = ' + json.dumps(access) + '\n'
                       for path, access in roots.items())
-            + '[permissions.lab.network]\nenabled = false\n')
+            + f'[permissions.{name}.network]\nenabled = false\n')
 
 
 def tool_argv(bwrap, tool, work, args, system_roots):

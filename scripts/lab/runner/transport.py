@@ -123,6 +123,12 @@ def worker(endpoint, token):
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 key = canonical.loads(lab.read(spec['key_path'] + '/key.json'))
                 from .cli import _program, _runner_digest, _subject
+                if 'triage_n' in spec:
+                    from .triager import Triage
+                    if canonical.digest(key) != spec['key'] or spec['runner'] != _runner_digest():
+                        raise RuntimeError('runner or key changed before triage')
+                    record = Triage(lab, spec).run(admitted=lambda: connection.sendall(b'A'))
+                    return {'proposed': 0, 'bound': 1, 'error': 4}[record['outcome']]
                 if canonical.digest(key) != spec['key'] or key['lab']['runner'] != _runner_digest():
                     raise RuntimeError('runner or key changed before provision')
                 _subject(lab, key['subject'])
@@ -152,12 +158,13 @@ def worker(endpoint, token):
             os.close(lock_fd)
 
 
-def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsal=None):
+def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsal=None, triage=None):
     """Start one unit and keep the same flock alive in both outer and worker."""
     key = canonical.loads(lab.read(key_path + '/key.json'))
     from .cli import _runtime_cost
     cost = _runtime_cost(lab, key)
-    _runtime_known(lab, key)
+    if triage is None:
+        _runtime_known(lab, key)
     programs = {Path(p['path']).name: p['path'] for p in key['lab']['programs']}
     systemctl, systemd_run = programs.get('systemctl'), programs.get('systemd-run')
     bwrap = programs.get('bwrap')
@@ -183,6 +190,8 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
                     else key_path + '/runs/' + run_id)
     if rehearsal is not None:
         spec['rehearsal'] = rehearsal
+    if triage is not None:
+        spec.update(triage)
     token = secrets.token_hex(16)
     endpoint = str(lab.root / ('.transport-' + secrets.token_hex(6)))
     runner_root = str(Path(__file__).resolve().parent.parent)
@@ -261,17 +270,18 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
         except FileNotFoundError:
             events = b''
         for line in events.splitlines(keepends=True):
-            event = canonical.loads(line)
-            if event['event'] == 'containment':
+            event = json.loads(line) if triage is not None else canonical.loads(line)
+            if event.get('event') == 'containment':
                 await_removed(event['cgroup'], cost['stop_seconds'])
-        path = base + '/run.json'
+        path = base + ('/triage.json' if triage is not None else '/run.json')
         try:
             record = canonical.loads(lab.read(path))
         except FileNotFoundError as error:
             raise RuntimeError('unit ended without run.json; retained live events require owner recovery') from error
-        expected = {'pass': 0, 'fail': 1, 'incomplete': 3, 'error': 4}[record['outcome']]
+        statuses = {'proposed': 0, 'bound': 1, 'error': 4} if triage is not None else {'pass': 0, 'fail': 1, 'incomplete': 3, 'error': 4}
+        expected = statuses[record['outcome']]
         interrupted = next((e['detail'] for e in record['errors'] if e['what'] == 'interrupted'), None)
-        if interrupted is not None:
+        if interrupted is not None and triage is None:
             expected = 128 + int(getattr(signal, interrupted))
         if status != expected:
             raise RuntimeError(f'unit status {status} differs from recorded outcome {record["outcome"]}')
@@ -305,9 +315,10 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
 
 class AppServer:
     """One request sequence; the run loop owns all reads, writes and deadlines."""
-    def __init__(self, work, prompt, schema, received, inventory):
+    def __init__(self, work, prompt, schema, received, inventory, *, permission='lab'):
         self.work, self.prompt, self.schema = work, prompt, schema
         self.received, self.inventory = received, inventory
+        self.permission = permission
         self.outgoing = b''
         self.pending = None
         self.serial = 0
@@ -354,7 +365,7 @@ class AppServer:
         if method == 'initialize':
             self.send(dict(method='initialized', params={}))
             # Raw response items carry every model call, including one no item answers (lab.md 6.1).
-            self.request('thread/start', dict(cwd=self.work, permissions='lab', ephemeral=True, experimentalRawEvents=True,
+            self.request('thread/start', dict(cwd=self.work, permissions=self.permission, ephemeral=True, experimentalRawEvents=True,
                                              approvalPolicy='never', config={}))
         elif method == 'thread/start':
             self.responses[method] = result

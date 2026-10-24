@@ -35,7 +35,8 @@ def _failure(value, signature, evidence):
     runs = [r for r in _records(evidence, value['key']) if r['run'] == value['run']]
     if len(runs) != 1 or runs[0]['outcome'] != 'fail' or runs[0]['seed'] != value['seed']:
         raise Refused('finding.run', 'failure must reference one verified judged failing run and its seed')
-    failures = [f for f in runs[0]['failures'] if f['id'] == value['failure'] and f['signature'] == signature]
+    failures = [f for f in runs[0]['failures'] if f['id'] == value['failure'] and (
+        f['signature'] == signature or f['kind'] == 'use' and value['by'] == 'triager')]
     if len(failures) != 1:
         raise Refused('finding.failure', 'failure identity or signature differs')
     return failures[0]
@@ -128,6 +129,8 @@ def fold(events, evidence, carried=None):
                 raise Refused('finding.candidate', 'candidate differs from failure')
             if failure['kind'] == 'use' and value['by'] != 'triager':
                 raise Refused('finding.candidate', 'use failure requires triager proposal')
+            if failure['kind'] == 'use' and not value['signature'].startswith('use/'):
+                raise Refused('finding.signature', 'use candidate requires a use/ signature')
             if value['by'] not in ('runner', 'triager'):
                 raise Refused('finding.by', 'candidate requires runner or triager')
             state = dict(signature=value['signature'], kind=value['kind'], summary=value['summary'],

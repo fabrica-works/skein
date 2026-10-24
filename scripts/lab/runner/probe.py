@@ -76,7 +76,8 @@ print(json.dumps(r), flush=True)
 def profile_roots(profile):
     """The absolute paths a permission profile grants, or none when it does not parse."""
     try:
-        filesystem = tomllib.loads(profile)['permissions']['lab']['filesystem']
+        config = tomllib.loads(profile)
+        filesystem = config['permissions'][config['default_permissions']]['filesystem']
     except (tomllib.TOMLDecodeError, KeyError, TypeError):
         return []
     return [path for path in filesystem if path.startswith('/')] if type(filesystem) is dict else []
@@ -102,7 +103,7 @@ class BoundaryError(RuntimeError):
 
 
 def boundary_probe(codex_executable, run_directory, *, source, work, canary, home,
-                   seconds, profile=None):
+                   seconds, profile=None, permission='lab'):
     """Return per-check evidence, or raise with that evidence before provisioning.
 
     The join calls this before Host.make_tree or any experiment process starts.
@@ -118,7 +119,7 @@ def boundary_probe(codex_executable, run_directory, *, source, work, canary, hom
         inert_home = root / 'home'
         inert_home.mkdir(mode=0o700)
         executable = os.path.realpath(codex_executable)
-        text = profile_toml(executable, source, work) if profile is None else profile
+        text = profile_toml(executable, source, work, name=permission) if profile is None else profile
         (codex_home / 'config.toml').write_text(text)
         # A missing fixture could make a read refusal vacuously succeed.
         if not Path(canary).is_file() or not Path(home).is_dir():
@@ -141,7 +142,7 @@ def boundary_probe(codex_executable, run_directory, *, source, work, canary, hom
             configuration = dict(canary=str(canary), home=str(home),
                 source_file=str(source_directory / token), work_file=str(Path(work) / token),
                 port=listener.getsockname()[1], namespace=os.readlink('/proc/self/ns/pid'), token=token)
-            argv = [executable, 'sandbox', '-P', 'lab', '-C', work, '--',
+            argv = [executable, 'sandbox', '-P', permission, '-C', work, '--',
                     '/usr/bin/python3', '-I', '-B', '-S', '-c', PROGRAM]
             try:
                 result = subprocess.run(argv, input=json.dumps(configuration).encode(),
