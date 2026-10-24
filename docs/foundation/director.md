@@ -388,8 +388,10 @@ is mechanical, and Codex reads what needs reading.
   - the user's classic token never goes to an implementer;
   - no probes on the project's real repositories;
   - no agent reads another process's environment (`/proc/*/environ`,
-    `ps e`), and none runs `pueue status` or `pueue log` in any form:
-    `heavy`'s output and `heavy.tsv` show the queue;
+    `ps e`), and none runs `pueue` in any form, `status`, `log`,
+    `remove` or `kill` alike: `heavy`'s own commands are the queue's
+    only way in, and its output and `heavy.tsv` show it (a `pueue
+    remove` can take another owner's queued task; frux-3, 10-24);
   - an agent searches only its worktree and the paths its task names,
     never `~/.local`, `~/.config`, `/run/user` or another tool's state:
     pueue's `state.json` holds the queued tasks' environments;
