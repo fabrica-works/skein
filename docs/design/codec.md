@@ -1548,9 +1548,19 @@ Step tests, in skein-lib and skein-codec, and the story in
 - **The owner's crate** includes `patches/mod.rs` as a module of its
   library (`#[path = "../patches/mod.rs"] pub mod patches;`), and
   depends on skein-codec, and on skein-codegen in its tests.
-- **A first run,** and a family's first, keeps its current text as its
-  first kept version and writes no patch: the baseline. A family whose
-  kept texts are all the branch's is kept afresh in the same way.
+- **The baseline is the first release** (section 5). A crate with no
+  kept text, landed or its own, is before its baseline, and a run there
+  is refused unless given `--baseline`, which its owner passes at that
+  release: the guard is the crate's files, and the command knows no
+  release. That first run keeps each family's current text as its first
+  kept version and writes no patch. A family new to a crate past its
+  baseline, or whose kept texts are all the branch's, is kept afresh in
+  the same way, with no flag.
+- **Fixtures stand for families past their baseline:** `tests/codec`'s
+  `every` texts and `tests/codec-patches`' families belong to no build
+  that stores, sends or embeds them, and move their versions as their
+  stories need. Section 5's rule binds the families a build stores,
+  sends or embeds.
 
 ### 12.2 A run
 
@@ -1735,6 +1745,7 @@ pub struct Options {
     pub owner: Option<String>,             // --owner, for a crate's first patch
     pub after: Vec<(String, u32)>,         // --after <upstream> <level>
     pub renames: Vec<(String, Rename)>,    // --rename <family> <old> <new>
+    pub baseline: bool,                    // --baseline, the crate's first run (12.1)
 }
 pub struct Landed { /* the base's files under patches/ and schema/kept/, by path */ }
 impl Landed {
@@ -1771,6 +1782,7 @@ pub enum Error {
     Io { path: PathBuf, error: String },
     Schema { path: PathBuf, error: String },  // a text that does not parse
     Diff { family: String, error: DiffError },
+    Baseline,                                 // before the baseline, without --baseline
     Owner,                                    // a first patch without --owner
     Unlanded { patches: Vec<u32> },           // two patches of the branch's own
     Conflict { path: PathBuf },               // conflict markers (12.6)
@@ -1782,9 +1794,9 @@ pub enum Error {
 
 - **The library reads no git:** what is landed is its input, so that
   its tests and the story pass it in memory.
-- **The binary:** `skein-codegen patch <crate> [--owner <name>]
-  [--after <upstream> <level>]… [--rename <family> <old> <new>]…
-  [--base <ref>] [--check]`. It reads the landed files with `git
+- **The binary:** `skein-codegen patch <crate> [--baseline]
+  [--owner <name>] [--after <upstream> <level>]… [--rename <family>
+  <old> <new>]… [--base <ref>] [--check]`. It reads the landed files with `git
   ls-tree` and `git show <base>:<path>`, the base `git merge-base HEAD
   origin/main` unless `--base` names another, prints the report, its proposals as the
   `--rename` that confirms each, and exits 1 while a finding is left.
@@ -1799,20 +1811,21 @@ Step tests in skein-codegen, the story in `tests/codec-patches`; no
 world, no cargo inside a test.
 
 - **Step tests,** each over a crate in a scratch directory, its files
-  compared as whole text: each outcome's files (the baseline, a
-  refresh, a rename waiting, a derived patch with its `?`, a written
-  one with its skeleton), the author's values and sites kept when
-  derived again, each verdict of 10.4, the gap, renumbering with and
-  without the family moved meanwhile, `mod.rs` for a crate of two
-  families and patches, and each finding of 12.7 and its absence.
-- **The story,** `tests/codec-patches`, an owner crate whose history
-  the command makes: the baseline; a field added, its patch asking `?`,
-  refused when planned, then filled, planned and its goldens written; a
-  rename refreshed in a family no patch names, and one waiting in a
-  frozen one; a written change, its skeleton's golden test failing with
-  `NoSite` naming the site, then its function written; another
-  branch's patch landing first, and the story's renumbered. The check
-  at each step. Each step is checked as text against its expected
+  compared as whole text: each outcome's files (a run before the
+  baseline refused, the baseline, a refresh, a rename waiting, a
+  derived patch with its `?`, a written one with its skeleton), the
+  author's values and sites kept when derived again, each verdict of
+  10.4, the gap, renumbering with and without the family moved
+  meanwhile, `mod.rs` for a crate of two families and patches, and each
+  finding of 12.7 and its absence.
+- **The story,** `tests/codec-patches`, an owner crate whose history the
+  command makes: the baseline, by `--baseline`; a field added, its patch
+  asking `?`, refused when planned, then filled, planned and its goldens
+  written; a rename refreshed in a family no patch names, and one
+  waiting in a frozen one; a written change, its skeleton's golden test
+  failing with `NoSite` naming the site, then its function written;
+  another branch's patch landing first, and the story's renumbered. The
+  check at each step. Each step is checked as text against its expected
   files; the crate's final files are the last step's, built and tested
   by the gate as any member: `current` and the golden tests.
 
