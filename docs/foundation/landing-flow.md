@@ -250,7 +250,7 @@ The split below is a proposal.
 - **Directors and sub-directors** read the landings feed. They hear
   from the keeper only in these cases:
   - an infrastructure fault (a machine, the store, GitHub);
-  - a set sent back a third time;
+  - a set sent back a third time (the user, 10-24);
   - two sets that keep breaking each other;
   - an owner that doesn't answer.
 
@@ -391,8 +391,8 @@ mission, then flood it with four milestones at once.
   - A milestone hands over when its set is queued, and the next
     milestone starts then.
   - It ends when the set has landed. Its 4-hour cap runs to the
-    request; the repair loop after it is bounded by the keeper's
-    escalations.
+    request. The repair loop after it doesn't count against the cap
+    (the user, 10-24); the keeper's escalations bound it.
   - Its sub-owner stays on for the landing as well as for QA, and
     briefs and checks the implementers that repair the set and fix the
     pass's findings.
@@ -448,5 +448,5 @@ mission, then flood it with four milestones at once.
   through it with the cache.
 - **Whether owners' receipts are trusted** to land an unchanged base
   without a new gate (gate-policy.md).
-- **The thresholds for escalation:** how many times a set may be sent
-  back, and how long an owner may stay silent.
+- **How long an owner may stay silent** before the keeper escalates. A
+  set sent back a third time escalates (the user, 10-24).
