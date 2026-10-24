@@ -12,7 +12,7 @@ from .records import Refused, triage_refusals
 
 
 def retained(lab, run_base, destination):
-    """Never walk scratch, dirs, or any of the driver's private host homes."""
+    """Never walk scratch, dirs, or the driver's host, rehearsal, provisioning or probe homes."""
     for name in ('run.json', 'events.jsonl'):
         lab.write_once(destination + '/' + name, lab.read(run_base + '/' + name))
     for name in ('proc', 'commands', 'collected', 'driver'):
@@ -21,7 +21,7 @@ def retained(lab, run_base, destination):
         except FileNotFoundError:
             continue
         os.close(fd)
-        excluded = ('home', 'rehearsal/home', 'provision/home') if name == 'driver' else ()
+        excluded = ('home', 'rehearsal/home', 'provision/home', 'probe') if name == 'driver' else ()
         for file in store.snapshot(lab.root / run_base / name, exclude=excluded):
             lab.write_once(destination + '/' + name + '/' + file['path'], file['data'], executable=file['exec'])
     fd = lab.directory(destination)

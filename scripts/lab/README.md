@@ -225,13 +225,14 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/uni
 
 Unit tests start no child processes and use no clock or sleep. CLI stories
 call `main` with temporary inputs, explicit machine facts and supplied finding
-times; native Git export and machine checks need native validation. Triage,
-campaigns, general recovery and pruning remain unsupported.
+times; native Git export and machine checks need native validation. Campaigns,
+general recovery and pruning remain unsupported.
 
 
 `run` and `judge` support null drivers and the pinned Codex app-server adapter.
-Nonnull triagers and `--campaign` are refused as unsupported. Judged
-failures publish finding candidates and occurrences from retained evidence.
+`--campaign` is refused as unsupported; `lab triage` (below) takes a non-null
+triager. Judged failures publish finding candidates and occurrences from retained
+evidence.
 
 The lifecycle in `runner/life.py` consumes events and returns ordered requests.
 It selects the next ready dependency set using canonical u64 draws, renders a
@@ -446,8 +447,8 @@ admitted. Its only built-ins are `exec_command` and `write_stdin`. The `triage`
 profile grants reads of minimal roots, the host executable and `evidence/`,
 writes only to `work/`, and no network. `evidence/` is a frozen copy of
 `run.json`, `events.jsonl`, `proc/`, `commands/`, `collected/` and `driver/`,
-excluding the driver's host, rehearsal and provisioning homes. Run `scratch/`
-and `dirs/` are never copied. Inventory limitations remain as in the adapter
+excluding the driver's host, rehearsal, provisioning and probe homes. Run
+`scratch/` and `dirs/` are never copied. Inventory limitations remain as in the adapter
 table below; an observed mismatch or unadmitted action ends triage in error.
 
 The host's final message must satisfy `schemas/triage.json`, checked again by

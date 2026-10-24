@@ -69,8 +69,12 @@ class Triage(unittest.TestCase):
     def test_proposals_keep_candidate_and_create_use_finding_with_usage_and_evidence(self):
         with store.open_lab(self.lab_root) as lab, lab.lock():
             for name in ('scratch/secret', 'dirs/client/secret', 'driver/home/secret',
-                         'driver/rehearsal/home/secret', 'driver/provision/home/secret'):
+                         'driver/rehearsal/home/secret', 'driver/provision/home/secret',
+                         'driver/probe/home/secret'):
                 lab.write_once(str(self.root_run.relative_to(lab.root)) + '/' + name, b'private fixture')
+        arg0 = self.root_run / 'driver/probe/codex/tmp/arg0/x'
+        arg0.mkdir(parents=True, mode=0o700)
+        (arg0 / 'apply_patch').symlink_to(self.program)
         self.settings['brake'] = dict(argv=['/usr/bin/echo', 'admitted triage'], env={})
         value = self.triage(dict(items=[dict(type='commandExecution', argv=[test_runtime.PYTHON,
             '-I', '-B', '-S', '-c', 'from pathlib import Path; assert Path("../evidence/run.json").is_file(); '
@@ -97,8 +101,10 @@ class Triage(unittest.TestCase):
         self.assertIn('run.json', paths)
         self.assertIn('commands/checks-new.stderr', paths)
         self.assertIn('driver/events.jsonl', paths)
+        self.assertIn('driver/probe.json', paths)
+        self.assertFalse((self.base / 'evidence/driver/probe').exists())
         self.assertFalse(any(path.startswith(('scratch/', 'dirs/', 'driver/home/',
-            'driver/rehearsal/home/', 'driver/provision/home/')) for path in paths))
+            'driver/rehearsal/home/', 'driver/provision/home/', 'driver/probe/')) for path in paths))
         index = json.loads((self.lab_root / 'findings/index.json').read_bytes())['findings']
         self.assertEqual([entry['proposed'] for entry in index], ['tools', 'tools'])
         self.assertTrue(all(entry['class'] is None for entry in index))
@@ -153,6 +159,19 @@ class Triage(unittest.TestCase):
         self.assertIsNone(value['invocation'])
         self.assertFalse(self.program.with_suffix('.turn').exists())
         self.assertEqual(self.histories(), before)
+
+    def test_retry_after_probe_error_uses_next_directory_without_walking_probe_home(self):
+        failed = self.triage(dict(probe_failure='source_write'), 4)
+        self.assertEqual(failed['outcome'], 'error')
+        previous = self.base
+        record = (previous / 'triage.json').read_bytes()
+        arg0 = previous / 'probe/codex/tmp/arg0/x'
+        arg0.mkdir(parents=True, mode=0o700)
+        (arg0 / 'apply_patch').symlink_to(self.program)
+        value = self.triage({}, n=2)
+        self.assertEqual(value['outcome'], 'proposed')
+        self.assertEqual((previous / 'triage.json').read_bytes(), record)
+        self.assertFalse((self.base / 'evidence/triage').exists())
 
     def test_inventory_with_a_tool_prevents_turn_and_findings(self):
         before = self.histories()
