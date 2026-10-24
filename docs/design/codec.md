@@ -1,6 +1,6 @@
 # Codecs from schemas
 
-Provisional, 2026-10-06, revised 2026-10-23. How an application protocol
+Provisional, 2026-10-06, revised 2026-10-24. How an application protocol
 built on skein encodes its records, and how its kept records follow its
 schemas from one version to the next. A schema says each record's fields
 and their bounds. skein's generator turns it into plain Rust codecs,
@@ -798,7 +798,10 @@ current text's header follows:
 - **The verdict:** `Kept` (no patch, the version kept), `Moved` (a
   patch, the next version), `Unmoved` (a patch, the version kept),
   `Needless` (no patch, the next version), `Wrong` (any other). The
-  command acts on it (section 12).
+  command acts on it (section 12), deciding whether a patch is needed
+  by 12.2's third step: `version()` alone holds where the kept text is
+  not frozen, since under a frozen one a change none needed may need
+  a patch.
 
 A `versioned` record's layouts are compared without the version, which
 is the family's: a version moved changes no record's line.
@@ -1491,32 +1494,328 @@ Step tests, in skein-lib and skein-codec, and the story in
 
 ## 12. The command and its check
 
-- **The command** (`skein-codegen patch <crate>`, aliased by each
-  repository) diffs each current schema against its latest kept text.
-  A change that needs no patch refreshes the kept text, unless a
-  landed patch names it: that patch's lines and written functions spell
-  its names, so a rename waits for the family's next patch, as its
-  `rename` line, the command keeping it confirmed until then. Otherwise it
-  keeps the current text as the next version, writes the next patch with
-  the derived operations, a skeleton for the written ones and the
-  values it asks of its author, regenerates `patches/mod.rs`, and writes
-  the patch's golden test.
-- **Renumbering:** the same command moves a patch whose number `land`
-  found taken to the next free one, deriving again against the new
-  latest kept text where the same family moved meanwhile, and keeping
-  its author's values and written code.
-- **The check** (`skein_codegen::patch::check`) finds a current schema
-  whose layout differs from its latest kept text with no patch, a kept
-  text whose names lag the current ones but for renames waiting on a
-  patch, and a landed patch or kept text
-  changed, and names the command. The command calls it; a gate calls it
-  from the baseline on.
+- **One command keeps a crate's patches,** `skein-codegen patch
+  <crate>`, ordinary Rust in skein-codegen's `patch` module, which each
+  repository may alias (`cargo xtask patch`, in its own mission). It
+  diffs each family's current text against its latest landed kept text
+  (section 10), and per family refreshes the kept text, keeps renames
+  waiting, or writes the branch's patch: its lines, the values it asks,
+  a skeleton for its written sites, the next kept text, `patches/mod.rs`
+  and the patch's goldens. It ends by calling the check.
+- **The base is the branch's own,** so that a branch not yet rebased
+  sees main as it was when it branched, never main's newer patches
+  without their schemas. Once rebased, its base is main's tip, so a
+  renumbering (12.6) and a gate after a rebase see what main holds.
+- **Landed is what the base holds.** The files under the crate's
+  `patches/` and `schema/kept/` as they are at the commit the branch is
+  built on, `git merge-base HEAD origin/main` unless `--base` names
+  another, are landed, read by the binary and passed to the library; whatever
+  else the tree holds there is the branch's. A landed patch, its
+  goldens and a kept text a landed patch names never change; the
+  branch's patch is derived again on every run, so that one command
+  serves a first write, a schema edited again, and a renumbering.
+- **One patch per landing.** A landing moves each family's version at
+  most once (temper's `draft/upgrades.md`, 4.2), so a branch holds at
+  most one patch of its own, numbered after the last landed one, with a
+  block per family it moves.
+- **The check** (`check`) finds, without writing, what the command would
+  change or refuse, each finding naming the command or the fix. The
+  command calls it; a gate calls it from the baseline on, none before.
+
+### 12.1 The crate's files
+
+| Path | What | Whose |
+|---|---|---|
+| `schema/<family>-v<N>.schema` | the current texts: of each family, the greatest version there | the author's |
+| `schema/kept/<family>-v<N>.schema` | every kept version's text from the family's first (11) | the command's |
+| `schema/kept/<family>.renames` | the renames waiting for the family's next patch (12.4), `rename` lines | the command's |
+| `patches/NNNN.patch` | the patch's text (11.1) | the command's lines, the author's values, sites and refusals |
+| `patches/pNNNN.rs` | its written functions, for a patch with sites (11.5) | the command's skeleton, then the author's |
+| `patches/context.rs` | the `Context`, written once, empty, deriving `Default` | the author's |
+| `patches/mod.rs` | generated from the kept texts and the patches alone (12.3) | the command's |
+| `patches/golden/NNNN/<family>/` | each old golden through the patch (12.3) | the command's or the golden test's, reviewed |
+
+- **The owner's crate** includes `patches/mod.rs` as a module of its
+  library (`#[path = "../patches/mod.rs"] pub mod patches;`), and
+  depends on skein-codec, and on skein-codegen in its tests.
+- **A first run,** and a family's first, keeps its current text as its
+  first kept version and writes no patch: the baseline. A family whose
+  kept texts are all the branch's is kept afresh in the same way.
+
+### 12.2 A run
+
+For each family, in name order, with `K` its latest landed kept text at
+version `k` (none for a family new to the base) and `C` its current
+text at version `c`:
+
+1. **Matching** by section 10.1, the renames confirmed being those
+   waiting (12.4), those given (`--rename`), and the `rename` lines of
+   the branch's patch for the family.
+2. **Proposals in rounds:** the diff is run again with its proposals
+   taken as confirmed until none is new, at most once per declaration,
+   so that renames a level of references down are proposed in the same
+   run. Proposals are reported for the author to confirm; only
+   confirmed renames reach a file.
+3. **A patch is needed** when a change is derived or written (10.3), or
+   when `K` is frozen and a change other than a rename or a declaration
+   dropped is none needed: a frozen text cannot take a declaration, a
+   variant or a bound that records of its version may now hold. `K` is
+   frozen when a landed patch names its version. This departs from
+   temper's `draft/upgrades.md`, 4.3, where such a change keeps its
+   version; the alternative, a frozen text refreshed where every landed
+   patch naming it still plans and keeps its goldens, would serve a
+   variant appended and a bound widened alone, at the cost of landed
+   kept texts that never change.
+4. **The verdict,** 10.4's, from whether a patch is needed:
+   - `Kept`: the version kept, no patch needed. A kept text not frozen
+     is refreshed (made a copy of `C`); a frozen one keeps renames
+     waiting (12.4);
+   - `Moved`: the version moved by one, a patch needed. The family's
+     block is written in the branch's patch, and `C` kept as
+     `kept/<family>-v<c>.schema`;
+   - `Unmoved`, `Needless` and `Wrong`: refused for the family, which
+     keeps its files as they are, with the fix: move the version to
+     `k + 1`, keep it at `k`, or say which (12.5).
+5. **The branch's patch:** with at least one block, it is written (12.3)
+   under the number after the last landed patch's; with none, its text
+   and goldens go, and its `pNNNN.rs`, if any, is reported for the
+   author to remove.
+6. **Landed files** the tree lacks or holds otherwise, a renumbering's
+   among them (12.6), are written back from the base, and the report
+   names each: an author's edit of a landed file is undone by name, as
+   the check's `Changed` names it.
+7. **`mod.rs`** is generated again; `context.rs` written if absent.
+8. **The check** runs, and its findings are reported (12.7).
+
+### 12.3 The patch it writes
+
+- **The text:** `patch 1`; `owner <owner> <n>`, the owner given once by
+  `--owner` and then read from the latest patch, with `after` and each
+  upstream's level as given by `--after`; the branch's patch's marks
+  kept; then a block per family, in name order, `family <family> <k> to
+  <c>`, holding the diff's lines in their order (10.2) without their
+  kind, an added field's value `?` or `none` as the diff asks, and a
+  `written D` line after the last line of each declaration the diff
+  names as a site (10.3). No comment is written.
+- **Derived again, the author's part kept:** when the branch's patch
+  exists, each added field's value is kept where the new diff adds the
+  same field with the same type; each site line, the author's and the
+  diff's alike, and the `refuses` lines after it, kept where its
+  declaration or field is still in the new text; the marks kept. A
+  text whose lines come out the same is left as it is, comments and
+  all; otherwise it is written whole, without them.
+- **The skeleton,** `patches/pNNNN.rs`, written for a patch with sites,
+  and for a site the file lacks a function appended: one function per
+  site in 11.5's signature, named by its target in snake case (`Shape`
+  is `shape`, `Every.score` is `every_score`), its doc comment naming
+  the site, its family and versions, and the block's lines for its
+  declaration, its body `Err(Halt::NoSite(Site::new(n, i)))`, never a
+  panic, until its author writes it. Two sites that spell one name are
+  refused.
+- **`patches/mod.rs`,** generated from the kept texts and the patches
+  alone, its first line saying so:
+  - `mod context; pub use context::Context;` and `mod pNNNN;` per
+    skeleton;
+  - `PATCHES: &[&str]`, each patch's text by `include_str!` in number
+    order, and per family `kept::<family>::TEXTS: &[&str]`, its kept
+    texts in version order;
+  - `kept::<family>::v<N>::<declaration>::<PART>`, the `FieldIx` and
+    `VariantIx` of every part of every kept version, by its index in
+    that version's schema; `refusal::pNNNN::<NAME>`, each refusal's
+    `RefusalIx`; names in snake case, parts in upper case, a keyword
+    raw, two names spelling one constant refused;
+  - `written(site, old, new, at, cx)`, the dispatch of 11.5; with no
+    site, `Err(Halt::NoSite(site))` alone;
+  - its tests: `current`, which fails when `mod.rs` is not as generated,
+    naming the command, and a golden test per patch.
+- **The golden test** of patch `n` (`patch::goldens(crate, n,
+  written)`), for each family it moves: each golden of the old version,
+  made from the kept text by section 6's rule, its declaration's
+  counterpart its root (a declaration dropped has none, and is passed
+  over), run through the patch, each stop answered by the dispatch with
+  a `Context::default()` and each held field carried; the result decodes
+  as a generic value of the new kept text, and equals its file
+  `patches/golden/NNNN/<family>/<golden>`, or, refused with a declared
+  reason, holds `refuses <name>` in `<golden>.refused`. A file missing,
+  different or stale fails it, naming every golden that does;
+  `SKEIN_PATCH_WRITE=1` writes them for review. The command writes them
+  itself for a patch with no site once it plans; a patch with sites
+  waits for its author's functions and the test.
+
+### 12.4 Renames
+
+- **Confirmed by its author,** `--rename <family> <old> <new>`, a
+  declaration's `Old New` or a part's `Decl.old new` with its
+  declaration's current name, as the patch's `rename` line spells it.
+- **Where a confirmed rename goes:** into the branch's patch, as its
+  `rename` line, when the family moves; else into the kept text by its
+  refresh, when not frozen; else into `schema/kept/<family>.renames`, one
+  `rename` line each, where it waits for the family's next patch, its
+  lines the diff's confirmed renames from then on. That patch takes them
+  and the file goes.
+- **Unconfirmed,** a rename is a drop and an add: a refresh takes it
+  alike, and under a frozen text it asks for a patch (12.2, 3), whose
+  report shows the proposal.
+
+### 12.5 Versions
+
+- **`Kept`, `Moved`:** acted on (12.2).
+- **`Unmoved`:** a patch needed and the version kept: the author moves
+  it, the current schema's header and file, then runs the command.
+- **`Needless`:** the version moved with no patch needed, against 10.4;
+  the author keeps it. An owner whose policy before the baseline moves
+  versions on such changes (jig's) is found `Needless` by the check
+  from its baseline on; before it, no gate runs the check.
+- **`Wrong`:** the current version neither `k` nor `k + 1`. A version
+  without its kept text, such as a current `v9` over a latest kept `v7`,
+  is `Wrong`: kept versions run without a gap from a family's first
+  (12.7).
+
+### 12.6 Renumbering
+
+- **A taken number shows at the rebase:** two branches that each write
+  the owner's next patch add the same `patches/NNNN.patch` and change
+  `patches/mod.rs`, so the second's rebase on main stops on their
+  conflict; a change to a landed file that rebases cleanly fails the
+  check.
+- **The author rebases on main,** by hand or by continuing the rebase
+  `land` stopped, and resolves: the branch's side of the files the
+  command owns (`git checkout --theirs -- <crate>/patches
+  <crate>/schema/kept`), the current schemas merged as any conflict, a
+  family both branches moved taking the version after the landed one;
+  then runs the command. A file holding conflict markers is refused,
+  naming this step.
+- **The command moves the branch's patch** to the number after the last
+  landed one, and writes the taken number's landed files back from the
+  base, now main's tip. It derives each block again against the latest
+  landed kept text (12.3), so a family that moved meanwhile has its
+  block from the new version, keeping its author's values, sites and
+  refusals; its `pNNNN.rs` and `patches/golden/NNNN/` move with it, the
+  file's own names rewritten: the module `pNNNN`, `Site::new(n,` and,
+  for a family moved meanwhile, its versions in `<family>::v<N>` paths.
+  Then the rebase goes on, and the branch lands.
+
+### 12.7 The check
+
+`check(crate, landed)` reads the crate's files and the landed ones, and
+returns every finding, each displayed with its fix:
+
+| `Finding` | Found |
+|---|---|
+| `Unkept { family }` | a current text with no kept text |
+| `KeptGap { family, missing }` | a kept version missing between a family's first and its latest |
+| `Unpatched { family, version }` | a kept version after a family's first that no patch moves it to, or a current text that needs a patch (12.2, 3) none moves it to |
+| `Lagging { family, version }` | a latest kept text not frozen that differs from the current with no patch needed: the command refreshes it |
+| `Version { family, verdict, kept, current }` | `Unmoved`, `Needless` or `Wrong` (12.5) |
+| `Changed { path }` | a landed patch's text or goldens, or a landed kept text, changed or gone; but a kept text no landed patch names, refreshed to its family's current text |
+| `PatchGap { missing }` | a patch number missing between 1 and the last |
+| `Misnumbered { patch, level }` | a patch whose header's level is not its number |
+| `Unplanned { patch, family, error }` | a block that does not plan against its kept texts (11.3): a `?` left, a site missing, a line wrong |
+
+A frozen kept text's differences from the current that need no patch,
+renames waiting or not, declarations dropped, comments and order, are
+no finding. The golden tests and `current` (12.3) are the owner's own
+tests beside it.
+
+### 12.8 The interface
+
+```rust
+pub mod patch;  // skein_codegen::patch
+
+pub struct Options {
+    pub owner: Option<String>,             // --owner, for a crate's first patch
+    pub after: Vec<(String, u32)>,         // --after <upstream> <level>
+    pub renames: Vec<(String, Rename)>,    // --rename <family> <old> <new>
+}
+pub struct Landed { /* the base's files under patches/ and schema/kept/, by path */ }
+impl Landed {
+    pub fn new(files: BTreeMap<PathBuf, Vec<u8>>) -> Landed;  // paths relative to the crate
+    pub fn read(owner: &Path) -> Result<Landed, Error>;       // the tree's own, as if landed
+    pub fn none() -> Landed;                                  // nothing landed
+}
+pub fn run(owner: &Path, landed: &Landed, options: &Options) -> Result<Report, Error>;
+pub fn check(owner: &Path, landed: &Landed) -> Result<(), Vec<Finding>>;
+pub fn module(owner: &Path) -> Result<String, Error>;  // patches/mod.rs's text
+pub fn current(owner: &Path) -> Result<(), Error>;     // mod.rs as generated
+pub fn goldens<C: Default>(owner: &Path, patch: u32, written: Written<C>) -> Result<(), Error>;
+pub type Written<C> = fn(Site, &Old, &mut Build, Node, &mut C) -> Result<(), Halt>;
+
+pub struct Report {
+    pub outcomes: Vec<Outcome>,            // a family's each, in name order
+    pub patch: Option<u32>,                // the branch's patch
+    pub moved: Option<u32>,                // the number it was moved from
+    pub proposed: Vec<(String, Rename)>,   // proposals not confirmed
+    pub asked: Vec<String>,                // what its author must give: `?` lines, sites
+    pub restored: Vec<PathBuf>,            // landed files written back (12.2, 6)
+    pub findings: Vec<Finding>,            // the check's, after the run
+}
+pub enum Outcome {
+    Kept { family: String, version: u16 },        // its first kept text
+    Current { family: String },                   // nothing to do
+    Refreshed { family: String, version: u16 },
+    Waiting { family: String, renames: Vec<Rename> },
+    Patched { family: String, from: u16, to: u16 },
+    Refused { family: String, verdict: Version },
+}
+pub enum Finding { /* 12.7's table */ }
+pub enum Error {
+    Io { path: PathBuf, error: String },
+    Schema { path: PathBuf, error: String },  // a text that does not parse
+    Diff { family: String, error: DiffError },
+    Owner,                                    // a first patch without --owner
+    Unlanded { patches: Vec<u32> },           // two patches of the branch's own
+    Conflict { path: PathBuf },               // conflict markers (12.6)
+    Spelled { first: String, second: String },// two names, one constant or function
+    Golden(Vec<String>),                      // each golden that fails
+    Stale,                                    // mod.rs not as generated
+}
+```
+
+- **The library reads no git:** what is landed is its input, so that
+  its tests and the story pass it in memory.
+- **The binary:** `skein-codegen patch <crate> [--owner <name>]
+  [--after <upstream> <level>]… [--rename <family> <old> <new>]…
+  [--base <ref>] [--check]`. It reads the landed files with `git
+  ls-tree` and `git show <base>:<path>`, the base `git merge-base HEAD
+  origin/main` unless `--base` names another, prints the report, its proposals as the
+  `--rename` that confirms each, and exits 1 while a finding is left.
+  `--check` runs the check alone. `skein-codegen <schema> <out-dir>`
+  is as before; a schema is never named `patch`.
+- `Report`, `Outcome`, `Finding` and `Error` derive `Clone`, `Debug` and
+  equality, and display as the command prints them.
+
+### 12.9 Tests
+
+Step tests in skein-codegen, the story in `tests/codec-patches`; no
+world, no cargo inside a test.
+
+- **Step tests,** each over a crate in a scratch directory, its files
+  compared as whole text: each outcome's files (the baseline, a
+  refresh, a rename waiting, a derived patch with its `?`, a written
+  one with its skeleton), the author's values and sites kept when
+  derived again, each verdict of 10.4, the gap, renumbering with and
+  without the family moved meanwhile, `mod.rs` for a crate of two
+  families and patches, and each finding of 12.7 and its absence.
+- **The story,** `tests/codec-patches`, an owner crate whose history
+  the command makes: the baseline; a field added, its patch asking `?`,
+  refused when planned, then filled, planned and its goldens written; a
+  rename refreshed in a family no patch names, and one waiting in a
+  frozen one; a written change, its skeleton's golden test failing with
+  `NoSite` naming the site, then its function written; another
+  branch's patch landing first, and the story's renumbered. The check
+  at each step. Each step is checked as text against its expected
+  files; the crate's final files are the last step's, built and tested
+  by the gate as any member: `current` and the golden tests.
 
 ## 13. Open questions
 
-- **Left to the milestone that builds it:** the command's options and
-  the check's findings, and where a confirmed rename waits for its
-  family's next patch (section 12).
+- **Upstreams' levels:** the command writes a patch's `after` as its
+  author gives it (12.3); jig's mission, which orders patches across
+  owners, reads them from the pins.
+- **Proposals to a fixpoint:** the command runs the diff in rounds to
+  propose renames a level of references down (12.2); the diff itself
+  could take candidate pairs as matched until none fails, and propose
+  them all in one pass.
 - **Pieces of a converted type:** a patch whose conversion of a
   `pieces` field's items is not a copy, or an identity plan whose
   pieces reach a held field, is refused when planned (11.3). jig's
