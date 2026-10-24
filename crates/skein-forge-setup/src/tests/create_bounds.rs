@@ -114,3 +114,54 @@ fn zero_file_limits_are_refused() {
     limits.file_bytes = 0;
     assert_eq!(given::check_create(&limits, STRING, &named(b"first", b"repo")), refused(Place::FileBytesLimit));
 }
+
+#[test]
+fn creation_with_a_decoder_bound_admin_login_fits_its_memory_bound() {
+    use crate::{
+        create,
+        reconcile::{Event, Need, Reply},
+    };
+    use skein_forge::forgejo::{document::Document, request::Request};
+    use skein_heap::Meter;
+    use skein_lib::Queue;
+
+    let given = fixtures::given();
+    let limits = super::host::limits();
+    let bound = crate::memory::per_run(&given, &limits).expect("creation bound");
+    let meter = Meter::new();
+    meter.start();
+    let mut machine = Box::new(
+        create::Create::new(
+            &given,
+            Box::from([b'o'; 40]),
+            Box::from([b'r'; NAME]),
+            Box::new([File {
+                path: Box::from([b'p'; PATH]),
+                content: skein_lib::bytes::zeroed(usize::try_from(given.limits.file_bytes).expect("file bound")),
+            }]),
+        )
+        .expect("maximum creation"),
+    );
+    let mut out = Queue::with_capacity(create::MAX_OUT);
+    create::step(&mut machine, Event::Begin, &mut out);
+    drop(out.pop());
+    create::step(&mut machine, Event::Read(Some(fixtures::secret(fixtures::ADMIN))), &mut out);
+    drop(out.pop());
+    let mut admin = fixtures::admin();
+    admin.login = skein_lib::bytes::zeroed(usize::try_from(limits.string_bytes).expect("decoder bound"));
+    admin.login.fill(b'a');
+    create::step(&mut machine, Event::Reply(Reply::Document(Document::User(admin))), &mut out);
+    drop(out.pop());
+    create::step(&mut machine, Event::Reply(Reply::Status(404)), &mut out);
+    let measured = meter.end();
+    assert!(measured.peak() <= bound, "{} exceeds {bound}", measured.peak());
+    let Some(Need::Send { request: crate::call::Call::Forgejo(Request::CreateOrg { person, .. }), .. }) = out.pop()
+    else {
+        panic!("missing org is made");
+    };
+    assert_eq!(person.len(), usize::try_from(limits.string_bytes).expect("decoder bound"));
+    drop(person);
+    drop(machine);
+    drop(out);
+    assert_eq!(meter.held(), 0);
+}

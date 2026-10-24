@@ -37,6 +37,7 @@ pub struct Create {
     forge: u16,
     admin_name: Box<[u8]>,
     admin: Option<Secret>,
+    admin_login: Box<[u8]>,
     owner: Option<Box<[u8]>>,
     at: Repo,
     subject: Box<[u8]>,
@@ -64,6 +65,7 @@ impl Create {
             forge: given.forge,
             admin_name: given.admin_name.clone(),
             admin: None,
+            admin_login: Box::new([]),
             owner: given.org_owner.clone(),
             at: Repo { owner: org, name: repository },
             subject: subject.finish(),
@@ -179,9 +181,11 @@ impl Create {
                 Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => Err(Why::Unexpected),
             },
             State::Admin => {
-                if !reconcile::account(event)?.is_admin {
+                let admin = reconcile::account(event)?;
+                if !admin.is_admin {
                     return Err(Why::NotAdmin);
                 }
+                self.admin_login = admin.login;
                 self.state = State::Org;
                 Ok(self.send(Request::Org { name: self.at.owner.clone() }))
             }
@@ -209,7 +213,10 @@ impl Create {
             State::Org => match answer {
                 Reply::Document(Document::Org(_)) => Ok(self.repository()),
                 Reply::Status(404) => {
-                    let owner = self.owner.clone().ok_or(Why::Missing)?;
+                    let owner = match &self.owner {
+                        Some(owner) => owner.clone(),
+                        None => self.admin_login.clone(),
+                    };
                     self.state = State::MakeOrg;
                     Ok(self.send(Request::CreateOrg { person: owner, name: self.at.owner.clone() }))
                 }

@@ -463,9 +463,9 @@ last one left, and a second run writes nothing.
 1. **The admin's token,** as step 1 (4.3).
 2. **The org,** `GET /api/v1/orgs/{org}`: absent (404), it is made as
    step 5 makes one (4.3), private and owned by the orgs' owner (4.1).
-   With no owner given, as managed has none, an absent org stops the
-   run `Missing` at `Org`. A present org is left as it is, whoever
-   owns it.
+   With no owner given, as managed has none, it is made owned by the admin
+   the run has just verified (step 1), the token's own user.
+   A present org is left as it is, whoever owns it.
 3. **The repository,** `GET /api/v1/repos/{org}/{name}`: absent, it is
    made, `CreateRepository { org, name, private: true }` (4.3), which
    writes a README on `main`. A `409` there, the repository made

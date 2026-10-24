@@ -32,6 +32,8 @@ pub(crate) fn per_run(g: &Given, l: &Limits) -> Option<u64> {
     let creation = u64::try_from(size_of::<crate::create::Create>())
         .ok()?
         .checked_add(copied(g)?)?
+        // Create retains the verified admin's login within the host decoder's text bound.
+        .checked_add(u64::from(l.string_bytes))?
         .checked_add(List::<crate::host::File>::worst_case(g.limits.files)?)?
         .checked_add(u64::from(g.limits.files).checked_mul(255_u64.checked_add(u64::from(g.limits.file_bytes))?)?)?
         // Names, repository path and pending file request may overlap the plan.

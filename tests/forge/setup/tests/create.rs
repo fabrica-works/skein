@@ -1,7 +1,7 @@
 use core::num::NonZeroU64;
 use skein_fake_forge_domain::{self as domain, api};
 use skein_fake_forge_protocol::Route;
-use skein_forge::forgejo::request::Grant;
+use skein_forge::forgejo::request::{Grant, Request};
 use skein_forge_setup::{
     host::File,
     reconcile::{Failure, Outcome, Stage, Why},
@@ -43,6 +43,11 @@ fn creation_makes_the_org_repository_access_hook_and_bot_authored_file() {
     assert_eq!(result, Ended::Done);
     assert_eq!(world.outcome(), Some(&created()));
     assert_eq!(world.store().organization(b"first").expect("created org").owner.as_ref(), b"ada");
+    assert!(
+        world
+            .requests()
+            .contains(&Request::CreateOrg { person: b"ada".as_slice().into(), name: b"first".as_slice().into() })
+    );
     assert_eq!(world.store().collaborator(REPOSITORY, b"kit"), Some(Grant::Write));
     assert_eq!(world.repository_hooks(REPOSITORY).len(), 1);
     let head = world.domain().branch(FULL, b"main").expect("main");
@@ -118,10 +123,38 @@ fn an_existing_org_and_person_edited_file_are_left_alone() {
     );
 }
 #[test]
-fn a_missing_org_without_an_owner_stops_at_org() {
+fn a_missing_org_without_an_owner_is_made_owned_by_the_verified_admin() {
     let mut world = world();
     world.org_owner(None);
-    assert_eq!(run(&mut world), stopped(Stage::Org, b"first", Why::Missing));
+    world.store_mut().revoke(fixtures::ADMIN);
+    let admin = world.store_mut().account(b"token-admin", true, b"");
+    world.store_mut().token(
+        admin,
+        b"creation-admin",
+        &[b"read:user", b"write:organization", b"write:repository", b"write:admin"],
+        fixtures::secret(fixtures::ADMIN),
+    );
+    assert_eq!(run(&mut world), Ended::Done);
+    assert_eq!(world.outcome(), Some(&created()));
+    assert_eq!(world.store().organization(b"first").expect("created org").owner.as_ref(), b"token-admin");
+    assert!(
+        world.requests().contains(&Request::CreateOrg {
+            person: b"token-admin".as_slice().into(),
+            name: b"first".as_slice().into(),
+        })
+    );
+    assert!(world.domain().object(FILE_COMMIT).expect("file commit").tree.contains_key(PATH));
+}
+#[test]
+fn a_present_org_without_an_owner_is_left_owned_by_its_person() {
+    let mut world = world();
+    world.org_owner(None);
+    world.store_mut().account(b"someone-else", false, b"");
+    world.store_mut().org(b"first", b"someone-else");
+    assert_eq!(run(&mut world), Ended::Done);
+    assert_eq!(world.outcome(), Some(&created()));
+    assert_eq!(world.store().organization(b"first").expect("org").owner.as_ref(), b"someone-else");
+    assert!(!world.requests().iter().any(|request| matches!(request, Request::CreateOrg { .. })));
 }
 #[test]
 fn a_token_without_repository_scope_stops_at_repository() {
