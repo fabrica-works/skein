@@ -76,7 +76,7 @@ What is still open is in section 11.
   Detection is proven with the fault on, the correction with the fault
   off, under two keys (9.4).
 - **Bounded, never by default:** an experiment names a cost class, whose
-  values are budgets decided as `owners.md` (3) says and kept in the
+  values are budgets decided as agents' `roles/owners.md` (3) says and kept in the
   lab's settings; a run without them is refused. Actions are bounded as
   they start; tokens are observed as the host reports them, so a drive
   may overshoot by a turn, recorded. Each run records what it used,

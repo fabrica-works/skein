@@ -207,7 +207,7 @@ ordinary streams, stdin, captures and records.
 Validation reads machine facts without starting experiment processes: cgroup
 v2, a user manager socket, enabled user namespaces, `systemd-run`, `bwrap`, and
 the disk floor from `tmp/machine.env` (`PLAN_MIN_DISK_GB`, otherwise the
-40 GiB machine default in owners.md, 4.5). Runtime admission also contacts the user manager and runs an inert bubblewrap
+40 GiB machine default in agents' roles/owners.md, 4.5). Runtime admission also contacts the user manager and runs an inert bubblewrap
 user/PID namespace probe, with no model. Each run provisions its delegated
 `memory` and `pids` controllers. Validation alone proves no native containment.
 The driver runs its boundary probe before experiment processes start and reads

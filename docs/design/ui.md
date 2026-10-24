@@ -321,8 +321,8 @@ two platforms (4.1); section 16 maps each onto the web, iOS and Android.
   lands with its code.
 - **Anything else** (an addition that does not map one to one, a new
   act, a change to a rule of sections 5 to 7) is a change to this design.
-- **Who may make such a change, and how it lands,** is owners.md's to
-  say (its section 3), not this document's.
+- **Who may make such a change, and how it lands,** is agents'
+  `roles/owners.md`'s to say (its section 3), not this document's.
 
 ## 5. Building
 

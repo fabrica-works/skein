@@ -2,7 +2,7 @@
 
 Updated 2026-10-24. How far skein's code is from its design, and which
 owners take it there. Owners keep the rows their work changes
-(owners.md, 4.4).
+(agents' `roles/owners.md`, 4.4).
 
 ## 1. In flight
 
@@ -26,7 +26,6 @@ owners take it there. Owners keep the rows their work changes
 |---|---|---|
 | `foundation/programming-model.md` | partly | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: state digests in the worlds of skein's services but the echo's (the harness carries them, `testing.md`, 5), transition coverage, `cargo fuzz`: not planned |
-| `build-infrastructure.md` | partly | 2–7: recovery kit; 8: approved strict SSH/local advisory transport and disposable acceptance; 9: standalone exact-tuple repin preparation and guarded ordinary-land entry, disposable Git/Cargo fixtures; real consumer slots and repins remain director-owned; 10: `land-set`, a set landed under one lock upstream first, built 2026-10-24 by o/landing-flow (f3fedf66), its eight-case fixture |
 | `README.md` | yes | Nothing: the index of the parts, their crates and what is not in skein |
 | `lib.md` | partly | 3: `Slab::get2_mut`: not planned |
 | `kernel.md` | partly | 6.1, 6.4, 6.5: `StatEntry`, `Stat`'s whole metadata and `Kind`'s special files, a tree's metadata (`ReadLink`, `MakeLink`, `HardLink`, `SetMode`, `SetOwner`, the attributes), `FilesystemStatus`, `SyncFilesystem` and btrfs's subvolumes, each with its conformance scenario (8), btrfs's on the ring alone: hearth's M2 files; 6.2, 6.6, 7, 8: cgroups, a spawn into one, the helper and its setup, with their conformance: hearth's M2 trees; 6.4: setting an entry's times: not planned (hearth's M3); 8: the descriptor limit on the ring; 9: fixed files: not planned |

@@ -65,7 +65,7 @@ test-threads = 1
 retries = 0
 fail-fast = false
 
-# The QA passes' tests (docs/foundation/owners.md, 4.6): the binaries named qa_*, which the gate builds and does not run. One at a time: they run real Chromium.
+# The QA passes' tests (agents' roles/owners.md, 4.6): the binaries named qa_*, which the gate builds and does not run. One at a time: they run real Chromium.
 [profile.qa]
 default-filter = "binary(/^qa_/)"
 global-timeout = "4m"

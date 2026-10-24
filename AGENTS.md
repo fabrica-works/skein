@@ -1,8 +1,8 @@
 # skein: what an agent must know before touching its code
 
-skein is the io and protocol kit, and holds the workspace's foundation
-documents and its development tools. Read this, then the design sections
-your task names.
+skein is the io and protocol kit, and holds the rules every
+repository's code follows; the roles and the tools are agents'. Read
+this, then the design sections your task names.
 
 ## Where things are
 
