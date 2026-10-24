@@ -97,7 +97,7 @@ enum OpKind {
     Type { text: Box<[u8]>, entry: Entry },
     Key { key: Key, shift: bool },
     Address,
-    Attribute { selector: Box<[u8]>, name: Box<[u8]> },
+    Attribute { selector: Box<[u8]>, name: Box<[u8]>, until: Time },
     Look { look: crate::boundary::Look, state: look::State },
     Snapshot,
     Screenshot,
@@ -645,7 +645,8 @@ impl Browser {
                     self.events.push_back(Event::Refused { op, why: Refusal::Limit });
                     return;
                 }
-                if self.admit_op(env, page, op, OpKind::Attribute { selector, name }) {
+                let until = env.now.saturating_add(env.limits.answer);
+                if self.admit_op(env, page, op, OpKind::Attribute { selector, name, until }) {
                     self.start_attribute(env, op);
                 }
             }
@@ -1340,6 +1341,22 @@ impl Browser {
         {
             if let Some(op) = self.op_mut(op) {
                 op.due = Some(env.now.saturating_add(env.limits.poll));
+            }
+            return;
+        }
+        if let PendingKind::Step(op, Step::AttributeSelector | Step::AttributeValue) = kind
+            && look::node_missing(&message)
+        {
+            // A render replaced the element between the selector and its
+            // read: the read starts again from the document until its
+            // deadline.
+            let again = env.now.saturating_add(env.limits.poll);
+            if let Some(Operation { kind: OpKind::Attribute { until, .. }, due, .. }) = self.op_mut(op)
+                && again < *until
+            {
+                *due = Some(again);
+            } else {
+                self.finish_refused(op, Refusal::Gone);
             }
             return;
         }

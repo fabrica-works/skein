@@ -104,7 +104,7 @@ impl Browser {
     fn attribute_fields(&self, token: Token) -> Option<(&[u8], &[u8])> {
         match self.op(token) {
             Some(Operation { kind, .. }) => match kind {
-                OpKind::Attribute { selector, name } => Some((selector, name)),
+                OpKind::Attribute { selector, name, .. } => Some((selector, name)),
                 OpKind::Look { .. }
                 | OpKind::Go(_)
                 | OpKind::Find { .. }
@@ -124,3 +124,7 @@ impl Browser {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "attribute_tests.rs"]
+mod tests;

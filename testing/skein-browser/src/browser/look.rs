@@ -669,7 +669,7 @@ fn level_value(property: Value<'_>) -> Option<u32> {
     nested_u64(property, b"value", b"value")?.try_into().ok()
 }
 
-fn node_missing(message: &[u8]) -> bool {
+pub(super) fn node_missing(message: &[u8]) -> bool {
     contains(message, b"No node found")
         || contains(message, b"Could not find node")
         || contains(message, b"Cannot find node")
