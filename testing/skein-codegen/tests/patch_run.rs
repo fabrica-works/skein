@@ -606,14 +606,14 @@ pub fn book(_old: &Old, _new: &mut Build, _at: Node, _cx: &mut Context) -> Resul
         end(&root);
     }
 
-    #[test]
-    fn family_moved_meanwhile_rederives_and_shifts_both_version_paths() {
-        const BASE3: &str =
-            "family shelf 3\nrecord Book { id: u8, note: option text 8, tag: option u8 }\nenum State { ready }\n";
-        const BASE_PATCH: &str = "patch 1\nowner shop 2\n\nfamily shelf 2 to 3\nadd Book.tag option u8 none\n";
-        const CURRENT4: &str = "family shelf 4\nrecord Book { id: u8, note: option text 8, tag: option u8, score: u32 }\nenum State { ready }\n";
-        const AUTHOR: &str = "patch 1\nowner shop 2\nmark score\n\nfamily shelf 2 to 3\nadd Book.score u32 written\nwritten Book.score\nrefuses missing \"no score\"\n";
-        const EXPECTED: &str = "patch 1\nowner shop 3\nmark score\n\nfamily shelf 3 to 4\nadd Book.score u32 written\nwritten Book.score\nrefuses missing \"no score\"\n";
+    const BASE3: &str =
+        "family shelf 3\nrecord Book { id: u8, note: option text 8, tag: option u8 }\nenum State { ready }\n";
+    const BASE_PATCH: &str = "patch 1\nowner shop 2\n\nfamily shelf 2 to 3\nadd Book.tag option u8 none\n";
+    const CURRENT4: &str = "family shelf 4\nrecord Book { id: u8, note: option text 8, tag: option u8, score: u32 }\nenum State { ready }\n";
+    const AUTHOR: &str = "patch 1\nowner shop 2\nmark score\n\nfamily shelf 2 to 3\nadd Book.score u32 written\nwritten Book.score\nrefuses missing \"no score\"\n";
+    const EXPECTED: &str = "patch 1\nowner shop 3\nmark score\n\nfamily shelf 3 to 4\nadd Book.score u32 written\nwritten Book.score\nrefuses missing \"no score\"\n";
+
+    fn moved_family_crate(name: &str, author: &str) -> (PathBuf, Landed) {
         let base = landed(&[
             ("schema/kept/shelf-v1.schema", V1),
             ("schema/kept/shelf-v2.schema", OPTIONAL),
@@ -623,6 +623,43 @@ pub fn book(_old: &Old, _new: &mut Build, _at: Node, _cx: &mut Context) -> Resul
             ("patches/p0002.rs", "landed code\n"),
             ("patches/golden/0002/shelf/book", "landed golden"),
         ]);
+        let root = crate_files(
+            name,
+            &[
+                ("schema/shelf-v4.schema", CURRENT4),
+                ("schema/kept/shelf-v1.schema", V1),
+                ("schema/kept/shelf-v2.schema", OPTIONAL),
+                ("schema/kept/shelf-v3.schema", BRANCH3),
+                ("patches/0001.patch", FROZEN),
+                ("patches/0002.patch", AUTHOR),
+                ("patches/p0002.rs", author),
+                ("patches/golden/0002/shelf/book", "branch golden"),
+            ],
+        );
+        (root, base)
+    }
+
+    #[test]
+    fn renumbered_alias_paths_follow_the_number_and_the_block() {
+        let author =
+            "use super::kept::shelf::p0002::{new, old};\npub fn book_score() { old::book::ID; new::book::SCORE; }\n";
+        let moved =
+            "use super::kept::shelf::p0003::{new, old};\npub fn book_score() { old::book::ID; new::book::SCORE; }\n";
+        let (root, base) = moved_family_crate("aliases", author);
+        run(&root, &base, &Options::default()).expect("aliases follow the moved family");
+        assert_files(&root, &[("patches/p0003.rs", moved), ("patches/0003.patch", EXPECTED)]);
+        let module = fs::read_to_string(root.join("patches/mod.rs")).expect("generated module");
+        assert!(module.contains(concat!(
+            "        pub mod p0003 {\n",
+            "            pub use super::v3 as old;\n",
+            "            pub use super::v4 as new;\n",
+            "        }\n",
+        )));
+        end(&root);
+    }
+
+    #[test]
+    fn family_moved_meanwhile_rederives_and_shifts_both_version_paths() {
         for (name, author, moved) in [
             (
                 "qualified",
@@ -645,19 +682,7 @@ pub fn book(_old: &Old, _new: &mut Build, _at: Node, _cx: &mut Context) -> Resul
                 "use super::kept::shelf::v3;\npub fn book_score() { p0003; Site::new(3, 0); v3::book::ID; shelf::v20::book::ID; bookshelf::v2::book::ID; /* shelf::v2::book::ID */ \"shelf::v2::book::ID\"; }\n",
             ),
         ] {
-            let root = crate_files(
-                name,
-                &[
-                    ("schema/shelf-v4.schema", CURRENT4),
-                    ("schema/kept/shelf-v1.schema", V1),
-                    ("schema/kept/shelf-v2.schema", OPTIONAL),
-                    ("schema/kept/shelf-v3.schema", BRANCH3),
-                    ("patches/0001.patch", FROZEN),
-                    ("patches/0002.patch", AUTHOR),
-                    ("patches/p0002.rs", author),
-                    ("patches/golden/0002/shelf/book", "branch golden"),
-                ],
-            );
+            let (root, base) = moved_family_crate(name, author);
             let report = run(&root, &base, &Options::default()).expect("family moved meanwhile");
             assert_files(
                 &root,

@@ -76,6 +76,12 @@ pub(crate) fn module_text(krate: &Crate) -> Result<String, Error> {
         &krate.patches.keys().map(|number| format!("{number:04}.patch")).collect::<Vec<_>>(),
     );
     out.push_str("\npub mod kept {\n");
+    let mut aliases = BTreeMap::new();
+    for (number, source) in &krate.patches {
+        for block in read_patch(source, *number)?.blocks {
+            aliases.entry(block.family).or_insert_with(Vec::new).push((*number, block.from, block.to));
+        }
+    }
     let mut families = BTreeMap::new();
     for (family, versions) in &krate.kept {
         let name = unique(&mut families, ident(&family.replace('-', "_")), family)?;
@@ -92,6 +98,11 @@ pub(crate) fn module_text(krate: &Crate) -> Result<String, Error> {
             writeln!(out, "        pub mod v{version} {{").expect("String write");
             declarations(&schema, &mut out)?;
             out.push_str("        }\n");
+        }
+        if let Some(blocks) = aliases.get(family) {
+            for (number, from, to) in blocks {
+                writeln!(out, "        pub mod p{number:04} {{\n            pub use super::v{from} as old;\n            pub use super::v{to} as new;\n        }}").expect("String write");
+            }
         }
         out.push_str("    }\n");
     }

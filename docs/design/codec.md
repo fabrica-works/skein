@@ -1193,7 +1193,7 @@ next_pass(plan, root)           the next plan, over those bytes
 ```rust
 // patches/p0041.rs: the command writes the skeleton, the author the body
 use super::Context;
-use super::kept::jig_store_tasks::{v9, v10};
+use super::kept::jig_store_tasks::p0041::{new, old};
 use super::refusal::p0041::UNSCORED;
 use skein_codec::patch::{Build, Halt, Old};
 use skein_codec::value::Node;
@@ -1201,9 +1201,9 @@ use skein_codec::value::Node;
 /// Task.score, 9 to 10, a field (`written Task.score`): ten a try; a
 /// done task without attempts refused.
 pub fn task_score(old: &Old, new: &mut Build, at: Node, _cx: &mut Context) -> Result<(), Halt> {
-    let attempts = old.uint(old.field(at, v9::task::ATTEMPTS)?)?;
-    let state = old.field(at, v9::task::STATE)?;
-    if attempts == 0 && old.tag(state)? == v9::state::DONE {
+    let attempts = old.uint(old.field(at, old::task::ATTEMPTS)?)?;
+    let state = old.field(at, old::task::STATE)?;
+    if attempts == 0 && old.tag(state)? == old::state::DONE {
         return Err(new.refuse(UNSCORED));
     }
     new.put_uint(attempts.saturating_mul(10))
@@ -1212,12 +1212,12 @@ pub fn task_score(old: &Old, new: &mut Build, at: Node, _cx: &mut Context) -> Re
 /// Shape, 9 to 10, a declaration (`drop Shape.square`, `written Shape`):
 /// a square made a rectangle, the other variants carried.
 pub fn shape(old: &Old, new: &mut Build, at: Node, _cx: &mut Context) -> Result<(), Halt> {
-    if old.tag(at)? != v9::shape::SQUARE {
+    if old.tag(at)? != old::shape::SQUARE {
         return new.carry(old, at);
     }
     let square = old.payload(at)?.ok_or(Halt::Misread(at))?;
-    let side = old.field(square, v9::square::SIDE)?;
-    new.open_variant(v10::shape::RECTANGLE)?;
+    let side = old.field(square, old::square::SIDE)?;
+    new.open_variant(new::shape::RECTANGLE)?;
     new.carry(old, side)?;
     new.carry(old, side)?;
     new.close()
@@ -1283,8 +1283,10 @@ pub fn shape(old: &Old, new: &mut Build, at: Node, _cx: &mut Context) -> Result<
 - **Names by constants,** never by text: `patches/mod.rs` (section 12)
   generates, per family and kept version, a module per declaration of
   its `FieldIx` and `VariantIx` constants, its parts' names in upper
-  case (`kept::jig_store_tasks::v9::task::ATTEMPTS`), and per patch its
-  refusals' (`refusal::p0041::UNSCORED`), so a misspelt name fails to
+  case (`kept::jig_store_tasks::v9::task::ATTEMPTS`), per block its
+  versions' aliases (`kept::jig_store_tasks::p0041::{old, new}`, so
+  written code names no version), and per patch its refusals'
+  (`refusal::p0041::UNSCORED`), so a misspelt name fails to
   build; the generator refuses two names that spell one constant. The
   dispatch matches a site's patch, then its index, in nested `match`es,
   each with a last arm `Err(Halt::NoSite(site))`:
@@ -1641,7 +1643,9 @@ text at version `c`:
   panic, until its author writes it. Two sites that spell one name are
   refused.
 - **`patches/mod.rs`,** generated from the kept texts and the patches
-  alone, its first line saying so:
+  alone, its first line saying so, in rustfmt's layout under skein's
+  `rustfmt.toml` (edition 2024, max_width 120, use_small_heuristics
+  Max), which jig's and temper's match:
   - `mod context; pub use context::Context;` and `mod pNNNN;` per
     skeleton;
   - `PATCHES: &[&str]`, each patch's text by `include_str!` in number
@@ -1652,6 +1656,8 @@ text at version `c`:
     that version's schema; `refusal::pNNNN::<NAME>`, each refusal's
     `RefusalIx`; names in the skeleton's snake case, parts in upper
     case, a keyword raw, two names spelling one constant refused;
+  - `kept::<family>::pNNNN::{old, new}`, aliases of each block's from
+    and to versions, so written code names no version;
   - `written(site, old, new, at, cx)`, the dispatch of 11.5; with no
     site, `Err(Halt::NoSite(site))` alone;
   - its tests: `current`, which fails when `mod.rs` is not as generated,
@@ -1721,7 +1727,8 @@ text at version `c`:
   block from the new version, keeping its author's values, sites and
   refusals; its `pNNNN.rs` and `patches/golden/NNNN/` move with it, the
   file's own names rewritten: the module `pNNNN`, `Site::new(n,` and,
-  for a family moved meanwhile, its versions in `<family>::v<N>` paths.
+  for a family moved meanwhile, its versions in bare `<family>::v<N>`
+  paths; code written through the aliases needs only its number.
   A family moved meanwhile has its goldens dropped instead of moved,
   each named in the report: their records are of the version it no
   longer moves from, so the author writes and reviews them again.

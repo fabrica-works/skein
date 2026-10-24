@@ -25,6 +25,10 @@ pub mod kept {
                 pub const COLOR: FieldIx = FieldIx::new(1);
             }
         }
+        pub mod p0002 {
+            pub use super::v1 as old;
+            pub use super::v2 as new;
+        }
     }
     pub mod shelf {
         pub const TEXTS: &[&str] =
@@ -65,6 +69,10 @@ pub mod kept {
                 pub const BOOKS: FieldIx = FieldIx::new(3);
                 pub const FORMAT: FieldIx = FieldIx::new(4);
             }
+        }
+        pub mod p0001 {
+            pub use super::v1 as old;
+            pub use super::v2 as new;
         }
     }
 }

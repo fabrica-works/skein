@@ -12,8 +12,9 @@ mod tests {
     const OLD: &str = "family a-b 1\nrecord Base { tag: u8 }\nenum Shape { dot, line }\nrecord Every { score: u8 }\n";
     const NEW: &str = "family a-b 2\nrecord Base { tag: u8 }\nenum Shape { line }\nrecord Every { score: u16 }\n";
     const OTHER: &str = "family type 1\nrecord Type {}\n";
+    const OTHER_NEW: &str = "family type 2\nrecord Type { id: u8 }\n";
     const PATCH: &str = "patch 1\nowner sample 1\n\nfamily a-b 1 to 2\ndrop Shape.dot\nwritten Shape\nrefuses no_dot \"no dot\"\nretype Every.score u8 u16\nwritten Every.score\nrefuses no_score \"no score\"\n";
-    const SECOND: &str = "patch 1\nowner sample 2\n";
+    const SECOND: &str = "patch 1\nowner sample 2\n\nfamily a-b 1 to 2\nretype Every.score u8 u16\n\nfamily type 1 to 2\nadd Type.id u8 0\n";
 
     fn scratch(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("skein-codegen-t2-{name}-{}", std::process::id()));
@@ -33,6 +34,7 @@ mod tests {
             ("schema/kept/a-b-v1.schema", OLD),
             ("schema/kept/a-b-v2.schema", NEW),
             ("schema/kept/type-v1.schema", OTHER),
+            ("schema/kept/type-v2.schema", OTHER_NEW),
             ("patches/0001.patch", PATCH),
             ("patches/0002.patch", SECOND),
             ("patches/p0001.rs", ""),
@@ -87,11 +89,30 @@ pub mod kept {
                 pub const SCORE: FieldIx = FieldIx::new(1);
             }
         }
+        pub mod p0001 {
+            pub use super::v1 as old;
+            pub use super::v2 as new;
+        }
+        pub mod p0002 {
+            pub use super::v1 as old;
+            pub use super::v2 as new;
+        }
     }
     pub mod r#type {
-        pub const TEXTS: &[&str] = &[include_str!("../schema/kept/type-v1.schema")];
+        pub const TEXTS: &[&str] =
+            &[include_str!("../schema/kept/type-v1.schema"), include_str!("../schema/kept/type-v2.schema")];
         pub mod v1 {
             pub mod r#type {}
+        }
+        pub mod v2 {
+            pub mod r#type {
+                use skein_codec::schema::FieldIx;
+                pub const ID: FieldIx = FieldIx::new(0);
+            }
+        }
+        pub mod p0002 {
+            pub use super::v1 as old;
+            pub use super::v2 as new;
         }
     }
 }

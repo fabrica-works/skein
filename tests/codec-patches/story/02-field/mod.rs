@@ -58,6 +58,10 @@ pub mod kept {
                 pub const FORMAT: FieldIx = FieldIx::new(4);
             }
         }
+        pub mod p0001 {
+            pub use super::v1 as old;
+            pub use super::v2 as new;
+        }
     }
 }
 
