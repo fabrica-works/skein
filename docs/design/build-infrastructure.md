@@ -545,3 +545,86 @@ normal/error exit; repository/global configuration is not changed.
 If main moves, land rebases/conflicts or the guard refuses, inspect the diff
 and start a fresh branch from updated main with an explicit new base. A land
 failure may leave its amended/rebased candidate; do not rerun it unguarded.
+
+## 10. Landing a set
+
+`scripts/dev/land-set` is the landing flow's starting primitive
+(landing-flow.md 9.1). It is a standalone Python 3.11 command, run from a
+committed skein checkout like `repin`; installation and stable links do not
+change. It lands one milestone's set across skein, smith, hearth, jig and
+temper, upstream first, under one lock:
+
+```text
+scripts/dev/land-set SETFILE
+```
+
+The set file is JSON with exactly two keys:
+
+```json
+{"set": "accounts-move/m4",
+ "repos": {"skein": "/abs/worktree", "smith": "/abs/worktree",
+           "hearth": "pin-only", "jig": "pin-only", "temper": "/abs/worktree"}}
+```
+
+`set` matches `[A-Za-z0-9][A-Za-z0-9_./-]{0,79}`. Each repository maps to the
+absolute root of a worktree, or to `pin-only`. The set must name every
+repository downstream of each one it names: skein's are smith, hearth, jig and
+temper; smith's are jig and temper; jig's is temper. A worktree must be clean,
+on a named branch other than `main`, with no rebase or merge in progress, and
+its `origin` must name its repository. A pin-only repository's primary
+checkout, `DEV_ROOT/<repo>`, must have that origin. Every check precedes the
+lock; a failure exits 2.
+
+**The lock.** The run holds a turn named `set` from the landing turn's
+installed holder on hetzner3 (section 8): the `land-turn.py` beside the
+resolved `land` on PATH, which must be an installed release's. On hetzner3 it
+runs locally; elsewhere over section 8's ssh argv, with its heartbeat. The
+client fails closed: a missing holder, a transport closed or a message
+invalid before the grant exits 5 with nothing fetched. A transport lost after
+the grant lets the repository in progress finish, then stops with exit 5.
+Sets therefore land one at a time. The run's children carry
+`LAND_TURN_ACTIVE=1`, so a temper `land` inside it doesn't also wait for the
+temper turn; a plain `land` that pushes temper first makes it rebase and gate
+again.
+
+**Each repository,** in the order skein, smith, hearth, jig, temper:
+1. A pin-only repository gets a worktree at `DEV_TMP/land-set/TOKEN/<repo>`
+   from its primary checkout, on branch `land-set/TOKEN/<repo>` at
+   `origin/main` after a fetch.
+2. Fetch, then rebase on `origin/main`. A stop whose only conflicted path is
+   the root `Cargo.lock` keeps the side being rebased onto and continues; any
+   other conflict aborts the rebase and exits 3.
+3. Repin the root lock to each upstream this run has landed, through `heavy
+   cargo update --precise`, the sources others name last, and check that
+   every package of each landed source is at its commit. `heavy cargo
+   metadata` then completes the lock for the rebased manifests. A changed
+   lock is committed as `land-set: <set>: pin <repo> to ...`. Upstreams this
+   run didn't land keep their pins.
+4. A branch now equal to `origin/main` is skipped.
+5. Otherwise the ordinary `land` runs, with no arguments: its rebase, gate,
+   trailers and push. A nonzero exit stops the run with land's status. The
+   landed commit is the worktree's `HEAD` after land, checked against
+   `origin/main` after a fetch.
+6. One JSON line goes to the feed: time, set, repository, commit, host and
+   token, appended under `flock` to
+   `/home/free/.local/state/skein-land-set/feed.jsonl` on hetzner3 (0600 in a
+   0700 directory), over the same ssh from elsewhere. A feed failure warns and
+   never fails the landing.
+7. A pin-only worktree is removed after it lands or is skipped, its target
+   with it. One that fails is kept, and its path printed.
+
+The run releases the lock on every exit, SIGINT and SIGTERM included, and
+prints each repository as landed (with its commit), skipped, failed (with its
+status and worktree) or not reached. Exit statuses: 0 all landed or skipped; 2
+an invalid set or worktree; 3 a rebase conflict outside `Cargo.lock`; 5 the
+lock; land's own status otherwise; 1 an unexpected failure. Repositories
+landed before a failure stay landed: a rerun after the repair skips them.
+
+`scripts/dev/test-land-set` runs eight cases on disposable repositories with
+`file://` origins, real Cargo and stand-ins for `heavy` and `land`: a whole
+set with pin-only repositories, a moved lock, a conflict outside the lock, a
+failing land, a missing downstream repository, two concurrent runs, an absent
+holder and a pin-only repository with nothing to land. With
+`HEAVY_RECOVERY_FIXTURE=1` and `LAND_SET_FIXTURE_DIR` strictly below
+`DEV_TMP`, the lock is the source kit's local fixture holder and the feed is
+that directory's `feed.jsonl`.

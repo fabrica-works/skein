@@ -1,7 +1,9 @@
 # The landing flow
 
-Provisional, 2026-10-24, proposed with the user and not built yet. How
-changes reach `main` across skein, smith, jig, hearth and temper:
+Provisional, 2026-10-24, proposed with the user. Live in part since
+10-24: `scripts/dev/land-set` is its starting primitive, and agents do
+the rest by hand until it is built (section 9.1). How changes reach
+`main` across skein, smith, jig, hearth and temper:
 - one set of branches per milestone;
 - a landing queue that is the only writer to `main`;
 - a tool that runs the queue, and a keeper that watches it.
@@ -14,6 +16,9 @@ and milestones are [owners.md](owners.md).
 
 ## 1. In one page
 
+- **Where it stands (10-24).** Only `land-set` is built: it lands a set
+  under one lock, upstream first. Agents do by hand what the rest of
+  this flow will do, as section 9.1 lists, and the tools come over time.
 - **The invariant.** Every repository's `main` pins the current `main`
   of each of its upstreams. Only a landing moves a `main`, and a landing
   keeps the invariant: it moves every repository it touches, and repins
@@ -508,6 +513,58 @@ mission, then flood it with four milestones at once.
    director.md change then.
 5. **Later:** speculative runs, tests selected by affected crates, and
    reuse of test results for byte-identical test binaries.
+
+### 9.1 Where it stands
+
+Live as soon as possible, perfected over time (the user, 10-24). The
+starting primitive is `scripts/dev/land-set`
+(build-infrastructure.md 10), run from a skein checkout like `repin`:
+- It takes one set lock on hetzner3, through the landing turn's holder.
+  Sets land one at a time.
+- In each repository of the set, upstream first, it rebases the branch
+  on `main`, keeping `main`'s side of a `Cargo.lock` conflict, and
+  repins it to what the run has just landed upstream. Then it lands it
+  with the ordinary `land`.
+- It refuses a set without its pin-only repositories, and makes their
+  branches itself when the set file says `pin-only`.
+- Each landing goes into a feed on hetzner3.
+
+Until the rest is built, agents do by hand what the tools don't:
+- **Sets and repins.** The owner keeps the set's branches. Repins inside
+  the set are `heavy cargo update --precise SHA -p <package>`, since
+  `repin` doesn't take a branch with commits yet.
+- **The milestone's end** follows section 3. One implementer task
+  rebases the set and runs every repository's gate. Then the owner runs
+  `land-set` on its detached route, and starts the next milestone on the
+  set's branches without waiting for it.
+- **Stacking.** Once the earlier set has landed, an implementer moves
+  the new milestone with `git rebase --onto main <fork point>` in each
+  repository, then repins.
+- **A failure.** `land-set` lands one repository at a time, so a failure
+  leaves the repositories before it landed. Its summary says which. The
+  owner reads the failure, which is the keeper's job later. Its
+  implementer repairs the rest, and the owner runs `land-set` again: the
+  repositories already landed have nothing left and are skipped.
+- **Order and escalation.** The set lock is the only order. An owner
+  brings to its director what the keeper would escalate (section 5).
+- **Landing news.** Owners report their landings as today, until the
+  directors read the feed.
+- **What `land` still does.** A docs change still lands with `land
+  --docs`. Code that moves skein, smith or jig goes through `land-set`,
+  with its pin-only repositories; a lone temper or hearth change may use
+  either.
+
+Not built yet:
+- the queue's service and order;
+- gating the whole set before any push;
+- reused receipts and git-note evidence (land's trailers stay);
+- the rerun of failed tests, and the keeper;
+- `queue wait` and `queue note`, and `land` as a front end;
+- `repin` for sets and stacked rebases.
+
+The mains don't yet all pin each other's current `main` (section 2).
+`land-set` moves only the pins of what it lands, so the invariant grows
+set by set.
 
 ## 10. Open
 
