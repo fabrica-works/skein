@@ -1679,7 +1679,8 @@ root:
   Codex's sandbox with no model, against stand-in programs and a
   scripted host in Codex's place that makes actions from a script; its
   test support, in `tests/support/`. It runs outside the gate, in the
-  after-landing lane. The stand-ins: one reports its port, one panics,
+  after-landing lane (paused since 10-24, on the user's word: agents'
+  `roles/owners.md`, 4.5). The stand-ins: one reports its port, one panics,
   one detaches a child, one ignores `SIGTERM`, one grows past its bound,
   one fails by its seed's parity. It shows:
   - ready lines feeding a dependent; an action's awaited line, printed
