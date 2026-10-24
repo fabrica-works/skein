@@ -1,0 +1,4 @@
+family shelf 2
+record Book { title: text 32, year: u16, pages: u16 }
+enum Format { paper, audio, ebook }
+record Shelf { books: list 8 Book, format: Format }

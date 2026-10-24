@@ -585,47 +585,65 @@ pub fn book(_old: &Old, _new: &mut Build, _at: Node, _cx: &mut Context) -> Resul
             ("patches/p0002.rs", "landed code\n"),
             ("patches/golden/0002/shelf/book", "landed golden"),
         ]);
-        let root = crate_files(
-            "versions-shift",
-            &[
-                ("schema/shelf-v4.schema", CURRENT4),
-                ("schema/kept/shelf-v1.schema", V1),
-                ("schema/kept/shelf-v2.schema", OPTIONAL),
-                ("schema/kept/shelf-v3.schema", BRANCH3),
-                ("patches/0001.patch", FROZEN),
-                ("patches/0002.patch", AUTHOR),
-                (
-                    "patches/p0002.rs",
-                    "pub fn book_score() { p0002 Site::new(2, 0) kept::shelf::v2::book::ID shelf::v3::book::SCORE }\n",
-                ),
-                ("patches/golden/0002/shelf/book", "branch golden"),
-            ],
-        );
-        let report = run(&root, &base, &Options::default()).expect("family moved meanwhile");
-        assert_files(
-            &root,
-            &[
-                ("patches/0003.patch", EXPECTED),
-                ("schema/kept/shelf-v3.schema", BASE3),
-                ("schema/kept/shelf-v4.schema", CURRENT4),
-                (
-                    "patches/p0003.rs",
-                    "pub fn book_score() { p0003 Site::new(3, 0) kept::shelf::v3::book::ID shelf::v4::book::SCORE }\n",
-                ),
-                ("patches/golden/0002/shelf/book", "landed golden"),
-            ],
-        );
-        assert!(!root.join("patches/golden/0003").exists(), "old-version goldens dropped");
-        assert_eq!(report.moved, Some(2));
-        assert_eq!(
-            report.asked,
-            [
-                "patch 0003, shelf: written Book.score",
-                "patches/golden/0002/shelf/book: goldens dropped; shelf's old kept version moved"
-            ]
-        );
-        assert_eq!(report.findings, []);
-        end(&root);
+        for (name, author, moved) in [
+            (
+                "qualified",
+                "pub fn book_score() { p0002 Site::new(2, 0) kept::shelf::v2::book::ID shelf::v3::book::SCORE }\n",
+                "pub fn book_score() { p0003 Site::new(3, 0) kept::shelf::v3::book::ID shelf::v4::book::SCORE }\n",
+            ),
+            (
+                "group",
+                "use super::kept::shelf::{v2, v3};\npub fn book_score() { p0002; Site::new(2, 0); v2::book::ID; v3::book::SCORE; }\n",
+                "use super::kept::shelf::{v3, v4};\npub fn book_score() { p0003; Site::new(3, 0); v3::book::ID; v4::book::SCORE; }\n",
+            ),
+            (
+                "ambiguous",
+                "use super::kept::shelf::{v2, v3};\nuse super::kept::label::v4;\npub fn book_score() { p0002; Site::new(2, 0); v2::book::ID; v3::book::SCORE; shelf::v2::book::ID; }\n",
+                "use super::kept::shelf::{v3, v4};\nuse super::kept::label::v4;\npub fn book_score() { p0003; Site::new(3, 0); v2::book::ID; v3::book::SCORE; shelf::v3::book::ID; }\n",
+            ),
+            (
+                "single-import",
+                "use super::kept::shelf::v2;\npub fn book_score() { p0002; Site::new(2, 0); v2::book::ID; shelf::v20::book::ID; bookshelf::v2::book::ID; /* shelf::v2::book::ID */ \"shelf::v2::book::ID\"; }\n",
+                "use super::kept::shelf::v3;\npub fn book_score() { p0003; Site::new(3, 0); v3::book::ID; shelf::v20::book::ID; bookshelf::v2::book::ID; /* shelf::v2::book::ID */ \"shelf::v2::book::ID\"; }\n",
+            ),
+        ] {
+            let root = crate_files(
+                name,
+                &[
+                    ("schema/shelf-v4.schema", CURRENT4),
+                    ("schema/kept/shelf-v1.schema", V1),
+                    ("schema/kept/shelf-v2.schema", OPTIONAL),
+                    ("schema/kept/shelf-v3.schema", BRANCH3),
+                    ("patches/0001.patch", FROZEN),
+                    ("patches/0002.patch", AUTHOR),
+                    ("patches/p0002.rs", author),
+                    ("patches/golden/0002/shelf/book", "branch golden"),
+                ],
+            );
+            let report = run(&root, &base, &Options::default()).expect("family moved meanwhile");
+            assert_files(
+                &root,
+                &[
+                    ("patches/0003.patch", EXPECTED),
+                    ("schema/kept/shelf-v3.schema", BASE3),
+                    ("schema/kept/shelf-v4.schema", CURRENT4),
+                    ("patches/p0003.rs", moved),
+                    ("patches/golden/0002/shelf/book", "landed golden"),
+                ],
+            );
+            assert!(!root.join("patches/golden/0003").exists(), "old-version goldens dropped");
+            assert_eq!(report.moved, Some(2));
+            assert_eq!(
+                report.asked,
+                [
+                    "patch 0003, shelf: written Book.score",
+                    "review patches/p0003.rs: shelf now moves 3 to 4",
+                    "patches/golden/0002/shelf/book: goldens dropped; shelf's old kept version moved"
+                ]
+            );
+            assert_eq!(report.findings, []);
+            end(&root);
+        }
     }
 
     #[test]

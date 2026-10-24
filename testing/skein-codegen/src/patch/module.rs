@@ -68,19 +68,24 @@ pub(crate) fn module_text(krate: &Crate) -> Result<String, Error> {
     for number in krate.skeletons.intersection(&krate.patches.keys().copied().collect()) {
         writeln!(out, "mod p{number:04};").expect("String write");
     }
-    out.push_str("\nuse skein_codec::patch::{Build, Halt, Old, Site};\nuse skein_codec::value::Node;\n\npub const PATCHES: &[&str] = &[\n");
-    for number in krate.patches.keys() {
-        writeln!(out, "    include_str!(\"{number:04}.patch\"),").expect("String write");
-    }
-    out.push_str("];\n\npub mod kept {\n");
+    out.push_str("\nuse skein_codec::patch::{Build, Halt, Old, Site};\nuse skein_codec::value::Node;\n\n");
+    text_array(
+        &mut out,
+        "",
+        "PATCHES",
+        &krate.patches.keys().map(|number| format!("{number:04}.patch")).collect::<Vec<_>>(),
+    );
+    out.push_str("\npub mod kept {\n");
     let mut families = BTreeMap::new();
     for (family, versions) in &krate.kept {
         let name = unique(&mut families, ident(&family.replace('-', "_")), family)?;
-        writeln!(out, "    pub mod {name} {{\n        pub const TEXTS: &[&str] = &[").expect("String write");
-        for text in versions.values() {
-            writeln!(out, "            include_str!(\"../{}\"),", text.path.display()).expect("String write");
-        }
-        out.push_str("        ];\n");
+        writeln!(out, "    pub mod {name} {{").expect("String write");
+        text_array(
+            &mut out,
+            "        ",
+            "TEXTS",
+            &versions.values().map(|text| format!("../{}", text.path.display())).collect::<Vec<_>>(),
+        );
         for (version, text) in versions {
             let schema = schema::parse(text.source.as_bytes())
                 .map_err(|error| Error::Schema { path: text.path.clone(), error: format!("{error:?}") })?;
@@ -91,11 +96,13 @@ pub(crate) fn module_text(krate: &Crate) -> Result<String, Error> {
         out.push_str("    }\n");
     }
     out.push_str("}\n\npub mod refusal {\n");
+    let mut refusals = false;
     for (number, source) in &krate.patches {
         let patch = read_patch(source, *number)?;
         if patch.refusals().next().is_none() {
             continue;
         }
+        refusals = true;
         writeln!(out, "    pub mod p{number:04} {{\n        use skein_codec::patch::RefusalIx;").expect("String write");
         let mut names = BTreeMap::new();
         for (index, name) in patch.refusals().enumerate() {
@@ -105,9 +112,36 @@ pub(crate) fn module_text(krate: &Crate) -> Result<String, Error> {
         out.push_str("    }\n");
     }
     out.push_str("}\n\n");
+    if !refusals {
+        out = out.replace("pub mod refusal {\n}\n", "pub mod refusal {}\n");
+    }
     dispatch(krate, &mut out)?;
     tests(krate, &mut out);
     Ok(out)
+}
+
+/// Arrays use the workspace's 120-column rustfmt layout, including the trailing comma only when expanded.
+fn text_array(out: &mut String, indent: &str, name: &str, paths: &[String]) {
+    let items = paths.iter().map(|path| format!("include_str!(\"{path}\")")).collect::<Vec<_>>();
+    let prefix = format!("{indent}pub const {name}: &[&str] =");
+    let array = format!("&[{}];", items.join(", "));
+    let line = format!("{prefix} {array}");
+    if line.len() <= 120 {
+        writeln!(out, "{line}").expect("String write");
+    } else if indent
+        .len()
+        .checked_add(4)
+        .and_then(|width| width.checked_add(array.len()))
+        .is_some_and(|width| width <= 120)
+    {
+        writeln!(out, "{prefix}\n{indent}    {array}").expect("String write");
+    } else {
+        writeln!(out, "{prefix} &[").expect("String write");
+        for item in items {
+            writeln!(out, "{indent}    {item},").expect("String write");
+        }
+        writeln!(out, "{indent}];").expect("String write");
+    }
 }
 
 fn declarations(schema: &schema::Schema, out: &mut String) -> Result<(), Error> {
@@ -116,6 +150,13 @@ fn declarations(schema: &schema::Schema, out: &mut String) -> Result<(), Error> 
         let declaration = schema.declaration(DeclIx::new(index));
         let name = core::str::from_utf8(schema.spelled(declaration.name)).expect("schema name");
         let name = unique(&mut declarations, ident(&snake(name)), name)?;
+        let empty = match declaration.shape {
+            Shape::Record { count, .. } | Shape::Enum { count, .. } => count == 0,
+        };
+        if empty {
+            writeln!(out, "            pub mod {name} {{}}").expect("String write");
+            continue;
+        }
         writeln!(out, "            pub mod {name} {{").expect("String write");
         let (kind, first, count) = match declaration.shape {
             Shape::Record { first, count, .. } => ("FieldIx", first.index(), count),
@@ -168,7 +209,7 @@ fn dispatch(krate: &Crate, out: &mut String) -> Result<(), Error> {
 fn tests(krate: &Crate, out: &mut String) {
     out.push_str("\n#[cfg(test)]\nmod tests {\n    use std::path::Path;\n\n    fn owner() -> &'static Path {\n        Path::new(env!(\"CARGO_MANIFEST_DIR\"))\n    }\n\n    #[test]\n    fn current() {\n        skein_codegen::patch::current(owner()).map_err(|error| error.to_string()).expect(\"patches are current\");\n    }\n");
     for number in krate.patches.keys() {
-        write!(out, "\n    #[test]\n    fn p{number:04}_goldens() {{\n        skein_codegen::patch::goldens(owner(), {number}, super::written).map_err(|error| error.to_string()).expect(\"patches are current\");\n    }}\n").expect("String write");
+        write!(out, "\n    #[test]\n    fn p{number:04}_goldens() {{\n        skein_codegen::patch::goldens(owner(), {number}, super::written)\n            .map_err(|error| error.to_string())\n            .expect(\"patch {number:04} goldens\");\n    }}\n").expect("String write");
     }
     out.push_str("}\n");
 }

@@ -1,5 +1,7 @@
 //! Move the author's files away from a number taken by the base.
 
+use alloc::collections::{BTreeMap, BTreeSet};
+
 use super::files::{golden_path, skeleton_path, unconflicted};
 use super::run::{Writes, read_optional};
 use super::text::PatchText;
@@ -17,6 +19,16 @@ pub(super) fn move_files(
     writes: &mut Writes,
     report: &mut Report,
 ) -> Result<(), Error> {
+    for before in &before.blocks {
+        if let Some(after) = after.blocks.iter().find(|block| block.family == before.family)
+            && before.from != after.from
+        {
+            report.asked.push(format!(
+                "review patches/p{new:04}.rs: {} now moves {} to {}",
+                before.family, after.from, after.to
+            ));
+        }
+    }
     let path = skeleton_path(old);
     if let Some(bytes) = read_optional(&owner.join(&path))?
         && landed.get(&path) != Some(bytes.as_slice())
@@ -55,39 +67,153 @@ pub(super) fn move_files(
     Ok(())
 }
 
+/// Rewrite version tokens together, so an adjacent version never shifts twice.
 fn shift_versions(source: &str, before: &PatchText, after: &PatchText) -> String {
-    let mut result = source.to_owned();
-    for old in &before.blocks {
-        let Some(new) = after.blocks.iter().find(|block| block.family == old.family) else { continue };
-        if old.from == new.from {
+    let shifts: Vec<_> = before
+        .blocks
+        .iter()
+        .filter_map(|old| {
+            let new = after.blocks.iter().find(|block| block.family == old.family)?;
+            (old.from != new.from).then(|| (old.family.replace('-', "_"), old.from, old.to, new.from, new.to))
+        })
+        .collect();
+    let tokens = tokens(source);
+    let mut replacements = BTreeMap::new();
+    let mut imports = BTreeSet::new();
+    let mut imported = BTreeMap::new();
+    let mut in_use = false;
+    for (index, (start, end)) in tokens.iter().copied().enumerate() {
+        let word = source.get(start..end).expect("token span");
+        if word == "use" {
+            in_use = true;
+        }
+        if word == ";" {
+            in_use = false;
+        }
+        let following =
+            |offset: usize| tokens.get(index.checked_add(offset)?).and_then(|(start, end)| source.get(*start..*end));
+        if following(1) != Some("::") {
             continue;
         }
-        let family = old.family.replace('-', "_");
-        // Tokenize both old versions in one pass so adjacent shifts cannot cascade.
-        let prefix = format!("{family}::v");
-        let mut shifted = String::new();
-        let mut rest = result.as_str();
-        while let Some(at) = rest.find(&prefix) {
-            let (head, tail) = rest.split_at(at);
-            let boundary =
-                head.chars().next_back().is_none_or(|character| !character.is_alphanumeric() && character != '_');
-            shifted.push_str(head);
-            shifted.push_str(&prefix);
-            let tail = tail.strip_prefix(&prefix).expect("prefix found");
-            let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
-            let (version, tail) = tail.split_at(digits);
-            let replacement = if boundary && tail.starts_with("::") && version.parse::<u16>() == Ok(old.from) {
-                new.from.to_string()
-            } else if boundary && tail.starts_with("::") && version.parse::<u16>() == Ok(old.to) {
-                new.to.to_string()
-            } else {
-                version.to_owned()
-            };
-            shifted.push_str(&replacement);
-            rest = tail;
+        if following(2) == Some("{") {
+            for (item_start, item_end) in tokens.iter().skip(index.checked_add(3).expect("token index")).copied() {
+                let item = source.get(item_start..item_end).expect("token span");
+                if item == "}" {
+                    break;
+                }
+                if let Some(version) = version(item) {
+                    if in_use {
+                        imports.insert(word.to_owned());
+                        imported.insert(item.to_owned(), word.to_owned());
+                    }
+                    if let Some(shift) = shifts.iter().find(|shift| shift.0 == word) {
+                        replace_version(&mut replacements, item_start, item_end, version, shift);
+                    }
+                }
+            }
+        } else if let Some(version) = following(2).and_then(version) {
+            let (item_start, item_end) =
+                *tokens.get(index.checked_add(2).expect("token index")).expect("version token");
+            if in_use {
+                imports.insert(word.to_owned());
+                imported.insert(format!("v{version}"), word.to_owned());
+            }
+            if let Some(shift) = shifts.iter().find(|shift| shift.0 == word) {
+                replace_version(&mut replacements, item_start, item_end, version, shift);
+            }
         }
-        shifted.push_str(rest);
-        result = shifted;
+    }
+    if imports.len() == 1 {
+        for (index, (start, end)) in tokens.iter().copied().enumerate() {
+            let word = source.get(start..end).expect("token span");
+            let next = tokens
+                .get(index.checked_add(1).expect("token index"))
+                .and_then(|(start, end)| source.get(*start..*end));
+            let previous = index
+                .checked_sub(1)
+                .and_then(|index| tokens.get(index))
+                .and_then(|(start, end)| source.get(*start..*end));
+            if next == Some("::")
+                && previous != Some("::")
+                && let Some(family) = imported.get(word)
+                && let Some(shift) = shifts.iter().find(|shift| &shift.0 == family)
+                && let Some(version) = version(word)
+            {
+                replace_version(&mut replacements, start, end, version, shift);
+            }
+        }
+    }
+    let mut result = String::new();
+    let mut from = 0;
+    for ((start, end), replacement) in replacements {
+        result.push_str(source.get(from..start).expect("ordered replacements"));
+        result.push_str(&replacement);
+        from = end;
+    }
+    result.push_str(source.get(from..).expect("remaining source"));
+    result
+}
+
+fn version(word: &str) -> Option<u16> {
+    word.strip_prefix('v')?.parse().ok()
+}
+
+fn replace_version(
+    replacements: &mut BTreeMap<(usize, usize), String>,
+    start: usize,
+    end: usize,
+    version: u16,
+    shift: &(String, u16, u16, u16, u16),
+) {
+    let new = if version == shift.1 {
+        shift.3
+    } else if version == shift.2 {
+        shift.4
+    } else {
+        return;
+    };
+    replacements.insert((start, end), format!("v{new}"));
+}
+
+/// Rust words and punctuation outside comments and string literals; spans
+/// keep every byte of the author's spacing and comments during rewriting.
+fn tokens(source: &str) -> Vec<(usize, usize)> {
+    let mut result = Vec::new();
+    let mut at = 0;
+    while let Some(rest) = source.get(at..) {
+        let Some(character) = rest.chars().next() else { break };
+        let length = if rest.starts_with("//") {
+            rest.find('\n').unwrap_or(rest.len())
+        } else if rest.starts_with("/*") {
+            rest.find("*/").and_then(|end| end.checked_add(2)).unwrap_or(rest.len())
+        } else if character == '"' {
+            let mut escaped = false;
+            let mut length = character.len_utf8();
+            for character in rest.chars().skip(1) {
+                length = length.checked_add(character.len_utf8()).expect("source length");
+                if character == '"' && !escaped {
+                    break;
+                }
+                escaped = character == '\\' && !escaped;
+            }
+            length
+        } else if character.is_whitespace() {
+            character.len_utf8()
+        } else {
+            let length = if character.is_alphanumeric() || character == '_' {
+                rest.chars()
+                    .take_while(|character| character.is_alphanumeric() || *character == '_')
+                    .map(char::len_utf8)
+                    .sum()
+            } else if rest.starts_with("::") {
+                2
+            } else {
+                character.len_utf8()
+            };
+            result.push((at, at.checked_add(length).expect("source length")));
+            length
+        };
+        at = at.checked_add(length).expect("source length");
     }
     result
 }

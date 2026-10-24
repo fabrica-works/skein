@@ -1,0 +1,17 @@
+[package]
+name = "skein-codec-patches"
+description = "The patch command's owner crate and replayed history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-codec = { path = "../../crates/skein-codec" }
+
+[dev-dependencies]
+skein-codegen = { path = "../../testing/skein-codegen" }
+
+[lints]
+workspace = true

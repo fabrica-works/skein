@@ -52,17 +52,12 @@ mod p0001;
 use skein_codec::patch::{Build, Halt, Old, Site};
 use skein_codec::value::Node;
 
-pub const PATCHES: &[&str] = &[
-    include_str!("0001.patch"),
-    include_str!("0002.patch"),
-];
+pub const PATCHES: &[&str] = &[include_str!("0001.patch"), include_str!("0002.patch")];
 
 pub mod kept {
     pub mod a_b {
-        pub const TEXTS: &[&str] = &[
-            include_str!("../schema/kept/a-b-v1.schema"),
-            include_str!("../schema/kept/a-b-v2.schema"),
-        ];
+        pub const TEXTS: &[&str] =
+            &[include_str!("../schema/kept/a-b-v1.schema"), include_str!("../schema/kept/a-b-v2.schema")];
         pub mod v1 {
             pub mod base {
                 use skein_codec::schema::FieldIx;
@@ -94,12 +89,9 @@ pub mod kept {
         }
     }
     pub mod r#type {
-        pub const TEXTS: &[&str] = &[
-            include_str!("../schema/kept/type-v1.schema"),
-        ];
+        pub const TEXTS: &[&str] = &[include_str!("../schema/kept/type-v1.schema")];
         pub mod v1 {
-            pub mod r#type {
-            }
+            pub mod r#type {}
         }
     }
 }
@@ -138,12 +130,16 @@ mod tests {
 
     #[test]
     fn p0001_goldens() {
-        skein_codegen::patch::goldens(owner(), 1, super::written).map_err(|error| error.to_string()).expect("patches are current");
+        skein_codegen::patch::goldens(owner(), 1, super::written)
+            .map_err(|error| error.to_string())
+            .expect("patch 0001 goldens");
     }
 
     #[test]
     fn p0002_goldens() {
-        skein_codegen::patch::goldens(owner(), 2, super::written).map_err(|error| error.to_string()).expect("patches are current");
+        skein_codegen::patch::goldens(owner(), 2, super::written)
+            .map_err(|error| error.to_string())
+            .expect("patch 0002 goldens");
     }
 }
 "#;
@@ -163,23 +159,18 @@ pub use context::Context;
 use skein_codec::patch::{Build, Halt, Old, Site};
 use skein_codec::value::Node;
 
-pub const PATCHES: &[&str] = &[
-];
+pub const PATCHES: &[&str] = &[];
 
 pub mod kept {
     pub mod r#type {
-        pub const TEXTS: &[&str] = &[
-            include_str!("../schema/kept/type-v1.schema"),
-        ];
+        pub const TEXTS: &[&str] = &[include_str!("../schema/kept/type-v1.schema")];
         pub mod v1 {
-            pub mod r#type {
-            }
+            pub mod r#type {}
         }
     }
 }
 
-pub mod refusal {
-}
+pub mod refusal {}
 
 pub fn written(site: Site, _old: &Old, _new: &mut Build, _at: Node, _cx: &mut Context) -> Result<(), Halt> {
     Err(Halt::NoSite(site))

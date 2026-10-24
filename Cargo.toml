@@ -44,6 +44,7 @@ members = [
     "tests/conformance/sim",
     "tests/browser",
     "tests/codec",
+    "tests/codec-patches",
     "tests/channel",
     "tests/echo",
     "tests/fake-forge",
