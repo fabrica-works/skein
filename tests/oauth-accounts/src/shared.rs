@@ -109,6 +109,7 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
             client.closed = true;
         }
         accounts::Event::Keep { .. }
+        | accounts::Event::Taken { .. }
         | accounts::Event::SignedIn { .. }
         | accounts::Event::SignedOut { .. }
         | accounts::Event::Visit { .. }

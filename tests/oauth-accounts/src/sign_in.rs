@@ -176,6 +176,8 @@ pub fn registration(story: Story) -> oauth::Registration {
 pub enum Fact {
     /// Authorization URL was ready to show.
     Visit,
+    /// The owner's redirect was taken.
+    Taken,
     /// A new record reached the durable keeper.
     Keep(u64),
     /// The kept sign-in completed.

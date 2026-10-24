@@ -94,7 +94,6 @@ fn a_redirect_is_matched_against_the_bound_uri() {
 #[derive(Debug, PartialEq, Eq)]
 enum RedirectOutcome {
     Refused,
-    Incomplete,
     Sent,
     Unexpected,
 }
@@ -110,17 +109,13 @@ fn redirected(suffix: &[u8]) -> RedirectOutcome {
     }
     let mut owner = Owner::configured([account], &profile);
     owner.redirected(suffix);
-    owner.fire();
-    let event = owner.above.pop();
+    let mut event = owner.above.pop();
+    if event == Some(Event::Taken { account: 0 }) {
+        owner.fire();
+        event = owner.above.pop();
+    }
     if let Some(Event::Refused { asked: Asked::Redirected, why: Refusal::Redirect, .. }) = event {
         RedirectOutcome::Refused
-    } else if let Some(Event::Failed {
-        ends: Ends::SignIn,
-        failure: Failure::Exchange(skein_oauth::Failure::Incomplete),
-        ..
-    }) = event
-    {
-        RedirectOutcome::Incomplete
     } else if event.is_none()
         && let Some(Lower::Connect { .. }) = owner.io.pop()
     {
@@ -133,7 +128,7 @@ fn redirected(suffix: &[u8]) -> RedirectOutcome {
 fn a_redirects_client_id_reaches_the_machine() {
     for (name, suffix, expected) in [
         ("present", b"&client_id=id%2B1".as_slice(), RedirectOutcome::Sent),
-        ("absent", b"".as_slice(), RedirectOutcome::Incomplete),
+        ("absent", b"".as_slice(), RedirectOutcome::Refused),
         ("repeated", b"&client_id=first&client_id=second".as_slice(), RedirectOutcome::Refused),
         ("at cap", b"&client_id=123456".as_slice(), RedirectOutcome::Sent),
         ("past cap", b"&client_id=1234567".as_slice(), RedirectOutcome::Refused),

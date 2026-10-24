@@ -585,6 +585,7 @@ impl Client {
                 | accounts::Event::Lock { .. }
                 | accounts::Event::Unlock { .. }
                 | accounts::Event::SignedOut { .. }
+                | accounts::Event::Taken { .. }
                 | accounts::Event::SignedIn { .. } => {
                     panic!("positive story has no such event")
                 }

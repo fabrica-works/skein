@@ -21,8 +21,8 @@ pub use documents::{
 pub use json::{Collector, Json};
 pub use jwt::{Claims, read_claims};
 pub use machine::{
-    Client, ClientLimits, Event, HttpEvidence, HttpRequest, HttpResponse, MAX_OUT, Method, Registration, Request,
-    WireFormat, client_worst_case,
+    Client, ClientLimits, Event, HttpEvidence, HttpRequest, HttpResponse, Inadmissible, MAX_OUT, Method, Redirect,
+    Registration, Request, WireFormat, client_worst_case,
 };
 pub use pkce::challenge;
 pub use record::{ClaimSelector, RECORD_VERSION, RefreshState, SavedToken, decode_record, encode_record, rotate};

@@ -4,19 +4,16 @@
 
 use alloc::boxed::Box;
 use skein_lib::{Decimal, List, Writer, bytes};
-use skein_oauth::ClientLimits;
-
-pub(crate) struct Redirect {
-    pub(crate) uri: Box<[u8]>,
-    pub(crate) state: Box<[u8]>,
-    pub(crate) code: Option<Box<[u8]>>,
-    pub(crate) error: Option<Box<[u8]>>,
-    pub(crate) client_id: Option<Box<[u8]>>,
-}
+use skein_oauth::{ClientLimits, Redirect};
 
 pub(crate) fn parse(uri: &[u8], registered: &[u8], limits: &ClientLimits) -> Option<Redirect> {
     if uri.len() > usize::try_from(limits.url_bytes).ok()? || uri.contains(&b'#') {
         return None;
+    }
+    for byte in uri {
+        if !(0x21..=0x7e).contains(byte) {
+            return None;
+        }
     }
     let rest = uri.strip_prefix(registered)?;
     let separator = if registered.contains(&b'?') { b'&' } else { b'?' };

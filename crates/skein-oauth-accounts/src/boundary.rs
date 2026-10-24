@@ -17,7 +17,8 @@ pub enum Request {
     Remove { account: u32 },
     /// Starts this account's sign-in: Visit once, then `SignedIn`, Failed or Refused.
     SignIn { account: u32, subject: Option<Box<[u8]>> },
-    /// The confidential owner's complete redirect URI; refusal leaves a sign-in waiting.
+    /// A redirect handed in: the confidential owner's, or the address a person pasted for a public
+    /// sign-in whose listener is up; Taken, or Refused with the sign-in still waiting (oauth.md, 6.5).
     Redirected { account: u32, uri: Box<[u8]> },
     /// The address the listener sends the browser on to once it takes this sign-in's redirect (oauth.md, 6.5).
     Return { account: u32, location: Box<[u8]> },
@@ -51,6 +52,8 @@ pub enum Event {
     SignedOut { account: u32, revoked: bool },
     /// The authorization URL for the owner to show, once per admitted sign-in.
     Visit { account: u32, url: Box<[u8]> },
+    /// Ends `Redirected`: the sign-in took the redirect handed in; its own terminal follows (oauth.md, 6.5).
+    Taken { account: u32 },
     /// Ends `SignIn` once kept, naming the record's subject and required scopes not granted in `missing`.
     SignedIn { account: u32, generation: u64, missing: Box<[u8]>, subject: Option<Box<[u8]>> },
     /// Answers Grant, then announces each new generation while the owner holds it.
@@ -116,7 +119,7 @@ pub enum Asked {
     Remove,
     /// The owner's sign-in request.
     SignIn,
-    /// The confidential owner's redirect.
+    /// The owner's redirect, confidential or pasted.
     Redirected,
     /// The owner's access-only record.
     HandIn,
@@ -135,8 +138,10 @@ pub enum Refusal {
     Busy,
     /// No sign-in of the account waits for a redirect.
     NotWaiting,
-    /// The URI differs from the registered redirect or exceeds its admitted syntax.
+    /// The redirect differs from the bound address or violates its admitted fields or syntax.
     Redirect,
+    /// The redirect carries another sign-in's state; the sign-in still waits (oauth.md, 6.5).
+    State,
     /// The owner has closed or aborted its component.
     Closed,
     /// The number names no live account.

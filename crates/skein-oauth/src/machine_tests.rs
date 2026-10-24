@@ -811,3 +811,5 @@ fn a_sign_in_without_refresh_completes_and_round_trips() {
 }
 
 mod access_only_openid;
+
+mod admits;

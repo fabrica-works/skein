@@ -1,4 +1,4 @@
-//! The owner's sign-in admission and confidential redirect boundary
+//! The owner's sign-in and redirect admission boundary
 //! (oauth.md, sections 6.3 and 6.5). Listener heads use the same decoder;
 //! the OAuth client owns state authentication and the exchange's deadline.
 
@@ -8,12 +8,13 @@ use crate::accounts::{Source, copy_registration};
 use crate::exchange::{Exchange, Stage};
 use crate::keeper::Store;
 use crate::listener::Listener;
-use crate::redirect::{self, Redirect};
+use crate::redirect;
 use crate::route::{self, Socket};
 use crate::{Asked, Ends, Event, Failure, Limits, Lower, Refusal};
 use alloc::boxed::Box;
 use skein_lib::{CryptoRng, Env, Queue, Time, Writer};
 use skein_oauth as oauth;
+use skein_oauth::Redirect;
 
 impl Component {
     pub(super) fn return_to(&mut self, account: u32, location: Box<[u8]>) {
@@ -230,8 +231,8 @@ impl Component {
             return;
         }
         let registered = match self.sources.get(account).expect("configured source") {
-            Source::SignIn { registration, .. } if registration.client_secret.is_some() => &registration.redirect_uri,
-            Source::SignIn { .. } | Source::HandedIn => {
+            Source::SignIn { registration, .. } => &registration.redirect_uri,
+            Source::HandedIn => {
                 up.push(Event::Refused {
                     account: number(&self.names, account),
                     asked: Asked::Redirected,
@@ -252,7 +253,16 @@ impl Component {
             }
         };
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
-        if !exchange.waiting() || exchange.visit.is_some() || !exchange.above.is_empty() {
+        let listener_ready = match &exchange.listener {
+            Some(listener) => listener.ready(),
+            None => true,
+        };
+        if !exchange.waiting()
+            || exchange.visit.is_some()
+            || !listener_ready
+            || exchange.sign_in.is_some()
+            || !exchange.above.is_empty()
+        {
             up.push(Event::Refused {
                 account: number(&self.names, account),
                 asked: Asked::Redirected,
@@ -260,18 +270,61 @@ impl Component {
             });
             return;
         }
-        match redirect::parse(uri, registered, &env.limits.client) {
-            Some(redirect) => {
-                exchange.received();
-                deliver(&mut exchange.client, &mut exchange.above, redirect, env.now);
-            }
-            None => up.push(Event::Refused {
+        if exchange.state_refusals >= crate::STATE_REFUSALS {
+            up.push(Event::Refused {
                 account: number(&self.names, account),
                 asked: Asked::Redirected,
-                why: Refusal::Redirect,
-            }),
+                why: Refusal::Full { bound: crate::STATE_REFUSALS },
+            });
+            return;
+        }
+        let registered = match &exchange.listener {
+            Some(listener) => listener.registered.as_ref(),
+            None => registered,
+        };
+        let result = match redirect::parse(uri, registered, &env.limits.client) {
+            Some(redirect) => judge(exchange, redirect, env.now),
+            None => Err(Refusal::Redirect),
+        };
+        match result {
+            Ok(()) => up.push(Event::Taken { account: number(&self.names, account) }),
+            Err(why) => {
+                if why == Refusal::State {
+                    exchange.state_refusals = exchange.state_refusals.checked_add(1).expect("bounded state refusals");
+                }
+                up.push(Event::Refused { account: number(&self.names, account), asked: Asked::Redirected, why });
+            }
         }
     }
+}
+
+/// Both sources ask the same pure question before taking a redirect (oauth.md, 6.5).
+pub(super) fn judge(exchange: &mut Exchange, redirect: Redirect, now: Time) -> Result<(), Refusal> {
+    if !exchange.waiting() {
+        return Err(Refusal::NotWaiting);
+    }
+    if let Some(deadline) = exchange.client.next_deadline()
+        && now >= deadline
+    {
+        exchange.client.step(oauth::Event::Tick { now }, &mut exchange.above);
+        exchange.received();
+        if let Some(listener) = &mut exchange.listener {
+            listener.stop_waiting();
+        }
+        return Err(Refusal::NotWaiting);
+    }
+    match exchange.client.admits(&redirect, now) {
+        Ok(()) => {}
+        Err(oauth::Inadmissible::NotWaiting) => return Err(Refusal::NotWaiting),
+        Err(oauth::Inadmissible::Address) => return Err(Refusal::Redirect),
+        Err(oauth::Inadmissible::State) => return Err(Refusal::State),
+    }
+    exchange.received();
+    if let Some(listener) = &mut exchange.listener {
+        listener.stop_waiting();
+    }
+    deliver(&mut exchange.client, &mut exchange.above, redirect, now);
+    Ok(())
 }
 
 pub(super) fn deliver(client: &mut oauth::Client, above: &mut Queue<oauth::Request>, redirect: Redirect, now: Time) {
@@ -294,8 +347,7 @@ fn prepare_sign_in(
     env: &Env<Limits>,
     crypto: &mut CryptoRng,
 ) -> oauth::Event {
-    let state =
-        draw(crypto, env.limits.client.state_bytes.min(32).checked_mul(3).expect("bounded state").div_euclid(4));
+    let state = draw(crypto, 24);
     let verifier = if registration.client_secret.is_none() || registration.pkce_for_confidential {
         Some(draw(crypto, 32))
     } else {

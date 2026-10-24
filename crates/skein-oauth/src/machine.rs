@@ -129,6 +129,28 @@ pub struct HttpResponse {
     pub wall: Wall,
 }
 
+/// A redirect's values as its caller decoded them: the address without its query, and the
+/// fields the client reads (oauth.md, sections 3 and 6.5).
+#[expect(missing_debug_implementations, reason = "redirects carry state and codes")]
+pub struct Redirect {
+    pub uri: Box<[u8]>,
+    pub state: Box<[u8]>,
+    pub code: Option<Box<[u8]>>,
+    pub error: Option<Box<[u8]>>,
+    pub client_id: Option<Box<[u8]>>,
+}
+
+/// Why `Client::admits` would not take a redirect, in the order it checks (oauth.md, section 3).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Inadmissible {
+    /// No sign-in waits for a redirect: any phase but `AwaitRedirect`, or its deadline reached.
+    NotWaiting,
+    /// Not the bound address; both code and error or neither; or no required issued client id.
+    Address,
+    /// Another sign-in's state, compared in constant time.
+    State,
+}
+
 #[expect(missing_debug_implementations, reason = "events can contain secrets")]
 pub enum Event {
     SignIn {
@@ -308,7 +330,7 @@ impl Client {
                 }
             }
             Event::Redirected { uri, state, code, error, client_id, now } => {
-                self.redirected((&uri, &state), code, error, client_id, now, out);
+                self.redirected(Redirect { uri, state, code, error, client_id }, now, out);
             }
             Event::Http(answer) => self.http(answer, out),
             Event::Tick { now } => self.tick(now, out),
@@ -376,51 +398,63 @@ impl Client {
         Ok((exchange, Request::Http(request), phase))
     }
 
-    fn redirected(
-        &mut self,
-        redirect: (&[u8], &[u8]),
-        code: Option<Box<[u8]>>,
-        error: Option<Box<[u8]>>,
-        client_id: Option<Box<[u8]>>,
-        now: Time,
-        out: &mut Queue<Request>,
-    ) {
-        let (uri, state) = redirect;
+    /// Whether `Redirected` would take this redirect at `now`; changes nothing (oauth.md, section 3).
+    #[must_use = "the caller must judge admission before taking a redirect"]
+    pub fn admits(&self, redirect: &Redirect, now: Time) -> Result<(), Inadmissible> {
+        match self.check_redirect(redirect, now) {
+            Ok(()) => Ok(()),
+            Err((why, _failure)) => Err(why),
+        }
+    }
+
+    fn check_redirect(&self, redirect: &Redirect, now: Time) -> Result<(), (Inadmissible, Failure)> {
+        if self.phase != Phase::AwaitRedirect {
+            return Err((Inadmissible::NotWaiting, Failure::InvalidRedirect));
+        }
+        let Some(exchange) = &self.active else {
+            return Err((Inadmissible::NotWaiting, Failure::Malformed));
+        };
+        if now >= exchange.deadline {
+            return Err((Inadmissible::NotWaiting, Failure::InvalidRedirect));
+        }
+        if redirect.uri != exchange.registration.redirect_uri {
+            return Err((Inadmissible::Address, Failure::InvalidRedirect));
+        }
+        let code = present(redirect.code.as_deref());
+        let error = present(redirect.error.as_deref());
+        if code.is_some() == error.is_some() {
+            return Err((Inadmissible::Address, Failure::Malformed));
+        }
+        if code.is_some() && issued_id(&exchange.registration) && present(redirect.client_id.as_deref()).is_none() {
+            return Err((Inadmissible::Address, Failure::Incomplete));
+        }
+        if !skein_lib::sha256::equal(&redirect.state, &exchange.state) {
+            return Err((Inadmissible::State, Failure::InvalidRedirect));
+        }
+        Ok(())
+    }
+
+    fn redirected(&mut self, redirect: Redirect, now: Time, out: &mut Queue<Request>) {
         if self.phase != Phase::AwaitRedirect {
             return;
         }
-        let Some(mut exchange) = self.active.take() else {
-            self.finish(Failure::Malformed, out);
-            return;
-        };
-        if now >= exchange.deadline
-            || uri != exchange.registration.redirect_uri.as_ref()
-            || !skein_lib::sha256::equal(state, &exchange.state)
-        {
-            self.finish(Failure::InvalidRedirect, out);
+        if let Err((_why, failure)) = self.check_redirect(&redirect, now) {
+            self.finish(failure, out);
             return;
         }
-        if error.is_some() {
+        let mut exchange = self.active.take().expect("admitted redirect's exchange");
+        if present(redirect.error.as_deref()).is_some() {
             self.finish(Failure::Refused, out);
             return;
         }
-        let Some(code) = code else {
-            self.finish(Failure::Malformed, out);
-            return;
-        };
-        if code.is_empty() || code.len() > usize::try_from(self.limits.code_bytes).expect("u32 fits") {
+        let code = redirect.code.expect("admitted redirect's code");
+        let client_id = redirect.client_id;
+        if code.len() > usize::try_from(self.limits.code_bytes).expect("u32 fits") {
             self.finish(Failure::Limit, out);
             return;
         }
         if issued_id(&exchange.registration) {
-            let Some(client_id) = client_id else {
-                self.finish(Failure::Incomplete, out);
-                return;
-            };
-            if client_id.is_empty() {
-                self.finish(Failure::Incomplete, out);
-                return;
-            }
+            let client_id = client_id.expect("admitted redirect's issued client id");
             if client_id.len() > usize::try_from(self.limits.document.issued_client_bytes).expect("u32 fits") {
                 self.finish(Failure::Limit, out);
                 return;
@@ -782,4 +816,11 @@ fn json_fields(fields: &[Option<(&[u8], &[u8])>], limits: &ClientLimits) -> Resu
     }
     writer.object_end();
     Ok(writer.finish())
+}
+
+fn present(value: Option<&[u8]>) -> Option<&[u8]> {
+    match value {
+        Some(value) if !value.is_empty() => Some(value),
+        Some(_) | None => None,
+    }
 }

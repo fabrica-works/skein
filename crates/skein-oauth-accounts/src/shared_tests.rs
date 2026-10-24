@@ -37,6 +37,7 @@ fn seen(events: &mut Queue<Event>) -> Seen {
         None => Seen::None,
         Some(
             Event::Visit { .. }
+            | Event::Taken { .. }
             | Event::Refused { .. }
             | Event::Expiring { .. }
             | Event::Removed { .. }
@@ -99,6 +100,7 @@ fn signing_in_as(subject: Option<Box<[u8]>>) -> Owner {
     });
     let mut owner = Owner::configured([account], &limits());
     owner.redirected_as(b"", subject);
+    assert_event(owner.above.pop(), Event::Taken { account: 0 });
     let identity = owner.sent();
     owner.above = owner.finish_tokens(identity, private::BODY);
     owner.socket(LowerEvent::Closed { owner: identity });

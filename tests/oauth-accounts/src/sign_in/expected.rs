@@ -71,6 +71,7 @@ impl Judge {
                     );
                 }
                 Story::Confidential => {
+                    assert!(client.facts.contains(&Fact::Taken));
                     assert!(client.facts.contains(&Fact::SignedIn(1)));
                     assert!(client.facts.contains(&Fact::Late));
                 }
@@ -83,6 +84,9 @@ impl Judge {
                 | Story::CloseWaiting
                 | Story::CloseConfidential => {
                     assert!(client.facts.contains(&Fact::SignedIn(1)));
+                    if self.story == Story::CloseConfidential {
+                        assert!(client.facts.contains(&Fact::Taken));
+                    }
                 }
             }
         }

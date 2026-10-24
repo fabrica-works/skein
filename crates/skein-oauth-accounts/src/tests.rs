@@ -577,6 +577,7 @@ fn refusal_of(event: Option<Event>) -> Option<(u32, Asked, Refusal)> {
         Some(Event::Refused { account, asked, why }) => Some((account, asked, why)),
         Some(
             Event::Visit { .. }
+            | Event::Taken { .. }
             | Event::SignedIn { .. }
             | Event::Lock { .. }
             | Event::Unlock { .. }
@@ -602,6 +603,7 @@ fn failure_of(event: Option<Event>) -> Option<Failed> {
         Some(Event::Failed { account, ends, failure }) => Some(Failed { account, ends, failure }),
         Some(
             Event::Visit { .. }
+            | Event::Taken { .. }
             | Event::SignedIn { .. }
             | Event::Lock { .. }
             | Event::Unlock { .. }
@@ -658,6 +660,7 @@ fn signed_in_names_the_required_scopes_not_granted() {
     for (granted, missing) in [(REQUIRED_SCOPES, b"".as_slice()), (b"read", b"write"), (b"", REQUIRED_SCOPES)] {
         let mut owner = scope_owner(granted, false);
         owner.redirected(b"");
+        assert_event(owner.above.pop(), Event::Taken { account: 0 });
         let identity = owner.sent();
         let mut events = owner.finish_tokens(identity, &scope_body(granted));
         let observed = if let Some(Event::SignedIn { generation, missing, .. }) = events.pop() {
@@ -714,3 +717,6 @@ pub(crate) fn terms() -> skein_oauth::Terms {
 const EXPECTED_SUBJECT: &[u8] = b"expected-subject";
 #[path = "openid_tests.rs"]
 mod openid;
+
+#[path = "paste_tests.rs"]
+mod paste;

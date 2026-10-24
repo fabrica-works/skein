@@ -42,6 +42,12 @@ pub(crate) fn refuse_refresh(
     component.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Refused), up, io);
 }
 
+#[cfg(test)]
+pub(crate) fn redirect_read(component: &Component) -> bool {
+    let id = component.bindings.get(0).expect("account binding").expect("sign-in exchange");
+    component.exchanges.get(id).expect("bound exchange").listener.as_ref().expect("public listener").read.is_some()
+}
+
 /// An io request the owner sends on, translating component tokens to io tokens.
 pub type Lower = skein_io::Request;
 
@@ -654,6 +660,10 @@ impl Component {
         }
         if exchange.waiting() && exchange.above.is_empty() && due(exchange.client.next_deadline(), env.now) {
             exchange.client.step(oauth::Event::Tick { now: env.now }, &mut exchange.above);
+            exchange.received();
+            if let Some(listener) = &mut exchange.listener {
+                listener.stop_waiting();
+            }
             return;
         }
         let visit_ready = match &exchange.listener {
@@ -668,22 +678,15 @@ impl Component {
             self.client_request(env, id, request, up, io);
             return;
         }
-        let waiting = exchange.waiting();
         match &mut exchange.listener {
             Some(listener) => {
                 if let Some(failure) = listener.failure.take() {
                     self.fail_exchange(env, id, Failure::Exchange(failure), up, io);
                     return;
                 }
-                if let Some(redirect) = listener.redirect.take() {
-                    if waiting {
-                        match &mut exchange.purpose {
-                            crate::exchange::Purpose::SignIn { waiting } => *waiting = false,
-                            crate::exchange::Purpose::Refresh | crate::exchange::Purpose::SignOut => {}
-                        }
-                        sign_in::deliver(&mut exchange.client, &mut exchange.above, redirect, env.now);
-                        listener.stop_waiting();
-                    }
+                if let Some(redirect) = listener.read.take() {
+                    let taken = sign_in::judge(exchange, redirect, env.now).is_ok();
+                    exchange.listener.as_mut().expect("redirect listener").answer(taken);
                     return;
                 }
                 if listener.has_work() {
@@ -999,7 +1002,13 @@ impl Component {
             None => {}
         }
         match &mut exchange.listener {
-            Some(listener) => listener.close(env, true, io),
+            Some(listener) => {
+                let abort = failure == Failure::Exchange(oauth::Failure::Cancelled);
+                if !abort {
+                    listener.stop_waiting();
+                }
+                listener.close(env, abort, io);
+            }
             None => {}
         }
     }

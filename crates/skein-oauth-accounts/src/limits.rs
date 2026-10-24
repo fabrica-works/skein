@@ -44,6 +44,7 @@ pub(crate) fn usable(limits: &Limits) -> bool {
             || (skein_http::server::worst_case(&limits.server).is_some()
                 && skein_http::server::largest_read(&limits.server) <= limits.io.intake
                 && skein_http::server::largest_room(&limits.server) <= limits.io.output))
+        && limits.client.state_bytes >= 32
         && limits.client.document.token_bytes > 0
         && limits.client.document.record_bytes > 0
         && limits.http.head >= 2

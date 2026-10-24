@@ -1,6 +1,6 @@
 //! One public sign-in's loopback listener and bounded request head (oauth.md,
-//! section 6.5). It knows the registered URI, no state or verifier. It hands a
-//! checked redirect to its exchange, answers the page or its owner's return, and settles at io.
+//! section 6.5). It knows the bound URI, no expected state or verifier. It hands a
+//! decoded redirect to its component, answers its verdict, and settles at io.
 
 #![expect(
     clippy::single_match,
@@ -10,13 +10,14 @@
 
 use crate::Limits;
 use crate::exchange::{Exchange, ROUTES};
-use crate::redirect::{self, Redirect};
+use crate::redirect;
 use crate::route::{self, Socket};
 use alloc::boxed::Box;
 use skein_http::{Header, server as http};
 use skein_io::{Event, Request};
 use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Env, Id, Queue, Token, bytes};
+use skein_oauth::Redirect;
 
 const PAGE: &[u8] = b"Sign-in received. You may close this page.\n";
 const REFUSAL: &[u8] = b"This is not the registered redirect.\n";
@@ -33,6 +34,7 @@ enum Phase {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Head {
     Reading,
+    Judging,
     Responding,
     Finishing,
     Closing,
@@ -49,13 +51,13 @@ enum Binding {
 
 pub(crate) struct Listener {
     pub(crate) return_location: Option<Box<[u8]>>,
-    registered: Box<[u8]>,
+    pub(crate) registered: Box<[u8]>,
     binding: Binding,
     socket: Option<Token>,
     close_sent: bool,
     phase: Phase,
     callback: Option<Callback>,
-    pub(crate) redirect: Option<Redirect>,
+    pub(crate) read: Option<Redirect>,
     pub(crate) failure: Option<skein_oauth::Failure>,
 }
 
@@ -66,6 +68,7 @@ struct Callback {
     requests: Queue<http::Request>,
     below: Queue<Down>,
     page: &'static [u8],
+    send: u32,
     offset: usize,
     phase: Head,
 }
@@ -86,7 +89,7 @@ impl Listener {
             close_sent: false,
             phase: Phase::Listening,
             callback: None,
-            redirect: None,
+            read: None,
             failure: None,
         }
     }
@@ -200,10 +203,25 @@ impl Listener {
         if self.phase == Phase::Listening {
             self.phase = Phase::Received;
         }
+        if self.read.take().is_some() {
+            self.answer(false);
+        }
+    }
+
+    /// Answers only the component's judgement (oauth.md, 6.5).
+    pub(crate) fn answer(&mut self, taken: bool) {
+        let location = if taken { self.return_location.take() } else { None };
+        if let Some(callback) = &mut self.callback
+            && callback.phase == Head::Judging
+        {
+            callback.answer(taken, location);
+        }
     }
 
     fn end_listener(&mut self, io: &mut Queue<Request>) {
-        if (self.phase == Phase::Closing || self.phase == Phase::Aborting) && !self.close_sent {
+        if (self.phase == Phase::Received || self.phase == Phase::Closing || self.phase == Phase::Aborting)
+            && !self.close_sent
+        {
             match self.socket {
                 Some(socket) => {
                     self.close_sent = true;
@@ -229,19 +247,22 @@ impl Listener {
         }
         self.end_listener(io);
         match &mut self.callback {
-            Some(callback) if abort || callback.phase == Head::Reading => callback.stop(env, abort, io),
+            Some(callback) if abort || callback.phase == Head::Reading || callback.phase == Head::Judging => {
+                callback.stop(env, abort, io);
+            }
             Some(_) | None => {}
         }
-        self.redirect = None;
+        self.read = None;
         self.return_location = None;
     }
 
     pub(crate) fn progress(&mut self, env: &Env<Limits>, io: &mut Queue<Request>) {
+        self.end_listener(io);
         let callback = match &mut self.callback {
             Some(callback) => callback,
             None => return,
         };
-        if callback.phase == Head::Closing || callback.phase == Head::Aborting {
+        if callback.phase == Head::Closing || callback.phase == Head::Aborting || callback.phase == Head::Judging {
             return;
         }
         let http_env = Env { now: env.now, wall: env.wall, limits: env.limits.server };
@@ -257,43 +278,12 @@ impl Listener {
             match event {
                 http::Event::Call(call) => {
                     let redirect = redirect::from_head(&call, &self.registered, &env.limits.client);
-                    let accepted = redirect.is_some() && self.phase == Phase::Listening;
-                    if accepted {
-                        self.redirect = redirect;
+                    callback.phase = Head::Judging;
+                    if self.phase == Phase::Listening && redirect.is_some() {
+                        self.read = redirect;
+                    } else {
+                        callback.answer(false, None);
                     }
-                    callback.phase = Head::Responding;
-                    callback.page = if accepted { PAGE } else { REFUSAL };
-                    callback.requests.push(http::Request::Discard);
-                    let content_type = Header {
-                        name: bytes::copy_of(b"content-type"),
-                        value: bytes::copy_of(b"text/plain; charset=utf-8"),
-                    };
-                    let location = if accepted { self.return_location.take() } else { None };
-                    let (status, headers): (u16, Box<[Header]>) = match location {
-                        Some(location) => (
-                            303,
-                            Box::new([
-                                Header { name: bytes::copy_of(b"location"), value: location },
-                                Header { name: bytes::copy_of(b"cache-control"), value: bytes::copy_of(b"no-store") },
-                                Header {
-                                    name: bytes::copy_of(b"referrer-policy"),
-                                    value: bytes::copy_of(b"no-referrer"),
-                                },
-                                content_type,
-                            ]),
-                        ),
-                        None => (if accepted { 200 } else { 404 }, Box::new([content_type])),
-                    };
-                    callback.requests.push(http::Request::Respond(http::Response {
-                        status,
-                        headers,
-                        body: http::Body::Length(u64::try_from(callback.page.len()).expect("fixed page")),
-                        close: true,
-                    }));
-                    callback.requests.push(http::Request::Reply(Down::Demand {
-                        read: Read::Nothing,
-                        room: env.limits.server.send.min(u32::try_from(callback.page.len()).expect("fixed page")),
-                    }));
                 }
                 http::Event::Reply(Up::Room) => {
                     let end = callback
@@ -331,7 +321,8 @@ impl Listener {
     }
 
     pub(crate) fn has_work(&self) -> bool {
-        self.redirect.is_some()
+        (self.phase == Phase::Received && !self.close_sent && self.socket.is_some())
+            || self.read.is_some()
             || self.failure.is_some()
             || match &self.callback {
                 Some(callback) => {
@@ -358,10 +349,41 @@ impl Callback {
             requests,
             below: Queue::with_capacity(ROUTES),
             page: PAGE,
+            send: limits.server.send,
             offset: 0,
             phase: Head::Reading,
         }
     }
+    fn answer(&mut self, taken: bool, location: Option<Box<[u8]>>) {
+        self.phase = Head::Responding;
+        self.page = if taken { PAGE } else { REFUSAL };
+        self.requests.push(http::Request::Discard);
+        let content_type =
+            Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"text/plain; charset=utf-8") };
+        let (status, headers): (u16, Box<[Header]>) = match location {
+            Some(location) => (
+                303,
+                Box::new([
+                    Header { name: bytes::copy_of(b"location"), value: location },
+                    Header { name: bytes::copy_of(b"cache-control"), value: bytes::copy_of(b"no-store") },
+                    Header { name: bytes::copy_of(b"referrer-policy"), value: bytes::copy_of(b"no-referrer") },
+                    content_type,
+                ]),
+            ),
+            None => (if taken { 200 } else { 404 }, Box::new([content_type])),
+        };
+        self.requests.push(http::Request::Respond(http::Response {
+            status,
+            headers,
+            body: http::Body::Length(u64::try_from(self.page.len()).expect("fixed page")),
+            close: true,
+        }));
+        self.requests.push(http::Request::Reply(Down::Demand {
+            read: Read::Nothing,
+            room: self.send.min(u32::try_from(self.page.len()).expect("fixed page")),
+        }));
+    }
+
     fn stop(&mut self, env: &Env<Limits>, abort: bool, io: &mut Queue<Request>) {
         if self.phase == Head::Aborting || (self.phase == Head::Closing && !abort) {
             return;

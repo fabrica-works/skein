@@ -195,6 +195,7 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
         accounts::Event::Lock { .. }
         | accounts::Event::Unlock { .. }
         | accounts::Event::SignedOut { .. }
+        | accounts::Event::Taken { .. }
         | accounts::Event::SignedIn { .. }
         | accounts::Event::Expiring { .. }
         | accounts::Event::Refused { .. } => {

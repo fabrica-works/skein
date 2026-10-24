@@ -402,6 +402,7 @@ fn assert_visit(event: Option<Event>) {
         Some(Event::Visit { .. }) => {}
         Some(
             Event::Removed { .. }
+            | Event::Taken { .. }
             | Event::SignedIn { .. }
             | Event::Lock { .. }
             | Event::Unlock { .. }
@@ -738,6 +739,7 @@ fn a_private_sign_in_keeps_above_the_generation_read() {
         bytes: skein_oauth::encode_record(&tests_record(0), &owner.env.limits.client.document).expect("record"),
     });
     owner.redirected(b"");
+    assert_event(owner.above.pop(), Event::Taken { account: 0 });
     let identity = owner.sent();
     owner.above = owner.finish_tokens(identity, BODY);
     assert_event(owner.above.pop(), Event::Lock { account: 0 });
@@ -767,6 +769,7 @@ fn a_sign_in_of_another_subject_keeps_nothing() {
         bytes: skein_oauth::encode_record(&tests_record(0), &owner.env.limits.client.document).expect("record"),
     });
     owner.redirect(b"");
+    assert_event(owner.above.pop(), Event::Taken { account: 0 });
     let identity = owner.sent();
     let mut events = owner.finish_tokens(identity, BODY);
     assert_eq!(
@@ -774,4 +777,124 @@ fn a_sign_in_of_another_subject_keeps_nothing() {
         Some(Failed { account: 0, ends: Ends::SignIn, failure: Failure::AnotherSubject })
     );
     assert!(events.is_empty() && owner.files.is_empty());
+}
+
+// A browser connection that can pause after its head was read and before judgement.
+impl Owner {
+    pub(super) fn callback(&mut self, listener: Token) -> Token {
+        self.socket(LowerEvent::Accepted {
+            owner: listener,
+            socket: Token::new(11),
+            peer: skein_io::Addr::Ip(([127, 0, 0, 1], 41001).into()),
+        });
+        match self.io.pop() {
+            Some(Lower::Bind { owner, socket }) => {
+                assert_eq!(socket, Token::new(11));
+                owner
+            }
+            Some(Lower::Reject { .. }) => panic!("callback admitted"),
+            Some(_) | None => panic!("callback binding"),
+        }
+    }
+
+    pub(super) fn callback_io(
+        &mut self,
+        listener: Token,
+        callback: Token,
+        head: &mut &[u8],
+        answer: &mut List<u8>,
+    ) -> bool {
+        let mut deferred = Queue::with_capacity(32);
+        let mut closed = false;
+        while let Some(request) = self.io.pop() {
+            match request {
+                Lower::Stream { stream, down } if stream == Token::new(11) => match down {
+                    Down::Send(bytes) => {
+                        for byte in &bytes {
+                            answer.push(*byte).expect("fixed callback answer room");
+                        }
+                    }
+                    Down::Demand { read, room } => {
+                        if room != 0 {
+                            self.socket(LowerEvent::Stream { owner: callback, up: Up::Room });
+                        }
+                        let length = match read {
+                            skein_lib::stream::Read::Nothing => 0,
+                            skein_lib::stream::Read::Fill(max) | skein_lib::stream::Read::Arrived { max } => {
+                                usize::try_from(max).expect("read cap")
+                            }
+                            skein_lib::stream::Read::Line { max } => bytes::line_end(head)
+                                .unwrap_or(head.len())
+                                .saturating_add(1)
+                                .min(usize::try_from(max).expect("read cap")),
+                            skein_lib::stream::Read::Scan { until, max } => {
+                                let length = match bytes::find(head, until.as_bytes()) {
+                                    Some(at) => at.saturating_add(until.as_bytes().len()),
+                                    None => head.len(),
+                                };
+                                length.min(usize::try_from(max).expect("read cap"))
+                            }
+                        }
+                        .min(head.len());
+                        if length != 0 {
+                            let bytes = bytes::copy_of(head.get(..length).expect("bounded head"));
+                            *head = head.get(length..).expect("remaining head");
+                            self.socket(LowerEvent::Stream { owner: callback, up: Up::Bytes(bytes) });
+                        }
+                    }
+                    Down::Finish => {}
+                },
+                Lower::Close { entity } | Lower::Abort { entity } if entity == Token::new(11) => {
+                    closed = true;
+                    self.socket(LowerEvent::Closed { owner: callback });
+                }
+                Lower::Close { entity } | Lower::Abort { entity } if entity == Token::new(10) => {
+                    self.socket(LowerEvent::Closed { owner: listener });
+                }
+                request @ (Lower::Listen { .. }
+                | Lower::Connect { .. }
+                | Lower::Bind { .. }
+                | Lower::Reject { .. }
+                | Lower::Stream { .. }
+                | Lower::Output { .. }
+                | Lower::Spawn { .. }
+                | Lower::Signal { .. }
+                | Lower::Usage { .. }
+                | Lower::Window { .. }
+                | Lower::Close { .. }
+                | Lower::Abort { .. }) => deferred.push(request),
+            }
+        }
+        while let Some(request) = deferred.pop() {
+            self.io.push(request);
+        }
+        closed
+    }
+
+    pub(super) fn callback_read(&mut self, listener: Token, head: &[u8]) -> Token {
+        let callback = self.callback(listener);
+        let mut head = head;
+        let mut answer = List::with_capacity(4096);
+        for _ in 0..DRIVE_STEPS {
+            self.fire();
+            self.callback_io(listener, callback, &mut head, &mut answer);
+            assert!(answer.is_empty(), "no answer before judgement");
+            if component::redirect_read(&self.component) {
+                assert!(head.is_empty());
+                return callback;
+            }
+        }
+        panic!("listener holds the decoded head");
+    }
+
+    pub(super) fn callback_answer(&mut self, listener: Token, callback: Token) -> Box<[u8]> {
+        let mut answer = List::with_capacity(4096);
+        for _ in 0..DRIVE_STEPS {
+            self.fire();
+            if self.callback_io(listener, callback, &mut b"".as_slice(), &mut answer) {
+                return answer.into_boxed();
+            }
+        }
+        panic!("callback answer closes");
+    }
 }

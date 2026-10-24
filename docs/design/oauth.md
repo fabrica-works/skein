@@ -307,7 +307,15 @@ not the one the sign-in bound; a code and an error both; neither; no issued
 client id beside a code, where one is issued), or another state (compared
 in constant time). A redirect it admits with an error is taken, and ends the
 sign-in as `Redirected` does. It changes nothing, so its caller can refuse a
-redirect without ending the sign-in (6.5).
+redirect without ending the sign-in (6.5). It takes the redirect's values as
+its caller decoded them (`Redirect`: the address without its query, the state,
+and the code, error and client id when given; an empty one counts as not
+given), and answers why it would not take them (`Inadmissible`: `NotWaiting`,
+`Address` or `State`). One check serves both, so they cannot differ. A caller
+that hands `Redirected` a redirect without asking still ends the sign-in on
+it, as the table says: another address or state, or the deadline, as
+`InvalidRedirect`; a code and an error both, or neither, as `Malformed`; no
+issued client id as `Incomplete`.
 
 `Cancel` in any active state emits one cancellation failure and goes to Done.
 An event for a different exchange cannot complete the current one. The HTTP
@@ -349,7 +357,9 @@ record or log. A status alone does not prove a grant was revoked.
   subject. It is the issuer's fault or an attacker's, never the person's:
   nothing of the sign-in is returned, and its code is spent.
 - **`Incomplete`** is a matching redirect without the issued client id
-  (section 2.1): no exchange is made, and the person signs in again.
+  (section 2.1), handed to `Redirected` without asking `admits`: no exchange
+  is made, and the person signs in again. The accounts component asks first,
+  and refuses such a redirect with the sign-in still waiting (6.5).
 
 Every type carrying a token, authorization code, verifier, state, nonce, ID
 token or client secret omits its bytes from `Debug` and logs. HTTP request bodies and headers
@@ -761,7 +771,15 @@ sign-in at once. The load goes on for the account.
   that its state is not this sign-in's. The owner's pastes are bounded as
   well: after `STATE_REFUSALS`, 4, `redirected`s refused for their state,
   a sign-in refuses every later one as full (`Full { bound: 4 }`), and
-  still waits for its listener and its deadline.
+  still waits for its listener and its deadline. The listener's own
+  refusals are not counted: they are bounded by its one connection at a
+  time and its request head's limits (6.7).
+
+  `redirected` refuses in this order: closed (a closing component still
+  serves a sign-in that waits, 6.6); another account; a handed-in account
+  (`source`); not waiting (no sign-in, its `visit` not yet out, or its
+  redirect already taken); full; another address, by the bounds above,
+  against the address as bound; the deadline; then what `admits` refuses.
 - **One redirect per sign-in.** Taking one leaves waiting in the step that
   takes it: the listener stops listening, a redirect it has read and not
   yet answered is refused, and so is any after it; a later `redirected` is
@@ -785,7 +803,11 @@ sign-in at once. The load goes on for the account.
   port does not vary binds once any listener of the component's on that
   port has settled, so that an owner that cancels a sign-in and starts
   another at once, as for a person starting again, gets the port, rather
-  than a sign-in failed before its `visit`.
+  than a sign-in failed before its `visit`. A sign-in that has ended leaves
+  its account at its terminal, while its listener still settles: the
+  account admits its next sign-in at once, and that sign-in's listener
+  binds once the last listener on the port has settled. A listener that
+  still settles counts toward the listeners limit (6.7).
 - **A confidential client's redirect** reaches the owner's web server. The
   owner hands it in (`redirected`), and the component checks it the same way.
 - **The component never opens a browser:** the owner shows `visit`.
@@ -840,7 +862,9 @@ registration, its terms' entries counted as section 5 counts them, its
 current and candidate records, a shared record's read under its lock beside
 them, per sign-in its return (`RETURN_BYTES`), and per exchange the client's worst case, the issuer's key set among it,
 `skein-http`'s, TLS's and io's buffers for one connection; per listener, one
-accepted connection and its request head. The trusted roots are shared
+accepted connection and its request head, a settling listener among them
+(6.5); the redirects it refuses, whatever their reason, take nothing more.
+The trusted roots are shared
 configuration, counted once.
 
 ### 6.8 Testing

@@ -216,6 +216,7 @@ impl Client {
                     self.facts.push(Fact::Visit);
                     self.visited(env);
                 }
+                accounts::Event::Taken { .. } => self.facts.push(Fact::Taken),
                 accounts::Event::Keep { account, record } => {
                     self.keep(env, account, record);
                 }

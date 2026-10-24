@@ -66,6 +66,7 @@ fn a_key_set_on_an_origin_not_given_fails_as_unverified() {
 fn a_sign_in_of_another_subject_keeps_nothing() {
     let mut owner = scope_owner(REQUIRED_SCOPES, false);
     owner.redirected_as(b"", Some(bytes::copy_of(EXPECTED_SUBJECT)));
+    assert_event(owner.above.pop(), Event::Taken { account: 0 });
     let identity = owner.sent();
     let mut events = owner.finish_tokens(identity, private::BODY);
     assert_eq!(
@@ -78,6 +79,7 @@ fn a_sign_in_of_another_subject_keeps_nothing() {
 fn signed_in_names_the_records_subject() {
     let mut owner = scope_owner(REQUIRED_SCOPES, false);
     owner.redirected(b"");
+    assert_event(owner.above.pop(), Event::Taken { account: 0 });
     let identity = owner.sent();
     let mut events = owner.finish_tokens(identity, private::BODY);
     let observed =
