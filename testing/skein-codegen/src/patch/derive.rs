@@ -2,12 +2,12 @@
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use core::fmt::Write;
-use skein_codec::schema::{self, FieldIx, Schema, Shape, VariantIx};
+use skein_codec::schema::{self, FieldIx, Held, Schema, Shape, Type, VariantIx};
 
 use super::Error;
 use super::files::{Crate, Text, patch_path};
 use super::text::{Block, Line, PatchText};
-use crate::diff::{self, Diff, Kind, Op, Rename, Version};
+use crate::diff::{self, Diff, Fill, Kind, Op, Rename, Version};
 
 pub(super) fn patches(tree: &Crate) -> Result<BTreeMap<u32, PatchText>, Error> {
     tree.patches
@@ -169,23 +169,64 @@ fn declaration(line: &str) -> &str {
     }
 }
 
-/// Rebuilds operations, retaining values only for the identical added type.
+/// Whether an added field's type takes no value a patch can spell (codec.md,
+/// 11.2): a record, an enumeration whose every variant holds one, a secret,
+/// a held record.
+fn takes_no_value(schema: &Schema, decl: &str, field: &str) -> bool {
+    let Some(decl) = schema.find(decl.as_bytes()) else { return false };
+    let Shape::Record { first, count, .. } = schema.declaration(decl).shape else { return false };
+    let Some(field) = (first.index()..first.index().checked_add(count).expect("bounded fields"))
+        .map(|at| schema.field(FieldIx::new(at)))
+        .find(|candidate| schema.spelled(candidate.name) == field.as_bytes())
+    else {
+        return false;
+    };
+    match schema.ty(field.ty) {
+        Type::Secret(_) => true,
+        Type::Bytes { held, .. } => matches!(held, Held::Record { .. }),
+        Type::Named(named) => match schema.declaration(named).shape {
+            Shape::Record { .. } => true,
+            Shape::Enum { first, count } => (first.index()
+                ..first.index().checked_add(count).expect("bounded variants"))
+                .all(|at| schema.variant(VariantIx::new(at)).record.is_some()),
+        },
+        Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::Bool
+        | Type::Duration
+        | Type::Fixed(_)
+        | Type::Text(_)
+        | Type::List { .. }
+        | Type::Option(_) => false,
+    }
+}
+
+/// Rebuilds operations, retaining values only for the identical added type;
+/// an added field whose type takes no value is `written` at its own site.
 pub(super) fn block(diff: &Diff, current: &Text, old: Option<&Block>) -> Result<Block, Error> {
+    let schema = schema(current)?;
     let mut operations = Vec::new();
+    let mut valueless = Vec::new();
     for change in &diff.changes {
         let mut line = change.op.to_string();
-        if let Op::AddField { decl, field, ty, .. } = &change.op {
+        if let Op::AddField { decl, field, ty, value } = &change.op {
             let prefix = format!("add {decl}.{field} {ty} ");
             if let Some(value) = old.into_iter().flat_map(|block| &block.lines).find_map(|line| match line {
                 Line::Op(line) => line.strip_prefix(&prefix),
                 Line::Site { .. } => None,
             }) {
                 line = format!("{prefix}{value}");
+            } else if *value == Fill::Asked && takes_no_value(&schema, decl, field) {
+                line = format!("{prefix}written");
+            }
+            if line == format!("{prefix}written") {
+                valueless.push(format!("{decl}.{field}"));
             }
         }
         operations.push(line);
     }
-    let schema = schema(current)?;
     let mut sites: Vec<Line> = old
         .into_iter()
         .flat_map(|block| &block.lines)
@@ -237,6 +278,11 @@ pub(super) fn block(diff: &Diff, current: &Text, old: Option<&Block>) -> Result<
                 })
             }));
         if !provided {
+            sites.push(Line::Site { target, refusals: Vec::new() });
+        }
+    }
+    for target in valueless {
+        if !sites.iter().any(|line| matches!(line, Line::Site { target: name, .. } if *name == target)) {
             sites.push(Line::Site { target, refusals: Vec::new() });
         }
     }

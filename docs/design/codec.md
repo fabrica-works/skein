@@ -1616,7 +1616,12 @@ text at version `c`:
   <c>`, holding the diff's lines in their order (10.2) without their
   kind, an added field's value `?` or `none` as the diff asks, and a
   `written D` line after the last line of each declaration the diff
-  names as a site (10.3). No comment is written.
+  names as a site (10.3). An added field whose type takes no value
+  (11.2: a record, an enumeration whose every variant holds one, a
+  secret, a `holds` field) is `written`, with its own `written D.f`
+  site, so its author is asked for the site's function, not a value;
+  the diff's line still reads `?`, as a retype's field site is the
+  patch's. No comment is written.
 - **Derived again, the author's part kept:** when the branch's patch
   exists, each added field's value is kept where the new diff adds the
   same field with the same type; each site line, the author's and the

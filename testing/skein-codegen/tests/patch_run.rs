@@ -209,6 +209,35 @@ mod tests {
     }
 
     #[test]
+    fn an_added_field_that_takes_no_value_is_written_at_its_own_site() {
+        const KEPT: &str = "family shelf 1\nrecord Label { id: u8 }\nenum State { ready }\nenum Held { label: Label }\nrecord Book { id: u8 }\n";
+        const GROWN: &str = "family shelf 2\nrecord Label { id: u8 }\nenum State { ready }\nenum Held { label: Label }\nrecord Book { id: u8, label: Label, key: secret 16, sealed: bytes 8 holds other Thing, held: Held, state: State, count: u32 }\n";
+        const TEXT: &str = "patch 1\nowner shop 1\n\nfamily shelf 1 to 2\nadd Book.label Label written\nadd Book.key secret 16 written\nadd Book.sealed bytes 8 holds other Thing written\nadd Book.held Held written\nadd Book.state State ?\nadd Book.count u32 ?\nwritten Book.label\nwritten Book.key\nwritten Book.sealed\nwritten Book.held\n";
+        let filled = TEXT.replace("State ?", "State ready").replace("u32 ?", "u32 7");
+        let root =
+            crate_files("valueless", &[("schema/shelf-v2.schema", GROWN), ("schema/kept/shelf-v1.schema", KEPT)]);
+        let base = landed(&[("schema/kept/shelf-v1.schema", KEPT)]);
+        let report = run(&root, &base, &options()).expect("written sites");
+        assert_files(&root, &[("patches/0001.patch", TEXT)]);
+        assert_eq!(
+            report.asked,
+            [
+                "patch 0001, shelf: add Book.state State ?",
+                "patch 0001, shelf: add Book.count u32 ?",
+                "patch 0001, shelf: written Book.label",
+                "patch 0001, shelf: written Book.key",
+                "patch 0001, shelf: written Book.sealed",
+                "patch 0001, shelf: written Book.held",
+            ]
+        );
+        write_files(&root, &[("patches/0001.patch", &filled)]);
+        let report = run(&root, &base, &options()).expect("filled values");
+        assert_files(&root, &[("patches/0001.patch", &filled)]);
+        assert_eq!(report.findings, [], "the sites and the two values plan");
+        end(&root);
+    }
+
+    #[test]
     fn written_change_writes_its_skeleton_context_and_module_once() {
         const WRITTEN: &str = "family shelf 2\nrecord Book { id: bool }\nenum State { ready }\n";
         const SKELETON: &str = r"//! Patch 0001: the command wrote the skeleton; its functions are the author's (codec.md, 11.5).
