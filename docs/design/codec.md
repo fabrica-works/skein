@@ -1249,13 +1249,18 @@ pub fn shape(old: &Old, new: &mut Build, at: Node, _cx: &mut Context) -> Result<
 - **What carries:** a part that converts derived (11.3), as the
   variant each record holds decides; `carry` of one that does not halts
   `Misbuilt` with the path of its first such part. A carried part
-  converts in place, at once, so one with a site or a held field in
-  reach halts `Misbuilt` too: its author builds it, until carried parts
-  stop in their turn (section 13). At a stop, `carry(old, at)` is the
-  stop's own: at a declaration's site, the derived conversion of the
-  variant at hand, never the site again; at a held field, its bytes as
-  they are. At a field's site `at` is its record, and the old field
-  `old.field(at, …)`.
+  converts in place, at once, so one whose type has a site or a held
+  field in reach, through any variant, halts `Misbuilt` too, at its own
+  path and before it puts anything, whichever variant the record holds:
+  its author learns it from any record, and builds that part, until
+  carried parts stop in their turn (section 13). A part that does not
+  convert derived is a site or lies in a site's declaration (11.3), so
+  the first rule meets one only where a declaration's site carries its
+  own value. At a stop, `carry(old, at)` is the stop's own: at a
+  declaration's site, the derived conversion of the variant at hand,
+  never the site again; at a held field, its bytes as they are. At a
+  field's site `at` is its record, and the old field `old.field(at,
+  …)`.
 - **One value per stop:** a field site's type, or the declaration's;
   `next()` refuses a stop answered with more or less (`Order`).
 - **Refusals** are a site's declared reasons: `new.refuse(r)` gives the
