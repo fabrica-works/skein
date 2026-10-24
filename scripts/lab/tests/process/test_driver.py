@@ -74,7 +74,8 @@ class Driver(unittest.TestCase):
             dict(type='mcpToolCall', server='lab', tool='echo', arguments=dict(args=['early'], stdin='input'), early=True),
             dict(type='commandExecution', argv=['/bin/sh', '-c', 'printf observed > evidence; printf command-output']),
             dict(type='mcpToolCall', server='lab', tool='read', arguments=dict(args=['evidence'], stdin=None))],
-            usage=[dict(inputTokens=10, cachedInputTokens=4, outputTokens=3)]), 0)
+            usage=[dict(inputTokens=4, cachedInputTokens=1, outputTokens=1),
+                   dict(inputTokens=10, cachedInputTokens=4, outputTokens=3)]), 0)
         self.assertEqual((self.root_run / 'driver/work/evidence').read_text(), 'observed')
         driver = record['driver']
         self.assertEqual([a['n'] for a in driver['actions']], [1, 2, 3])
@@ -83,6 +84,10 @@ class Driver(unittest.TestCase):
         self.assertEqual(command['end']['aggregatedOutput'], 'command-output')
         self.assertEqual(driver['end']['status'], 0)
         self.assertEqual(record['usage']['driver']['tokens'], dict(input=10, cached=4, output=3))
+        events = [json.loads(line) for line in (self.root_run / 'driver/events.jsonl').read_text().splitlines()]
+        usage = [e['params']['tokenUsage'] for e in events if e.get('method') == 'thread/tokenUsage/updated']
+        self.assertEqual(usage[-1]['last']['inputTokens'], 6)
+        self.assertEqual(record['usage']['driver']['tokens']['input'], usage[-1]['total']['inputTokens'])
         self.assertEqual(record['usage']['driver']['turns'], 1)
         self.assertEqual(record['usage']['driver']['actions'], 3)
         self.assertEqual({n for n, v in driver['inventory'].items() if v['state'] == 'unobserved'},
@@ -271,7 +276,8 @@ class Driver(unittest.TestCase):
         self.assertFalse(self.program.with_suffix('.turn').exists())
 
     def test_input_tokens_bound_records_overshoot_and_unknown_cached(self):
-        record = self.story(dict(usage=[dict(inputTokens=107, outputTokens=3)]), 1)
+        record = self.story(dict(usage=[dict(inputTokens=90, outputTokens=1),
+                                       dict(inputTokens=107, outputTokens=3)]), 1)
         self.assertEqual([f['signature'] for f in record['failures']], ['bound/driver_input_tokens'])
         self.assertEqual(record['usage']['driver']['input_tokens_overshoot'], 7)
         self.assertEqual(record['usage']['driver']['tokens'], dict(input=107, cached=None, output=3))

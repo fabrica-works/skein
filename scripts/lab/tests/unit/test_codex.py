@@ -275,16 +275,64 @@ class Codex(unittest.TestCase):
             self.assertEqual(len(state['actions']), 3)
             self.assertEqual(state['actions'][-1]['sources'], [first, second])
 
-    def test_usage_folds_per_turn_and_unknown_stays_null(self):
+    def test_usage_folds_thread_totals_as_turn_differences(self):
         state = codex.initial()
-        for turn, usage in [('one', dict(inputTokens=10, cachedInputTokens=4, outputTokens=3)),
-                            ('one', dict(inputTokens=12, cachedInputTokens=5, outputTokens=4)),
-                            ('two', dict(inputTokens=7, outputTokens=2))]:
-            state = codex.fold(state, message('thread/tokenUsage/updated', turnId=turn, tokenUsage=dict(last=usage)), 1)
+        for turn, updates in [('one', [(10, 4, 3), (12, 5, 4)]),
+                              ('two', [(15, 6, 5), (19, 8, 6)])]:
+            state = codex.fold(state, message('turn/started', turn=dict(id=turn)), 0)
+            for input_, cached, output in updates:
+                usage = dict(inputTokens=input_, cachedInputTokens=cached, outputTokens=output)
+                state = codex.fold(state, message('thread/tokenUsage/updated', turnId=turn,
+                    tokenUsage=dict(total=usage, last=dict(inputTokens=True))), 1)
+            state = codex.fold(state, message('turn/completed', turn=dict(id=turn, status='completed')), 2)
+        self.assertEqual(state['tokens'], dict(input=19, cached=8, output=6))
+        self.assertEqual([t['tokens'] for t in state['turns']],
+                         [dict(input=12, cached=5, output=4), dict(input=7, cached=3, output=2)])
+
+    def test_usage_real_drive_counts_every_model_request(self):
+        path = Path(__file__).with_name('vectors') / 'e-usage-events.jsonl'
+        state = codex.initial()
+        for ms, line in enumerate(path.read_text().splitlines()):
+            state = codex.fold(state, json.loads(line), ms)
+        self.assertEqual(state['tokens'], dict(input=188394, cached=147584, output=720))
+        self.assertEqual(state['turns'][0]['tokens'], state['tokens'])
+
+    def test_usage_missing_total_ignores_last_and_stays_null(self):
+        state = codex.initial()
+        for usage in (dict(total=dict(inputTokens=10, cachedInputTokens=4, outputTokens=3)),
+                      dict(last=dict(inputTokens=99, cachedInputTokens=90, outputTokens=9))):
+            state = codex.fold(state, message('thread/tokenUsage/updated', turnId='one', tokenUsage=usage), 1)
+        self.assertEqual(state['tokens'], dict(input=None, cached=None, output=None))
+        self.assertEqual(state['turns'][0]['tokens'], state['tokens'])
+
+    def test_usage_unknown_counts_stay_null_across_turns(self):
+        state = codex.initial()
+        for turn, usage in [('one', dict(inputTokens=12, outputTokens=4)),
+                            ('two', dict(inputTokens=19, cachedInputTokens=8, outputTokens=6))]:
+            state = codex.fold(state, message('thread/tokenUsage/updated', turnId=turn,
+                                            tokenUsage=dict(total=usage)), 1)
         self.assertEqual(state['tokens'], dict(input=19, cached=None, output=6))
-        self.assertEqual(len(state['turns']), 2)
-        with self.assertRaises(Refused):
-            codex.fold(state, message('thread/tokenUsage/updated', turnId='one', tokenUsage=dict(last=dict(inputTokens=True))), 1)
+        self.assertEqual(state['turns'][1]['tokens'], dict(input=7, cached=None, output=2))
+
+    def test_usage_refuses_invalid_counts(self):
+        for field in ('inputTokens', 'cachedInputTokens', 'outputTokens'):
+            for value in (True, -1, 1.5, '1'):
+                with self.subTest(field=field, value=value), self.assertRaisesRegex(Refused, 'invalid token count'):
+                    codex.fold(codex.initial(), message('thread/tokenUsage/updated', turnId='one',
+                                                       tokenUsage=dict(total={field: value})), 1)
+
+    def test_usage_refuses_decreasing_totals_within_and_across_turns(self):
+        for field in ('inputTokens', 'cachedInputTokens', 'outputTokens'):
+            for turn in ('one', 'two'):
+                for missing in (False, True):
+                    with self.subTest(field=field, turn=turn, missing=missing):
+                        state = codex.fold(codex.initial(), message('thread/tokenUsage/updated', turnId='one',
+                                                                  tokenUsage=dict(total={field: 10})), 1)
+                        if missing:
+                            state = codex.fold(state, message('thread/tokenUsage/updated', turnId='one'), 2)
+                        with self.assertRaisesRegex(Refused, 'driver/usage: token total decreased'):
+                            codex.fold(state, message('thread/tokenUsage/updated', turnId=turn,
+                                                     tokenUsage=dict(total={field: 9})), 3)
 
     def test_host_payloads_outside_the_key_subset_remain_opaque_evidence(self):
         item = dict(type='commandExecution', id='one', durationMs=1.5, output={'é': 'word'})
@@ -326,7 +374,8 @@ class DriveLife(unittest.TestCase):
             ('driver_seconds', dict(kind='tick', ms=1000)),
             ('driver_actions', dict(kind='driver_event', ms=1, message=message('item/started', item=dict(type='commandExecution', id='second')))),
             ('driver_input_tokens', dict(kind='driver_event', ms=1,
-                message=message('thread/tokenUsage/updated', turnId='one', tokenUsage=dict(last=dict(inputTokens=7)))))):
+                message=message('thread/tokenUsage/updated', turnId='one',
+                                tokenUsage=dict(total=dict(inputTokens=7), last=dict(inputTokens=1)))))):
             state = drive({**fixture()[2]['costs']['smoke'], name: 1})
             if name == 'driver_actions':
                 state, _ = self.event(state, 'driver_event', message=message('item/started', item=dict(type='commandExecution', id='first')))
@@ -363,7 +412,8 @@ class DriveLife(unittest.TestCase):
         state = drive({**fixture()[2]['costs']['smoke'], 'driver_seconds': 1, 'driver_input_tokens': 5})
         state, _ = self.event(state, 'tick', ms=1000)
         state, effects = self.event(state, 'driver_event', ms=1001, message=message(
-            'thread/tokenUsage/updated', turnId='one', tokenUsage=dict(last=dict(inputTokens=8, cachedInputTokens=2))))
+            'thread/tokenUsage/updated', turnId='one', tokenUsage=dict(total=dict(inputTokens=8, cachedInputTokens=2),
+                                                                    last=dict(inputTokens=1))))
         self.assertEqual(state.data['driver']['observed']['tokens'], dict(input=8, cached=2, output=None))
         self.assertEqual(state.data['driver']['observed']['overshoot'], 3)
         self.assertIn(dict(op='bound', name='driver_input_tokens'), effects)

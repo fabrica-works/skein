@@ -38,6 +38,7 @@ if provisioning:
     script = script.get('provision', {})
 work = os.getcwd()
 thread, turn = 'script-thread', 'script-turn'
+previous_usage = {}
 
 
 def send(value):
@@ -54,6 +55,16 @@ def event(method, **params):
     send(dict(method=method, params=dict(threadId=thread, turnId=turn, **params)))
     if raw and method == 'item/completed':
         event('rawResponseItem/completed', item=dict(type='function_call_output', call_id=item['id'], output=''))
+
+
+def usage_event(total):
+    """Scripts supply thread totals; last describes only the latest request."""
+    global previous_usage
+    last = {name: value - previous_usage.get(name, 0)
+            if value is not None and previous_usage.get(name, 0) is not None else None
+            for name, value in total.items()}
+    event('thread/tokenUsage/updated', tokenUsage=dict(last=last, total=total, modelContextWindow=None))
+    previous_usage = total
 
 
 class Tools:
@@ -139,13 +150,12 @@ def play_responses():
             events = [json.loads(line[6:]) for line in response.read().decode().splitlines() if line.startswith('data: ')]
         output = [e['item'] for e in events if e['type'] == 'response.output_item.done']
         history.extend(output)
+        usage_event(dict(inputTokens=100 * (number + 1), cachedInputTokens=0, outputTokens=10 * (number + 1)))
         for entry in output:
             if entry['type'] == 'message':
                 text = ''.join(c['text'] for c in entry['content'])
                 event('item/started', item=dict(type='agentMessage', id=entry['id'], text=''))
                 event('item/completed', item=dict(type='agentMessage', id=entry['id'], text=text))
-                usage = dict(inputTokens=100 * (number + 1), cachedInputTokens=0, outputTokens=10 * (number + 1))
-                event('thread/tokenUsage/updated', tokenUsage=dict(last=usage, total=usage, modelContextWindow=None))
                 event('turn/completed', turn=dict(id=turn, status='completed', items=[]))
                 return True
             args = json.loads(entry['arguments'])
@@ -224,7 +234,7 @@ def play():
     if script.get('wait_after_actions'):
         return False
     for usage in script.get('usage', []):
-        event('thread/tokenUsage/updated', tokenUsage=dict(last=usage, total=usage, modelContextWindow=None))
+        usage_event(usage)
     report = script.get('report', dict(done=True, retried=[], unseen=[], surprises=[]))
     if report is not None:
         event('item/started', item=dict(type='agentMessage', id='final', text=''))

@@ -629,8 +629,10 @@ without it Codex 0.162.1 leaves only its own helper directory on their `PATH`. `
 answered by an item with its call id, or be a `write_stdin` to a running command's
 `processId` (a counted `write_stdin` action). Any other raw call is a counted
 `unhandled` action and ends the drive in error, as do actions with no raw call.
-Time and action bounds stop the host as they pass. Usage replaces each turn's
-last counts and folds across turns: input includes cached, unknown stays null.
+Time and action bounds stop the host as they pass. Usage takes the thread's
+cumulative `total` (Codex's `last` is one request's), per turn as the difference
+from the previous turn's end, folded across turns: input includes cached,
+unknown stays null.
 Input past its bound records the overshoot and stops the host. `done:false`
 and each unseen step produce `use/untriaged`; malformed or missing reports
 with clean host ends remain incomplete.

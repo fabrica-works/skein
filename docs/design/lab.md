@@ -1241,9 +1241,12 @@ evidence for the owner, not failures.
   actions, observed turns and tokens by kind (input with cached
   included, cached input, output, as the host reports them), each
   triage's (9.2), the subject's last metered spend, and the account's
-  windows as the host last reported them. The driver's events are read
-  until its end, so usage it reports as it stops is kept. A value the
-  host did not report, as when it was ended within a turn, is null:
+  windows as the host last reported them. Driver usage takes the thread's
+  cumulative `total` (Codex's `last` is one request's), per turn as the
+  difference from the previous turn's end, folded across turns, with
+  cached input included in input and unknown counts kept null. The driver's
+  events are read until its end, so usage it reports as it stops is kept.
+  A value the host did not report, as when it was ended within a turn, is null:
   unknown, never 0. A campaign's totals add what is known and count what
   is not.
 

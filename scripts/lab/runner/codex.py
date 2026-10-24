@@ -195,7 +195,7 @@ def report(text: str) -> dict:
 def initial() -> dict:
     return dict(actions=[], turns=[], report=None, report_error=None, final_message=None,
                 tokens=dict(input=None, cached=None, output=None), overshoot=None, windows=None,
-                calls=[], unhandled=None)
+                calls=[], unhandled=None, token_totals=dict(input=None, cached=None, output=None))
 
 
 def _unhandled(state: dict, call_id, start, ms: int, why: str, end: dict | None = None) -> None:
@@ -292,7 +292,7 @@ def action_start(state: dict, item: dict, ms: int, source: str = 'host') -> dict
 
 
 def fold(state: dict, message: dict, ms: int) -> dict:
-    """Fold one app-server notification; repeated usage replaces that turn's counts."""
+    """Fold usage from thread totals, relative to the previous turn's end."""
     state = json.loads(canonical.dumps(state))
     method, params = message.get('method'), message.get('params', {})
     if method in ('item/started', 'item/completed'):
@@ -317,12 +317,21 @@ def fold(state: dict, message: dict, ms: int) -> dict:
         if method == 'turn/started':
             turn['started_ms'] = ms
         elif method == 'thread/tokenUsage/updated':
-            usage = params.get('tokenUsage', {}).get('last') or {}
+            usage = params.get('tokenUsage', {}).get('total') or {}
+            previous = state['turns'][:state['turns'].index(turn)]
             for name, field in (('input', 'inputTokens'), ('cached', 'cachedInputTokens'), ('output', 'outputTokens')):
                 value = usage.get(field)
                 if value is not None and (type(value) is not int or value < 0):
                     raise Refused('driver/usage', 'invalid token count')
-                turn['tokens'][name] = value
+                if value is not None:
+                    # Keep the last known total even when an update omits this count.
+                    known = state['token_totals'][name]
+                    if known is not None and value < known:
+                        raise Refused('driver/usage', 'token total decreased')
+                    state['token_totals'][name] = value
+                counts = [t['tokens'][name] for t in previous]
+                baseline = sum(counts) if all(v is not None for v in counts) else None
+                turn['tokens'][name] = value - baseline if value is not None and baseline is not None else None
             for name in state['tokens']:
                 values = [t['tokens'][name] for t in state['turns']]
                 state['tokens'][name] = sum(values) if all(v is not None for v in values) else None
