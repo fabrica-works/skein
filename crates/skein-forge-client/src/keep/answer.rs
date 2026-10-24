@@ -138,7 +138,7 @@ pub(crate) fn answered_resource(
     result: Result<Answer, Error>,
     out: &mut Queue<Request>,
 ) {
-    let row = d.keep.live.get(key).expect("call owns resource");
+    let row = d.keep.live.get_mut(key).expect("call owns resource");
     if !row.active {
         d.keep.live.remove(key).expect("inactive resource exists");
         return;
@@ -147,6 +147,12 @@ pub(crate) fn answered_resource(
         State::Busy(phase, _) => phase,
         State::Idle | State::Due(_, _) | State::Waiting(_, _) => unreachable!("resource terminal while busy"),
     };
+    // A head or an absence read before this client's own push cannot judge
+    // that push; a fresh read does. Other failures keep their backoff.
+    if core::mem::take(&mut row.stale) && matches!(result, Ok(_) | Err(Error::Missing)) {
+        row.state = State::Due(Phase::Branch, Priority::Fresh);
+        return;
+    }
     let answer = match result {
         Ok(answer) => answer,
         Err(error) => {
