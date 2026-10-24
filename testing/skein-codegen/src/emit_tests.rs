@@ -271,8 +271,18 @@ fn tables(name: &str, cases: &[String], out: &mut String) {
 }
 
 fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
+    named_goldens(schema, cases).into_iter().map(|(_, golden)| golden).collect()
+}
+
+/// Golden values paired with their schema declaration, without parsing filenames.
+pub(crate) fn goldens(schema: &crate::Schema) -> Vec<(skein_codec::schema::DeclIx, Golden)> {
+    named_goldens(&Context::new(schema), &mut Vec::new())
+}
+
+fn named_goldens(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<(skein_codec::schema::DeclIx, Golden)> {
     let mut goldens = Vec::new();
-    for declaration in schema.declarations {
+    for (index, declaration) in schema.declarations.iter().enumerate() {
+        let root = skein_codec::schema::DeclIx::new(u32::try_from(index).expect("schema declaration index"));
         match declaration {
             Declaration::Record(record) => {
                 for (label, full) in [("smallest", false), ("full", true)] {
@@ -280,7 +290,7 @@ fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
                     write_record(record, full, schema, &mut bytes);
                     let name = format!("record_{}_{}", emit_limits::snake(&record.name), label);
                     cases.push(golden_case(&name, &record.name, &record_expr(record, full, schema), &bytes));
-                    goldens.push(Golden { name: format!("{name}.bin"), bytes });
+                    goldens.push((root, Golden { name: format!("{name}.bin"), bytes }));
                 }
             }
             Declaration::Enum(enumeration) => {
@@ -295,7 +305,7 @@ fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
                             &variant_expr(enumeration, variant, full, schema),
                             &bytes,
                         ));
-                        goldens.push(Golden { name: format!("{name}.bin"), bytes });
+                        goldens.push((root, Golden { name: format!("{name}.bin"), bytes }));
                     }
                 }
             }

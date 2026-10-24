@@ -15,6 +15,7 @@ mod emit_tests;
 mod emit_types;
 mod emit_worst;
 mod parse;
+pub mod patch;
 
 pub use parse::{Error, parse};
 

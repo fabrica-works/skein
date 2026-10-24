@@ -1717,7 +1717,8 @@ text at version `c`:
 ### 12.7 The check
 
 `check(crate, landed)` reads the crate's files and the landed ones, and
-returns every finding, each displayed with its fix:
+returns every finding, each displayed with its fix; a crate it cannot
+read, such as a text that does not parse, is its error, as the run's:
 
 | `Finding` | Found |
 |---|---|
@@ -1754,7 +1755,7 @@ impl Landed {
     pub fn none() -> Landed;                                  // nothing landed
 }
 pub fn run(owner: &Path, landed: &Landed, options: &Options) -> Result<Report, Error>;
-pub fn check(owner: &Path, landed: &Landed) -> Result<(), Vec<Finding>>;
+pub fn check(owner: &Path, landed: &Landed) -> Result<Vec<Finding>, Error>;
 pub fn module(owner: &Path) -> Result<String, Error>;  // patches/mod.rs's text
 pub fn current(owner: &Path) -> Result<(), Error>;     // mod.rs as generated
 pub fn goldens<C: Default>(owner: &Path, patch: u32, written: Written<C>) -> Result<(), Error>;
