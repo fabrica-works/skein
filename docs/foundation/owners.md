@@ -416,6 +416,12 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
 - **`heavy`** is the only way to build and test, for everyone: `heavy
   cargo nextest run -p <crate>`. It queues on pueue in two lanes:
   builds, two at a time, and gates, alone on a quiet machine.
+- **The build cache.** `scripts/dev/kache-setup` pins kache
+  `1.2.2-gitrev.1`. The director places its binary at
+  `tmp/kache/kache-1.2.2-gitrev.1` on each machine; setup checks its
+  digest before stopping the daemon. Run setup through `heavy --gate`
+  so no build is running when it swaps the wrapper and clears a store
+  of another version.
 - **Every machine's gate.** A repository's `main` must pass its gate
   on every machine that builds it, x1 the slowest. A test that fits
   its time budget only on a fast machine breaks other owners' and

@@ -7,7 +7,8 @@
 #
 #   heavy --gate -- kache-setup
 #
-# It downloads the pinned release, checks it against its digest, and swaps
+# It checks the pinned binary the director places at
+# $tmp/kache/kache-<version> against its digest, then swaps
 # ~/.local/bin/kache by rename (and ~/bin/kache, an older install's path, for
 # a link to it). It points cargo's rustc-wrapper at that path, writes the
 # store's cap (the machine file's KACHE_MAX_GB, 12 unless it says otherwise)
@@ -18,9 +19,8 @@
 # changes nothing that is already right.
 set -euo pipefail
 
-version=1.2.2
-asset=kache-x86_64-unknown-linux-musl.tar.gz
-digest=f2f6555dee50945c2a90a7fb793c2084a00cc6459d08ac2306d38d905064321b
+version=1.2.2-gitrev.1
+digest=93f8551e8f1deedfab30118957d5450e2204b4a09a9cd951e092426c096839a3
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 workspace() {
@@ -41,18 +41,16 @@ read -r floor _ < <(machine_setting PLAN_MIN_DISK_GB 40)
 bin=$HOME/.local/bin/kache
 installed=$("$bin" --version 2>/dev/null || true)
 
-# The release, kept beside earlier ones under ~/.local/share/kache.
+# Check the director's file before stopping anything.
+artifact=$tmp/kache/kache-$version
+[[ -f $artifact ]] || { echo "kache-setup: missing $artifact; the director must place the pinned binary there" >&2; exit 2; }
+echo "$digest  $artifact" | sha256sum -c --quiet || { echo "kache-setup: digest mismatch for $artifact; expected $digest" >&2; exit 2; }
+
+# The binary, kept beside earlier ones under ~/.local/share/kache.
 share=$HOME/.local/share/kache/$version
-if [[ ! -x $share/kache ]]; then
-    work=$(mktemp -d)
-    trap 'rm -rf "$work"' EXIT
-    curl -fsSL -o "$work/$asset" "https://github.com/kunobi-ninja/kache/releases/download/v$version/$asset"
-    echo "$digest  $work/$asset" | sha256sum -c --quiet
-    tar -xzf "$work/$asset" -C "$work"
-    mkdir -p "$share"
-    install -m 755 "$(find "$work" -type f -name kache | head -n1)" "$share/.kache.new"
-    mv -f "$share/.kache.new" "$share/kache"
-fi
+mkdir -p "$share"
+install -m 755 "$artifact" "$share/.kache.new"
+mv -f "$share/.kache.new" "$share/kache"
 [[ $("$share/kache" --version) == "kache $version" ]]
 
 unit=$HOME/.config/systemd/user/kache.service
