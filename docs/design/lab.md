@@ -1375,10 +1375,16 @@ evidence for the owner, not failures.
   one the run was held to, is no longer judged: the verdict leaves it
   out as it leaves out an error, and its seed may be attempted again.
   So a class raised as use teaches keeps its keys' evidence (6.5).
+  A run superseded by bounds is shown so by retained evidence: a later
+  run of the key holds a strictly higher value for every bound it
+  failed. This holds within the same key and cost class name only, and
+  a run is superseded only for the bounds it failed: a run with any
+  other failure is never superseded.
 - **`verdict.json`** (`lab-verdict/1`): the key, the policy, each seed's
   state, the runs judged and the runs not, and the verdict. It is derived
   from `evidence.jsonl`, and from the class's values for superseded
-  bounds, whenever either changes.
+  bounds, whenever either changes; a finding's snapshot uses the
+  evidence rule.
 - **`lab judge`** runs a key's seeds one run at a time, drawing a new
   seed while the key has fewer than three, until each has a judged run;
   a key whose evidence already decides it runs nothing. It stops at the

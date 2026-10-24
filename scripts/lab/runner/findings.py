@@ -56,7 +56,9 @@ def _lines(runs):
 
 
 def snapshot(key, runs):
-    return judge.verdict_record(key, _lines(runs))
+    lines = _lines(runs)
+    superseded = judge.superseded_by_evidence(lines, {r['run']: r['bounds'] for r in runs})
+    return judge.verdict_record(key, lines, superseded)
 
 
 def _snapshot_runs(value, evidence):
@@ -195,9 +197,10 @@ def fold(events, evidence, carried=None):
             if phase not in ('fixed', 'rechecked'):
                 raise Refused('finding.recheck', 'fixed finding required')
             prefix = _snapshot_runs(value['verdict'], evidence)
+            judged = {run for seed in value['verdict']['seeds'] for run in seed['judged']}
             if (value['key'] != value['verdict']['key'] or value['key'] in {v['key'] for v in state['occurrences']}
                     or value['verdict']['verdict'] != 'pass'
-                    or any(_signature(r, state['signature']) for r in prefix if r['outcome'] in ('pass', 'fail'))):
+                    or any(_signature(r, state['signature']) for r in prefix if r['run'] in judged)):
                 raise Refused('finding.recheck', 'new key, exactly three passing seeds and no judged signature required')
             _require_carried(state, value, carried)
             state.update(state='rechecked', recheck=value)

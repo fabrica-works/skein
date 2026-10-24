@@ -52,6 +52,23 @@ def superseded(signatures, held_to, current):
     return True
 
 
+def superseded_by_evidence(evidence, bounds):
+    """Within one key, later judged runs prove raised bounds of the same class."""
+    result = set()
+    for index, line in enumerate(evidence):
+        if line['outcome'] != 'fail':
+            continue
+        held = bounds[line['run']]
+        for later in evidence[index + 1:]:
+            if later['outcome'] not in ('pass', 'fail'):
+                continue
+            raised = bounds[later['run']]
+            if held['name'] == raised['name'] and superseded(line['signatures'], held, raised):
+                result.add(line['run'])
+                break
+    return frozenset(result)
+
+
 def _evidence(evidence, superseded=frozenset()):
     if type(evidence) not in (list, tuple):
         raise Refused("evidence", "expected evidence records in append order")

@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import unittest
-from runner import canonical, findings
+from runner import canonical, evidence, findings, judge
 from runner.records import CLASSES, Refused, finding_refusals, fix_refusals
 from .test_runtime_store import run_record
 from .fixtures import D
@@ -20,6 +20,94 @@ def run(number, seed='1', outcome='fail', attempt=1, *, key=D, signature=SIGNATU
     if outcome == 'fail':
         value['failures'] = [dict(id='failure-1', signature=signature, kind=kind, summary='failed', evidence=[])]
     return value
+
+
+def bound_runs(*, key=Q):
+    failed = run(10, key=key, signature='bound/driver_input_tokens', kind='bound')
+    failed['bounds'].update(name='temper-m1', driver_input_tokens=283000)
+    passing = [run(11, '1', 'pass', 2, key=key),
+               run(12, '2', 'pass', key=key), run(13, '3', 'pass', key=key)]
+    for value in passing:
+        value['bounds'].update(name='temper-m1', driver_input_tokens=450000)
+    return [failed, *passing]
+
+
+class BoundSnapshots(unittest.TestCase):
+    def check_snapshot(self, runs, verdict, superseded, *, not_judged=None):
+        lines = [evidence.line_for(r) for r in runs]
+        self.assertEqual(judge.superseded_by_evidence(lines, {r['run']: r['bounds'] for r in runs}),
+                         frozenset(superseded))
+        value = findings.snapshot(Q, runs)
+        self.assertEqual(value['verdict'], verdict)
+        self.assertEqual(value['seeds'][0]['not_judged'], superseded if not_judged is None else not_judged)
+        return value
+
+    def test_later_higher_bounds_supersede_the_bound_only_failure(self):
+        runs = bound_runs()
+        self.check_snapshot(runs, 'pass', [runs[0]['run']])
+
+    def test_other_failure_no_later_run_different_class_and_equal_values_stay_judged(self):
+        for case in ('other failure', 'no later higher run', 'different class', 'equal value',
+                     'lower value', 'earlier higher run', 'error', 'incomplete'):
+            with self.subTest(case=case):
+                runs = bound_runs()
+                if case == 'other failure':
+                    runs[0]['failures'].extend(run(1)['failures'])
+                elif case == 'no later higher run':
+                    runs = runs[:1]
+                elif case == 'earlier higher run':
+                    runs = [*runs[1:], runs[0]]
+                else:
+                    for later in runs[1:]:
+                        if case == 'different class':
+                            later['bounds']['name'] = 'another'
+                        elif case in ('equal value', 'lower value'):
+                            later['bounds']['driver_input_tokens'] = 283000 if case == 'equal value' else 282999
+                        else:
+                            later['outcome'] = case
+                self.check_snapshot(runs, 'not enough evidence' if case in (
+                    'no later higher run', 'error', 'incomplete') else 'flaky', [],
+                    not_judged=[runs[1]['run']] if case in ('error', 'incomplete') else [])
+
+    def test_one_later_run_must_raise_both_failed_bounds(self):
+        runs = bound_runs()
+        runs[0]['bounds']['driver_actions'] = 80
+        runs[0]['failures'].append(dict(runs[0]['failures'][0], id='failure-2', signature='bound/driver_actions'))
+        for later in runs[1:]:
+            later['bounds']['driver_actions'] = 80
+        self.check_snapshot(runs, 'flaky', [])
+        runs[1]['bounds'].update(driver_input_tokens=283000, driver_actions=81)
+        self.check_snapshot(runs, 'flaky', [])
+        runs[2]['bounds']['driver_actions'] = 81
+        self.check_snapshot(runs, 'pass', [runs[0]['run']])
+
+    def test_later_failure_can_prove_higher_bounds(self):
+        runs = bound_runs()
+        runs[1]['outcome'] = 'fail'
+        runs[1]['failures'] = run(1)['failures']
+        self.check_snapshot(runs, 'flaky', [runs[0]['run']])
+
+    def test_historical_snapshot_uses_only_its_prefix_and_key(self):
+        runs = bound_runs()
+        prefix = findings.snapshot(Q, runs[:1])
+        records = {Q: runs, D: bound_runs(key=D)}
+        self.assertEqual(findings._snapshot_runs(prefix, records), runs[:1])
+        self.check_snapshot(runs[:1], 'not enough evidence', [])
+        forged = findings.snapshot(Q, runs)
+        forged['seeds'][0]['judged'].remove(runs[1]['run'])
+        with self.assertRaisesRegex(Refused, 'prefix'):
+            findings._snapshot_runs(forged, records)
+
+    def test_historical_flaky_snapshot_stays_valid_after_bounds_are_superseded(self):
+        runs = bound_runs()
+        prefix = [runs[0], runs[2], runs[3]]
+        for later in prefix[1:]:
+            later['bounds']['driver_input_tokens'] = 283000
+        historical = findings.snapshot(Q, prefix)
+        self.assertEqual(historical['verdict'], 'flaky')
+        retained = [*prefix, runs[1]]
+        self.assertEqual(findings.snapshot(Q, retained)['verdict'], 'pass')
+        self.assertEqual(findings._snapshot_runs(historical, {Q: retained}), prefix)
 
 
 class Lifecycle(unittest.TestCase):
@@ -70,6 +158,16 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(derived['state'], 'closed')
         self.assertEqual(derived['reproduction']['numerator'], 1)
         self.assertEqual(derived['reproduction']['denominator'], 1)
+
+    def test_recheck_ignores_signature_in_a_superseded_run(self):
+        signature = 'bound/driver_input_tokens'
+        for value in self.records[D]:
+            value['failures'][0].update(signature=signature, kind='bound')
+        self.history[0].update(signature=signature, kind='bound')
+        fix = self.fixed()
+        self.records[Q] = bound_runs()
+        self.assertEqual(self.recheck(fix)['state'], 'rechecked')
+        self.assertEqual(self.add('closed')['state'], 'closed')
 
     def test_language_neutral_reproduction_vectors(self):
         vectors = json.loads((Path(__file__).parent / 'vectors/findings.json').read_text())

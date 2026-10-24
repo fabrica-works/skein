@@ -519,6 +519,9 @@ verdict snapshot, then `closed`. A later original-experiment failure is
 `occurred` while closed; a corrected-experiment recurrence is `reopened`.
 Historical verdict snapshots are verified against retained evidence prefixes,
 so a later recurrence does not invalidate the earlier recheck history.
+A finding's snapshot supersedes a bound-only failure only when a later judged
+run of the same key and cost class name retains strictly higher values for
+every bound it failed.
 
 Product-class host close/closed-recurrence verification remains unavailable:
 it requires an independently verified product repository binding, the
