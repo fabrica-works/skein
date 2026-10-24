@@ -14,7 +14,7 @@ mod tests {
     use skein_codec::patch::{Build, Halt, Old, RefusalIx, Site};
     use skein_codec::value::Node;
     use skein_codegen::diff::{Rename, Version};
-    use skein_codegen::patch::{self, Error, Finding, Landed, Options, Outcome, Report};
+    use skein_codegen::patch::{self, Error, Finding, Landed, Mode, Options, Outcome, Report};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -464,7 +464,7 @@ mod tests {
         for name in ["record_r_smallest.bin", "record_r_full.bin"] {
             branch.write(&format!("patches/golden/0001/alpha/{name}"), [1]);
         }
-        assert_eq!(patch::goldens(&branch.0, 1, truth), Ok(()));
+        assert_eq!(patch::golden(&branch.0, 1, truth, Mode::Check), Ok(()));
         upstream.schema("alpha", 8, "record R { x: u16 }");
         upstream.run(&base, &options());
         let landed = upstream.landed();
@@ -626,7 +626,7 @@ mod tests {
         owner.write("patches/golden/0003/shelf/record_book_full.bin", b"corrupt");
         owner.write("patches/golden/0003/shelf/obsolete.bin", b"stale");
         let before = owner.snapshot();
-        let result = patch::goldens(&owner.0, 3, skein_codec_patches::patches::written);
+        let result = patch::golden(&owner.0, 3, skein_codec_patches::patches::written, Mode::Check);
         assert!(matches!(&result, Err(Error::Golden(_))), "{result:?}");
         let Err(Error::Golden(failures)) = result else { return };
         for name in ["record_book_smallest", "record_book_full", "obsolete"] {
@@ -638,7 +638,7 @@ mod tests {
     #[test]
     fn s12_3_goldens_written_stops_report_no_site() {
         let owner = fixture();
-        let result = patch::goldens(&owner.0, 3, no_site);
+        let result = patch::golden(&owner.0, 3, no_site, Mode::Check);
         assert!(matches!(&result, Err(Error::Golden(_))), "{result:?}");
         let Err(Error::Golden(failures)) = result else { return };
         assert_eq!(failures.len(), 8, "{failures:?}");
@@ -660,9 +660,9 @@ mod tests {
         for name in ["record_r_smallest", "record_r_full"] {
             owner.write(&format!("patches/golden/0001/alpha/{name}.bin.refused"), "refuses bad\n");
         }
-        assert_eq!(patch::goldens(&owner.0, 1, refuse), Ok(()));
+        assert_eq!(patch::golden(&owner.0, 1, refuse, Mode::Check), Ok(()));
         owner.write("patches/golden/0001/alpha/record_r_full.bin.refused", "refuses different\n");
-        let result = patch::goldens(&owner.0, 1, refuse);
+        let result = patch::golden(&owner.0, 1, refuse, Mode::Check);
         assert!(
             matches!(&result, Err(Error::Golden(names)) if names.iter().any(|s| s.contains("record_r_full"))),
             "{result:?}"
@@ -724,7 +724,7 @@ mod tests {
         let owner = fixture();
         let before = owner.snapshot();
         for number in [1, 2, 3] {
-            assert_eq!(patch::goldens(&owner.0, number, skein_codec_patches::patches::written), Ok(()));
+            assert_eq!(patch::golden(&owner.0, number, skein_codec_patches::patches::written, Mode::Check), Ok(()));
         }
         assert_eq!(owner.snapshot(), before);
     }

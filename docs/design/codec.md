@@ -1666,7 +1666,9 @@ text at version `c`:
   `patches/golden/NNNN/<family>/<golden>`, or, refused with a declared
   reason, holds `refuses <name>` in `<golden>.refused`. A file missing,
   different or stale fails it, naming every golden that does;
-  `SKEIN_PATCH_WRITE=1` writes them for review. The command writes them
+  `SKEIN_PATCH_WRITE=1` writes them for review: `goldens`, which
+  `mod.rs` calls, picks `patch::golden`'s mode from it, `Mode::Write`
+  or `Mode::Check`, which never writes. The command writes them
   itself for a patch with no site once it plans; a patch with sites
   waits for its author's functions and the test.
 

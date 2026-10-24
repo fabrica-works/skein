@@ -13,7 +13,7 @@ mod skeleton;
 mod text;
 
 pub use check::check;
-pub use golden::{Written, goldens};
+pub use golden::{Mode, Written, golden, goldens};
 pub use module::{current, module};
 pub use run::run;
 

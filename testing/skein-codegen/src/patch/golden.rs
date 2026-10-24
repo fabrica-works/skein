@@ -17,11 +17,24 @@ use super::{
 /// The owner's written dispatch, called once at each written stop.
 pub type Written<C> = fn(Site, &Old, &mut Build, Node, &mut C) -> Result<(), Halt>;
 
-/// Checks a patch's golden results, or writes them for review when
-/// `SKEIN_PATCH_WRITE=1`.
+/// What a golden test does with a patch's golden files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Fails on a file missing, different or stale, and writes nothing.
+    Check,
+    /// Writes them for review.
+    Write,
+}
+
+/// Checks a patch's golden results, or writes them for review, as `mode` says.
+pub fn golden<C: Default>(owner: &Path, patch: u32, written: Written<C>, mode: Mode) -> Result<(), Error> {
+    run_goldens(&Crate::read(owner)?, patch, written, mode == Mode::Write)
+}
+
+/// [`golden`], writing when `SKEIN_PATCH_WRITE=1` and checking otherwise.
 pub fn goldens<C: Default>(owner: &Path, patch: u32, written: Written<C>) -> Result<(), Error> {
     let write = std::env::var_os("SKEIN_PATCH_WRITE").is_some_and(|value| value == "1");
-    run_goldens(&Crate::read(owner)?, patch, written, write)
+    golden(owner, patch, written, if write { Mode::Write } else { Mode::Check })
 }
 
 pub(crate) fn run_goldens<C: Default>(

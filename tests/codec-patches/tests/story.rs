@@ -9,7 +9,7 @@ mod tests {
     use skein_codec::value::Node;
     use skein_codec_patches::patches::{self, Context};
     use skein_codegen::diff::Rename;
-    use skein_codegen::patch::{self, Error, Finding, Landed, Options, Outcome, Report};
+    use skein_codegen::patch::{self, Error, Finding, Landed, Mode, Options, Outcome, Report};
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -181,7 +181,7 @@ mod tests {
         text(root, "patches/0001.patch", FIELD, "0001.patch");
         text(root, "patches/mod.rs", FIELD, "mod.rs");
         golden_names(root, "patches/golden/0001/shelf", SHELF_GOLDENS);
-        assert_eq!(patch::goldens(root, 1, patches::written), Ok(()));
+        assert_eq!(patch::golden(root, 1, patches::written, Mode::Check), Ok(()));
         clean(root, &baseline);
         let field = Landed::read(root).expect("added pages lands");
 
@@ -231,7 +231,7 @@ mod tests {
         text(root, "schema/kept/shelf-v3.schema", WRITTEN, "shelf-v3.schema");
         assert!(!root.join("schema/kept/shelf.renames").exists(), "patch consumes waiting rename");
         clean(root, &renames);
-        let Err(Error::Golden(failures)) = patch::goldens(root, 2, skeleton) else {
+        let Err(Error::Golden(failures)) = patch::golden(root, 2, skeleton, Mode::Check) else {
             unreachable!("skeleton must fail its goldens")
         };
         // Successful Book conversions also report their two not-yet-reviewed files.
@@ -267,7 +267,7 @@ mod tests {
             put(root, &Path::new("patches/golden/0002/shelf").join(path.file_name().expect("golden name")), &bytes);
         }
         golden_names(root, "patches/golden/0002/shelf", SHELF_GOLDENS);
-        assert_eq!(patch::goldens(root, 2, written), Ok(()));
+        assert_eq!(patch::golden(root, 2, written, Mode::Check), Ok(()));
 
         // 5. Main lands label's color while the branch's written change waits.
         // This scratch tree is the branch's side of patches/ and schema/kept/;

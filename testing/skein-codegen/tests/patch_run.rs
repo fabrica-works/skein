@@ -8,7 +8,7 @@ mod tests {
     use skein_codec::patch::{Build, Halt, Old, Site};
     use skein_codec::value::Node;
     use skein_codegen::diff::{Rename, Version};
-    use skein_codegen::patch::{Error, Landed, Options, Outcome, current, goldens, run};
+    use skein_codegen::patch::{Error, Landed, Mode, Options, Outcome, current, golden, run};
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -310,7 +310,32 @@ pub fn book(_old: &Old, _new: &mut Build, _at: Node, _cx: &mut Context) -> Resul
                 "record_book_smallest.bin"
             ]
         );
-        assert_eq!(goldens(&root, 1, unwritten), Ok(()), "the golden test passes on what the command wrote");
+        assert_eq!(
+            golden(&root, 1, unwritten, Mode::Check),
+            Ok(()),
+            "the golden test passes on what the command wrote"
+        );
+        end(&root);
+    }
+
+    #[test]
+    fn a_golden_check_never_writes_and_a_golden_write_restores() {
+        const GOLDEN: &str = "patches/golden/0001/shelf/record_book_full.bin";
+        let root = crate_files("golden-modes", &[("schema/shelf-v2.schema", V2), ("schema/kept/shelf-v1.schema", V1)]);
+        let base = landed(&[("schema/kept/shelf-v1.schema", V1)]);
+        run(&root, &base, &options()).expect("asked patch");
+        write_files(&root, &[("patches/0001.patch", FILLED)]);
+        run(&root, &base, &options()).expect("goldens written");
+        let bytes = fs::read(root.join(GOLDEN)).expect("written golden");
+        fs::remove_file(root.join(GOLDEN)).expect("remove golden");
+        let Err(Error::Golden(failures)) = golden(&root, 1, unwritten, Mode::Check) else {
+            unreachable!("a missing golden fails the check")
+        };
+        assert!(matches!(failures.as_slice(), [failure] if failure.contains(GOLDEN)), "{failures:?}");
+        assert!(!root.join(GOLDEN).exists(), "Check writes nothing, whatever SKEIN_PATCH_WRITE says");
+        assert_eq!(golden(&root, 1, unwritten, Mode::Write), Ok(()));
+        assert_eq!(fs::read(root.join(GOLDEN)).expect("rewritten golden"), bytes);
+        assert_eq!(golden(&root, 1, unwritten, Mode::Check), Ok(()));
         end(&root);
     }
 
