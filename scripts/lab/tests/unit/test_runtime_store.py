@@ -134,8 +134,7 @@ class Bounds(unittest.TestCase):
                 bounds = {**value['bounds'], field: bad}
                 self.assertIn('run.bounds.' + field, [r.member for r in records.run_refusals({**value, 'bounds': bounds})])
 
-    def test_host_superseding_reads_fail_bounds_and_preserves_nonfail_outcomes(self):
-        from types import SimpleNamespace
+    def test_derivation_supersedes_only_bound_failures_and_preserves_nonfail_outcomes(self):
         current = run_record(1, '1')['bounds']
         held = {**current, 'ready_seconds': current['ready_seconds'] - 1}
         run = run_record(1, '1', 'fail')
@@ -145,10 +144,9 @@ class Bounds(unittest.TestCase):
                  dict(evidence.line_for(run), run='incomplete', outcome='incomplete'),
                  dict(evidence.line_for(run), run='pass', outcome='pass'),
                  dict(evidence.line_for(run), run='mixed', signatures=['bound/ready_seconds', 'stop/server/exit:1'])]
-        read = unittest.mock.Mock(return_value=canonical.record_bytes(run))
-        lab = SimpleNamespace(read=read)
-        self.assertEqual(cli._superseded(lab, 'key', lines, current), frozenset({run['run']}))
-        read.assert_called_once_with(f"key/runs/{run['run']}/run.json")
+        derived = judge.derive_verdict(D, lines, {line['run']: held for line in lines}, current=current)
+        self.assertEqual(derived['seeds'], [dict(seed='1', state='judged', judged=['pass', 'mixed'],
+                                               not_judged=[run['run'], 'error', 'incomplete'])])
 
 
 class Evidence(unittest.TestCase):
@@ -157,6 +155,7 @@ class Evidence(unittest.TestCase):
         self.lab = store.open_lab(Path(self.temp.name) / 'lab')
         self.key_path = 'keys/sample/' + D
         os.close(self.lab.directory(self.key_path, create=True))
+        self.judge_inputs()
 
     def tearDown(self):
         self.lab.close()
@@ -310,7 +309,6 @@ class Evidence(unittest.TestCase):
         self.assertEqual(output.getvalue(), '')
 
     def test_judge_runs_three_new_seeds_once_and_stops_on_unjudged_evidence(self):
-        self.judge_inputs()
         from types import SimpleNamespace
         from runner import transport
         args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
@@ -330,7 +328,6 @@ class Evidence(unittest.TestCase):
             self.assertEqual(launched.call_count, 3)
 
     def test_judge_does_not_automatically_retry_error_or_run_another_seed(self):
-        self.judge_inputs()
         from types import SimpleNamespace
         from runner import transport
         args = SimpleNamespace(command='judge', campaign=None, experiment='/experiment', subject=D)
@@ -350,7 +347,6 @@ class Evidence(unittest.TestCase):
     def test_judge_rebuilds_superseded_verdict_and_blocks_until_explicit_pass(self):
         from types import SimpleNamespace
         from runner import transport
-        self.judge_inputs()
         record = run_record(1, '1', 'fail')
         record['failures'] = [dict(id='failure-1', signature='bound/ready_seconds/server', kind='bound',
                                    summary='readiness bound', evidence=[])]
@@ -373,6 +369,10 @@ class Evidence(unittest.TestCase):
             retry = run_record(4, '1', attempt=2)
             retry['bounds'] = {'name': 'smoke', **settings['costs']['smoke']}
             evidence.publish(self.lab, self.key_path, retry)
+            published = canonical.loads(self.lab.read(self.key_path + '/verdict.json'))
+            self.assertEqual(published['verdict'], 'pass')
+            self.assertEqual(published['seeds'][0], dict(seed='1', state='judged', judged=[retry['run']],
+                                                        not_judged=[record['run']]))
             self.assertEqual(cli.runtime_command(self.lab, fd, args), 0)
             derived = canonical.loads(self.lab.read(self.key_path + '/verdict.json'))
             self.assertEqual(derived['verdict'], 'pass')

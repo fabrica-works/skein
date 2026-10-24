@@ -34,6 +34,7 @@ class TerminalErrors(unittest.TestCase):
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
                 with store.open_lab(Path(temporary) / 'lab') as lab:
                     exp, subject, _settings, _facts, inputs = fixture()
+                    lab.write_once('settings.json', canonical.record_bytes(_settings))
                     exp.update(processes=[], actions=[], collect=[], checks=[])
                     for group in ('collect', 'checks'):
                         exp[group] = [dict(name='pending', cluster='stopped', argv=['/never-start'], env={})]

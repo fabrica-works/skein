@@ -113,9 +113,15 @@ def next_seed(evidence, superseded=frozenset()):
     return dict(action='draw', excluded=seeds)
 
 
-def verdict_record(key, evidence, superseded=frozenset()):
-    seeds, judged = _evidence(evidence, superseded)
-    return dict(format='lab-verdict/1', key=key, policy='three-seeds', verdict=verdict(evidence, superseded),
+def derive_verdict(key, evidence, bounds, *, current=None):
+    """Published verdicts use current class values; snapshots use retained evidence."""
+    if current is None:
+        excluded = superseded_by_evidence(evidence, bounds)
+    else:
+        excluded = frozenset(line['run'] for line in evidence if line['outcome'] == 'fail'
+                             and superseded(line['signatures'], bounds[line['run']], current))
+    seeds, judged = _evidence(evidence, excluded)
+    return dict(format='lab-verdict/1', key=key, policy='three-seeds', verdict=verdict(evidence, excluded),
                 seeds=[dict(seed=s, state=('judged' if any(r['seed'] == s for r in judged) else 'not judged'),
                             judged=[r['run'] for r in judged if r['seed'] == s],
                             not_judged=[r['run'] for r in evidence if r['seed'] == s and r not in judged])

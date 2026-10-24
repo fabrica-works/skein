@@ -188,3 +188,33 @@ class HeldRuntime(unittest.TestCase):
 
     def test_held_interrupted_running_seed_still_returns_file(self):
         self.interrupt_story('hold')
+
+    def test_killed_unit_is_swept_and_held_file_stays_taken(self):
+        from runner.host import manager
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(self.root / 'notify'))
+        listener.listen(1)
+        self.addCleanup(listener.close)
+        self.configure(notification=str(self.root / 'notify'), seed_wait='hold')
+        self.put(b'throwaway-held-file')
+        process = self.run_cli(wait=False)
+        self.assertTrue(select.select([listener], [], [], COST['ready_seconds'])[0])
+        connection, _ = listener.accept()
+        connection.close()
+        live = next(self.lab_root.glob('keys/native/*/runs/*/live.json'))
+        marker = canonical.loads(live.read_bytes())
+        manager(self.systemctl, ['kill', '--signal=SIGKILL', marker['unit']], COST['command_seconds'])
+        process.communicate(timeout=COST['command_seconds'])
+        self.assertEqual(process.returncode, 4)
+        # A different held put is a writing command that can proceed after the sweep.
+        source = self.root / 'other'
+        source.write_bytes(b'other throwaway')
+        status, _out, stderr = self.cli('held', 'put', 'other', str(source))
+        self.assertEqual(status, 0, stderr)
+        record = canonical.loads((live.parent / 'run.json').read_bytes())
+        self.assertEqual(record['outcome'], 'error')
+        self.assertEqual(record['held'][0]['given_ms'], None)
+        self.assertFalse(live.exists())
+        status, listing, stderr = self.cli('held')
+        self.assertEqual(status, 0, stderr)
+        self.assertIn(('token taken ' + record['run']).encode(), listing)

@@ -54,7 +54,7 @@ class Judge(unittest.TestCase):
                 if 'superseded' in vector:
                     self.assertEqual(superseded, frozenset(vector['superseded']))
                     self.assertEqual(judge.next_seed(vector['evidence'], superseded), vector['next_seed'])
-                    record = judge.verdict_record('key', vector['evidence'], superseded)
+                    record = judge.derive_verdict('key', vector['evidence'], vector['held_to'], current=vector['current'])
                     self.assertEqual(record['verdict'], vector['verdict'])
                     self.assertEqual(record['seeds'][0]['not_judged'], vector['superseded'])
                     self.assertEqual(record['seeds'][0]['judged'], [r['run'] for r in vector['evidence']

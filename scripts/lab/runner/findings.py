@@ -57,8 +57,7 @@ def _lines(runs):
 
 def snapshot(key, runs):
     lines = _lines(runs)
-    superseded = judge.superseded_by_evidence(lines, {r['run']: r['bounds'] for r in runs})
-    return judge.verdict_record(key, lines, superseded)
+    return judge.derive_verdict(key, lines, {r['run']: r['bounds'] for r in runs})
 
 
 def _snapshot_runs(value, evidence):

@@ -186,7 +186,9 @@ def run_refusals(value):
     fields = ('run', 'key', 'experiment', 'seed', 'attempt', 'campaign', 'started', 'ended', 'outcome',
               'schedule', 'processes', 'commands', 'driver', 'failures', 'undecided', 'errors', 'bounds', 'usage')
     out = []
-    obj = shape(value, ('format',) + fields, ('about', 'held', 'rehearsal'), 'run', out)
+    obj = shape(value, ('format',) + fields, ('about', 'held', 'rehearsal', 'network'), 'run', out)
+    if 'network' in obj and obj['network'] not in ('loopback', 'host'):
+        out.append(Refusal('run.network', 'expected loopback or host'))
     if obj.get('format') != 'lab-run/1':
         out.append(Refusal('run.format', 'expected lab-run/1'))
     if not digest_value(obj.get('key')):
@@ -270,7 +272,8 @@ def run_refusals(value):
                     names.add(name)
                 for field in ('taken_ms', 'given_ms'):
                     ms = h.get(field)
-                    if field == 'given_ms' and ms is None:
+                    if ms is None and (field == 'given_ms' or type(obj.get('errors')) is list and any(
+                            type(e) is dict and e.get('what') == 'interrupted' for e in obj['errors'])):
                         continue
                     if type(ms) is not int or not 0 <= ms <= SAFE:
                         out.append(Refusal(m + '.' + field, 'expected nonnegative safe milliseconds'))
@@ -442,7 +445,15 @@ def triage_refusals(value):
     fields = ('format', 'run', 'key', 'n', 'started', 'ended', 'outcome', 'invocation',
               'expected_inventory', 'inventory', 'probe', 'input', 'output', 'bounds', 'usage',
               'errors', 'finding_events', 'brake')
-    obj = shape(value, fields, (), 'triage', out)
+    obj = shape(value, fields, ('rehearsal', 'network'), 'triage', out)
+    if 'network' in obj and obj['network'] not in ('loopback', 'host'):
+        out.append(Refusal('triage.network', 'expected loopback or host'))
+    if 'rehearsal' in obj:
+        rehearsal = shape(obj['rehearsal'], ('script',), (), 'triage.rehearsal', out)
+        if not digest_value(rehearsal.get('script')):
+            out.append(Refusal('triage.rehearsal.script', 'expected script digest'))
+        if obj.get('finding_events') != []:
+            out.append(Refusal('triage.finding_events', 'a rehearsal is never evidence'))
     if obj.get('format') != 'lab-triage/1':
         out.append(Refusal('triage.format', 'expected lab-triage/1'))
     if type(obj.get('run')) is not str or not RUN_ID.fullmatch(obj['run']):

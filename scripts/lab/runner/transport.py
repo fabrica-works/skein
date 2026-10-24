@@ -158,6 +158,25 @@ def worker(endpoint, token):
             os.close(lock_fd)
 
 
+def check_network(spec):
+    """Verify the unit's network namespace before it provisions any process."""
+    if spec.get('network', 'host') == 'loopback':
+        interfaces = sorted(os.listdir('/sys/class/net'))
+        if interfaces != ['lo']:
+            raise CapabilityError('containment: loopback network requires lo alone; interfaces: ' + ', '.join(interfaces))
+
+
+def unit_command(systemd_run, python, unit, cost, code, runner_root, endpoint, token, *, network='host'):
+    """The machine's bootstrap has the machine-call bound (lab.md, 5.2)."""
+    return [systemd_run, '--user', '--no-ask-password', '--quiet', '--wait', '--pipe', '--collect',
+            '--expand-environment=no', '--service-type=exec', '--unit=' + unit,
+            '--property=Delegate=yes', '--property=KillMode=control-group',
+            '--property=TimeoutStopSec=' + str(cost['stop_seconds']),
+            '--property=TimeoutStartSec=' + str(cost['command_seconds']),
+            *(['--property=PrivateNetwork=yes'] if network == 'loopback' else []),
+            python, '-I', '-B', '-S', '-c', code, runner_root, endpoint, token]
+
+
 def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsal=None, triage=None):
     """Start one unit and keep the same flock alive in both outer and worker."""
     key = canonical.loads(lab.read(key_path + '/key.json'))
@@ -192,16 +211,13 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
         spec['rehearsal'] = rehearsal
     if triage is not None:
         spec.update(triage)
+    exp = canonical.loads(lab.read('store/experiments/' + key['experiment'] + '/experiment.json'))
+    spec['network'] = 'loopback' if experiment.loopback_only(exp, rehearsal=rehearsal is not None, triage=triage is not None) else 'host'
     token = secrets.token_hex(16)
     endpoint = str(lab.root / ('.transport-' + secrets.token_hex(6)))
     runner_root = str(Path(__file__).resolve().parent.parent)
     code = 'import sys; sys.path.insert(0,sys.argv[1]); from runner.transport import worker; sys.exit(worker(sys.argv[2],sys.argv[3]))'
-    command = [systemd_run, '--user', '--no-ask-password', '--quiet', '--wait', '--pipe', '--collect',
-               '--expand-environment=no', '--service-type=exec', '--unit=' + unit,
-               '--property=Delegate=yes', '--property=KillMode=control-group',
-               '--property=TimeoutStopSec=' + str(cost['stop_seconds']),
-               '--property=TimeoutStartSec=' + str(cost['ready_seconds']),
-               os.path.realpath(sys.executable), '-I', '-B', '-S', '-c', code, runner_root, endpoint, token]
+    command = unit_command(systemd_run, os.path.realpath(sys.executable), unit, cost, code, runner_root, endpoint, token, network=spec['network'])
     saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
     received, sent = [], 0
     def relay(sig, _frame):
@@ -225,7 +241,7 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
             process = subprocess.Popen(command, env=manager_environment(), stdin=subprocess.DEVNULL,
                                        stdout=out, stderr=err)
             process_fd = os.pidfd_open(process.pid)
-            deadline = time.monotonic() + cost['ready_seconds']
+            deadline = time.monotonic() + cost['command_seconds']
             connection = None
             while process.poll() is None:
                 if sent < len(received):
@@ -237,7 +253,7 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
                 if not accepted:
                     left = deadline - time.monotonic()
                     if left <= 0:
-                        raise CapabilityError('unit bootstrap exceeded ready_seconds')
+                        raise CapabilityError('unit bootstrap exceeded command_seconds')
                     ready, _, _ = select.select([listener, wake_r, process_fd], [], [], left)
                     if wake_r in ready:
                         os.read(wake_r, 4096)
@@ -246,7 +262,7 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
                         with connection:
                             remaining = deadline - time.monotonic()
                             if remaining <= 0:
-                                raise CapabilityError('unit bootstrap exceeded ready_seconds')
+                                raise CapabilityError('unit bootstrap exceeded command_seconds')
                             connection.settimeout(remaining)
                             if _receive(connection, len(token)) != token.encode('ascii'):
                                 raise CapabilityError('unit transport token differs')
@@ -297,7 +313,8 @@ def launch(lab, lock_fd, key_path, seed, campaign, *, brake_event=None, rehearsa
                 # KillMode=control-group remains the unit's ownership fallback.
                 pass
         if not accepted and isinstance(error, (OSError, CapabilityError, subprocess.SubprocessError)):
-            raise Refused('containment', str(error)) from error
+            detail = 'unit bootstrap exceeded command_seconds' if isinstance(error, TimeoutError) else str(error)
+            raise Refused('containment', detail) from error
         raise
     finally:
         if process_fd is not None:

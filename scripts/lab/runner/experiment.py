@@ -657,3 +657,8 @@ def key(exp_digest, subject, lab):
              "subject": canonical.digest(subject), "lab": lab}
     # Copy through canonical bytes so later edits of inputs cannot mutate a key.
     return canonical.loads(canonical.record_bytes(value))
+
+
+def loopback_only(exp, *, rehearsal=False, triage=False):
+    """No account, no network (lab.md, 5.2); paid triage always uses its host."""
+    return rehearsal or not triage and exp['driver'] is None and not exp.get('held', [])

@@ -320,7 +320,7 @@ class Lab:
                 os.unlink(temporary, dir_fd=fd)
             os.close(fd)
 
-    def append_line(self, path, value):
+    def append_line(self, path, value, *, prefix=b''):
         fd, name = self._parent(path, create=True)
         opened = None
         try:
@@ -328,7 +328,7 @@ class Lab:
             info = os.fstat(opened)
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid() or info.st_mode & 0o077:
                 raise Refused(path, "append target must be a private owned regular file")
-            data = canonical.record_bytes(value)
+            data = prefix + canonical.record_bytes(value)
             while data:
                 written = os.write(opened, data)
                 if written == 0:

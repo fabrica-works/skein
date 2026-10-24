@@ -7,7 +7,7 @@ Python 3.11+, standard library only. Run from any directory:
 /path/to/skein/scripts/lab/lab validate EXPERIMENT --subject sha256:...
 /path/to/skein/scripts/lab/lab run EXPERIMENT --subject sha256:... --seed 1
 /path/to/skein/scripts/lab/lab judge EXPERIMENT --subject sha256:...
-/path/to/skein/scripts/lab/lab triage RUN
+/path/to/skein/scripts/lab/lab triage RUN [--rehearse SCRIPT]
 ```
 
 The launcher uses `python3 -I -B -S` (including no system site initialization) and adds its own directory for imports.
@@ -336,9 +336,10 @@ never retries an unjudged seed automatically. Rerun it explicitly with `run
 Exit codes are 0 pass, 1 fail/flaky, 2 refused, 3 incomplete/not enough evidence,
 4 machinery error, or 128 plus the interrupting signal.
 
-`judge` re-derives the verdict with the class's current values. A fail whose
-signatures are all `bound/NAME` or `bound/NAME/WHO`, each now strictly above
-its recorded value, is superseded: listed in `not_judged`, as an error is.
+Run publication and `judge` re-derive the verdict with the class's current
+values. A fail whose signatures are all `bound/NAME` or `bound/NAME/WHO`,
+each now strictly above its recorded value, is superseded: listed in
+`not_judged`, as an error is.
 An equal value or any non-bound failure keeps it judged. A seed left with
 no judged attempt needs an explicit additive run.
 
@@ -759,3 +760,9 @@ Codex sent, separated by a dot: `mcp__lab.ledger`. The admitted built-ins are
 `exec_command`, `write_stdin`, `list_mcp_resources`,
 `list_mcp_resource_templates` and `read_mcp_resource`; their names and namespace
 shape are held to a recorded Codex 0.162.1 request in the unit vectors.
+
+Writing commands first sweep ended live units into error records; held files stay taken.
+
+`triage RUN --rehearse SCRIPT` uses a private home and the scripted endpoint, bypasses brake and pause, and keeps no finding evidence in `rehearsals/triage/<run>/<n>/`.
+
+Rehearsals and runs with neither a driver nor held files have a private loopback network, verified before provisioning; records name `network` as `loopback` or `host`.

@@ -16,6 +16,7 @@ class Files(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.lab = store.open_lab(Path(self.temp.name) / 'lab')
+        self.lab.write_once('settings.json', canonical.record_bytes(fixture()[2]))
         self.lock = self.lab.lock()
         self.lock.__enter__()
         self.subject = dict(format='lab-subject/1', commit='a' * 40, source=canonical.tree_digest([]), artifacts={})

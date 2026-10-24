@@ -1,4 +1,4 @@
-"""Run publication and evidence verification; no recovery or pruning (lab.md, 8)."""
+"""Run publication and evidence verification; interrupted-unit recovery, no pruning (lab.md, 8)."""
 import os
 from . import canonical, judge
 from .records import Refused, evidence_refusals, run_refusals
@@ -37,6 +37,18 @@ def line_for(record):
                 signatures=sorted(set(f['signature'] for f in record['failures'])))
 
 
+def derive_verdict(lab, key_path, previous):
+    """Read the current class and retained bounds for a published verdict (lab.md, 8)."""
+    from .cli import _runtime_cost
+    key = canonical.loads(lab.read(key_path + '/key.json'))
+    current = _runtime_cost(lab, key)
+    bounds = {line['run']: canonical.loads(lab.read(
+        f"{key_path}/runs/{line['run']}/run.json"))['bounds'] for line in previous}
+    derived = judge.derive_verdict(key_path.rsplit('/', 1)[-1], previous, bounds, current=current)
+    lab.replace_derived(key_path + '/verdict.json', derived)
+    return derived
+
+
 def publish(lab, key_path, record):
     if 'rehearsal' in record:
         raise Refused('run.rehearsal', 'a rehearsal is never evidence')
@@ -56,64 +68,107 @@ def publish(lab, key_path, record):
     if not existing:
         lab.append_line(key_path + '/evidence.jsonl', line_for(record))
         previous.append(line_for(record))
-    lab.replace_derived(key_path + '/verdict.json', judge.verdict_record(record['key'], previous))
+    derive_verdict(lab, key_path, previous)
     # Publication failure leaves the worker's live marker intact. A repeated
     # publish verifies immutable bytes and reconciles without duplicating events.
     from .finding_store import sync
     sync(lab, record['ended'])
 
 
-def require_recovered(lab):
-    """Inspect run metadata only; retain unfinished runs for owner recovery."""
-    for directory in sorted(lab.root.glob('rehearsals/*/*')):
-        path = directory.relative_to(lab.root).as_posix()
+def _names(lab, path):
+    try:
         fd = lab.directory(path)
-        try:
-            files = os.listdir(fd)
-        finally:
-            os.close(fd)
-        if 'live.json' in files or 'run.json' not in files:
-            raise Refused('recovery', path + ': unfinished rehearsal retained; owner recovery required')
-    try:
-        root = lab.directory('keys')
     except FileNotFoundError:
-        return
+        return []
     try:
-        experiments = os.listdir(root)
+        return sorted(os.listdir(fd))
     finally:
-        os.close(root)
-    for name in sorted(experiments):
-        parent = lab.directory('keys/' + name)
+        os.close(fd)
+
+
+def _finish(lab, path, record_name, writing, key_path=None):
+    files = _names(lab, path)
+    complete = record_name in files
+    live = 'live.json' in files
+    if complete and not live:
+        return
+    kind = 'triage' if record_name == 'triage.json' else 'rehearsal' if path.startswith('rehearsals/') else 'run'
+    refusal = path + ': unfinished ' + kind + ' retained; owner recovery required'
+    if not writing or not live:
+        raise Refused('recovery', refusal)
+    marker = canonical.loads(lab.read(path + '/live.json'))
+    context = marker.get('context')
+    if complete:
+        context = canonical.loads(lab.read(path + '/' + record_name))
+    if not complete and type(context) is not dict:
+        raise Refused('recovery', refusal)
+    from . import recovery
+    from .host import manager, CapabilityError
+    import subprocess
+    from .loop import utc
+    import shutil
+    systemctl = marker.get('systemctl') or (shutil.which('systemctl', path=os.defpath) if complete else None)
+    if type(context) is not dict or systemctl is None:
+        raise Refused('recovery', refusal)
+    try:
+        answer = manager(systemctl, ['show', '--property=ActiveState,LoadState', marker['unit']],
+                         context['bounds']['command_seconds'])
+        ended = recovery.unit_ended(answer)
+    except (OSError, subprocess.SubprocessError, CapabilityError, ValueError, KeyError) as error:
+        raise Refused('recovery', path + ': manager unavailable: ' + str(error)) from error
+    if not ended:
+        raise Refused('recovery', path + ': run in progress: ' + marker['unit'])
+    if complete:
+        record = canonical.loads(lab.read(path + '/' + record_name))
+    else:
         try:
-            keys = os.listdir(parent)
-        finally:
-            os.close(parent)
-        for key in sorted(keys):
-            published = {r['run'] for r in read(lab, 'keys/' + name + '/' + key)}
-            prefix = 'keys/' + name + '/' + key + '/runs'
-            try:
-                runs = lab.directory(prefix)
-            except FileNotFoundError:
-                continue
-            try:
-                names = os.listdir(runs)
-            finally:
-                os.close(runs)
-            for run in sorted(names):
-                path = prefix + '/' + run
-                directory = lab.directory(path)
-                try:
-                    files = os.listdir(directory)
-                finally:
-                    os.close(directory)
-                if 'live.json' in files or 'run.json' not in files or run not in published:
-                    raise Refused('recovery', path + ': unfinished run retained; owner recovery required')
-                for triage in sorted((lab.root / path / 'triage').glob('*')):
-                    triage_path = triage.relative_to(lab.root).as_posix()
-                    fd = lab.directory(triage_path)
-                    try:
-                        retained = os.listdir(fd)
-                    finally:
-                        os.close(fd)
-                    if 'live.json' in retained or 'triage.json' not in retained:
-                        raise Refused('recovery', triage_path + ': unfinished triage retained; owner recovery required')
+            data = lab.read(path + '/events.jsonl')
+        except FileNotFoundError:
+            data = b''
+        from . import held
+        taken = []
+        for name in marker.get('held', []):
+            handoff = held.taken_record(lab, name)
+            if handoff is not None and handoff['run'] == context['run']:
+                taken.append(name)
+        try:
+            driver_data = lab.read(path + '/driver/events.jsonl') if record_name == 'run.json' else None
+        except FileNotFoundError:
+            driver_data = None
+        record, event = recovery.interrupted(context, data, utc(), taken, driver_data)
+        # Preserve a cut fragment byte for byte, separating the correction line.
+        lab.append_line(path + '/events.jsonl', event, prefix=b'\n' if data and not data.endswith(b'\n') else b'')
+        from .records import triage_refusals
+        problems = (run_refusals if record_name == 'run.json' else triage_refusals)(record)
+        if problems:
+            raise Refused(problems[0].member, problems[0].why)
+        lab.write_once(path + '/' + record_name, canonical.record_bytes(record))
+    if record_name == 'run.json' and 'rehearsal' not in record:
+        publish(lab, key_path, record)
+    elif record_name == 'triage.json' and 'rehearsal' not in record:
+        from .finding_store import sync
+        sync(lab, record['ended'])
+    lab.remove_live(path + '/live.json')
+
+
+def require_recovered(lab, *, writing=False):
+    """Writers sweep ended units; readers refuse unswept metadata (lab.md, 3.2)."""
+    for experiment in _names(lab, 'rehearsals'):
+        if experiment == 'triage':
+            for run in _names(lab, 'rehearsals/triage'):
+                for n in _names(lab, 'rehearsals/triage/' + run):
+                    _finish(lab, f'rehearsals/triage/{run}/{n}', 'triage.json', writing)
+        else:
+            for run in _names(lab, 'rehearsals/' + experiment):
+                _finish(lab, f'rehearsals/{experiment}/{run}', 'run.json', writing)
+    for name in _names(lab, 'keys'):
+        for key in _names(lab, 'keys/' + name):
+            key_path = f'keys/{name}/{key}'
+            for run in _names(lab, key_path + '/runs'):
+                path = key_path + '/runs/' + run
+                _finish(lab, path, 'run.json', writing, key_path)
+                published = {r['run'] for r in read(lab, key_path)}
+                if run not in published:
+                    raise Refused('recovery', path + ': unpublished record; owner recovery required')
+                for n in _names(lab, path + '/triage'):
+                    _finish(lab, path + '/triage/' + n, 'triage.json', writing)

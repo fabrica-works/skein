@@ -33,6 +33,18 @@ def bound_runs(*, key=Q):
 
 
 class BoundSnapshots(unittest.TestCase):
+    def test_published_and_snapshot_derivations_exclude_superseded_bound_failures(self):
+        runs = bound_runs()
+        lines = [evidence.line_for(r) for r in runs]
+        bounds = {r['run']: r['bounds'] for r in runs}
+        for current in (None, runs[1]['bounds']):
+            with self.subTest(current=current):
+                value = judge.derive_verdict(Q, lines, bounds, current=current)
+                self.assertEqual(value, dict(format='lab-verdict/1', key=Q, policy='three-seeds', verdict='pass',
+                    seeds=[dict(seed='1', state='judged', judged=[runs[1]['run']], not_judged=[runs[0]['run']]),
+                           dict(seed='2', state='judged', judged=[runs[2]['run']], not_judged=[]),
+                           dict(seed='3', state='judged', judged=[runs[3]['run']], not_judged=[])]))
+
     def check_snapshot(self, runs, verdict, superseded, *, not_judged=None):
         lines = [evidence.line_for(r) for r in runs]
         self.assertEqual(judge.superseded_by_evidence(lines, {r['run']: r['bounds'] for r in runs}),

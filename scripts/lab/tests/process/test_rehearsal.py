@@ -54,6 +54,7 @@ class Rehearsal(unittest.TestCase):
         self.assertEqual(list((self.lab_root / 'campaigns').glob('*')), [])
         self.assertEqual(paid_home.read_bytes(), b'private-home-sentinel')
         self.assertEqual(record['errors'], [])
+        self.assertEqual(record['network'], 'loopback')
         self.assertFalse((root / 'live.json').exists())
         self.assertEqual(record['usage']['driver']['actions'], 4)
         self.assertEqual(record['usage']['driver']['tokens'], dict(input=500, cached=0, output=50))

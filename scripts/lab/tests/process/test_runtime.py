@@ -727,7 +727,7 @@ class Runtime(unittest.TestCase):
         self.assertTrue(any(e['what'] == 'interrupted' for e in record['errors']))
         self.assert_empty(record)
 
-    def test_runner_main_sigkill_leaves_no_detached_tree_and_retains_recovery_marker(self):
+    def test_runner_main_sigkill_leaves_no_detached_tree_and_next_writer_sweeps(self):
         process, _connection, note, fds = self.notified('doublefork')
         signal.pidfd_send_signal(fds[0], signal.SIGKILL)
         _stdout, stderr = process.communicate(timeout=COST['command_seconds'])
@@ -743,6 +743,13 @@ class Runtime(unittest.TestCase):
         with store.open_lab(self.lab_root) as lab:
             with self.assertRaisesRegex(Exception, 'owner recovery required'):
                 evidence.require_recovered(lab)
+        self.experiment()
+        status, _stdout, stderr = self.cli('run', seed='2')
+        self.assertEqual(status, 0, stderr)
+        record = canonical.loads((runs[0] / 'run.json').read_bytes())
+        self.assertEqual(record['outcome'], 'error')
+        self.assertEqual(record['errors'][0]['what'], 'interrupted')
+        self.assertFalse((runs[0] / 'live.json').exists())
 
     def test_worker_keeps_writer_lock_after_outer_sigkill(self):
         process, _connection, note, fds = self.notified('none')

@@ -5,8 +5,8 @@ from pathlib import Path
 import select
 import signal
 import time
-from . import canonical, codex, driver, finding_store, probe, store, transport, triage, views
-from .host import Host
+from . import canonical, codex, driver, finding_store, probe, scripted, store, transport, triage, views
+from .host import CapabilityError, Host
 from .loop import utc
 from .records import Refused, triage_refusals
 
@@ -59,6 +59,7 @@ class Triage:
         self.stopping = False
         self.end = None
         self.files = {}
+        self.endpoint = None
 
     def ms(self):
         return 0 if self.origin is None else (time.monotonic_ns() - self.origin) // 1_000_000
@@ -98,6 +99,7 @@ class Triage:
         self.protocol.start_turn()
 
     def prepare(self):
+        transport.check_network(self.spec)
         lab, spec = self.lab, self.spec
         settings = canonical.loads(lab.read('settings.json'))
         from .cli import _triager_settings
@@ -114,7 +116,9 @@ class Triage:
         retained(lab, spec['run_base'], self.base + '/evidence')
         for name in ('work', 'home'):
             os.close(lab.directory(self.base + '/' + name, create=True))
-        home = Path(settings.get('codex_home', str(lab.root / 'codex')))
+        home = self.root / 'rehearsal/home' if 'rehearsal' in spec else Path(settings.get('codex_home', str(lab.root / 'codex')))
+        if 'rehearsal' in spec:
+            os.close(lab.directory(self.base + '/rehearsal', create=True))
         profile = views.profile_toml(configured['program']['path'], str(self.root / 'evidence'),
                                      str(self.root / 'work'), name='triage')
         text = codex.config_toml('', '', spec['run'], [], configured['model'], configured['effort'],
@@ -149,6 +153,12 @@ class Triage:
     def run_host(self, wake):
         self.host = Host(self.spec['unit'], self.spec['systemctl'], self.cost)
         self.lab.append_line(self.base + '/events.jsonl', dict(event='containment', cgroup=str(self.host.root)))
+        if 'rehearsal' in self.spec:
+            self.endpoint = scripted.Endpoint(self.lab, self.base + '/rehearsal', self.host,
+                                              self.spec['rehearsal']['value'], self.cost['command_seconds'])
+            address = self.endpoint.ready(wake)
+            text = codex.with_endpoint(self.lab.read(self.base + '/config.toml').decode(), address)
+            driver._write_config(Path(self.invocation['env']['CODEX_HOME']), text.encode())
         read, self.input = os.pipe2(os.O_CLOEXEC)
         os.set_blocking(self.input, False)
         try:
@@ -159,7 +169,9 @@ class Triage:
         self.origin = time.monotonic_ns()
         buffers = {'stdout': b'', 'ack': b''}
         cleanup_at = None
-        while self.host.children:
+        while 'triager' in self.host.children:
+            if self.endpoint is not None:
+                self.endpoint.poll()
             now = self.ms()
             if self.outcome is None and now >= self.cost['triage_seconds'] * 1000:
                 self.bound('triage_seconds')
@@ -236,6 +248,8 @@ class Triage:
                 os.read(wake, 4096)
             except BlockingIOError:
                 pass
+        if self.endpoint is not None:
+            self.endpoint.stop(wake, self.cost['stop_seconds'])
         if self.outcome is None and not any(t['completed_ms'] is not None for t in self.observed['turns']):
             self.error('triage.host', 'host ended without a completed turn')
         if self.outcome is None and (self.inventory is None or not self.protocol.turn_sent):
@@ -255,7 +269,15 @@ class Triage:
             os.mkdir(name, 0o700, dir_fd=parent)
         finally:
             os.close(parent)
-        self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit=self.spec['unit'])))
+        context = dict(format='lab-triage/1', network=self.spec.get('network', 'host'), run=self.spec['run'], key=self.spec['key'], n=self.spec['triage_n'],
+            started=self.started, ended=self.started, outcome='error', invocation=None,
+            expected_inventory=None, inventory=None, probe=None, input=None, output=None, bounds=self.cost,
+            usage=dict(seconds=None, turns=0, tokens=dict(input=None, cached=None, output=None), tokens_overshoot=None),
+            errors=[], finding_events=[], brake=self.spec.get('brake'))
+        if 'rehearsal' in self.spec:
+            context['rehearsal'] = dict(script=self.spec['rehearsal']['script'])
+        self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1',
+            unit=self.spec['unit'], systemctl=self.spec['systemctl'], context=context)))
         for name in ('events.jsonl', 'host.stdout', 'host.stderr'):
             self.files[name] = self.lab.create_file(self.base + '/' + name)
         wake_r, wake_w = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
@@ -274,12 +296,14 @@ class Triage:
                 cleaned = self.host is None or not self.host.children
                 if self.outcome is None:
                     output = triage.output_value(self.observed['final_message'], self.supplied)
+                    # A rehearsal plans the same additions, so it fails where the paid triage would, and appends none.
                     history, records, _paths, facts = finding_store.load(self.lab)
                     additions = triage.additions(self.supplied, output, history, records, utc(), facts)
-                    self.events = finding_store.append_triage(self.lab, additions)
+                    if 'rehearsal' not in self.spec:
+                        self.events = finding_store.append_triage(self.lab, additions)
                     self.outcome = 'proposed'
             except Exception as error:
-                self.error('triage', str(error))
+                self.error('containment' if isinstance(error, CapabilityError) else 'triage', str(error))
                 cleaned = self.host is None or not self.host.children
             final = self.observed['final_message']
             self.lab.write_once(self.base + '/output.json', (final + '\n').encode() if type(final) is str else b'null\n')
@@ -295,13 +319,15 @@ class Triage:
                     references[name] = None
                 else:
                     references[name] = dict(path=name, bytes=len(data), sha256=store.file_digest(data))
-            value = dict(format='lab-triage/1', run=self.spec['run'], key=self.spec['key'], n=self.spec['triage_n'],
+            value = dict(format='lab-triage/1', network=self.spec.get('network', 'host'), run=self.spec['run'], key=self.spec['key'], n=self.spec['triage_n'],
                 started=self.started, ended=utc(), outcome=self.outcome, invocation=self.invocation,
                 expected_inventory=self.expected, inventory=self.inventory, probe=self.probe,
                 input=references['input.json'], output=references['output.json'], bounds=self.cost,
                 usage=dict(seconds=None if self.origin is None else (self.ms() + 999) // 1000,
                     turns=len(self.observed['turns']), tokens=self.observed['tokens'], tokens_overshoot=self.overshoot),
                 errors=self.errors, finding_events=[dict(id=i, value=v) for i, v in self.events], brake=self.spec.get('brake'))
+            if 'rehearsal' in self.spec:
+                value['rehearsal'] = dict(script=self.spec['rehearsal']['script'])
             problems = triage_refusals(value)
             if problems:
                 raise Refused(problems[0].member, problems[0].why)
@@ -313,6 +339,8 @@ class Triage:
             if self.host is not None:
                 for identity in self.host.children:
                     self.host.kill_tree(identity)
+            if self.endpoint is not None:
+                self.endpoint.close()
             if self.input is not None:
                 os.close(self.input)
             for fd in self.files.values():

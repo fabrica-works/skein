@@ -284,6 +284,17 @@ named by its digest.
   ended (5.2) gets an `interrupted` event, its `run.json` from its
   events with outcome error, its evidence line, and `live.json` removed.
   Its held files stay taken, for their owner to settle (4.8).
+  - **From what is kept:** `live.json` holds the run's start (its seed,
+    bounds, brake, rehearsal and held names), so the record needs
+    nothing but it and the events that survived. A cut last line is kept
+    as written and ignored; a handoff whose event was lost has `taken_ms`
+    null.
+  - **A record wins:** a run whose `run.json` was written is never
+    rewritten; the sweep finishes its publication. A triage is swept the
+    same way into an error `triage.json`, its appended finding events
+    standing; a rehearsal publishes no evidence.
+  - **Refused for the owner:** a `live.json` without the run's start, a
+    directory with neither file, or a unit the user manager can't answer for.
 - **The disk floor:** a run is refused while the lab's file system has
   less free space than the machine's floor (`owners.md`, 4.5).
 
@@ -770,7 +781,13 @@ once every started process's exit is confirmed.
   process ends, however it ends (`KillMode=control-group`); and
   collected once it ends. So after a `SIGKILL` or a crash of the runner
   nothing of the run is left, its cgroup included, and the next
-  command's sweep records it (3.2).
+  command's sweep records it (3.2). Its start and handshake are bounded by
+  `command_seconds`, as the runner's other calls to the machine are.
+- **No account, no network.** A rehearsal, or a run with no driver and
+  no held file, has `PrivateNetwork=yes`: loopback alone. Before provisioning,
+  its worker checks `/sys/class/net` for `lo` alone; any other interfaces
+  are a containment error, named. All other runs and paid triages use the
+  host's network. Run and triage records name `network`, `"loopback"` or `"host"`.
 - **The machine** needs cgroup v2 and a user manager that delegates
   `memory` and `pids` to a transient unit, bubblewrap, and unprivileged
   user namespaces. A machine without cgroup v2, a user manager or
@@ -1291,7 +1308,12 @@ evidence for the owner, not failures.
   program and catalog, the configuration but its provider, the views,
   the probe, the seed, the provisioning, the checks. Its host's home is
   the run's own, so it needs no login; neither the brake nor `pause`
-  applies, since it spends nothing.
+  applies, since it spends nothing. Its unit has loopback alone, with no
+  network beyond the machine (5.2). Rehearsal covers `lab triage` too,
+  kept in `rehearsals/triage/<run>/<n>/`, with the same evidence, profile,
+  probe, inventory, output schema and planned finding events, so it fails
+  where the paid triage would; it appends none and never counts as that
+  run's triage.
   - **Never evidence:** a rehearsal is kept in
     `rehearsals/<experiment>/<run>/`, its `run.json` naming the key it
     rehearsed and, in `rehearsal`, the script's digest. It is never in a
@@ -1431,7 +1453,7 @@ finding's id, signature, class, state, title and runs, derived.
   finding's is an `occurred` on it; any other, but a use failure, is a
   new `candidate`.
 - **The triager** is Codex, its host as the driver's, bounded by the
-  triage class; `lab triage RUN` runs it on the run's failures no
+  triage class (rehearsed with `--rehearse SCRIPT`, 6.6); `lab triage RUN` runs it on the run's failures no
   signature matched and on its use failures. Its commands may read the
   host's minimal roots and the run's evidence (never its scratch), and
   write only in `triage/<n>/work/`, with no network, under a profile
@@ -1574,7 +1596,7 @@ lab subject --repository DIR --commit C [--exclude PATH]... --artifact NAME=PATH
 lab validate EXPERIMENT --subject DIGEST
 lab run EXPERIMENT --subject DIGEST [--seed N] [--campaign NAME | --rehearse SCRIPT]
 lab judge EXPERIMENT --subject DIGEST [--campaign NAME]
-lab triage RUN
+lab triage RUN [--rehearse SCRIPT]
 lab finding ID file | class CLASS | take --by WHO | fix ... | close --recheck KEY
 lab campaign open NAME | close NAME
 lab prune --scratch | --runs | --subjects
@@ -1673,7 +1695,8 @@ root:
   - no process and no cgroup left after a pass, a failure, a `SIGINT`
     and a `SIGKILL` of the runner, and the next command's sweep;
   - every action in the transcript; the inventory checked; the driver
-    stopped past its bound;
+    stopped past its bound; correct and wrong scripted triage rehearsals
+    proposed or errored without any finding append;
   - the probe against Codex's sandbox: each refusal of 6.2, and its
     failure when the profile is weakened;
   - three seeds of the parity stand-in giving flaky, and three passes

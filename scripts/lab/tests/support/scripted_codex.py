@@ -142,8 +142,9 @@ def play_responses():
     offered = [dict(type='function', name=name, parameters=dict(type='object', properties={}))
                for name in ('exec_command', 'write_stdin', 'list_mcp_resources',
                             'list_mcp_resource_templates', 'read_mcp_resource')]
-    offered.append(dict(type='namespace', name='mcp__lab', tools=[dict(type='function', name=t['name'],
-                        parameters=t['inputSchema']) for t in tools.tools]))
+    if tools is not None:
+        offered.append(dict(type='namespace', name='mcp__lab', tools=[dict(type='function', name=t['name'],
+                            parameters=t['inputSchema']) for t in tools.tools]))
     offered.extend(dict(type='function', name=name) for name in script.get('offered', []))
     history = []
     for number in range(100):

@@ -119,10 +119,15 @@ def _triager_settings(settings):
     return configured
 
 
-def triage_command(lab, lock_fd, run_id):
+def triage_command(lab, lock_fd, run_id, rehearsal_path=None):
     from . import triage, triager, transport
     if not RUN_ID.fullmatch(run_id):
         raise Refused('triage.run', 'expected a run id')
+    rehearsal = None
+    if rehearsal_path is not None:
+        from . import script
+        data, _ = store.read_regular(rehearsal_path)
+        rehearsal = dict(script=store.file_digest(data), value=script.parse(data))
     settings = canonical.loads(lab.read('settings.json'))
     configured = _triager_settings(settings)
     history, records, paths, facts = finding_store.load(lab)
@@ -143,33 +148,22 @@ def triage_command(lab, lock_fd, run_id):
     machine = _machine_facts(lab)
     if machine['disk_ok'] is not True:
         raise Refused('triage.disk', 'disk floor not met')
-    admitted, refusal = brake.admit(lab, dict(driver={}), cost, str(_runner_root()))
+    admitted, refusal = (None, None) if rehearsal is not None else brake.admit(lab, dict(driver={}), cost, str(_runner_root()))
     if refusal is not None:
         raise Refused('brake', refusal)
-    names = finding_store._names(lab, run_base + '/triage')
+    destination = 'rehearsals/triage/' + run_id if rehearsal is not None else run_base + '/triage'
+    names = finding_store._names(lab, destination)
     if any(not name.isascii() or not name.isdecimal() or str(int(name)) != name or int(name) <= 0 for name in names):
         raise Refused('triage.n', 'invalid triage directory')
     n = max((int(name) for name in names), default=0) + 1
-    spec = dict(triage_n=n, run=run_id, run_base=run_base, base=run_base + '/triage/' + str(n),
+    spec = dict(triage_n=n, run=run_id, run_base=run_base, base=destination + '/' + str(n),
                 triager=configured, runner=_runner_digest())
     record, status = transport.launch(lab, lock_fd, key_path, run['seed'], None,
-                                      brake_event=admitted, triage=spec)
+                                      brake_event=admitted, triage=spec, rehearsal=rehearsal)
     print(record['outcome'])
     for error in record['errors']:
         print(error['what'] + ': ' + error['detail'], file=sys.stderr)
     return status
-
-
-def _superseded(lab, key_path, previous, current):
-    result = set()
-    for line in previous:
-        if (line['outcome'] != 'fail' or not line['signatures']
-                or not all(signature.startswith('bound/') for signature in line['signatures'])):
-            continue
-        record = canonical.loads(lab.read(f"{key_path}/runs/{line['run']}/run.json"))
-        if judge.superseded(line['signatures'], record['bounds'], current):
-            result.add(line['run'])
-    return frozenset(result)
 
 
 def _subject(lab, identity):
@@ -452,10 +446,9 @@ def runtime_command(lab, lock_fd, args):
         return status
     while True:
         key = canonical.loads(lab.read(key_path + '/key.json'))
-        superseded = _superseded(lab, key_path, previous, _runtime_cost(lab, key))
-        decision = judge.next_seed(previous, superseded)
-        derived = judge.verdict_record(identity, previous, superseded)
-        lab.replace_derived(key_path + '/verdict.json', derived)
+        derived = evidence.derive_verdict(lab, key_path, previous)
+        not_judged = frozenset(run for seed in derived['seeds'] for run in seed['not_judged'])
+        decision = judge.next_seed(previous, not_judged)
         if decision['action'] == 'done':
             print(derived['verdict'])
             return 0 if derived['verdict'] == 'pass' else 1
@@ -507,6 +500,7 @@ def main(argv=None, *, lab_root=None, finding_time=None):
     commands = parser.add_subparsers(dest="command", required=True)
     triage_parser = commands.add_parser('triage', help='propose findings for a judged failing run')
     triage_parser.add_argument('run')
+    triage_parser.add_argument('--rehearse', metavar='SCRIPT')
     tool = commands.add_parser("tool", help="serve the run’s tools over stdio MCP")
     tool.add_argument("run")
     subject = commands.add_parser("subject", help="capture a commit tree and named artifacts")
@@ -561,11 +555,12 @@ def main(argv=None, *, lab_root=None, finding_time=None):
             from .tool import main as tool_main
             return tool_main(root, args.run)
         with store.open_lab(root) as lab, lab.lock() as lock_fd:
-            evidence.require_recovered(lab)
+            writing = args.command not in ('validate', 'held') or (args.command == 'held' and args.held_action == 'put')
+            evidence.require_recovered(lab, writing=writing)
             now = finding_time
             if args.command == 'finding' and now is None:
                 now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-            if not (args.command == 'run' and args.rehearse is not None):
+            if not (args.command in ('run', 'triage') and args.rehearse is not None):
                 finding_store.sync(lab, now)
             if args.command == 'held':
                 if args.held_action == 'put':
@@ -590,7 +585,7 @@ def main(argv=None, *, lab_root=None, finding_time=None):
                 print(args.id + ' ' + state)
                 return 0
             if args.command == 'triage':
-                return triage_command(lab, lock_fd, args.run)
+                return triage_command(lab, lock_fd, args.run, args.rehearse)
             if args.command in ('run', 'judge'):
                 return runtime_command(lab, lock_fd, args)
             if args.command == "subject":

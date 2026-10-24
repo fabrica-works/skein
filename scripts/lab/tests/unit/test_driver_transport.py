@@ -6,6 +6,16 @@ from runner import codex, driver, life, transport
 from .test_codex import drive, inventory
 
 
+class UnitCommand(unittest.TestCase):
+    def test_unit_start_uses_machine_call_bound(self):
+        command = transport.unit_command('/systemd-run', '/python', 'lab-example.service',
+            dict(ready_seconds=1, command_seconds=17, stop_seconds=3),
+            'worker', '/runner', '/endpoint', 'token')
+        self.assertIn('--property=TimeoutStartSec=17', command)
+        self.assertIn('--property=TimeoutStopSec=3', command)
+        self.assertNotIn('--property=TimeoutStartSec=1', command)
+
+
 class AppServer(unittest.TestCase):
     def test_sequence_pages_and_turn_schema(self):
         received, inventories = [], []

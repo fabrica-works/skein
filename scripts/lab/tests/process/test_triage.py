@@ -51,6 +51,7 @@ class Triage(unittest.TestCase):
         self.assertEqual(triage_refusals(value), [])
         self.assertEqual(outcome, value['outcome'])
         self.assertEqual(value['n'], n)
+        self.assertEqual(value['network'], 'host')
         self.assertFalse((self.base / 'live.json').exists())
         events = [json.loads(line) for line in (self.base / 'events.jsonl').read_text().splitlines()]
         groups = [e['cgroup'] for e in events if e.get('event') == 'containment']
@@ -210,7 +211,7 @@ class Triage(unittest.TestCase):
             _, error = self.invoke({}, 2)
             self.assertIn(field, error)
             self.settings['costs']['smoke'][field] = old
-        self.assertFalse((self.root_run / 'triage').exists())
+        self.assertEqual(list((self.root_run / 'triage').glob('*')), [])
 
     def test_pause_and_brake_refuse_without_triage_directory(self):
         pause = self.lab_root / 'pause'
@@ -221,13 +222,13 @@ class Triage(unittest.TestCase):
         self.settings['brake'] = dict(argv=['/bin/false'], env={})
         _, error = self.invoke({}, 2)
         self.assertIn('brake: exit 1', error)
-        self.assertFalse((self.root_run / 'triage').exists())
+        self.assertEqual(list((self.root_run / 'triage').glob('*')), [])
 
     def test_writer_lock_refuses_triage_without_starting_host(self):
         with store.open_lab(self.lab_root) as lab, lab.lock():
             _, error = self.invoke({}, 2)
         self.assertIn('lock', error)
-        self.assertFalse((self.root_run / 'triage').exists())
+        self.assertEqual(list((self.root_run / 'triage').glob('*')), [])
 
     def test_existing_occurrence_without_use_has_nothing_to_triage(self):
         self.script.write_text('{}')
@@ -237,3 +238,44 @@ class Triage(unittest.TestCase):
         _, error = self.invoke({}, 2, run=second['run'])
         self.assertIn('no use failures or candidates created by this run', error)
         self.assertFalse((self.root_run.parent / second['run'] / 'triage').exists())
+
+    def rehearsal_story(self, name, expected):
+        self.settings['costs']['smoke']['triage_tokens'] = 1000
+        self.settings['brake'] = dict(argv=['/usr/bin/false'], env={})
+        self.settings['codex_home'] = str(self.root / 'paid-home-sentinel')
+        Path(self.settings['codex_home']).write_bytes(b'never open this')
+        (self.lab_root / 'pause').write_text('paused')
+        self.settings_file()
+        before = self.histories()
+        script = test_runtime.PACKAGE / 'tests/support/triage-rehearsal' / (name + '.json')
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            status = cli.main(['triage', self.run['run'], '--rehearse', str(script)], lab_root=self.lab_root)
+        self.assertEqual(status, expected, stderr.getvalue())
+        base = self.lab_root / 'rehearsals/triage' / self.run['run'] / '1'
+        value = canonical.loads((base / 'triage.json').read_bytes())
+        self.assertEqual(triage_refusals(value), [])
+        self.assertEqual(stdout.getvalue().strip(), value['outcome'])
+        self.assertEqual(value['rehearsal'], dict(script=store.file_digest(script.read_bytes())))
+        self.assertEqual(value['network'], 'loopback')
+        self.assertEqual(value['run'], self.run['run'])
+        self.assertEqual(value['finding_events'], [])
+        self.assertEqual(self.histories(), before)
+        self.assertEqual(list((self.root_run / 'triage').glob('*')), [])
+        self.assertFalse((base / 'live.json').exists())
+        self.assertEqual(Path(self.settings['codex_home']).read_bytes(), b'never open this')
+        self.assertEqual(value['invocation']['env']['CODEX_HOME'], str(base / 'rehearsal/home'))
+        self.assertTrue(list((base / 'rehearsal/requests').glob('[0-9]*.json')))
+        for name, before in self.original.items():
+            self.assertEqual((self.root_run / name).read_bytes(), before)
+        return value
+
+    def test_correct_script_rehearses_triage_while_paused_and_proposes_without_findings(self):
+        value = self.rehearsal_story('correct', 0)
+        self.assertEqual(value['outcome'], 'proposed')
+        self.assertEqual(value['usage']['tokens'], dict(input=200, cached=0, output=20))
+
+    def test_wrong_script_rehearses_triage_and_errors_without_findings(self):
+        value = self.rehearsal_story('wrong', 4)
+        self.assertEqual(value['outcome'], 'error')
+        self.assertTrue(any('triage.output' in error['detail'] for error in value['errors']))

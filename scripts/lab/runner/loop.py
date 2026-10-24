@@ -81,6 +81,7 @@ class Run:
             self.effects.extend(effects)
 
     def provision(self):
+        transport.check_network(self.spec)
         paths = ['scratch/' + p['name'] for p in self.exp['processes']]
         paths += ['dirs/' + n for n in self.exp['dirs']]
         paths += ['collected/' + c['name'] for c in self.exp['collect']]
@@ -89,7 +90,6 @@ class Run:
             paths.append('meter')
         for path in paths:
             os.close(self.lab.directory(self.base + '/' + path, create=True))
-        self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit=self.spec['unit'])))
         self.take_held()
         if self.exp['driver'] is not None:
             self.driver = driver.Driver(self)
@@ -663,7 +663,7 @@ class Run:
         outcome = judge.outcome(self.failures, self.errors, self.undecided, report, driver_required=required)
         for i, failure in enumerate(self.failures):
             failure['id'] = 'failure-' + str(i + 1)
-        record = dict(format='lab-run/1', run=self.spec['run'], key=self.spec['key'], experiment=self.exp['name'],
+        record = dict(format='lab-run/1', network=self.spec.get('network', 'host'), run=self.spec['run'], key=self.spec['key'], experiment=self.exp['name'],
                       seed=self.spec['seed'], attempt=self.spec['attempt'], campaign=self.spec['campaign'],
                       started=self.started, ended=utc(), outcome=outcome, schedule=self.state.data['schedule'],
                       processes=self.records, commands=self.command_records, driver=self.driver_record, held=self.held_records,
@@ -706,7 +706,17 @@ class Run:
         if 'rehearsal' in self.spec:
             self.lab.write_once(self.base + '/key.json', canonical.record_bytes(self.key))
         # The marker precedes all native provisioning, including controller failures.
-        self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1', unit=self.spec['unit'])))
+        context = dict(format='lab-run/1', network=self.spec.get('network', 'host'), run=self.spec['run'], key=self.spec['key'], experiment=self.exp['name'],
+            seed=self.spec['seed'], attempt=self.spec['attempt'], campaign=self.spec['campaign'],
+            started=self.started, ended=self.started, outcome='error', schedule=self.state.data['schedule'],
+            processes={}, commands=[], driver=None, held=[], failures=[], undecided=[], errors=[], bounds=self.cost,
+            usage=dict(elapsed_ms=None, longest_ms=self.longest_ms(), driver=None, triage=[], subject_spend=None, windows=None),
+            about=dict(unit=self.spec['unit'], manager=self.spec.get('manager_version')))
+        if 'rehearsal' in self.spec:
+            context['rehearsal'] = dict(script=self.spec['rehearsal']['script'])
+        self.lab.write_once(self.base + '/live.json', canonical.record_bytes(dict(format='lab-live/1',
+            unit=self.spec['unit'], systemctl=self.spec['systemctl'], context=context, brake=self.spec.get('brake'),
+            held=self.exp.get('held', []))))
         wake_r, wake_w = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
         handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
         def interrupted(sig, _frame):
