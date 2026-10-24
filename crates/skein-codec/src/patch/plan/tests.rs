@@ -20,7 +20,7 @@ fn kept(old: &str, new: &str) -> Patcher {
 fn planned(old: &str, new: &str, lines: &str) -> Plan {
     let mut patcher = kept(old, new);
     patcher.plan(format!("{HEADER}{lines}").as_bytes()).expect("valid patch").expect("family block");
-    let tables = core::mem::replace(&mut patcher.tables.plans, List::with_capacity(0));
+    let tables = core::mem::replace(&mut patcher.build.tables.plans, List::with_capacity(0));
     tables.into_boxed().into_iter().next().expect("one plan")
 }
 
@@ -590,7 +590,7 @@ fn identity_copies_versioned_records_and_stops_at_held_fields() {
     let mut patcher =
         kept("versioned record Copy {} record Held { f: bytes 8 holds other R } record Nested { f: Held }", "");
     patcher.identity(1).expect("identity");
-    let plan = patcher.tables.plans.get(0).expect("identity plan");
+    let plan = patcher.build.tables.plans.get(0).expect("identity plan");
     assert_eq!(flags(plan), [(true, false), (false, true), (false, true)]);
     assert_eq!(plan.fields.as_slice(), [true, true]);
 }
@@ -646,7 +646,7 @@ fn plan_retains_global_refusals_marks_and_its_own_sites() {
     const TEXT: &[u8] = b"patch 1\nowner o 7\nmark mark\nmark fresh\nfamily other 1 to 2\nwritten X\nrefuses a \"other\"\nfamily f 1 to 2\nwritten D\nrefuses b \"first#\"\nrefuses c \"second\"\n";
     let mut patcher = kept("record D {}", "record D {}");
     patcher.plan(TEXT).expect("valid patch");
-    let plan = patcher.tables.plans.get(0).expect("plan");
+    let plan = patcher.build.tables.plans.get(0).expect("plan");
     assert_eq!((plan.patch, plan.old, plan.new), (7, 0, 1));
     assert_eq!(plan.text.as_ref(), TEXT);
     let mut marks = Vec::new();

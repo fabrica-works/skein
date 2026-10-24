@@ -100,7 +100,7 @@ struct Entry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Source {
+pub(crate) enum Source {
     Declaration(DeclIx),
     Type(TypeIx),
 }
@@ -178,6 +178,25 @@ impl Value {
             | Kind::List { .. }
             | Kind::Option(_) => Err(Misread { node: record }),
         }
+    }
+
+    /// The number of items in a list.
+    pub fn count(&self, list: Node) -> Result<u32, Misread> {
+        let items = self.items(list)?;
+        Ok(items.left)
+    }
+
+    /// The node holding this value, or none for the root.
+    pub fn parent(&self, node: Node) -> Result<Option<Node>, Misread> {
+        Ok(self.entry(node)?.parent)
+    }
+
+    pub(crate) fn source(&self, node: Node) -> Result<Source, Misread> {
+        Ok(self.entry(node)?.source)
+    }
+
+    pub(crate) fn nodes(&self, node: Node) -> Result<u32, Misread> {
+        Ok(self.entry(node)?.next.checked_sub(node.0).expect("preorder subtree ends after its root"))
     }
 
     /// Starts walking a list's items.

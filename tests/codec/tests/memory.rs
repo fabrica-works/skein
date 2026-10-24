@@ -219,3 +219,77 @@ mod tests {
         assert_eq!(measured.held(), 0, "decoding again holds no new allocation");
     }
 }
+
+#[cfg(test)]
+mod patch_memory {
+    use skein_codec::patch::{Capacity, Patcher, Step};
+    use skein_codec::schema::{DeclIx, FieldIx};
+    use skein_heap::{Meter, Span};
+
+    // Two short texts, one patch, and a root with two scalar fields.
+    const CAPACITY: Capacity = Capacity { versions: 2, patches: 1, text: 256, bytes: 64, nodes: 8 };
+    const OLD: &[u8] = b"family f 1\nversioned record D { f: u8 held: bytes 3 holds other R }";
+    const NEW: &[u8] = b"family f 2\nversioned record D { f: u16 held: bytes 3 holds other R }";
+    const PATCH: &[u8] = b"patch 1\nowner o 1\nfamily f 1 to 2\nwiden D.f u8 u16\nwritten D.f\n";
+    const WIRE: &[u8] = &[0, 1, 7, 0, 0, 0, 1, 97];
+    const EXPECTED: &[u8] = &[0, 2, 0, 7, 0, 0, 0, 1, 97];
+    const RECORDS: u32 = 128;
+
+    #[test]
+    fn patcher_stays_within_its_heap_bound_after_every_call() {
+        let bound = Patcher::worst_case_heap(CAPACITY).expect("bound");
+        let meter = Meter::new();
+        meter.start();
+        let mut patcher = Patcher::new(CAPACITY);
+        assert!(meter.held() <= bound, "new");
+        patcher.keep(OLD).expect("old");
+        assert!(meter.held() <= bound, "old schema");
+        patcher.keep(NEW).expect("new");
+        assert!(meter.held() <= bound, "new schema");
+        let plan = patcher.plan(PATCH).expect("patch").expect("family");
+        let measured = meter.end();
+        assert!(measured.peak() <= bound, "planning scratch is counted");
+        for _ in 0..RECORDS {
+            let wire = Box::from(WIRE);
+            let span = Span::start();
+            patcher.start(plan, DeclIx::new(0), wire).expect("record");
+            assert_eq!(span.end().peak, 0, "start allocates nothing beyond the input box");
+            assert!(meter.held() <= bound, "start");
+            let span = Span::start();
+            let at = match patcher.next().expect("written") {
+                Step::Written { at, .. } => at,
+                Step::Held { .. } | Step::Done => unreachable!("written field first"),
+            };
+            assert_eq!(span.end().peak, 0, "next allocates nothing");
+            assert!(meter.held() <= bound, "written stop");
+            let span = Span::start();
+            let (old, new) = patcher.parts();
+            let field = old.field(at, FieldIx::new(0)).expect("f");
+            new.put_uint(old.uint(field).expect("uint")).expect("written answer");
+            assert_eq!(span.end().peak, 0, "answer allocates nothing");
+            assert!(meter.held() <= bound, "written answer");
+            let span = Span::start();
+            let at = match patcher.next().expect("held") {
+                Step::Held { at, .. } => at,
+                Step::Written { .. } | Step::Done => unreachable!("held field second"),
+            };
+            assert_eq!(span.end().peak, 0, "held next allocates nothing");
+            assert!(meter.held() <= bound, "held stop");
+            let span = Span::start();
+            let (old, new) = patcher.parts();
+            new.carry(old, at).expect("held answer");
+            assert_eq!(span.end().peak, 0, "carry allocates nothing");
+            assert!(meter.held() <= bound, "held answer");
+            let span = Span::start();
+            assert_eq!(patcher.next(), Ok(Step::Done));
+            assert_eq!(span.end().peak, 0, "done allocates nothing");
+            assert!(meter.held() <= bound, "done");
+            let span = Span::start();
+            assert_eq!(patcher.finish().expect("finish"), EXPECTED);
+            assert_eq!(span.end().peak, 0, "finish lends the output without allocation");
+            assert!(meter.held() <= bound, "finish");
+        }
+        drop(patcher);
+        assert_eq!(meter.held(), 0, "all machine storage released");
+    }
+}

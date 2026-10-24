@@ -390,6 +390,27 @@ pub fn parse(text: &[u8]) -> Result<Schema, SchemaError> {
     Ok(parsed.schema)
 }
 
+/// Text bounds every token and type; names occupy disjoint spans of the text.
+pub(crate) fn worst_case_heap(text: u32) -> Option<u64> {
+    let declarations = text.min(MAX_DECLARATIONS);
+    let mut total = u64::from(text).checked_mul(3)?; // owned text and both name sets
+    for bytes in [
+        List::<tokens::Token>::worst_case(text)?,
+        List::<Declaration>::worst_case(declarations)?,
+        List::<Field>::worst_case(text)?,
+        List::<Variant>::worst_case(text)?,
+        List::<Type>::worst_case(text)?,
+        List::<Span>::worst_case(text)?,
+        List::<Option<Span>>::worst_case(text)?,
+        List::<u32>::worst_case(declarations)?.checked_mul(2)?,
+        Map::<Box<[u8]>, DeclIx>::worst_case(declarations)?,
+        skein_lib::Set::<Box<[u8]>>::worst_case(text)?,
+    ] {
+        total = total.checked_add(bytes)?;
+    }
+    Some(total)
+}
+
 fn spelled(text: &[u8], span: Span) -> &[u8] {
     let start = usize::try_from(span.start).expect("text offset fits usize");
     let end = usize::try_from(span.end).expect("text offset fits usize");

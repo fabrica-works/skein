@@ -1,9 +1,11 @@
-//! Read and plan bounded family patches (codec.md, sections 11.1–11.3).
+//! Plan and run bounded family patches (codec.md, section 11).
 
 use crate::schema::{self, DeclIx, FieldIx, Schema, SchemaError, Span, VariantIx};
 use skein_lib::List;
 
 mod plan;
+mod run;
+pub use run::{Build, Halt, Old, Step};
 mod text;
 
 #[cfg(test)]
@@ -30,7 +32,8 @@ pub struct Capacity {
 /// A family's kept schemas and planned conversions.
 #[derive(Debug)]
 pub struct Patcher {
-    pub(crate) tables: Tables,
+    old: Old,
+    build: Build,
 }
 
 /// The tables shared by planning and the run's build half (codec.md, 11.6).
@@ -285,19 +288,13 @@ impl Patcher {
     #[must_use]
     pub fn new(capacity: Capacity) -> Patcher {
         assert!(capacity.text <= schema::MAX_TEXT, "patch texts stay within the schema text ceiling");
-        Patcher {
-            tables: Tables {
-                capacity,
-                schemas: List::with_capacity(capacity.versions),
-                plans: List::with_capacity(capacity.patches),
-            },
-        }
+        Patcher { old: Old::new(capacity.nodes), build: Build::new(capacity) }
     }
 
     /// Parses and keeps one version of the machine's family.
     pub fn keep(&mut self, text: &[u8]) -> Result<u16, KeepError> {
-        if text.len() > usize::try_from(self.tables.capacity.text).expect("u32 fits usize")
-            || self.tables.schemas.room() == 0
+        if text.len() > usize::try_from(self.build.tables.capacity.text).expect("u32 fits usize")
+            || self.build.tables.schemas.room() == 0
         {
             return Err(KeepError::Room);
         }
@@ -305,7 +302,7 @@ impl Patcher {
             Ok(schema) => schema,
             Err(error) => return Err(KeepError::Schema(error)),
         };
-        if let Some(first) = self.tables.schemas.get(0)
+        if let Some(first) = self.build.tables.schemas.get(0)
             && first.spelled(first.family()) != schema.spelled(schema.family())
         {
             return Err(KeepError::Family);
@@ -314,23 +311,23 @@ impl Patcher {
         if self.schema(version).is_some() {
             return Err(KeepError::Twice);
         }
-        self.tables.schemas.push(schema).expect("schema room checked");
+        self.build.tables.schemas.push(schema).expect("schema room checked");
         Ok(version)
     }
 
     /// The kept schema of this version, when present.
     #[must_use]
     pub fn schema(&self, version: u16) -> Option<&Schema> {
-        self.tables.schemas.get(self.tables.schema_index(version)?)
+        self.build.tables.schemas.get(self.build.tables.schema_index(version)?)
     }
 
     /// Reads the whole text and plans this family's block, if present.
     pub fn plan(&mut self, patch: &[u8]) -> Result<Option<PlanIx>, PatchError> {
-        if patch.len() > usize::try_from(self.tables.capacity.text).expect("u32 fits usize") {
+        if patch.len() > usize::try_from(self.build.tables.capacity.text).expect("u32 fits usize") {
             return Err(error(1, Span { start: 0, end: 0 }, PatchWrong::Long));
         }
         let parsed = text::parse(patch)?;
-        let Some(first) = self.tables.schemas.get(0) else {
+        let Some(first) = self.build.tables.schemas.get(0) else {
             return Ok(None);
         };
         for block in &parsed.blocks {
@@ -338,12 +335,12 @@ impl Patcher {
                 if self.plan_from(block.from).is_some() {
                     return Err(block.error(PatchWrong::Twice));
                 }
-                if self.tables.plans.room() == 0 {
+                if self.build.tables.plans.room() == 0 {
                     return Err(block.error(PatchWrong::Room));
                 }
-                let planned = plan::build(&self.tables, patch, &parsed, *block)?;
-                let index = PlanIx(self.tables.plans.len());
-                self.tables.plans.push(planned).expect("plan room checked");
+                let planned = plan::build(&self.build.tables, patch, &parsed, *block)?;
+                let index = PlanIx(self.build.tables.plans.len());
+                self.build.tables.plans.push(planned).expect("plan room checked");
                 return Ok(Some(index));
             }
         }
@@ -352,25 +349,25 @@ impl Patcher {
 
     /// Plans a kept version to itself, stopping only at held records.
     pub fn identity(&mut self, version: u16) -> Result<PlanIx, PatchWrong> {
-        let schema = self.tables.schema_index(version).ok_or(PatchWrong::Unkept)?;
-        for plan in &self.tables.plans {
+        let schema = self.build.tables.schema_index(version).ok_or(PatchWrong::Unkept)?;
+        for plan in &self.build.tables.plans {
             if plan.from == version && plan.from == plan.to {
                 return Err(PatchWrong::Twice);
             }
         }
-        if self.tables.plans.room() == 0 {
+        if self.build.tables.plans.room() == 0 {
             return Err(PatchWrong::Room);
         }
-        let planned = plan::identity(&self.tables, schema)?;
-        let index = PlanIx(self.tables.plans.len());
-        self.tables.plans.push(planned).expect("plan room checked");
+        let planned = plan::identity(&self.build.tables, schema)?;
+        let index = PlanIx(self.build.tables.plans.len());
+        self.build.tables.plans.push(planned).expect("plan room checked");
         Ok(index)
     }
 
     /// Finds the patch from a version, excluding an identity plan.
     #[must_use]
     pub fn plan_from(&self, version: u16) -> Option<PlanIx> {
-        for (at, plan) in self.tables.plans.iter().enumerate() {
+        for (at, plan) in self.build.tables.plans.iter().enumerate() {
             if plan.from == version && plan.from != plan.to {
                 return Some(PlanIx(u32::try_from(at).expect("bounded plans table")));
             }
@@ -381,14 +378,15 @@ impl Patcher {
     /// The versions of a plan made by this patcher.
     #[must_use]
     pub fn versions(&self, plan: PlanIx) -> Versions {
-        let plan = self.tables.plans.get(plan.0).expect("plan belongs to this patcher");
+        let plan = self.build.tables.plans.get(plan.0).expect("plan belongs to this patcher");
         Versions { from: plan.from, to: plan.to }
     }
 
     /// An old declaration's new counterpart, when it survives.
     #[must_use]
     pub fn counterpart(&self, plan: PlanIx, old: DeclIx) -> Option<DeclIx> {
-        self.tables
+        self.build
+            .tables
             .plans
             .get(plan.0)
             .expect("plan belongs to this patcher")
@@ -402,6 +400,7 @@ impl Patcher {
     #[must_use]
     pub fn source(&self, plan: PlanIx, new: DeclIx) -> Option<DeclIx> {
         *self
+            .build
             .tables
             .plans
             .get(plan.0)

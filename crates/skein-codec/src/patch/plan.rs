@@ -17,9 +17,7 @@ pub(crate) struct Plan {
     pub(crate) from: u16,
     pub(crate) to: u16,
     /// Indices in `Tables::schemas`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the run reads its kept schema indices (codec.md, 11.4)"))]
     pub(crate) old: u32,
-    #[cfg_attr(not(test), expect(dead_code, reason = "the run reads its kept schema indices (codec.md, 11.4)"))]
     pub(crate) new: u32,
     /// Refusal and mark spans refer to these bytes.
     pub(crate) text: Box<[u8]>,
@@ -74,20 +72,15 @@ pub(crate) enum Source {
 pub(crate) struct SitePlan {
     pub(crate) index: u32,
     pub(crate) target: Target,
-    #[cfg_attr(not(test), expect(dead_code, reason = "the run checks a site's declared refusals (codec.md, 11.5)"))]
     pub(crate) refusals: (u32, u32),
 }
 
 /// A declared refusal's spans in `Plan::text` and its global site index.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RefusalPlan {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the run exposes declared refusal names and text (codec.md, 11.6)")
-    )]
+    #[cfg_attr(not(test), expect(dead_code, reason = "planning retains refusal names in text order (codec.md, 11.3)"))]
     pub(crate) name: Span,
     /// The content without its quotes.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the run exposes declared refusal text (codec.md, 11.6)"))]
     pub(crate) text: Span,
     pub(crate) site: u32,
 }
@@ -1703,4 +1696,30 @@ pub(super) fn identity(tables: &Tables, index: u32) -> Result<Plan, PatchWrong> 
     let mut plan = empty_plan(schema, schema, index, index, 0, 0);
     fill(&mut plan, schema, schema, &matching, true)?;
     Ok(plan)
+}
+
+/// Retained conversions plus the parser, matching and change scratch at text's bound.
+pub(super) fn worst_case_heap(text: u32) -> Option<u64> {
+    let tokens = text.checked_add(1)?;
+    let mut total = u64::from(text);
+    for bytes in [
+        List::<Conversion>::worst_case(text)?,
+        List::<Option<DeclIx>>::worst_case(text)?.checked_mul(2)?,
+        List::<Source>::worst_case(text)?,
+        List::<Option<VariantIx>>::worst_case(text)?.checked_mul(2)?,
+        List::<bool>::worst_case(text)?.checked_mul(2)?,
+        List::<u8>::worst_case(tokens.checked_mul(8)?.checked_add(text)?)?,
+        List::<SitePlan>::worst_case(tokens)?,
+        List::<RefusalPlan>::worst_case(tokens)?,
+        List::<Span>::worst_case(tokens)?.checked_mul(2)?,
+        List::<Token>::worst_case(tokens)?,
+        List::<Line>::worst_case(tokens)?,
+        List::<Block>::worst_case(tokens)?,
+        List::<Option<FieldIx>>::worst_case(text)?,
+        List::<Option<PatchError>>::worst_case(tokens)?,
+        List::<Change>::worst_case(text.checked_mul(2)?)?,
+    ] {
+        total = total.checked_add(bytes)?;
+    }
+    Some(total)
 }
