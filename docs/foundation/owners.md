@@ -451,7 +451,7 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
   build, and a repin of a repository others also repin, wait for the
   director's word: it orders them across owners and runs.
 - **The footprint.** An owner's notes list the repositories, crates and
-  protocol versions it changes, and the repins it needs. The director
+  protocols it changes, and the repins it needs. The director
   orders owners whose footprints overlap, and one repin at a time per
   repository.
 

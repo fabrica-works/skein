@@ -90,7 +90,8 @@ is made:
 - **its magic:** four bytes naming the application's protocol;
 - **its versions:** the contiguous range this side speaks. An
   application speaks one version at a time: its formats change at will,
-  and a change its peer would notice is a new version (codec.md, 5). Its
+  and from the first release a change its peer would notice is a new
+  version (codec.md, 5); before it, the version never moves. Its
   range is then that one version, a peer of another is refused with
   *version* (5.2), and nothing is translated;
 - **for each version, its kinds:** for each kind, its direction and the

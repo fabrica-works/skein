@@ -35,9 +35,10 @@ records kept in files or stores.
   other, so what decodes encodes back to the same bytes.
 - **Versioned.** A schema is one version of a family, and a family has
   one current version. A record kept beyond a channel carries its
-  version. A reader reads the current version and refuses another. From
-  the baseline on (section 11), kept versions are read as generic values
-  and patched to the current one; until it, nothing is translated.
+  version. A reader reads the current version and refuses another. The
+  baseline is the first release (section 5): until it, no version moves
+  and nothing is translated; from it on, kept versions are read as
+  generic values and patched to the current one (section 11).
 - **Read at run time too.** `skein-codec` reads a schema's text as step
   code (section 7), and decodes the bytes of any of its records into a
   generic value, an index over those bytes, with the generated code's
@@ -224,25 +225,34 @@ For each record and enumeration:
 
 ## 5. Versions
 
-- **Any change a reader would notice is a new version:** a new schema,
-  whose generated code replaces the old. There is one version at a time,
-  and no promise of stability to anyone outside the family's owner.
+- **The baseline is the first release.** Until it, a family's version
+  keeps its number: a change a reader would notice changes the schema,
+  its generated code and its golden bytes in place. A record an older
+  build kept is then not told apart by its version, so nothing is kept
+  across builds that change its family: a store from an older build is
+  started afresh. Versions move at a release, not at a landing.
+- **From the baseline on, any change a reader would notice is a new
+  version:** a new schema, whose generated code replaces the old. There
+  is one version at a time, and no promise of stability to anyone
+  outside the family's owner.
 - **A reader reads one version.** It reads a versioned record's version
   first, with `skein-codec`, and refuses another with the problem
   *another version*. Its generated code reads the current version only.
-- **Kept versions are patched, from the baseline on.** The baseline is
-  the first landing under section 11's rules. From it, a family's owner
-  keeps each version's schema as text, and a kept record of an older
-  version is read as a generic value (section 8) and patched to the
-  current version (section 11) before the generated code reads it. A
-  version then names one layout. Until the baseline, nothing is
-  translated: what an owner does with a record of another version, such
-  as starting afresh, is its own policy.
+- **Kept versions are patched, from the baseline on.** From it, a
+  family's owner keeps each version's schema as text, and a kept record
+  of an older version is read as a generic value (section 8) and patched
+  to the current version (section 11) before the generated code reads
+  it. A version then names one layout. Until the baseline, nothing is
+  translated. Rolling upgrades, a release running beside the one before
+  it, are designed with the first release: what a channel's sides speak
+  across it (channel.md, 5.2) and the order a store's readers move in.
 - **A writer writes its current version only.**
 - **On a channel,** the agreed version picks the code for its bodies
   (channel.md, section 5.2). Bodies carry no version of their own.
-- **A version's golden bytes stand for it.** A change that moves them is
-  a new version.
+- **Golden bytes:** until the baseline, a family has one set, its
+  current schema's, which a change moves in place. From it on, a
+  version's golden bytes stand for it, and a change that moves them is a
+  new version.
 
 ## 6. Golden bytes and tests
 
@@ -1663,9 +1673,8 @@ text at version `c`:
 - **`Unmoved`:** a patch needed and the version kept: the author moves
   it, the current schema's header and file, then runs the command.
 - **`Needless`:** the version moved with no patch needed, against 10.4;
-  the author keeps it. An owner whose policy before the baseline moves
-  versions on such changes (jig's) is found `Needless` by the check
-  from its baseline on; before it, no gate runs the check.
+  the author keeps it. Before the baseline no version moves (section 5),
+  and no gate runs the check.
 - **`Wrong`:** the current version neither `k` nor `k + 1`. A version
   without its kept text, such as a current `v9` over a latest kept `v7`,
   is `Wrong`: kept versions run without a gap from a family's first

@@ -425,7 +425,7 @@ changed or dropped.
   writing to their inbox files as before.
 - **The director keeps what crosses roadmaps:** the user and the
   status page; machines and placement; the landing turn and the build
-  infrastructure; repins, API breaks and the version constants; spend;
+  infrastructure; repins and API breaks; spend;
   security (section 10); and starting, pausing, resuming and closing
   owners, with their briefs. A question in these, or one that touches
   another roadmap's owner, the sub-director brings to the director with
