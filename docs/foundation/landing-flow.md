@@ -4,7 +4,7 @@ Provisional, 2026-10-24, proposed with the user and not built yet. How
 changes reach `main` across skein, smith, jig, hearth and temper:
 - one set of branches per milestone;
 - a landing queue that is the only writer to `main`;
-- a keeper that runs the queue.
+- a tool that runs the queue, and a keeper that watches it.
 
 It has two goals. It gets the most out of the shared build cache
 ([build-cache.md](build-cache.md)), and it leaves owners nothing to
@@ -40,12 +40,16 @@ and milestones are [owners.md](owners.md).
   - If `main` moved since the set was rebased, the queue rebases it
     again and runs the gate of every repository the set reaches.
   - Then it lands the whole set, or sends it back to its owner.
-  - A set sent back and returned goes to the front of the queue.
-- **A keeper runs the queue** (section 5). It is a Codex session that
-  orders the owners' requests, runs the queue's tool and talks to
-  owners. Directors and sub-directors take no part in merging: they get
-  news of what landed, and escalations when merging goes wrong (the
-  user, 10-24).
+  - Sets that need no gate go first, then returned sets, then the rest
+    as they came.
+- **A tool runs the queue, and a keeper watches it** (section 5).
+  - The tool does the mechanics, the order's fixed rules included.
+  - The keeper is a Codex session, woken only for what needs judgement.
+    It reads failures and writes the owner a note, overrides the order
+    when it must, and escalates.
+  - Directors and sub-directors take no part in merging: they get news
+    of what landed, and escalations when merging goes wrong (the user,
+    10-24).
 - **Why per milestone** (section 6):
   - **The cache:** a change is compiled once for the fleet, and two
     versions of the same crates coexist for at most a milestone.
@@ -177,84 +181,144 @@ commit of each.
 
 ## 4. The queue
 
-The queue is the only writer to every repository's `main`. It takes one
-set at a time, in the keeper's order.
+The queue is the only writer to every repository's `main`. Its tool,
+`queue`, runs on hetzner3 (section 5) and takes one set at a time.
 
-1. **Unchanged base.** If each repository's `main` is still the set's
-   base, and the set carries a valid gate receipt for each candidate
-   tree, the set lands without a new gate.
-   - A receipt already names the tree it proved (`Gate-Tree`), and the
-     tree includes the lock, and with it the tuple.
-2. **Moved base.** Otherwise the queue rebases each branch on its
-   current `main`, repins the set and runs every gate, upstream first.
-   - A conflict sends the set back, unless it is mechanical: a
-     `Cargo.lock` conflict, or a generated file that has a generator.
+1. **The request.** The owner pushes the set's branches and runs `queue
+   request` with a set file: the set's name, each repository's branch,
+   head and base, and its gate receipts. The tool refuses at once, with
+   the reason, a request with any of these:
+   - a head that isn't pushed;
+   - a base that isn't on its repository's `main`, which also refuses a
+     stacked milestone queued before the earlier one has landed;
+   - a missing pin-only branch, or a lock that doesn't pin the set's
+     tuple;
+   - a receipt that doesn't check out (step 3).
+2. **The order.** It follows fixed rules, which the keeper may override
+   (section 5):
+   1. sets that need no gate: docs sets, and sets whose base is still
+      current and whose receipts check out. Each takes seconds, and
+      landing them early saves their gates;
+   2. returned sets;
+   3. the rest, first come, first served.
+3. **Unchanged base.** If each repository's `main` is still the set's
+   base, and each candidate tree has a receipt that checks out, the set
+   lands without a new gate.
+   - The tool reads heavy's receipt on the machine that ran the gate.
+     It checks it as `land` does (gate-policy.md 3.1): the tree, the
+     policy, the outcome and the log's digest.
+   - The tree includes the lock, and with it the tuple.
+   - Receipts are checked, never taken on an owner's word.
+4. **Moved base.** Otherwise the tool rebases each branch on its
+   current `main`, repins the set and runs every gate.
+   - It pushes the rebased branches under new names, and never forces a
+     push.
+   - It resolves only mechanical conflicts: a `Cargo.lock` conflict
+     (take `main`'s lock, repin to the tuple), or a generated file that
+     has a generator. Any other conflict sends the set back, for the
+     owner's implementer to resolve (section 3).
+   - Gates run through `heavy --gate` on a free build machine, upstream
+     first. A failing skein gate stops the set before four more run, and
+     each downstream gate restores its upstream's builds from the store.
    - With the cache, only the set's own changes and the crates built on
      them compile here (section 6.1).
-3. **Green.** The queue pushes the mains upstream first: skein, then
+5. **Green.** The tool pushes the mains upstream first: skein, then
    smith and hearth, then jig, then temper.
    - Each push is a fast-forward and is journaled, so a crash between
      pushes resumes where it stopped.
    - No push can be refused, because nothing else writes to `main`.
+   - The gate evidence goes in a git note on each landed commit, not in
+     a trailer. Amending skein's head after temper's lock pinned it
+     would leave temper pinning a commit that `main` never holds.
    - The landing goes into the landings feed.
-4. **Red.** The set goes back to its owner with the failure: the
-   repository, the test or build step, the log and the receipt.
-   - A failure that passes on one rerun is a flake. The set lands, and
-     the flake becomes a finding.
-5. **Returned sets go first.** A set sent back and returned is next in
-   line, after the landing that is running.
-6. **Docs sets.** Markdown-only changes (`land --docs` today) go through
-   the queue too, with no gate, so the queue stays `main`'s only writer.
-   They take seconds.
-7. **After landing.** The slow tiers that run after a landing still do.
-   A failure goes to the set's owner through the keeper.
+6. **Red.** The tool reruns the tests that failed, alone, once.
+   - If they pass, it was a flake. The set lands, and the keeper files
+     the flake as a finding.
+   - If not, the set is parked and the next one starts. The keeper
+     reads the failure and returns the set with its note (section 5).
+   - A fault of the infrastructure is not a red: heavy refusing the
+     run, or a machine or GitHub out of reach. The tool retries it, and
+     wakes the keeper if it lasts.
+7. **Docs sets.** Markdown-only changes go through the queue too, with
+   no gate, so the queue stays `main`'s only writer.
+8. **After landing.** The slow tiers that run after a landing still do.
+   A failure goes to the set's owner with the keeper's note.
 
-Gates run on whichever build machine is free, through `heavy --gate`,
-and publish to the store. The queue takes over from today's landing
-turn (build-infrastructure.md 8). Speculative runs come later, when the
+The queue replaces today's advisory landing turn
+(build-infrastructure.md 8). Speculative runs come later, when the
 queue backs up: testing set B on top of set A while A's gates run, and
 batching several sets.
 
-## 5. The keeper
+## 5. Who does what
 
-The keeper is a Codex session (GPT Sol, medium or high effort), the
-user's choice on 10-24. Who does what is still the user's to settle.
-The split below is a proposal.
+Mechanics go to the tool, and judging a failure to the keeper. All code
+goes to the owners' implementers, and decisions about the work stay
+with owners and directors (the user, 10-24). The keeper never edits
+code, and never decides whether a set lands: the gates do.
 
-- **The tool** (`queue`, deterministic and journaled) does the
-  mechanics:
-  - rebases, repins and gates;
-  - checks receipts, pushes and resumes;
-  - writes the landings feed.
+- **The tool,** `queue`, is a hand-rolled script like `land` and
+  `repin`. It is deterministic and journaled, and runs as a user
+  systemd service on hetzner3.
+  - hetzner3 is already the landing turn's coordinator and hosts the
+    store. Clients reach it over the landing turn's ssh
+    (build-infrastructure.md 8).
+  - It does section 4's mechanics: checking requests and receipts, the
+    order, rebases, repins, mechanical conflicts, gates, the rerun,
+    pushes, the journal and the feed.
+  - It is tested in fixtures, like `heavy` and `land`.
+- **The keeper** is a Codex session (GPT Sol, high effort). The tool
+  starts it fresh for each event that needs judgement, and it is never
+  left running. The events:
+  - a red result that survives its rerun;
+  - an infrastructure fault the tool can't retry past;
+  - a note from an owner;
+  - an owner's silence.
 
-  It is tested in fixtures, like `heavy` and `land`.
-- **The keeper** brings the judgement:
-  - it reads requests and orders them: first come, first served, with
-    returned sets first and docs sets batched;
-  - it runs the tool;
-  - it classifies failures (conflict, build, test, flake,
-    infrastructure);
-  - it reruns a suspected flake once;
-  - it resolves mechanical conflicts only, and sends a set back with
-    its evidence;
-  - it tells each owner when its set lands or comes back.
+  Such events should be few, and a wrong reading costs an owner a
+  repair round, hence high effort. Its memory is the queue's journal
+  and a notes file. It acts only through the tool's commands: return a
+  set with a note, hold or move a set, file a finding, escalate. The
+  queue doesn't wait for it.
+  - **The return note** names the repository, the step and the test,
+    where the log is, the likely cause and the commits behind it. It
+    says whether the fault looks like the set's, `main`'s, a flake's or
+    the infrastructure's.
+  - **Overrides of the order** are rare, and each goes in the feed with
+    its reason: two sets that keep breaking each other, or an owner's
+    note asking to wait.
+- **Owners** reach the queue through three commands, and need no
+  messages:
+  - `queue request <set file>` (section 4);
+  - `queue wait <id>`, on the owner's detached route. It exits when the
+    set lands, comes back with the note's path, or is escalated, and its
+    exit wakes the owner, on any machine. A sub-owner that stays on for
+    the landing then runs `queue wait --after <id>` for the
+    after-landing tiers;
+  - `queue note <id> "..."`, which wakes the keeper: a large repair
+    under way, or a failure the owner reads as the infrastructure's.
 
-  Keeping the mechanics in a tool keeps the keeper cheap and the
-  mechanics testable.
-- **Owners** reach the keeper only through requests and returns.
-  - A request names the set, its branches and heads, its base and its
-    receipts.
-  - A returned set goes to the sub-owner of the milestone that made it,
-    who has an implementer repair it (section 3) while the mission's
-    next milestone goes on.
-- **Directors and sub-directors** read the landings feed. They hear
-  from the keeper only in these cases:
-  - an infrastructure fault (a machine, the store, GitHub);
-  - a set sent back a third time (the user, 10-24);
+  A returned set goes to the sub-owner of the milestone that made it,
+  who has an implementer repair it (section 3) while the mission's next
+  milestone goes on.
+- **`land` stays, as a front end.** A one-repository landing becomes a
+  one-branch request, and the tool adds the downstream pin-only branches
+  the invariant needs. `land --docs` becomes a docs request. Habits and
+  scripts keep working.
+- **Directors and sub-directors** read the landings feed. The keeper
+  writes to the director's inbox only for:
+  - a set sent back a third time;
+  - a returned set with no new request or note from its owner after 2
+    hours;
   - two sets that keep breaking each other;
-  - an owner that doesn't answer.
+  - an infrastructure fault that lasts 15 minutes: a machine, or
+    GitHub. The store going down isn't one, since kache then compiles
+    locally;
+  - a flake, as a finding for the director to assign.
 
   They don't order landings, and they don't relay them.
+- **Building and running it.** The build-infra mission, with a Codex
+  owner, builds the tool and writes the keeper's brief. The director
+  runs the service.
 
 ## 6. Why this shape
 
@@ -316,7 +380,8 @@ In this flow:
   caused them.
 - **Conflicts belong to the later set,** which resolves them at its
   rebase or when it comes back.
-- **The only order is the queue's,** and the keeper sets it.
+- **The only order is the queue's,** set by fixed rules and, rarely,
+  the keeper.
 - **What's left for the directors:** dispatching work, policy, machines
   and escalations.
 
@@ -400,7 +465,8 @@ mission, then flood it with four milestones at once.
   tasks at high effort, which the launcher doesn't lower.
 - **owners.md 4.4:** tasks merge into the set's branches. The owner
   checks the end-of-milestone rebase as it checks any task's diff,
-  requests the milestone's landing, and the queue lands it.
+  requests the milestone's landing with `queue request`, and waits on
+  it with `queue wait`. The queue lands it.
 - **owners.md 4.5:**
   - Repins happen inside the set, by its owner, with `scripts/dev/repin`.
   - "Breaking upstream" waits for no one's word: the break and its
@@ -415,18 +481,24 @@ mission, then flood it with four milestones at once.
     leave the director and the sub-directors.
   - The landings feed replaces landing news.
   - The keeper's escalations come to the director.
+  - The director runs the queue's service.
+- **gate-policy.md 3 and build-infrastructure.md 8:** gate evidence
+  moves from trailers to git notes, and the queue replaces the advisory
+  landing turn.
 
 ## 9. Building it
 
 1. **The shared store on every build machine** (build-cache.md 7),
    under way.
-2. **The queue's tool and the keeper,** as a build-infra mission. The
-   first version:
+2. **The queue's tool and the keeper,** as a build-infra mission
+   (section 5). The first version:
    - serial, with sets across repositories;
-   - reused receipts, automatic rebases, and mechanical lock and
-     generated-file resolution;
-   - returned sets first, and docs sets;
-   - journaled pushes and the landings feed.
+   - request and receipt checks, the order's rules, automatic rebases,
+     and mechanical lock and generated-file resolution;
+   - the rerun, journaled pushes, git-note evidence and the landings
+     feed;
+   - `queue wait` and `queue note`, and `land` as a front end;
+   - the keeper's brief.
 
    Fixtures cover it as they cover `heavy`.
 3. **`scripts/dev/repin` learns sets:** one command moves every branch of
@@ -439,14 +511,8 @@ mission, then flood it with four milestones at once.
 
 ## 10. Open
 
-- **Who does what** among the keeper, the tool and the owners (the
-  user: to be settled). Section 5 is a proposal.
-- **Where the queue runs,** and how owners on other machines send their
-  requests. Options include git refs plus a request record over ssh,
-  as the landing turn does today.
 - **The queue's throughput,** measured: replay 10-23's milestones
   through it with the cache.
-- **Whether owners' receipts are trusted** to land an unchanged base
-  without a new gate (gate-policy.md).
-- **How long an owner may stay silent** before the keeper escalates. A
-  set sent back a third time escalates (the user, 10-24).
+- **Where the queue's gates run.** A gate pauses the other builds on
+  its machine (build-infrastructure.md 1). The queue's gates could
+  keep to one or two machines, or take whichever is free.
