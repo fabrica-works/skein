@@ -1582,9 +1582,10 @@ text at version `c`:
    when `K` is frozen and a change other than a rename or a declaration
    dropped is none needed: a frozen text cannot take a declaration, a
    variant or a bound that records of its version may now hold. `K` is
-   frozen when a landed patch names its version. This departs from
-   temper's `draft/upgrades.md`, 4.3, where such a change keeps its
-   version; the alternative, a frozen text refreshed where every landed
+   frozen when a landed patch names its version, from the first release
+   on, since no version moves before it. This is the user's rule, and
+   temper's `draft/upgrades.md`, 4.3, follows it. The alternative, a
+   frozen text refreshed where every landed
    patch naming it still plans and keeps its goldens, would serve a
    variant appended and a bound widened alone, at the cost of landed
    kept texts that never change.
