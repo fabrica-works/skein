@@ -10,6 +10,44 @@ use crate::system;
 /// Pipe descriptors for a spawned service hosted in the real loop (examples.md, section 6).
 pub use crate::system::process::HostedPipes;
 
+/// Executes a command with a parent-death signal, returning only on failure.
+/// On Linux the signal survives exec of a non-setuid binary and is cleared
+/// by a setuid/setgid exec. It fires when the parent's thread that forked
+/// the child exits, rather than when the parent process exits. With io,
+/// that thread runs the shell's kernel and lives as long as the loop.
+/// `parent` must be the PID the caller's parent gave it, for example as an
+/// argument, so the re-check after installing the signal detects a parent
+/// that already died. macOS and other non-Linux systems return
+/// [`std::io::ErrorKind::Unsupported`] without executing the command.
+#[expect(clippy::disallowed_types, reason = "the child consumes Command only to exec, without a Child handle")]
+#[must_use]
+pub fn exec_dying_with_parent(
+    command: std::process::Command,
+    parent: u32,
+    signal: skein_io::kernel::Signal,
+) -> std::io::Error {
+    #[cfg(target_os = "linux")]
+    {
+        system::process::exec_dying_with_parent(command, parent, signal)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _unused = (command, parent, signal);
+        std::io::Error::new(std::io::ErrorKind::Unsupported, "parent-death exec requires Linux")
+    }
+}
+
+#[cfg(all(test, not(target_os = "linux")))]
+#[test]
+#[expect(clippy::disallowed_types, reason = "the refused command must never be executed")]
+fn parent_death_exec_is_unsupported() {
+    assert_eq!(
+        exec_dying_with_parent(std::process::Command::new("/no-such-program"), 0, skein_io::kernel::Signal::Kill)
+            .kind(),
+        std::io::ErrorKind::Unsupported
+    );
+}
+
 /// Opens the service's termination signal source for io
 /// to adopt before the loop starts (shell.md, section 6; io.md, section 7).
 pub fn open_termination_signals() -> Result<Fd, i32> {

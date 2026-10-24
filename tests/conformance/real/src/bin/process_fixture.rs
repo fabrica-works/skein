@@ -12,14 +12,31 @@ const DESCRIPTORS: &str = "/proc/self/fd";
 #[cfg(target_os = "macos")]
 const DESCRIPTORS: &str = "/dev/fd";
 
+fn main() -> ExitCode {
+    let mut args = std::env::args();
+    let _program = args.next();
+    let mode = args.next();
+    #[cfg(target_os = "linux")]
+    {
+        match mode.as_deref() {
+            Some("parent-death-parent") => return parent_death_parent(&args.next().expect("exec mode")),
+            Some("parent-death-child") => {
+                assert_eq!(args.next().as_deref(), Some("--parent"));
+                let parent = args.next().expect("parent PID").parse().expect("numeric parent PID");
+                return parent_death_child(parent, &args.next().expect("exec mode"));
+            }
+            _ => {}
+        }
+    }
+    fixture(mode.as_deref(), &mut args)
+}
+
 #[expect(
     clippy::zombie_processes,
     reason = "the process-tree fixture deliberately leaves a descendant for the keeper to settle"
 )]
-fn main() -> ExitCode {
-    let mut args = std::env::args();
-    let _program = args.next();
-    match args.next().as_deref() {
+fn fixture(mode: Option<&str>, args: &mut std::env::Args) -> ExitCode {
+    match mode {
         Some("echo") => {
             let input = args.next().expect("input descriptor");
             let output = args.next().expect("output descriptor");
@@ -119,6 +136,51 @@ fn main() -> ExitCode {
         }
         other => panic!("unknown fixture program {other:?}"),
     }
+}
+
+#[cfg(target_os = "linux")]
+struct ChildGuard(std::process::Child);
+
+#[cfg(target_os = "linux")]
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let _killed = self.0.kill();
+        let _reaped = self.0.wait();
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parent_death_parent(mode: &str) -> ExitCode {
+    let mut child = ChildGuard(
+        Command::new(std::env::current_exe().expect("fixture path"))
+            .args(["parent-death-child", "--parent", &std::process::id().to_string(), mode])
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn exec child"),
+    );
+    std::fs::write("child-pid", child.0.id().to_string()).expect("report child PID");
+    let mut start = [0_u8; 1];
+    std::io::stdin().read_exact(&mut start).expect("observer registered child");
+    child.0.stdin.take().expect("child input").write_all(&start).expect("release exec child");
+    let status = child.0.wait().expect("wait for exec child");
+    if status.success() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+#[cfg(target_os = "linux")]
+fn parent_death_child(parent: u32, mode: &str) -> ExitCode {
+    use std::os::unix::process::CommandExt;
+
+    let mut start = [0_u8; 1];
+    std::io::stdin().read_exact(&mut start).expect("observer ready for exec");
+    let mut command = Command::new("/bin/sleep");
+    command.arg("30");
+    let error = match mode {
+        "protected" => skein_shell::exec_dying_with_parent(command, parent, skein_io::kernel::Signal::Kill),
+        "plain" => command.exec(),
+        other => panic!("unknown parent-death mode {other:?}"),
+    };
+    eprintln!("parent-death exec refused: {error}");
+    ExitCode::FAILURE
 }
 
 fn megabyte() -> ExitCode {

@@ -101,6 +101,15 @@ the two (7.5, 7.6).
   its pidfd: Linux obtains it from the unreaped pidfd with `pidfd_getpid`,
   and Darwin wraps the pid returned by `posix_spawn` or `fork`.
   io keeps the identity only until the child's `Exited` event (io.md, 6 and 7).
+- **A child-side exec,** `exec_dying_with_parent(command, parent, signal)`,
+  installs Linux's parent-death signal, re-checks the parent PID, then
+  execs, returning only on failure. The signal survives exec of a
+  non-setuid binary and is cleared by a setuid/setgid exec. It fires when
+  the parent's **thread that forked the child** exits, rather than when
+  the parent process exits; with io, that thread runs the shell's kernel
+  and lives as long as the loop. `parent` must be the PID the caller's
+  parent gave it (for example as an argument), so the re-check detects
+  death before the signal was installed. macOS returns `Unsupported`.
 - **Its checks:** the first two broken invariants of the kernel boundary
   (an invalid record, a token already in flight) at submit.
 

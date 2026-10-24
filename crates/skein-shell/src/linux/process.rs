@@ -11,7 +11,7 @@
 
 #![expect(
     clippy::disallowed_types,
-    reason = "OwnedFd closes temporary spawn descriptors on every failure path inside the unsafe adapter"
+    reason = "OwnedFd closes temporary spawn descriptors on failure; Command is consumed only by child-side exec"
 )]
 
 use std::ffi::CString;
@@ -49,6 +49,26 @@ fn cstring(bytes: &[u8]) -> Result<CString, i32> {
 
 fn action(rc: i32) -> Result<(), i32> {
     if rc == 0 { Ok(()) } else { Err(rc) }
+}
+
+pub(crate) fn exec_dying_with_parent(
+    mut command: std::process::Command,
+    parent: u32,
+    signal: Signal,
+) -> std::io::Error {
+    use std::os::unix::process::CommandExt;
+
+    // SAFETY: PR_SET_PDEATHSIG takes a signal number and unused integer
+    // arguments; it borrows no memory and changes only the calling process.
+    if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, signal_number(signal), 0, 0, 0) } != 0 {
+        return std::io::Error::last_os_error();
+    }
+    // SAFETY: getppid takes no arguments and borrows no memory.
+    let current_parent = unsafe { libc::getppid() };
+    if u32::try_from(current_parent).ok() != Some(parent) {
+        return std::io::Error::new(std::io::ErrorKind::NotFound, "parent changed before exec");
+    }
+    command.exec()
 }
 
 /// A pipe write after the child closes its read end returns EPIPE instead of

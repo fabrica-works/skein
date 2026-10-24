@@ -58,8 +58,8 @@ pub use group::{child_id, group_live, process_live, signal_group};
 pub use kernel::{Backend, Chosen, Config, Kernel, OpenError, Wait};
 pub use listeners::{ListenersRefusal, MAX_INHERITED_LISTENERS, inherited_listeners, listener_at, open_listener};
 pub use process::{
-    HostedPipes, abandon_binary, close_keeper_fd, hosted_pipes, open_signal_pipe, open_termination_signals, poll_child,
-    signal_current_thread, signal_kept_child, start_binary, write_service_signal,
+    HostedPipes, abandon_binary, close_keeper_fd, exec_dying_with_parent, hosted_pipes, open_signal_pipe,
+    open_termination_signals, poll_child, signal_current_thread, signal_kept_child, start_binary, write_service_signal,
 };
 pub use seed::{crypto_seed, seed};
 pub use settings::{
