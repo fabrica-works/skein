@@ -74,12 +74,13 @@ pub(crate) fn read_signal(info: &libc::signalfd_siginfo, count: usize) -> Result
     if count != size_of::<libc::signalfd_siginfo>() {
         return Err(Error::Other(libc::EIO));
     }
+    let sender = (info.ssi_pid != 0).then_some(skein_io::kernel::Sender::new(u64::from(info.ssi_pid)));
     let signal = match info.ssi_signo {
         value if value == u32::try_from(libc::SIGINT).expect("positive signal") => {
-            skein_io::kernel::Signalled::Termination(ServiceSignal::Interrupt)
+            skein_io::kernel::Signalled::Termination { signal: ServiceSignal::Interrupt, sender }
         }
         value if value == u32::try_from(libc::SIGTERM).expect("positive signal") => {
-            skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)
+            skein_io::kernel::Signalled::Termination { signal: ServiceSignal::Terminate, sender }
         }
         value if value == u32::try_from(libc::SIGWINCH).expect("positive signal") => {
             skein_io::kernel::Signalled::WindowChanged

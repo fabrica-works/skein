@@ -143,7 +143,7 @@ pub fn processes<B: Backend>(backend: &mut B, executable: &[u8]) -> Processes {
 
 pub(crate) fn spawned(complete: skein_io::kernel::Complete) -> (Fd, Vec<Fd>) {
     match (complete.kind, complete.result) {
-        (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd })) => {
+        (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd, .. })) => {
             (pidfd, spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent pipe slot filled")).collect())
         }
         (_, other) => unexpected("a fixture spawned", &other),

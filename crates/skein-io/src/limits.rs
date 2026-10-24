@@ -121,7 +121,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         Map::<crate::Name, Id<Entity>>::worst_case(limits.names)?
             .checked_add(Map::<(Id<Entity>, u64), Id<Entity>>::worst_case(sockets)?)?
     };
-    let tables = Slab::<Entity>::worst_case(sockets)?
+    let tables = Map::<Token, crate::kernel::Sender>::worst_case(sockets)?
+        .checked_add(Slab::<Entity>::worst_case(sockets)?)?
         .checked_add(Slab::<Flight>::worst_case(flights(limits)?)?)?
         .checked_add(Deadlines::<(Id<Entity>, Timer)>::worst_case(timers(limits)?)?)?
         .checked_add(Set::<Id<Entity>>::worst_case(sockets)?.checked_mul(3)?)?

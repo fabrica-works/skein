@@ -66,8 +66,8 @@ pub(super) fn open_signals(watch: crate::Watch) -> Result<Fd, i32> {
 }
 fn decode(number: i32) -> Result<Done, Error> {
     let signal = match number {
-        libc::SIGINT => Signalled::Termination(ServiceSignal::Interrupt),
-        libc::SIGTERM => Signalled::Termination(ServiceSignal::Terminate),
+        libc::SIGINT => Signalled::Termination { signal: ServiceSignal::Interrupt, sender: None },
+        libc::SIGTERM => Signalled::Termination { signal: ServiceSignal::Terminate, sender: None },
         libc::SIGWINCH => Signalled::WindowChanged,
         _ => return Err(Error::Other(libc::EINVAL)),
     };

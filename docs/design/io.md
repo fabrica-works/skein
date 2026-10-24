@@ -76,7 +76,7 @@ pub enum Event {
     Exited    { owner: Token, exit: Exit },
     Usage     { owner: Token, usage: Measured },      // for a Usage: its one terminal
     Cgroup    { owner: Token, event: cgroup::Event }, // 6.2
-    Shutdown  { signal: ServiceSignal },              // section 7
+    Shutdown  { signal: ServiceSignal, from: Option<Token> }, // section 7
     // File { owner, result }; Resized, Window { owner, size } (section 7)
     Failed     { owner: Token, error: Error },
     Closed     { owner: Token },                      // terminal
@@ -1000,7 +1000,10 @@ private root or file owned by anyone else is refused, saying so.
 
 - **Spawn** takes a program, its arguments, its environment, a working
   directory beneath a root, and which pipes to make. It answers with a
-  child and its pipes.
+  child and its pipes. The backend also returns an opaque `kernel::Sender`,
+  kept by io beside the child's token until its `Exited` event. It is
+  compared only for equality with signal senders (section 7); no numeric PID
+  enters io's events or its child entity.
   - The ring adapter uses glibc's `pidfd_spawn`, so the child is a pidfd from
     the start. Its file actions install requested pipes at chosen child
     descriptors and close everything else on exec. The kernel's own check
@@ -1333,6 +1336,17 @@ pub struct Rlimit { pub resource: Resource, pub soft: u64, pub hard: u64 }
 Termination signals are blocked at startup (shell.md, 6), read from a
 signalfd through the ring, and arrive as `Shutdown` events. The domain
 decides what shutting down means.
+
+`Shutdown { signal: ServiceSignal, from: Option<Token> }` names the sender
+only when it is a live child this io spawned: `from` is `Some(child)` after
+that child's successful `Spawn` completion and before its `Exited` event.
+The kernel boundary carries `Signalled::Termination { signal, sender:
+Option<kernel::Sender> }`; io compares that opaque identity for equality
+with the identities returned by `Done::Spawned { pidfd, sender }` (section 6).
+`from` is `None` for the kernel, a terminal, this process itself, an
+unrelated process, or a child whose exit io has reported, even before its
+reap. Linux reads the identity from signalfd's `ssi_pid`. macOS's kqueue
+signal source has no sender identity, so `from` is always `None` there.
 
 A service at a terminal also blocks `SIGWINCH` at startup (shell.md,
 6.3). It is read from the same signalfd and arrives as `Resized`, after

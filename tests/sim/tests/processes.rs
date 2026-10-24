@@ -23,7 +23,7 @@ fn child(world: &mut World, parent: Pid, root: Fd, program: Program, output: boo
     world.sim.answer(&mut answers);
     let complete = world.reap_one(parent, token);
     world.serving = true;
-    let (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd })) = (complete.kind, complete.result) else {
+    let (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd, .. })) = (complete.kind, complete.result) else {
         panic!("spawn succeeded")
     };
     (pidfd, spawn.pipes.first().and_then(|pipe| pipe.parent))
@@ -211,7 +211,7 @@ fn hosted_signal(signal: Signal, expected: ServiceSignal) {
         world.call(parent, Op::Signal { pidfd, signal, to: target });
         assert_eq!(
             world.call(service, Op::ReadSignal { fd: source }).result,
-            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(expected)))
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination { signal: expected, sender: None }))
         );
         assert!(world.sim.service_running(service), "the catchable signal is delivered to the service's signal source");
         world.close(service, source);

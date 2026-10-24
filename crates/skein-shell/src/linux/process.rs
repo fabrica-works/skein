@@ -22,6 +22,7 @@ use std::ptr;
 use skein_io::kernel::{Done, Error, Fd, Resources, Signal, Spawn, Target, Usage, Way};
 
 unsafe extern "C" {
+    fn pidfd_getpid(pidfd: libc::c_int) -> libc::pid_t;
     fn posix_spawnattr_setcgroup_np(attributes: *mut libc::posix_spawnattr_t, cgroup: libc::c_int) -> libc::c_int;
     fn pidfd_spawn(
         pidfd: *mut libc::c_int,
@@ -297,12 +298,21 @@ fn spawn_prepared(command: &mut Spawn, terminal: Option<&CString>, cgroup: Optio
         // SAFETY: no spawn call can still read the attributes.
         let _destroyed = unsafe { libc::posix_spawnattr_destroy(ptr::from_mut(&mut attributes)) };
         let pidfd = spawned?;
+        // SAFETY: pidfd_spawn returned this owned descriptor; the child is
+        // unreaped, so its identity cannot be reused while io retains it.
+        let pid = unsafe { pidfd_getpid(pidfd.as_raw_fd()) };
+        if pid < 0 {
+            let errno = super::last_errno();
+            abandon_binary(Some(Fd::new(pidfd.as_raw_fd())), &[]);
+            return Err(errno);
+        }
+        let sender = skein_io::kernel::Sender::new(u64::try_from(pid).expect("a child pid is positive"));
         for (pipe, parent) in command.pipes.iter_mut().zip(parents) {
             if let Some(parent) = parent {
                 pipe.parent = Some(Fd::new(parent.into_raw_fd()));
             }
         }
-        Ok(Done::Spawned { pidfd: Fd::new(pidfd.into_raw_fd()) })
+        Ok(Done::Spawned { pidfd: Fd::new(pidfd.into_raw_fd()), sender })
     })();
     // SAFETY: the actions object was initialized and is no longer used.
     let _destroyed = unsafe { libc::posix_spawn_file_actions_destroy(ptr::from_mut(&mut actions)) };
@@ -441,7 +451,7 @@ pub(crate) fn start_binary(command: &mut Spawn, terminal: bool, cgroup: Option<F
         return Err(Error::InvalidArgument);
     }
     let done = spawn_prepared(command, terminal.as_ref().map(|(_, name)| name), cgroup).map_err(map_error)?;
-    let Done::Spawned { pidfd } = done else { unreachable!("a spawn returns a pidfd") };
+    let Done::Spawned { pidfd, .. } = done else { unreachable!("a spawn returns a pidfd") };
     Ok((pidfd, terminal.map(|(master, _)| Fd::new(master.into_raw_fd()))))
 }
 

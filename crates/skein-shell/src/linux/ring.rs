@@ -792,7 +792,10 @@ mod tests {
         assert_eq!(answer.kind, Op::ReadSignal { fd });
         assert_eq!(
             answer.result,
-            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination {
+                signal: ServiceSignal::Terminate,
+                sender: Some(skein_io::kernel::Sender::new(u64::from(std::process::id())))
+            }))
         );
 
         submits.push(Submit { op: Token::new(2), kind: Op::Close { fd } });

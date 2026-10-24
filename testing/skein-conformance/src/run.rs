@@ -301,7 +301,7 @@ impl<'b, B: Backend> Run<'b, B> {
                 None
             }
             (_, Ok(Done::Fd(fd) | Done::Accepted { fd, .. })) => Some(*fd),
-            (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd })) => {
+            (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd, .. })) => {
                 assert!(self.open.insert((process, *pidfd)), "a new pidfd is not already open");
                 for pipe in &spawn.pipes {
                     let fd = pipe.parent.expect("every requested parent end is written");

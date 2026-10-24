@@ -88,13 +88,14 @@ fn documented(op: &Op) -> Done {
         Op::List { .. } => Done::Count(0),
         Op::Bind { .. } => Done::Bound(v4()),
         Op::Stat { .. } => Done::Stat(STAT),
-        Op::Spawn { .. } => Done::Spawned { pidfd: NEW },
+        Op::Spawn { .. } => Done::Spawned { pidfd: NEW, sender: crate::kernel::Sender::new(1) },
         Op::Wait { .. } => Done::Exit(crate::kernel::Exit::Code(0)),
         Op::Window { .. } => Done::Window(crate::kernel::Size { rows: 24, columns: 80 }),
         Op::Usage => Done::Usage(crate::kernel::Usage::ZERO),
-        Op::ReadSignal { .. } => {
-            Done::Signalled(crate::kernel::Signalled::Termination(crate::kernel::ServiceSignal::Terminate))
-        }
+        Op::ReadSignal { .. } => Done::Signalled(crate::kernel::Signalled::Termination {
+            signal: crate::kernel::ServiceSignal::Terminate,
+            sender: None,
+        }),
         Op::Listen { .. }
         | Op::Connect { .. }
         | Op::Shutdown { .. }
@@ -122,7 +123,10 @@ fn every_operation_succeeds_with_its_documented_shape_and_no_other() {
         Done::Usage(crate::kernel::Usage::ZERO),
         Done::Window(crate::kernel::Size { rows: 24, columns: 80 }),
         Done::Exit(crate::kernel::Exit::Code(0)),
-        Done::Signalled(crate::kernel::Signalled::Termination(crate::kernel::ServiceSignal::Terminate)),
+        Done::Signalled(crate::kernel::Signalled::Termination {
+            signal: crate::kernel::ServiceSignal::Terminate,
+            sender: None,
+        }),
     ];
     for op in every_op() {
         assert!(op.is_valid(), "the examples are valid: {op:?}");
@@ -692,7 +696,7 @@ fn spawn_parent_slots_are_empty_until_a_successful_completion() {
         }),
     };
     assert!(kind.is_valid(), "kernel.md, section 4: parent slots start empty");
-    let success = Done::Spawned { pidfd: NEW };
+    let success = Done::Spawned { pidfd: NEW, sender: crate::kernel::Sender::new(1) };
     let mut complete = Complete { op: Token::new(1), kind, result: Ok(success) };
     assert!(!complete.is_valid(), "success must fill each requested parent end");
     let Op::Spawn { spawn } = &mut complete.kind else { panic!("spawn record") };
@@ -770,6 +774,6 @@ fn given_slots_are_resolved_before_submission_and_retained_on_failure() {
     assert!(kind.is_valid());
     let mut answer = Complete { op: Token::new(2), kind, result: Err(Error::NotFound) };
     assert!(answer.is_valid(), "failure returns the borrowed Given descriptor");
-    answer.result = Ok(Done::Spawned { pidfd: NEW });
+    answer.result = Ok(Done::Spawned { pidfd: NEW, sender: crate::kernel::Sender::new(1) });
     assert!(answer.is_valid(), "success returns the borrowed Given descriptor");
 }

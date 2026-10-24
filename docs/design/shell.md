@@ -94,6 +94,13 @@ the two (7.5, 7.6).
   entering the ring, the socket address casts, the synchronous calls, and
   dropping a kernel with operations in flight, which leaks the table so
   that the kernel never writes into freed memory.
+- **Signal senders** cross the kernel boundary as an opaque `kernel::Sender`,
+  compared only for equality. Linux's `read_signal` wraps signalfd's
+  `ssi_pid` when it is nonzero in `Signalled::Termination { signal, sender }`.
+  A successful spawn returns the child's identity in `Done::Spawned` beside
+  its pidfd: Linux obtains it from the unreaped pidfd with `pidfd_getpid`,
+  and Darwin wraps the pid returned by `posix_spawn` or `fork`.
+  io keeps the identity only until the child's `Exited` event (io.md, 6 and 7).
 - **Its checks:** the first two broken invariants of the kernel boundary
   (an invalid record, a token already in flight) at submit.
 
@@ -716,6 +723,9 @@ other module is safe Rust, the same on both systems.
   `d_type`, or its `fstatat` where that is unknown, as on Linux. The
   listing state is each system's: Linux's one buffer of the table's,
   Darwin's streams.
+- **Signal reads** from kqueue have no sender identity. Their
+  `Signalled::Termination` carries `sender: None`, so io's `Shutdown` always
+  has `from: None` on macOS (io.md, 7).
 - **Spawn** is `posix_spawn`, with the file actions Linux's spawn has
   (the working directory by `posix_spawn_file_actions_addfchdir_np`), the
   child in a group of its own (`POSIX_SPAWN_SETPGROUP`), its signal mask

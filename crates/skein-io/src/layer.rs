@@ -62,6 +62,8 @@ pub(crate) struct Tables {
     pub(crate) names: Map<Name, Id<Entity>>,
     pub(crate) waiting: Map<(Id<Entity>, u64), Id<Entity>>,
     pub(crate) sequence: u64,
+    /// Spawned children that have not yet reported their exit.
+    pub(crate) senders: Map<Token, kernel::Sender>,
 }
 
 /// An operation in flight: its purpose and its entity, absent for process usage.
@@ -150,6 +152,7 @@ impl Io {
                 names: Map::with_capacity(limits.names),
                 waiting: Map::with_capacity(limits.sockets),
                 sequence: 0,
+                senders: Map::with_capacity(limits.sockets),
             },
         }
     }
@@ -295,6 +298,7 @@ impl Io {
             && self.tables.held.is_empty()
             && self.tables.names.is_empty()
             && self.tables.waiting.is_empty()
+            && self.tables.senders.is_empty()
     }
 
     /// The reclaim point: frees what closed in this iteration, and renews the

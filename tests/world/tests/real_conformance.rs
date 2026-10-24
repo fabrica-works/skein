@@ -51,16 +51,21 @@ impl RecordingParent {
     }
 
     fn record(&mut self, complete: &Complete) {
-        if let (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd })) = (&complete.kind, &complete.result) {
+        if let (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd, .. })) = (&complete.kind, &complete.result) {
             self.descriptors.insert(*pidfd, 1);
             for (at, pipe) in spawn.pipes.iter().enumerate() {
                 self.descriptors
                     .insert(pipe.parent.expect("successful parent end"), u32::try_from(at + 2).expect("small table"));
             }
         }
-        // Fd numbers are kernel identities. Everything else, including the
-        // original op token and returned buffers, is compared without alteration.
-        let mut normalized = format!("{complete:?}");
+        // Descriptor numbers and sender identities differ between backends.
+        // This transcript spawns one child, whose sender has logical identity 1.
+        let mut result = complete.result.clone();
+        if let Ok(Done::Spawned { sender, .. }) = &mut result {
+            *sender = skein_io::kernel::Sender::new(1);
+        }
+        let mut normalized =
+            format!("Complete {{ op: {:?}, kind: {:?}, result: {result:?} }}", complete.op, complete.kind);
         for (fd, logical) in &self.descriptors {
             normalized = normalized.replace(&format!("Fd({})", fd.raw()), &format!("Fd(logical{logical})"));
         }

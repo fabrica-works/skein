@@ -67,8 +67,8 @@ pub enum Done {
     Nothing, Count(u32), Fd(Fd), Accepted { fd: Fd, peer: Addr }, Bound(Addr),
     Stat(Stat),                       // kind, size, mode, owners, links, inode, times (6.1)
     Subvolume(Subvolume), Filesystem(Filesystem),  // btrfs's, and a filesystem's status (6.5)
-    Spawned { pidfd: Fd, report: Option<Fd> },  // report: the helper's (6.6)
-    Exit(Exit), ServiceSignal(ServiceSignal),
+    Spawned { pidfd: Fd, sender: Sender, report: Option<Fd> },  // report: the helper's (6.6)
+    Exit(Exit), Signalled(Signalled),
     Cgroup { dir: Fd, events: Fd }, Populated(bool), Counts(Counts),  // cgroups (6.6)
     Usage(Usage), Window(Window),     // the process's own (6.3)
 }
@@ -498,7 +498,12 @@ documentation, with each operation's errors; the decisions behind it:
 
 ### 6.3 The process's own
 
-- **`ReadSignal`** reads one blocked signal from the signalfd the shell
+- **`ReadSignal`** returns `Signalled::Termination { signal, sender }`, where
+  `sender: Option<Sender>` is an opaque process identity compared only for
+  equality with the `Sender` returned by `Spawn`. io maps a live spawned
+  sender to its child token (io.md, 7). Linux reads signalfd's `ssi_pid`;
+  Darwin's kqueue supplies no sender.
+  It reads one blocked signal from the signalfd the shell
   opened at startup: `SIGINT`, `SIGTERM`, and `SIGWINCH` for a service at
   a terminal (io.md, 7; shell.md, 6.3).
 - **`Usage` reads what the process has used,** in one synchronous call:

@@ -16,7 +16,7 @@
 //!   `bytes` untouched.
 //! - **The backend allocates nothing that goes up** (kernel.md, section 4).
 //!   A `Spawn` returns its original pipe table, each `parent` slot filled
-//!   only on success; `Done::Spawned` carries the pidfd alone.
+//!   only on success; `Done::Spawned` carries the pidfd and an opaque sender identity.
 //! - **One success shape per operation** ([`Shape`], tabled on [`Op`]). An
 //!   error means the operation did nothing usable: a failed `Socket` or
 //!   `Accept` made no descriptor.
@@ -362,7 +362,7 @@ pub struct Complete {
 /// | `Sync`, `Rename`, `Remove`, `MakeDirectory` | `Done::Nothing` |
 /// | `Stat` | `Done::Stat`, the kind and size of what is open |
 /// | `List` | `Done::Count`, entries listed into `entries[..n]`, 0 at the end |
-/// | `Spawn` | `Done::Spawned`, pidfd; parent ends written into the returned `Spawn` pipe slots |
+/// | `Spawn` | `Done::Spawned`, pidfd and sender identity; parent ends written into the returned `Spawn` pipe slots |
 /// | `Wait` | `Done::Exit`, exit code or signal |
 /// | `Signal` | `Done::Nothing`, child or group through its pidfd |
 /// | `Usage` | `Done::Usage`, own and reaped children resources |
@@ -768,11 +768,24 @@ pub struct Size {
     pub columns: u16,
 }
 
+/// A backend process identity, compared only for equality (io.md, sections 6 and 7).
+/// It has no numeric accessor and is never exposed in io events.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Sender(u64);
+
+impl Sender {
+    /// Wraps the backend's process identity at the kernel boundary.
+    #[must_use]
+    pub const fn new(identity: u64) -> Sender {
+        Sender(identity)
+    }
+}
+
 /// One signal read from the service's signalfd (io.md, section 7).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Signalled {
     /// A termination delivered as io's Shutdown.
-    Termination(ServiceSignal),
+    Termination { signal: ServiceSignal, sender: Option<Sender> },
     /// A window change delivered as io's Resized.
     WindowChanged,
 }
@@ -800,6 +813,7 @@ pub enum Done {
     /// The backend's child descriptor; parent pipe ends are in the returned spawn record.
     Spawned {
         pidfd: Fd,
+        sender: Sender,
     },
     Exit(Exit),
     /// One blocked signal read from a signalfd.

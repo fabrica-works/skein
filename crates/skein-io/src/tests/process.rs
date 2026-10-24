@@ -7,7 +7,7 @@ use super::{Kind, Rig, limits, owner};
 use crate::kernel::{Done, Exit, Fd, Op, Pipe, Spawn, Way};
 use crate::{Event, Limits, Request};
 
-fn command(pipes: &[(u32, Way)]) -> Spawn {
+pub(super) fn command(pipes: &[(u32, Way)]) -> Spawn {
     Spawn {
         program: Box::from(&b"/bin/true"[..]),
         args: Box::default(),
@@ -91,7 +91,7 @@ fn a_childs_output_is_a_stream_and_the_child_closes_after_its_pipe() {
     let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
     let mut spawn = rig.down(Request::Spawn { owner: owner(1), spawn: command(&[(9, Way::Out)]) }).take(Kind::Spawn);
     parent_ends(&mut spawn, &[Fd::new(12)]);
-    let mut out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(11) }));
+    let mut out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(11), sender: crate::kernel::Sender::new(1) }));
     let wait = out.take(Kind::Wait);
     assert_eq!(wait.kind, Op::Wait { pidfd: Fd::new(11), reap: false });
     let (child, pipe) = match out.events.as_slice() {
@@ -140,7 +140,7 @@ fn a_childs_input_grants_room_continues_short_writes_and_finishes() {
     let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
     let mut spawn = rig.down(Request::Spawn { owner: owner(2), spawn: command(&[(7, Way::In)]) }).take(Kind::Spawn);
     parent_ends(&mut spawn, &[Fd::new(22)]);
-    let mut out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(21) }));
+    let mut out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(21), sender: crate::kernel::Sender::new(1) }));
     let wait = out.take(Kind::Wait);
     assert_eq!(wait.kind, Op::Wait { pidfd: Fd::new(21), reap: false });
     let pipe = match out.events.as_slice() {
@@ -182,7 +182,8 @@ pub(super) fn parent_ends(submit: &mut crate::kernel::Submit, ends: &[Fd]) {
 fn child_with_input(rig: &mut Rig) -> (skein_lib::Token, skein_lib::Token, crate::kernel::Submit) {
     let mut spawning = rig.down(Request::Spawn { owner: owner(1), spawn: command(&[(0, Way::In)]) }).take(Kind::Spawn);
     parent_ends(&mut spawning, &[Fd::new(41)]);
-    let mut spawned = rig.complete(spawning, Ok(Done::Spawned { pidfd: Fd::new(40) }));
+    let mut spawned =
+        rig.complete(spawning, Ok(Done::Spawned { pidfd: Fd::new(40), sender: crate::kernel::Sender::new(1) }));
     let waiting = spawned.take(Kind::Wait);
     let (child, pipe) = match spawned.events.as_slice() {
         [Event::Spawned { child, pipes, .. }] => (*child, pipes[0]),
@@ -283,7 +284,7 @@ fn a_childs_output_is_read_as_it_arrives() {
     let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
     let mut spawn = rig.down(Request::Spawn { owner: owner(1), spawn: command(&[(1, Way::Out)]) }).take(Kind::Spawn);
     parent_ends(&mut spawn, &[Fd::new(12)]);
-    let out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(11) }));
+    let out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(11), sender: crate::kernel::Sender::new(1) }));
     let pipe = match out.events.as_slice() {
         [Event::Spawned { pipes, .. }] => pipes[0],
         other => panic!("spawned pipe: {other:?}"),
@@ -334,7 +335,7 @@ fn given_entries_resolve_without_pipe_entities_and_preserve_pipe_order() {
     let Op::Spawn { spawn } = &mut spawning.kind else { panic!("spawn") };
     spawn.pipes[0].parent = Some(Fd::new(51));
     spawn.pipes[2].parent = Some(Fd::new(52));
-    let out = rig.complete(spawning, Ok(Done::Spawned { pidfd: Fd::new(53) }));
+    let out = rig.complete(spawning, Ok(Done::Spawned { pidfd: Fd::new(53), sender: crate::kernel::Sender::new(1) }));
     let [Event::Spawned { pipes, .. }] = out.events.as_slice() else { panic!("spawned") };
     assert_eq!(pipes.len(), 2);
     let (input, output) = (pipes[0], pipes[1]);
@@ -363,7 +364,7 @@ fn a_given_listener_stays_held_after_exit_and_can_be_given_again() {
             rig.down(Request::Spawn { owner: owner(1), spawn: command(&[(3, Way::Given(held))]) }).take(Kind::Spawn);
         let Op::Spawn { spawn } = &spawning.kind else { panic!("spawn") };
         assert_eq!(spawn.pipes[0].parent, Some(Fd::new(50)));
-        let mut out = rig.complete(spawning, Ok(Done::Spawned { pidfd }));
+        let mut out = rig.complete(spawning, Ok(Done::Spawned { pidfd, sender: crate::kernel::Sender::new(1) }));
         let [Event::Spawned { pipes, .. }] = out.events.as_slice() else { panic!("spawned") };
         assert!(pipes.is_empty());
         let waiting = out.take(Kind::Wait);

@@ -12,13 +12,17 @@ fn signal_source_rearms_and_settles_its_read_before_close() {
     let read = rig.next().take(Kind::ReadSignal);
     assert_eq!(read.kind, Op::ReadSignal { fd: Fd::new(50) });
 
-    let mut out =
-        rig.complete(read, Ok(Done::Signalled(crate::kernel::Signalled::Termination(ServiceSignal::Interrupt))));
-    assert_eq!(out.events, [Event::Shutdown { signal: ServiceSignal::Interrupt }]);
+    let mut out = rig.complete(
+        read,
+        Ok(Done::Signalled(crate::kernel::Signalled::Termination { signal: ServiceSignal::Interrupt, sender: None })),
+    );
+    assert_eq!(out.events, [Event::Shutdown { signal: ServiceSignal::Interrupt, from: None }]);
     let read = out.take(Kind::ReadSignal);
-    let mut out =
-        rig.complete(read, Ok(Done::Signalled(crate::kernel::Signalled::Termination(ServiceSignal::Terminate))));
-    assert_eq!(out.events, [Event::Shutdown { signal: ServiceSignal::Terminate }]);
+    let mut out = rig.complete(
+        read,
+        Ok(Done::Signalled(crate::kernel::Signalled::Termination { signal: ServiceSignal::Terminate, sender: None })),
+    );
+    assert_eq!(out.events, [Event::Shutdown { signal: ServiceSignal::Terminate, from: None }]);
     let read = out.take(Kind::ReadSignal);
 
     let cancel = rig.down(Request::Close { entity: source }).take(Kind::Cancel);
@@ -52,8 +56,14 @@ fn a_signal_read_retries_an_unsubmitted_cancel_only_while_its_target_waits() {
         let read = rig.next().take(Kind::ReadSignal);
         let cancel = rig.down(Request::Close { entity: source }).take(Kind::Cancel);
         if read_first {
-            rig.complete(read, Ok(Done::Signalled(crate::kernel::Signalled::Termination(ServiceSignal::Terminate))))
-                .nothing();
+            rig.complete(
+                read,
+                Ok(Done::Signalled(crate::kernel::Signalled::Termination {
+                    signal: ServiceSignal::Terminate,
+                    sender: None,
+                })),
+            )
+            .nothing();
             let close = rig.complete(cancel, Err(Error::Other(11))).take(Kind::Close);
             rig.complete(close, Ok(Done::Nothing));
         } else {
@@ -114,4 +124,83 @@ fn a_window_on_a_terminal_that_hung_up_is_gone() {
     let close = rig.complete(read, Err(Error::Cancelled)).take(Kind::Close);
     rig.complete(close, Ok(Done::Nothing));
     rig.empty();
+}
+
+const CHILD_SENDER: crate::kernel::Sender = crate::kernel::Sender::new(71);
+
+struct SignalChild {
+    rig: Rig,
+    source: skein_lib::Token,
+    child: skein_lib::Token,
+    read: crate::kernel::Submit,
+    wait: crate::kernel::Submit,
+}
+
+fn signal_child() -> SignalChild {
+    let mut rig = Rig::new(limits());
+    let source = rig.io.adopt_signals(Fd::new(50)).expect("signal source");
+    let read = rig.next().take(Kind::ReadSignal);
+    let spawn =
+        rig.down(Request::Spawn { owner: super::owner(1), spawn: super::process::command(&[]) }).take(Kind::Spawn);
+    let mut out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(51), sender: CHILD_SENDER }));
+    let Event::Spawned { child, .. } = out.events[0] else { panic!("child spawned") };
+    let wait = out.take(Kind::Wait);
+    SignalChild { rig, source, child, read, wait }
+}
+
+fn hear(
+    rig: &mut Rig,
+    read: crate::kernel::Submit,
+    sender: Option<crate::kernel::Sender>,
+    from: Option<skein_lib::Token>,
+) -> crate::kernel::Submit {
+    let mut out = rig.complete(
+        read,
+        Ok(Done::Signalled(crate::kernel::Signalled::Termination { signal: ServiceSignal::Terminate, sender })),
+    );
+    assert_eq!(out.events, [Event::Shutdown { signal: ServiceSignal::Terminate, from }]);
+    out.take(Kind::ReadSignal)
+}
+
+fn reap_child(rig: &mut Rig, killing: crate::kernel::Submit) {
+    let reap = rig.complete(killing, Ok(Done::Nothing)).take(Kind::Wait);
+    let close = rig.complete(reap, Ok(Done::Exit(crate::kernel::Exit::Code(0)))).take(Kind::Close);
+    rig.complete(close, Ok(Done::Nothing));
+}
+
+fn close_source(rig: &mut Rig, source: skein_lib::Token, read: crate::kernel::Submit) {
+    let cancel = rig.down(Request::Close { entity: source }).take(Kind::Cancel);
+    rig.complete(cancel, Ok(Done::Nothing));
+    let close = rig.complete(read, Err(Error::Cancelled)).take(Kind::Close);
+    rig.complete(close, Ok(Done::Nothing));
+    rig.empty();
+}
+
+#[test]
+fn a_live_childs_signal_names_its_io_token() {
+    let SignalChild { mut rig, source, child, read, wait } = signal_child();
+    let read = hear(&mut rig, read, Some(CHILD_SENDER), Some(child));
+    let killing = rig.complete(wait, Ok(Done::Exit(crate::kernel::Exit::Code(0)))).take(Kind::Signal);
+    reap_child(&mut rig, killing);
+    close_source(&mut rig, source, read);
+}
+
+#[test]
+fn an_exited_childs_signal_has_no_child_token() {
+    let SignalChild { mut rig, source, read, wait, .. } = signal_child();
+    let killing = rig.complete(wait, Ok(Done::Exit(crate::kernel::Exit::Code(0)))).take(Kind::Signal);
+    let read = hear(&mut rig, read, Some(CHILD_SENDER), None);
+    reap_child(&mut rig, killing);
+    let read = hear(&mut rig, read, Some(CHILD_SENDER), None);
+    close_source(&mut rig, source, read);
+}
+
+#[test]
+fn other_senders_have_no_child_token_with_a_live_child() {
+    let SignalChild { mut rig, source, read, wait, .. } = signal_child();
+    let read = hear(&mut rig, read, Some(crate::kernel::Sender::new(72)), None);
+    let read = hear(&mut rig, read, None, None);
+    let killing = rig.complete(wait, Ok(Done::Exit(crate::kernel::Exit::Code(0)))).take(Kind::Signal);
+    reap_child(&mut rig, killing);
+    close_source(&mut rig, source, read);
 }

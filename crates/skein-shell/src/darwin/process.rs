@@ -326,7 +326,10 @@ fn finish_spawn(command: &mut Spawn, pid: libc::pid_t, parents: Vec<Option<Owned
             pipe.parent = Some(Fd::new(parent.into_raw_fd()));
         }
     }
-    Ok(Done::Spawned { pidfd: handle })
+    Ok(Done::Spawned {
+        pidfd: handle,
+        sender: skein_io::kernel::Sender::new(u64::try_from(pid).expect("a child pid is positive")),
+    })
 }
 
 fn child_handle(pid: libc::pid_t) -> Result<Fd, i32> {
@@ -551,7 +554,7 @@ pub(crate) fn start_binary(command: &mut Spawn, terminal: bool, cgroup: Option<F
         return Err(Error::InvalidArgument);
     }
     let done = spawn_prepared(command, terminal.as_ref().map(|(_, name)| name)).map_err(map_error)?;
-    let Done::Spawned { pidfd } = done else { unreachable!("a spawn returns a child handle") };
+    let Done::Spawned { pidfd, .. } = done else { unreachable!("a spawn returns a child handle") };
     Ok((pidfd, terminal.map(|(master, _)| Fd::new(master.into_raw_fd()))))
 }
 

@@ -626,9 +626,14 @@ mod tests {
         kernel.submit(&mut Queue::with_capacity(0), Wait::Forever);
         let mut out = Queue::with_capacity(1);
         kernel.reap(&mut out);
+        let sender = if cfg!(target_os = "linux") {
+            Some(skein_io::kernel::Sender::new(u64::from(std::process::id())))
+        } else {
+            None
+        };
         assert_eq!(
             out.pop().expect("one signal read").result,
-            Ok(Done::Signalled(Signalled::Termination(ServiceSignal::Interrupt)))
+            Ok(Done::Signalled(Signalled::Termination { signal: ServiceSignal::Interrupt, sender }))
         );
         assert!(kernel.waiters.is_empty());
         submit(&mut kernel, 2, Op::Close { fd });

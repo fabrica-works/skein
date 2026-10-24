@@ -129,7 +129,7 @@ impl Driver {
         for (index, pipe) in spawn.pipes.iter_mut().enumerate() {
             pipe.parent = Some(Fd::new(41 + i32::try_from(index).expect("small pipe count")));
         }
-        let result = Done::Spawned { pidfd: Fd::new(40) };
+        let result = Done::Spawned { pidfd: Fd::new(40), sender: skein_io::kernel::Sender::new(1) };
         self.meter.start();
         skein_io::up(
             &mut self.io,
@@ -342,7 +342,10 @@ fn a_slab_full_of_children_and_pipes_with_each_signal_in_flight_fits_the_bound()
             Complete {
                 op,
                 kind,
-                result: Ok(Done::Spawned { pidfd: Fd::new(40 + i32::try_from(index * 2).expect("four children")) }),
+                result: Ok(Done::Spawned {
+                    pidfd: Fd::new(40 + i32::try_from(index * 2).expect("four children")),
+                    sender: skein_io::kernel::Sender::new(u64::from(index)),
+                }),
             },
             &mut events,
             &mut submissions,

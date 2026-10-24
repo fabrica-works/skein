@@ -61,8 +61,17 @@ pub(crate) fn landed(
             assert!(signals.read.take() == Some(landed.flight), "the signal read flight matches");
             if !signals.closing {
                 match landed.result {
-                    Ok(Done::Signalled(crate::kernel::Signalled::Termination(signal))) => {
-                        up.push(Event::Shutdown { signal });
+                    Ok(Done::Signalled(crate::kernel::Signalled::Termination { signal, sender })) => {
+                        let mut from = None;
+                        if let Some(sender) = sender {
+                            for (child, identity) in &tables.senders {
+                                if *identity == sender {
+                                    from = Some(*child);
+                                    break;
+                                }
+                            }
+                        }
+                        up.push(Event::Shutdown { signal, from });
                         resume(signals, id, tables, subs);
                     }
                     Ok(Done::Signalled(crate::kernel::Signalled::WindowChanged)) => {

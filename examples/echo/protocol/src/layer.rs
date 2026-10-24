@@ -324,7 +324,7 @@ pub fn up(proto: &mut Protocol, env: &Env<Limits>, event: Told, up: &mut Queue<C
         | Told::Usage { .. } => {
             unreachable!("the echo connects to no one and spawns no child")
         }
-        Told::Shutdown { signal: _ } => proto.shutdown(),
+        Told::Shutdown { .. } => proto.shutdown(),
         Told::Stream { owner, up: event } => {
             let id = Id::<Conn>::from_token(owner);
             let Protocol { conns, tables, .. } = proto;

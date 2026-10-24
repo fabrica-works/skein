@@ -17,6 +17,7 @@ const SEED: u64 = 7;
 const ROOT: Handle = Handle::new(1);
 
 pub struct HostedInput {
+    pub sender: skein_io::kernel::Sender,
     pub sim: Sim,
     pub parent: Pid,
     pub child: Pid,
@@ -54,10 +55,10 @@ pub fn hosted_input() -> HostedInput {
     let complete = completes.pop().expect("spawned service");
     let Op::Spawn { spawn } = complete.kind else { unreachable!("spawn record") };
     let writer = spawn.pipes.iter().find(|pipe| pipe.child == 0).expect("input pipe").parent.expect("writer");
-    let Ok(Done::Spawned { pidfd }) = complete.result else { unreachable!("service spawned") };
+    let Ok(Done::Spawned { pidfd, sender }) = complete.result else { unreachable!("service spawned") };
     let (child, inherited) = sim.bind_service(parent, pidfd);
     let reader = inherited.into_iter().find(|(number, _)| *number == 0).expect("child input").1;
-    HostedInput { sim, parent, child, writer, reader }
+    HostedInput { sender, sim, parent, child, writer, reader }
 }
 
 pub fn submit(sim: &mut Sim, pid: Pid, op: Token, kind: Op) {

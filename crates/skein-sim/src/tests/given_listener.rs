@@ -113,7 +113,9 @@ fn given_fd_three_claims_the_parents_backlog_and_leaves_the_parent_listening() {
         let mut completions = Queue::with_capacity(1);
         sim.reap(parent, &mut completions);
         let complete = completions.pop().expect("spawn completed");
-        let Ok(Done::Spawned { pidfd }) = complete.result else { unreachable!("the fake machine answered Service") };
+        let Ok(Done::Spawned { pidfd, .. }) = complete.result else {
+            unreachable!("the fake machine answered Service")
+        };
         let (child, inherited) = sim.bind_service(parent, pidfd);
         assert_eq!(inherited, [(3, Fd::new(3))]);
         claim_and_accept(&mut sim, child, Fd::new(3), address);

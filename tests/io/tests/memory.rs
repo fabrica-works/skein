@@ -403,13 +403,24 @@ fn listen_accept_and_discard(limits: Limits) -> (u64, u64) {
     (driver.most, driver.bound)
 }
 
+// Socket workloads leave the child-only sender table empty. Utilization
+// excludes that reserve; Driver::end checks every step against the full
+// bound, including the child's pipe-list reserve.
+fn socket_bound(limits: Limits, bound: u64) -> u64 {
+    let senders = skein_lib::Map::<Token, skein_io::kernel::Sender>::worst_case(limits.sockets)
+        .expect("the sender table is priced");
+    bound.checked_sub(senders).expect("sender reserve is part of the bound")
+}
+
 #[test]
 fn io_never_holds_more_than_its_worst_case_filled_to_its_limits() {
     for limits in workloads() {
         let (most, bound) = fill_and_drain(limits);
-        // The shared bound also reserves room for a child's pipe lists, which
-        // this socket-only workload does not allocate.
-        assert!(most * 10 >= bound * 6, "{limits:?}: filled, io held {most} of its worst case of {bound}");
+        let socket_bound = socket_bound(limits, bound);
+        assert!(
+            most * 10 >= socket_bound * 6,
+            "{limits:?}: filled, io held {most} of its socket bound of {socket_bound}"
+        );
         let (most, bound) = listen_accept_and_discard(limits);
         assert!(most <= bound, "{limits:?}: a listener's life held {most} of {bound}");
     }
@@ -548,12 +559,13 @@ fn native_output_fills_the_same_actual_payload_and_slot_maxima_with_pending_and_
             driver.down(Request::Abort { entity: socket });
         }
         drain(&mut driver);
+        let socket_bound = socket_bound(limits, driver.bound);
         assert!(
             driver.most.checked_mul(10).expect("small measured heap")
-                >= driver.bound.checked_mul(6).expect("small heap bound"),
-            "native maximal scene held {} of {}",
+                >= socket_bound.checked_mul(6).expect("small heap bound"),
+            "native maximal scene held {} of its socket bound of {}",
             driver.most,
-            driver.bound
+            socket_bound
         );
     }
 }

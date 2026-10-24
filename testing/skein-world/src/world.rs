@@ -471,7 +471,7 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
             let (pid, source) = *self.signals.get(&host).expect("a service declares its signal source");
             let at = self.pids.iter().position(|current| *current == pid).expect("a signal names a running host");
             assert!(!self.procs.get(at).expect("admitted process").is_empty(), "a signal names a running service");
-            self.sim.deliver_service_signal(pid, source, signal);
+            self.sim.deliver_service_signal(pid, source, signal, None);
         }
     }
 

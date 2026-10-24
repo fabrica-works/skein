@@ -138,7 +138,10 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
         Purpose::Spawn => {
             let Op::Spawn { spawn } = kind else { unreachable!("a spawn completion returns its command") };
             match result {
-                Ok(Done::Spawned { pidfd }) => {
+                Ok(Done::Spawned { pidfd, sender }) => {
+                    let previous =
+                        io.tables.senders.insert(id.token(), sender).expect("at most one sender per child entity");
+                    assert!(previous.is_none(), "a child records its sender once");
                     let Some(Entity::Child(child)) = io.entities.get_mut(id) else {
                         unreachable!("a child owns spawn")
                     };
@@ -223,6 +226,7 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
                 return;
             }
             let Some(Entity::Child(child)) = io.entities.get_mut(id) else { unreachable!("a child owns wait") };
+            let _sender = io.tables.senders.remove(&id.token());
             match result {
                 Ok(Done::Exit(exit)) => up.push(Event::Exited { owner: child.owner, exit }),
                 Err(_) => up.push(Event::Failed { owner: child.owner, error: Error::Other }),

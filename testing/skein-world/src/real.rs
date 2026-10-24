@@ -32,6 +32,16 @@ use crate::referee::Referee;
 use crate::{HostedProgram, Inherited, StartupAppends, StartupRoots};
 use std::os::unix::ffi::OsStrExt;
 
+// Hosted identities occupy the high word; kernel PIDs fit in a u32.
+const HOSTED_SENDER_BASE: u64 = 1_u64 << 32;
+
+fn hosted_sender(host: usize) -> skein_io::kernel::Sender {
+    let identity = HOSTED_SENDER_BASE
+        .checked_add(u64::from(u32::try_from(host).expect("host index fits u32")))
+        .expect("two u32 words fit u64");
+    skein_io::kernel::Sender::new(identity)
+}
+
 /// What a real run left.
 #[derive(Debug)]
 pub struct Outcome<P> {
@@ -318,7 +328,7 @@ impl Process {
 
     fn completed(&mut self, complete: &Complete) {
         match &complete.result {
-            Ok(Done::Fd(fd) | Done::Accepted { fd, .. } | Done::Spawned { pidfd: fd }) => {
+            Ok(Done::Fd(fd) | Done::Accepted { fd, .. } | Done::Spawned { pidfd: fd, .. }) => {
                 self.fds.insert(*fd);
             }
             Ok(
@@ -765,7 +775,7 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
                         placeholder_open: true,
                     },
                 );
-                Ok(Done::Spawned { pidfd: pipes.pidfd })
+                Ok(Done::Spawned { pidfd: pipes.pidfd, sender: hosted_sender(child) })
             }
             Err(error) => {
                 for (_, fd) in roots.into_iter().chain(appends) {

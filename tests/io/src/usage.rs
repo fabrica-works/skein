@@ -155,7 +155,7 @@ impl Host for Process {
                 assert_eq!(complete.result, Ok(Done::Nothing));
                 self.root_closing = false;
             } else {
-                if let Ok(Done::Spawned { pidfd }) = complete.result {
+                if let Ok(Done::Spawned { pidfd, .. }) = complete.result {
                     self.pidfd = Some(pidfd);
                 }
                 skein_io::up(&mut self.io, &self.env, complete, &mut self.events, &mut self.submissions);

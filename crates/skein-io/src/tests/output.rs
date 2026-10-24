@@ -280,7 +280,8 @@ fn native_pipe_close_settles_waiting_output_and_actual_reap_waits_for_both_close
     let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
     let mut spawn = rig.down(Request::Spawn { owner: owner(1), spawn: child_command() }).take(Kind::Spawn);
     super::process::parent_ends(&mut spawn, &[Fd::new(21), Fd::new(22)]);
-    let mut spawned = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(20) }));
+    let mut spawned =
+        rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(20), sender: crate::kernel::Sender::new(1) }));
     let wait = spawned.take(Kind::Wait);
     let (input, output_pipe) = match spawned.events.as_slice() {
         [Event::Spawned { pipes, .. }] => match pipes.as_ref() {

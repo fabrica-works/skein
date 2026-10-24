@@ -229,7 +229,7 @@ impl Host for Script {
         while let Some(complete) = self.completions.pop() {
             self.waiting = false;
             match complete.result {
-                Ok(Done::Spawned { pidfd }) => {
+                Ok(Done::Spawned { pidfd, .. }) => {
                     self.pidfd = Some(pidfd);
                     let Op::Spawn { spawn } = &complete.kind else { panic!("spawn record") };
                     self.fds = spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent pipe end")).collect();
@@ -242,7 +242,9 @@ impl Host for Script {
                         self.received.extend_from_slice(&buf[..usize::try_from(count).expect("small count")]);
                     }
                 }
-                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(signal))) => self.signals.push(signal),
+                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination { signal, .. })) => {
+                    self.signals.push(signal);
+                }
                 Ok(Done::Exit(exit)) => self.child_exit = Some(exit),
                 Ok(Done::Fd(fd)) => self.fds.push(fd),
                 Ok(

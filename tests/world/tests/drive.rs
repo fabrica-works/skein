@@ -60,7 +60,7 @@ impl Host for Closing {
             self.pending -= 1;
             if matches!(
                 complete.result,
-                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination { signal: ServiceSignal::Terminate, .. }))
             ) {
                 self.heard = true;
                 self.submissions.push(Submit { op: Token::new(3), kind: Op::Cancel { target: Token::new(1) } });

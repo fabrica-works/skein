@@ -60,6 +60,7 @@ const UNSUBMITTED: i32 = 11;
 
 #[derive(Debug)]
 struct Process {
+    sender: skein_io::kernel::Sender,
     /// The parent spawn represented by this process, when it hosts a child service.
     parent: Option<(Pid, u64)>,
     usage: skein_io::kernel::Usage,
@@ -91,7 +92,7 @@ struct Process {
 
 #[derive(Debug)]
 struct SignalSource {
-    pending: VecDeque<ServiceSignal>,
+    pending: VecDeque<skein_io::kernel::Signalled>,
     read: Option<Token>,
 }
 
@@ -207,7 +208,10 @@ impl Sim {
     pub fn spawn_process(&mut self) -> Pid {
         let pid = Pid(u32::try_from(self.processes.len()).expect("fewer than 2^32 processes"));
         assert!(pid < Pid::MACHINE, "a process pid is below the machine's");
+        let sender = skein_io::kernel::Sender::new(self.next_child);
+        self.next_child = self.next_child.checked_add(1).expect("process identities fit u64");
         self.processes.push(Process {
+            sender,
             parent: None,
             usage: skein_io::kernel::Usage::ZERO,
             next_fd: FIRST_FD,
@@ -323,7 +327,11 @@ impl Sim {
     }
 
     /// Delivers a termination signal to the process's signalfd, in order.
-    pub fn deliver_service_signal(&mut self, pid: Pid, fd: Fd, signal: ServiceSignal) {
+    /// `from` names the sending simulated process; a bound child uses the
+    /// identity returned by its Spawn completion. None has no known sender.
+    pub fn deliver_service_signal(&mut self, pid: Pid, fd: Fd, signal: ServiceSignal, from: Option<Pid>) {
+        let sender = from.map(|from| self.process(from).sender);
+        let signal = skein_io::kernel::Signalled::Termination { signal, sender };
         let Some(source) = self.process_mut(pid).signal_fds.get_mut(&fd) else {
             self.fail(pid, "a service signal needs an open signalfd");
         };
@@ -338,7 +346,7 @@ impl Sim {
                 .pending
                 .pop_front()
                 .expect("one signal queued");
-            self.complete(pid, token, op, Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(signal))));
+            self.complete(pid, token, op, Ok(Done::Signalled(signal)));
         }
     }
 

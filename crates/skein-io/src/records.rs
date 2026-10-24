@@ -127,10 +127,12 @@ pub enum Event {
     /// A blocked termination signal to the service itself (io.md, section 7).
     Shutdown {
         signal: ServiceSignal,
+        /// The live child that sent it, when the backend identifies the sender.
+        from: Option<Token>,
     },
     // Files, processes and signals go here when a user pulls them:
     // File { owner, result }, Spawned { owner, child, pipes },
-    // Exited { owner, exit }, Shutdown { signal }.
+    // Exited { owner, exit }, Shutdown { signal, from }.
     /// Told once. A listen or a connect failed: io closes what it made, and
     /// `Closed` follows without a request. Or a listener can accept no more:
     /// it stays, and its owner closes it.

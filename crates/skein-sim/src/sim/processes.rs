@@ -137,6 +137,7 @@ impl Sim {
             process.next_fd = process.next_fd.max(raw.checked_add(1).expect("room above child descriptor"));
         }
         self.process_mut(pid).parent = Some((parent, child_id));
+        self.process_mut(pid).sender = skein_io::kernel::Sender::new(child_id);
         let mut inherited: Vec<_> = given
             .iter()
             .map(|&(child, _)| (child, Fd::new(i32::try_from(child).expect("validated descriptor"))))
@@ -598,12 +599,7 @@ impl Sim {
             Op::ReadSignal { fd } => {
                 let source = self.process_mut(pid).signal_fds.get_mut(&fd).expect("checked signalfd");
                 if let Some(signal) = source.pending.pop_front() {
-                    self.complete(
-                        pid,
-                        token,
-                        Op::ReadSignal { fd },
-                        Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(signal))),
-                    );
+                    self.complete(pid, token, Op::ReadSignal { fd }, Ok(Done::Signalled(signal)));
                 } else {
                     source.read = Some(token);
                     self.park(pid, token, Op::ReadSignal { fd });
@@ -710,7 +706,7 @@ impl Sim {
             (Some(delivered), Some(service)) => {
                 let source = self.process(service).signal_fds.keys().next().copied();
                 match source {
-                    Some(fd) => self.deliver_service_signal(service, fd, delivered),
+                    Some(fd) => self.deliver_service_signal(service, fd, delivered, None),
                     None => self.exit_child(parent, child_id, Exit::Signal(number)),
                 }
             }
@@ -792,7 +788,12 @@ impl Sim {
                     self.process_mut(pid).pipe_fds.insert(fd, PipeEnd { child: child_id, index });
                     pipe.parent = Some(fd);
                 }
-                self.complete(pid, token, op, Ok(Done::Spawned { pidfd }));
+                self.complete(
+                    pid,
+                    token,
+                    op,
+                    Ok(Done::Spawned { pidfd, sender: skein_io::kernel::Sender::new(child_id) }),
+                );
             }
             Ok(reply) => self.machine(&format!("{reply:?} to a Spawn")),
             Err(error) => self.complete(pid, token, op, Err(error)),
@@ -1136,7 +1137,7 @@ mod tests {
         let complete = completes.pop().expect("spawned");
         let Op::Spawn { spawn } = complete.kind else { unreachable!("spawn record") };
         let pipes: Vec<_> = spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent end")).collect();
-        let Ok(Done::Spawned { pidfd }) = complete.result else { unreachable!("a service and three pipes") };
+        let Ok(Done::Spawned { pidfd, .. }) = complete.result else { unreachable!("a service and three pipes") };
         let (child, inherited) = sim.bind_service(parent, pidfd);
         assert_eq!(inherited.len(), 3);
         assert_eq!([inherited[0].0, inherited[1].0, inherited[2].0], [0, 1, 2]);
@@ -1213,7 +1214,10 @@ mod tests {
         sim.reap(child, &mut child_completes);
         assert_eq!(
             child_completes.pop().expect("service signal").result,
-            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination {
+                signal: ServiceSignal::Terminate,
+                sender: None
+            }))
         );
         for (index, (_, fd)) in inherited.iter().enumerate() {
             child_submits.push(Submit {
@@ -1236,6 +1240,34 @@ mod tests {
     }
 
     #[test]
+    fn a_childs_sender_survives_queued_and_waiting_signal_reads() {
+        use super::closed_input::fixtures::{HostedInput, ONE_RECORD, READ, hosted_input, submit};
+        let HostedInput { mut sim, parent, child, sender, .. } = hosted_input();
+        let fd = sim.open_signal_source(parent);
+        let mut completes = Queue::with_capacity(ONE_RECORD);
+        sim.deliver_service_signal(parent, fd, ServiceSignal::Terminate, Some(child));
+        submit(&mut sim, parent, READ, Op::ReadSignal { fd });
+        sim.reap(parent, &mut completes);
+        assert_eq!(
+            completes.pop().expect("queued child signal").result,
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination {
+                signal: ServiceSignal::Terminate,
+                sender: Some(sender),
+            }))
+        );
+        submit(&mut sim, parent, READ, Op::ReadSignal { fd });
+        sim.deliver_service_signal(parent, fd, ServiceSignal::Terminate, Some(child));
+        sim.reap(parent, &mut completes);
+        assert_eq!(
+            completes.pop().expect("waiting child signal").result,
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination {
+                signal: ServiceSignal::Terminate,
+                sender: Some(sender),
+            }))
+        );
+    }
+
+    #[test]
     fn signal_source_delivers_and_cancels_a_pending_read() {
         let mut sim = Sim::new(2, Config::calm());
         let pid = sim.spawn_process();
@@ -1243,12 +1275,15 @@ mod tests {
         let mut submits = Queue::with_capacity(2);
         submits.push(Submit { op: Token::new(1), kind: Op::ReadSignal { fd } });
         sim.submit(pid, &mut submits);
-        sim.deliver_service_signal(pid, fd, ServiceSignal::Interrupt);
+        sim.deliver_service_signal(pid, fd, ServiceSignal::Interrupt, None);
         let mut completes = Queue::with_capacity(3);
         sim.reap(pid, &mut completes);
         assert_eq!(
             completes.pop().expect("signal read").result,
-            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Interrupt)))
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination {
+                signal: ServiceSignal::Interrupt,
+                sender: None
+            }))
         );
 
         submits.push(Submit { op: Token::new(2), kind: Op::ReadSignal { fd } });
@@ -1294,7 +1329,10 @@ mod tests {
             sim.reap(child, &mut completes);
             assert_eq!(
                 completes.pop().expect("termination delivered at once").result,
-                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination {
+                    signal: ServiceSignal::Terminate,
+                    sender: None
+                }))
             );
         }
     }
@@ -1342,7 +1380,9 @@ mod tests {
         let spawned = completes.pop().expect("the spawn completion");
         let Op::Spawn { spawn } = spawned.kind else { unreachable!("spawn record") };
         let pipes: Vec<_> = spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent end")).collect();
-        let Ok(Done::Spawned { pidfd }) = spawned.result else { unreachable!("the child and its pipes are created") };
+        let Ok(Done::Spawned { pidfd, .. }) = spawned.result else {
+            unreachable!("the child and its pipes are created")
+        };
         assert_eq!(pipes.len(), 2);
 
         if stopped {

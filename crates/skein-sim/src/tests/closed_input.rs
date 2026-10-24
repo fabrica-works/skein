@@ -8,7 +8,7 @@ use fixtures::{CLOSE, END, HostedInput, INPUT, INPUT_BYTES, ONE_RECORD, READ, WR
 
 #[test]
 fn a_hosted_childs_input_closed_with_bytes_unread_reads_them_then_ends() {
-    let HostedInput { mut sim, parent, child, writer, reader } = hosted_input();
+    let HostedInput { mut sim, parent, child, writer, reader, .. } = hosted_input();
     let mut completes = Queue::with_capacity(ONE_RECORD);
     submit(&mut sim, parent, WRITE, Op::PipeWrite { fd: writer, bytes: Box::from(&INPUT[..]), from: 0 });
     sim.reap(parent, &mut completes);
