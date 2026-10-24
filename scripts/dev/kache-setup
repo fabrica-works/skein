@@ -13,11 +13,14 @@
 # a link to it). It points cargo's rustc-wrapper at that path, writes the
 # store's cap (the machine file's KACHE_MAX_GB, 12 unless it says otherwise)
 # and the disk floor (PLAN_MIN_DISK_GB) into kache's config, starts its
-# daemon as a user service. From 1.2, kache collects its own store past its
+# daemon as a user service. A user-owned 0600 store.env enables the shared
+# S3 store; without it, setup removes the remote and its service drop-in.
+# From 1.2, kache collects its own store past its
 # cap; a timer that collected the older one's is kept running. A store of
 # another version is cleared, since its keys no longer match. Run again, it
 # changes nothing that is already right.
 set -euo pipefail
+umask 077
 
 version=1.2.2-gitrev.1
 digest=93f8551e8f1deedfab30118957d5450e2204b4a09a9cd951e092426c096839a3
@@ -38,6 +41,19 @@ source "$kit/kit.sh"
 read -r cap _ < <(machine_setting KACHE_MAX_GB 12)
 read -r floor _ < <(machine_setting PLAN_MIN_DISK_GB 40)
 
+# Inspect metadata only: systemd, not setup, reads the credentials.
+credentials=$HOME/.config/kache/store.env
+remote=0
+if [[ -e $credentials || -L $credentials ]]; then
+    if [[ ! -f $credentials || -L $credentials ||
+          $(stat -c %a "$credentials") != 600 ||
+          $(stat -c %u "$credentials") != "$(id -u)" ]]; then
+        echo "kache-setup: $credentials must be a regular file owned by the current user with mode 0600" >&2
+        exit 2
+    fi
+    remote=1
+fi
+
 bin=$HOME/.local/bin/kache
 installed=$("$bin" --version 2>/dev/null || true)
 
@@ -55,18 +71,13 @@ mv -f "$share/.kache.new" "$share/kache"
 
 unit=$HOME/.config/systemd/user/kache.service
 systemctl --user stop kache.service 2>/dev/null || true
-pkill -u "$(id -u)" -f 'kache daemon run' || true
+if [[ -x $bin ]]; then "$bin" daemon stop >/dev/null 2>&1 || true; fi
 
 mkdir -p "${bin%/*}"
 cp "$share/kache" "${bin%/*}/.kache.new" && mv -f "${bin%/*}/.kache.new" "$bin"
 if [[ -e $HOME/bin/kache || -L $HOME/bin/kache ]]; then
     ln -sfn "$bin" "$HOME/bin/.kache.new" && mv -fT "$HOME/bin/.kache.new" "$HOME/bin/kache"
 fi
-# An older install through mise would put its own kache on PATH beside it.
-if grep -qs 'kache' "$HOME/.config/mise/config.toml"; then
-    sed -i '/kache/d' "$HOME/.config/mise/config.toml"
-fi
-
 # cargo's wrapper names the binary by its path, so no other kache on PATH
 # runs in its place.
 cargo=$HOME/.cargo/config.toml
@@ -83,7 +94,7 @@ config=$HOME/.config/kache/config.toml
 mkdir -p "${config%/*}"
 [[ ! -f $config || -f $config.before-$version ]] || cp "$config" "$config.before-$version"
 # A machine that keeps its cache elsewhere, on a larger disk, keeps it there.
-local=$(sed -n 's/^local_store *= *"\(.*\)"$/\1/p' "$config" 2>/dev/null | head -n1)
+local=$(sed -n 's/^local_store *= *"\(.*\)"$/\1/p' "$config" 2>/dev/null | head -n1 || true)
 cat >"$config.new" <<TOML
 # Written by skein's scripts/dev/kache-setup.
 [cache]
@@ -92,7 +103,33 @@ ${local:+local_store = \"$local\"
 cache_executables = true
 auto_recover_min_free_bytes = $((floor * 1024 * 1024 * 1024))
 TOML
+if ((remote)); then
+    cat >>"$config.new" <<'TOML'
+
+[cache.remote]
+type = "s3"
+bucket = "kache"
+endpoint = "http://10.80.0.13:3900"
+region = "garage"
+prefix = "artifacts"
+TOML
+fi
 mv -f "$config.new" "$config"
+
+# Keep credentials out of the config and the unit itself. Removing the key
+# file and rerunning setup returns the daemon to its local store alone.
+dropin=${unit}.d/20-shared-store.conf
+if ((remote)); then
+    mkdir -p "${dropin%/*}"
+    cat >"$dropin.new" <<'UNIT'
+# Written by skein's scripts/dev/kache-setup.
+[Service]
+EnvironmentFile=%h/.config/kache/store.env
+UNIT
+    mv -f "$dropin.new" "$dropin"
+else
+    rm -f "$dropin"
+fi
 
 mkdir -p "${unit%/*}"
 cat >"$unit.new" <<UNIT

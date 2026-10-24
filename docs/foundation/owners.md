@@ -421,7 +421,10 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
   `tmp/kache/kache-1.2.2-gitrev.1` on each machine; setup checks its
   digest before stopping the daemon. Run setup through `heavy --gate`
   so no build is running when it swaps the wrapper and clears a store
-  of another version.
+  of another version. A user-owned 0600 `~/.config/kache/store.env`
+  enables the shared S3 store through a config section and a service
+  drop-in; without that file setup removes both and keeps caching local
+  ([build-cache.md](build-cache.md), section 7).
 - **Every machine's gate.** A repository's `main` must pass its gate
   on every machine that builds it, x1 the slowest. A test that fits
   its time budget only on a fast machine breaks other owners' and

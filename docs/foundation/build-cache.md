@@ -244,17 +244,32 @@ hetzner2 and hetzner, with the shared store:
 
 ## 7. Operating it
 
-The rollout belongs to the director, one machine at a time:
-1. Install the patched kache on every build machine (under way).
-2. `kache-setup` learns the remote. Its `[cache.remote]` section names
-   type `s3`, bucket `kache`, endpoint `http://10.80.0.13:3900`,
-   region `garage` and prefix `artifacts`, and the key goes in a 0600
-   file that `kache.service` loads into its environment.
-   - The daemon ignores the S3 selection variables in its environment,
-     so the remote must be named in the config file.
-   - It reads the key itself from its environment.
-3. Enable it on hetzner2, then on the other build machines.
-4. Measure remote hits over a day.
+`scripts/dev/kache-setup` pins the patched binary and writes the local
+store settings. When `~/.config/kache/store.env` exists, setup checks that
+it is a regular file owned by the current user with mode 0600, before
+stopping the daemon or changing anything. It never reads the key.
+
+- The config at `~/.config/kache/config.toml` gets `[cache.remote]` with
+  `type = "s3"`, `bucket = "kache"`, `endpoint = "http://10.80.0.13:3900"`,
+  `region = "garage"` and `prefix = "artifacts"`.
+- The user unit's `kache.service.d/20-shared-store.conf` loads
+  `EnvironmentFile=%h/.config/kache/store.env`. The file supplies
+  `KACHE_S3_ACCESS_KEY` and `KACHE_S3_SECRET_KEY` to the daemon.
+- The daemon ignores S3 selection variables in its environment, so the
+  remote belongs in the config; the key belongs in its environment.
+- Without the key file, setup removes the remote section and that
+  drop-in: x1, carbon, hel8 and a machine awaiting its key stay local.
+- Rerunning setup preserves the local store at the same kache version.
+  Run it through `heavy --gate -- ~/src/rust/skein/scripts/dev/kache-setup`
+  so the daemon restarts between builds. Plain HTTP is expected to be
+  flagged by `kache doctor` (section 5).
+
+The director rolls out one machine at a time: hetzner2, hetzner4,
+hetzner5, hetzner, then the store's host hetzner3. Check the daemon and
+`kache doctor` on each; an empty-target build on hetzner2 publishes and
+the same commit on hetzner4 must show remote hits. Stop on setup,
+store or subsequent cache-related gate failures. Measure remote hits
+over the following day.
 
 Day to day:
 - **Health.** On hetzner3, `garage status` and `garage bucket info
