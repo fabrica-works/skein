@@ -66,6 +66,12 @@ pub struct Peer {
 }
 
 impl Peer {
+    /// Adopts a held listener before the first drive, so the face's queued
+    /// Listen claims its address. On refusal the caller keeps the descriptor.
+    pub fn adopt_listener(&mut self, fd: kernel::Fd, addr: SocketAddr) -> Result<(), kernel::Fd> {
+        self.face.io.adopt_listener(fd, addr).map(|_| ())
+    }
+
     /// Starts loopback admission with caller-supplied seeded script and fault configuration.
     #[expect(clippy::too_many_arguments, reason = "independent machine configurations stay explicit")]
     pub fn new(

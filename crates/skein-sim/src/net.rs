@@ -9,8 +9,9 @@ use skein_lib::Token;
 
 use crate::sim::Pid;
 
-/// A socket's name in the world, never reused. A socket has one descriptor
-/// at most, in one process; one waiting in a listener's queue has none yet.
+/// A socket's name in the world, never reused. Streams have at most one
+/// descriptor; listening sockets can be given to children. A socket
+/// waiting in a listener's queue has no descriptor yet.
 pub(crate) type SocketId = u64;
 
 /// Linux's default ephemeral range, `ip_local_port_range`.
@@ -19,7 +20,7 @@ pub(crate) const EPHEMERAL_LAST: u16 = 60999;
 
 #[derive(Debug)]
 pub(crate) struct Socket {
-    /// The process and descriptor that name it, once it has one.
+    /// The process and descriptor driving its pending operations.
     pub(crate) owner: Option<(Pid, Fd)>,
     pub(crate) family: Family,
     /// The address bound, by `Bind` or by a `Connect` that picked one.

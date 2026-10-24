@@ -319,3 +319,131 @@ fn spawn_debug_prints_env_names_without_values() {
         assert!(!debug.contains("115, 101, 99, 114, 101, 116"));
     }
 }
+
+#[test]
+fn given_entries_resolve_without_pipe_entities_and_preserve_pipe_order() {
+    let mut rig = Rig::new(Limits { sockets: 4, ..limits() });
+    let held = rig.io.adopt_listener(Fd::new(50), super::local(8000)).expect("held listener");
+    let mut spawning = rig
+        .down(Request::Spawn { owner: owner(1), spawn: command(&[(7, Way::In), (3, Way::Given(held)), (9, Way::Out)]) })
+        .take(Kind::Spawn);
+    assert_eq!(rig.io.entities.len(), 4, "listener, child and two pipes fill the slab");
+    let Op::Spawn { spawn } = &mut spawning.kind else { panic!("spawn") };
+    assert_eq!(spawn.pipes[1].parent, Some(Fd::new(50)));
+    assert!(spawning.kind.is_valid(), "resolved Given is a valid backend submission");
+    let Op::Spawn { spawn } = &mut spawning.kind else { panic!("spawn") };
+    spawn.pipes[0].parent = Some(Fd::new(51));
+    spawn.pipes[2].parent = Some(Fd::new(52));
+    let out = rig.complete(spawning, Ok(Done::Spawned { pidfd: Fd::new(53) }));
+    let [Event::Spawned { pipes, .. }] = out.events.as_slice() else { panic!("spawned") };
+    assert_eq!(pipes.len(), 2);
+    let (input, output) = (pipes[0], pipes[1]);
+    let read = rig.next().take(Kind::PipeRead);
+    let Op::PipeRead { fd, .. } = &read.kind else { panic!("output pipe") };
+    assert_eq!(*fd, Fd::new(52));
+    rig.down(Request::Stream { stream: input, down: Down::Demand { read: Read::Nothing, room: 1 } }).nothing();
+    assert_eq!(rig.next().events, [Event::Stream { owner: input, up: Up::Room }]);
+    let write =
+        rig.down(Request::Stream { stream: input, down: Down::Send(Box::from(&b"x"[..])) }).take(Kind::PipeWrite);
+    let Op::PipeWrite { fd, .. } = &write.kind else { panic!("input pipe") };
+    assert_eq!(*fd, Fd::new(51));
+    rig.complete(write, Ok(Done::Count(1))).nothing();
+    rig.down(Request::Stream { stream: output, down: Down::Demand { read: Read::Fill(1), room: 0 } }).nothing();
+    rig.next().nothing();
+    assert_eq!(rig.complete(read, Ok(Done::Count(0))).events, [Event::Stream { owner: output, up: Up::End }]);
+    assert_eq!(rig.io.tables.held.get(&super::local(8000)).copied(), Some(skein_lib::Id::from_token(held)));
+}
+
+#[test]
+fn a_given_listener_stays_held_after_exit_and_can_be_given_again() {
+    let mut rig = Rig::new(Limits { sockets: 2, ..limits() });
+    let held = rig.io.adopt_listener(Fd::new(50), super::local(8000)).expect("held listener");
+    for pidfd in [Fd::new(51), Fd::new(52)] {
+        let spawning =
+            rig.down(Request::Spawn { owner: owner(1), spawn: command(&[(3, Way::Given(held))]) }).take(Kind::Spawn);
+        let Op::Spawn { spawn } = &spawning.kind else { panic!("spawn") };
+        assert_eq!(spawn.pipes[0].parent, Some(Fd::new(50)));
+        let mut out = rig.complete(spawning, Ok(Done::Spawned { pidfd }));
+        let [Event::Spawned { pipes, .. }] = out.events.as_slice() else { panic!("spawned") };
+        assert!(pipes.is_empty());
+        let waiting = out.take(Kind::Wait);
+        rig.next().nothing();
+        let mut out = rig.complete(waiting, Ok(Done::Exit(Exit::Code(0))));
+        assert_eq!(out.events, [Event::Exited { owner: owner(1), exit: Exit::Code(0) }]);
+        let killing = out.take(Kind::Signal);
+        let reaping = rig.complete(killing, Ok(Done::Nothing)).take(Kind::Wait);
+        let closing = rig.complete(reaping, Ok(Done::Exit(Exit::Code(0)))).take(Kind::Close);
+        assert_eq!(closing.kind, Op::Close { fd: pidfd });
+        assert_eq!(rig.complete(closing, Ok(Done::Nothing)).events, [Event::Closed { owner: owner(1) }]);
+        rig.next().nothing();
+        assert_eq!(rig.io.entities.len(), 1);
+    }
+    let closing = rig.down(Request::Close { entity: held }).take(Kind::Close);
+    assert_eq!(closing.kind, Op::Close { fd: Fd::new(50) });
+    assert_eq!(rig.complete(closing, Ok(Done::Nothing)).events, [Event::Closed { owner: held }]);
+    rig.empty();
+}
+
+fn refused_spawn(rig: &mut Rig, specs: &[(u32, Way)]) {
+    let entities = rig.io.entities.len();
+    rig.down(Request::Spawn { owner: owner(99), spawn: command(specs) }).nothing();
+    assert_eq!(rig.io.entities.len(), entities, "refused before making anything");
+    assert_eq!(
+        rig.next().events,
+        [Event::Failed { owner: owner(99), error: crate::Error::Busy }, Event::Closed { owner: owner(99) }]
+    );
+}
+
+#[test]
+fn given_refuses_missing_pipe_stream_claimed_and_closing_tokens() {
+    let mut rig = Rig::new(Limits { sockets: 8, ..limits() });
+    refused_spawn(&mut rig, &[(3, Way::Given(owner(400)))]);
+    let pipe = rig.io.adopt_write_pipe(Fd::new(41), None).expect("pipe");
+    rig.next().nothing();
+    refused_spawn(&mut rig, &[(3, Way::Given(pipe))]);
+    let (stream, _) = super::connected(&mut rig, owner(1), Fd::new(42));
+    refused_spawn(&mut rig, &[(3, Way::Given(stream))]);
+    let held = rig.io.adopt_listener(Fd::new(43), super::local(8000)).expect("held");
+    rig.down(Request::Listen { owner: owner(2), addr: super::addr(8000) }).nothing();
+    rig.next().take(Kind::Accept);
+    refused_spawn(&mut rig, &[(3, Way::Given(held))]);
+    let held = rig.io.adopt_listener(Fd::new(44), super::local(8001)).expect("held");
+    rig.down(Request::Close { entity: held }).take(Kind::Close);
+    refused_spawn(&mut rig, &[(3, Way::Given(held))]);
+}
+
+#[test]
+fn duplicate_child_descriptors_are_refused_for_pipes_and_given_entries() {
+    let mut rig = Rig::new(Limits { sockets: 4, ..limits() });
+    let held = rig.io.adopt_listener(Fd::new(50), super::local(8000)).expect("held");
+    for specs in [
+        [(3, Way::In), (3, Way::Out)],
+        [(3, Way::Given(held)), (3, Way::Out)],
+        [(3, Way::Given(held)), (3, Way::Given(held))],
+    ] {
+        refused_spawn(&mut rig, &specs);
+    }
+}
+
+#[test]
+fn a_failed_spawn_releases_only_its_pipes_and_keeps_the_given_listener() {
+    let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
+    let held = rig.io.adopt_listener(Fd::new(50), super::local(8000)).expect("held");
+    let spawning = rig
+        .down(Request::Spawn { owner: owner(1), spawn: command(&[(3, Way::Given(held)), (1, Way::Out)]) })
+        .take(Kind::Spawn);
+    assert_eq!(
+        rig.complete(spawning, Err(crate::kernel::Error::NotFound)).events,
+        [Event::Failed { owner: owner(1), error: crate::Error::Other }, Event::Closed { owner: owner(1) }]
+    );
+    rig.next().nothing();
+    assert_eq!(rig.io.entities.len(), 1);
+    let spawning =
+        rig.down(Request::Spawn { owner: owner(2), spawn: command(&[(3, Way::Given(held))]) }).take(Kind::Spawn);
+    let Op::Spawn { spawn } = &spawning.kind else { panic!("spawn") };
+    assert_eq!(spawn.pipes[0].parent, Some(Fd::new(50)));
+    rig.complete(spawning, Err(crate::kernel::Error::NotFound));
+    let closing = rig.down(Request::Close { entity: held }).take(Kind::Close);
+    rig.complete(closing, Ok(Done::Nothing));
+    rig.empty();
+}

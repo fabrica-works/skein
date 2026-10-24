@@ -345,3 +345,17 @@ fn two_setup_hooks_each_receive_the_change_with_their_own_signature() {
     }
     assert_eq!(world.forge.borrow().domain.tally().hooks, 1);
 }
+
+#[test]
+fn a_forge_peer_answers_on_its_adopted_listener() {
+    let mut world = World::new();
+    let address = world.adopt_listener();
+    let fd = world.open();
+    assert_eq!(world.peer.address(), Some(address));
+    world.send(fd, &request(b"/api/v1/repos/org/repo"));
+    let response = world.response(fd);
+    assert!(response.starts_with(b"HTTP/1.1 200"), "{}", String::from_utf8_lossy(&response));
+    assert!(skein_lib::bytes::find(&response, b"org/repo").is_some());
+    world.close(fd);
+    world.settle();
+}

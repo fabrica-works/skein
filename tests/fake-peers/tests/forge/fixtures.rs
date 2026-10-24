@@ -256,6 +256,13 @@ impl World {
             self.sim.advance_to(next);
         }
     }
+    pub fn adopt_listener(&mut self) -> SocketAddr {
+        let (fd, address) = support::held_listener(&mut self.sim, self.peer_pid);
+        self.peer = Peer::new(address, limits(), config(), protocol_limits(), Rc::clone(&self.forge), SEED)
+            .expect("forge configured at the held address");
+        self.peer.adopt_listener(fd, address).expect("held listener before the first drive");
+        address
+    }
     pub fn bind(&mut self) {
         while self.peer.address().is_none() {
             self.pass();

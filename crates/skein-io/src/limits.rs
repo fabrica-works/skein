@@ -126,7 +126,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Deadlines::<(Id<Entity>, Timer)>::worst_case(timers(limits)?)?)?
         .checked_add(Set::<Id<Entity>>::worst_case(sockets)?.checked_mul(3)?)?
         .checked_add(Queue::<Token>::worst_case(limits.refusals)?)?
-        .checked_add(joined)?;
+        .checked_add(joined)?
+        .checked_add(Map::<crate::kernel::Addr, Id<Entity>>::worst_case(sockets)?)?;
     let stream = Intake::worst_case(limits.intake)?
         .checked_add(u64::from(limits.receive))?
         .checked_add(u64::from(limits.output))?

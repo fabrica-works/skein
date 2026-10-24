@@ -1,5 +1,8 @@
 //! A child executable for the ring's process conformance scenarios.
 
+#[path = "../../tests/support/given_listener.rs"]
+mod given_listener;
+
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, ExitCode, Stdio};
@@ -33,6 +36,7 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some("given-listener") => given(&args.next().expect("held address")),
         Some("megabyte") => megabyte(),
         Some("usage") => {
             let mut accumulator = 1_u64;
@@ -123,5 +127,20 @@ fn megabyte() -> ExitCode {
     for _ in 0..256 {
         stdout.write_all(&pattern).expect("write patterned megabyte");
     }
+    ExitCode::SUCCESS
+}
+
+fn given(address: &str) -> ExitCode {
+    let address = address.parse().expect("socket address");
+    let inherited = skein_shell::inherited_listeners().expect("inherited listening sockets");
+    assert_eq!(&*inherited, &[(skein_io::kernel::Fd::new(3), address)]);
+    let limits = given_listener::limits();
+    let mut state = skein_io::Io::new(&limits);
+    let token = state.adopt_listener(inherited[0].0, address).expect("adopt inherited listener");
+    let mut kernel = skein_shell::Kernel::open(skein_shell::Config {
+        operations: skein_io::operations(&limits).expect("operation bound"),
+    })
+    .expect("child kernel");
+    given_listener::claim_and_accept(&mut kernel, &mut state, token, address);
     ExitCode::SUCCESS
 }

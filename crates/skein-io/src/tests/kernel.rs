@@ -750,3 +750,26 @@ fn a_lock_answers_nothing_and_is_never_cancelled() {
         assert_eq!(complete(Op::Lock { fd: FD }, result.clone()).is_valid(), valid, "{result:?}");
     }
 }
+
+#[test]
+fn given_slots_are_resolved_before_submission_and_retained_on_failure() {
+    use crate::kernel::{Pipe, Spawn, Way};
+    let mut kind = Op::Spawn {
+        spawn: Box::new(Spawn {
+            program: name(b"child"),
+            args: Box::default(),
+            env: Box::default(),
+            root: FD,
+            dir: Box::default(),
+            pipes: Box::new([Pipe { child: 3, way: Way::Given(Token::new(1)), parent: None }]),
+        }),
+    };
+    assert!(!kind.is_valid(), "backend requires the resolved descriptor");
+    let Op::Spawn { spawn } = &mut kind else { panic!("spawn") };
+    spawn.pipes[0].parent = Some(FD);
+    assert!(kind.is_valid());
+    let mut answer = Complete { op: Token::new(2), kind, result: Err(Error::NotFound) };
+    assert!(answer.is_valid(), "failure returns the borrowed Given descriptor");
+    answer.result = Ok(Done::Spawned { pidfd: NEW });
+    assert!(answer.is_valid(), "success returns the borrowed Given descriptor");
+}

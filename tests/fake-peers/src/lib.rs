@@ -36,3 +36,16 @@ pub fn assert_record_bound<T>(before: u64, after: u64, count: u32, bytes: u32) {
         u64::from(count) * u64::try_from(std::mem::size_of::<T>()).expect("record size fits") + u64::from(bytes)
     );
 }
+
+/// Open and listen before the peer's first pass, retaining the chosen address.
+pub fn held_listener(sim: &mut Sim, pid: Pid) -> (skein_io::kernel::Fd, std::net::SocketAddr) {
+    use skein_io::kernel::Family;
+    let Done::Fd(fd) = call(sim, pid, 1, Op::Socket { family: Family::Ipv4 }) else {
+        panic!("socket descriptor");
+    };
+    let Done::Bound(addr) = call(sim, pid, 2, Op::Bind { fd, addr: (std::net::Ipv4Addr::LOCALHOST, 0).into() }) else {
+        panic!("bound address");
+    };
+    assert_eq!(call(sim, pid, 3, Op::Listen { fd, backlog: 1 }), Done::Nothing);
+    (fd, addr)
+}

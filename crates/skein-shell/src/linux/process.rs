@@ -123,7 +123,7 @@ fn directory(command: &Spawn) -> Result<OwnedFd, i32> {
 
 use std::mem::size_of;
 
-type PreparedPipes = (OwnedFd, Vec<OwnedFd>, Vec<OwnedFd>, Vec<Option<OwnedFd>>);
+type PreparedPipes = (OwnedFd, Vec<Option<OwnedFd>>, Vec<OwnedFd>, Vec<Option<OwnedFd>>);
 
 fn prepare(command: &Spawn) -> Result<PreparedPipes, i32> {
     let dir = directory(command)?;
@@ -132,6 +132,16 @@ fn prepare(command: &Spawn) -> Result<PreparedPipes, i32> {
     let mut parents = Vec::with_capacity(command.pipes.len());
     let mut children = Vec::with_capacity(command.pipes.len());
     for pipe in &command.pipes {
+        if let Way::Given(_) = pipe.way {
+            let source = pipe.parent.ok_or(libc::EINVAL)?;
+            // Keep every source above every target so file actions cannot
+            // overwrite another entry's source. io retains the original fd.
+            // SAFETY: fcntl duplicates the borrowed source with CLOEXEC.
+            let high = fd(unsafe { libc::fcntl(source.raw(), libc::F_DUPFD_CLOEXEC, start) })?;
+            parents.push(None);
+            children.push(high);
+            continue;
+        }
         let mut pair = [0_i32; 2];
         // SAFETY: `pair` has two writable descriptor slots.
         if unsafe { libc::pipe2(pair.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
@@ -144,12 +154,13 @@ fn prepare(command: &Spawn) -> Result<PreparedPipes, i32> {
         let (parent, child) = match pipe.way {
             Way::In => (write, read),
             Way::Out => (read, write),
+            Way::Given(_) => unreachable!("given descriptors do not make pipes"),
         };
         // Move the source above every child target: ordered dup2 actions can
         // then never overwrite the source of a later action.
         // SAFETY: `child` is open, and fcntl duplicates it with CLOEXEC.
         let high = fd(unsafe { libc::fcntl(child.as_raw_fd(), libc::F_DUPFD_CLOEXEC, start) })?;
-        parents.push(parent);
+        parents.push(Some(parent));
         children.push(high);
     }
     let mut nulls = Vec::with_capacity(3);
@@ -287,7 +298,9 @@ fn spawn_prepared(command: &mut Spawn, terminal: Option<&CString>, cgroup: Optio
         let _destroyed = unsafe { libc::posix_spawnattr_destroy(ptr::from_mut(&mut attributes)) };
         let pidfd = spawned?;
         for (pipe, parent) in command.pipes.iter_mut().zip(parents) {
-            pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+            if let Some(parent) = parent {
+                pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+            }
         }
         Ok(Done::Spawned { pidfd: Fd::new(pidfd.into_raw_fd()) })
     })();
@@ -352,7 +365,9 @@ fn hosted_pipes_inner(command: &mut Spawn) -> Result<HostedPipes, i32> {
     let pipes =
         command.pipes.iter().zip(children).map(|(pipe, child)| (pipe.child, Fd::new(child.into_raw_fd()))).collect();
     for (pipe, parent) in command.pipes.iter_mut().zip(parents) {
-        pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+        if let Some(parent) = parent {
+            pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+        }
     }
     Ok(HostedPipes {
         pidfd: Fd::new(placeholder.into_raw_fd()),

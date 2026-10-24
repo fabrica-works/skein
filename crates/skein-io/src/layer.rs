@@ -57,6 +57,8 @@ pub(crate) struct Tables {
     /// The process resource read, independently of entity admission.
     usage: Option<Id<Flight>>,
     window: Option<Id<Flight>>,
+    /// Unclaimed listening sockets, keyed by their exact bound address.
+    pub(crate) held: Map<kernel::Addr, Id<Entity>>,
     pub(crate) names: Map<Name, Id<Entity>>,
     pub(crate) waiting: Map<(Id<Entity>, u64), Id<Entity>>,
     pub(crate) sequence: u64,
@@ -144,11 +146,28 @@ impl Io {
                 armed: 0,
                 usage: None,
                 window: None,
+                held: Map::with_capacity(limits.sockets),
                 names: Map::with_capacity(limits.names),
                 waiting: Map::with_capacity(limits.sockets),
                 sequence: 0,
             },
         }
+    }
+
+    /// Takes a listening socket opened before the loop, holding it without
+    /// accepting until a Listen claims its exact address (io.md, 3.2).
+    /// Its token owns its Closed until claimed. A full slab or an address
+    /// already held returns the descriptor to the caller.
+    pub fn adopt_listener(&mut self, fd: Fd, addr: kernel::Addr) -> Result<Token, Fd> {
+        if self.tables.held.contains_key(&addr) {
+            return Err(fd);
+        }
+        let Ok(id) = self.entities.insert(Entity::Listener(listener::held(fd, addr))) else {
+            return Err(fd);
+        };
+        let previous = self.tables.held.insert(addr, id).expect("one held address per entity slot");
+        assert!(previous.is_none(), "a held address is unique");
+        Ok(id.token())
     }
 
     /// Takes an inherited readable pipe descriptor at startup, returning its
@@ -273,6 +292,7 @@ impl Io {
             && self.tables.deadlines.is_empty()
             && self.tables.refused.is_empty()
             && self.tables.ready.is_empty()
+            && self.tables.held.is_empty()
             && self.tables.names.is_empty()
             && self.tables.waiting.is_empty()
     }
@@ -390,7 +410,7 @@ pub fn resume(io: &mut Io, env: &Env<Limits>, up: &mut Queue<Event>, subs: &mut 
     }
     let room = !io.entities.is_full();
     match io.entities.get_mut(id).expect("retiring an entity takes it off the ready list") {
-        Entity::Listener(listener) => listener::resume(listener, id, room, env, &mut io.tables, subs),
+        Entity::Listener(listener) => listener::resume(listener, id, room, env, &mut io.tables, up, subs),
         Entity::Stream(stream) => stream::resume(stream, id, env, &mut io.tables, up, subs),
         Entity::Pipe(pipe) => pipe::resume(pipe, id, env, &mut io.tables, up, subs),
         Entity::Child(_) => {}
@@ -602,6 +622,14 @@ fn listen(io: &mut Io, owner: Token, addr: Addr, subs: &mut Queue<Submit>) {
             return;
         }
     };
+    if let Some(id) = io.tables.held.remove(&addr) {
+        let Some(Entity::Listener(listener)) = io.entities.get_mut(id) else {
+            unreachable!("a held address names its listener");
+        };
+        listener.claim(owner);
+        io.tables.ready.mark(id);
+        return;
+    }
     let Ok(id) = io.entities.insert(Entity::Listener(listener::opened(owner, addr))) else {
         io.tables.refused.push(owner);
         return;

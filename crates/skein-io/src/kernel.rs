@@ -197,7 +197,8 @@
 //!   the chosen child descriptor, fills missing standard descriptors from
 //!   `/dev/null`, and leaves every other descriptor close-on-exec. It answers
 //!   with a pidfd and the parent ends in request order. `Way::In` means the
-//!   child reads; `Way::Out` means it writes.
+//!   child reads; `Way::Out` means it writes. `Way::Given` duplicates its
+//!   resolved parent descriptor without making a pipe or taking ownership.
 //! - `PipeRead` and `PipeWrite` have the same count rules as `Recv` and
 //!   `Send`, with EOF at a zero read count. A pipe is closed by `Close`.
 //! - `Wait` observes an exit without reaping, or reaps after that observation;
@@ -574,20 +575,23 @@ impl core::fmt::Debug for EnvNames<'_> {
     }
 }
 
-/// A requested child pipe, sent by io and returned with its parent end (kernel.md, section 4).
+/// A child descriptor: a pipe or a held listener (io.md, sections 6 and 6.3).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Pipe {
     pub child: u32,
     pub way: Way,
-    /// Empty on submission and failure; filled by the backend on success.
+    /// The caller leaves this empty. io resolves Given before submission and
+    /// retains that borrowed descriptor on failure; the backend fills pipes on success.
     pub parent: Option<Fd>,
 }
 
-/// The direction as seen by the child.
+/// How a child descriptor is supplied.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Way {
     In,
     Out,
+    /// A held listener retained by io and duplicated to the child.
+    Given(Token),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1178,7 +1182,11 @@ fn valid_spawn(spawn: &Spawn) -> bool {
         }
     }
     for (at, pipe) in spawn.pipes.iter().enumerate() {
-        if i32::try_from(pipe.child).is_err() || pipe.parent.is_some() {
+        let parent_valid = match pipe.way {
+            Way::In | Way::Out => pipe.parent.is_none(),
+            Way::Given(_) => pipe.parent.is_some(),
+        };
+        if i32::try_from(pipe.child).is_err() || !parent_valid {
             return false;
         }
         let Some(before) = spawn.pipes.get(..at) else {
@@ -1238,8 +1246,10 @@ fn may_fail(op: &Op, error: Error) -> bool {
     }
     if let Op::Spawn { spawn } = op {
         for pipe in &spawn.pipes {
-            if pipe.parent.is_some() {
-                return false;
+            match pipe.way {
+                Way::In | Way::Out if pipe.parent.is_some() => return false,
+                Way::Given(_) if pipe.parent.is_none() => return false,
+                Way::In | Way::Out | Way::Given(_) => {}
             }
         }
         return error != Error::TooLate && error != Error::Cancelled;

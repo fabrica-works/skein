@@ -26,6 +26,8 @@
 pub(crate) mod epoll;
 pub(crate) mod files;
 pub(crate) mod group;
+#[path = "listener_calls.rs"]
+pub(crate) mod listener_calls;
 
 use std::{mem, ptr};
 

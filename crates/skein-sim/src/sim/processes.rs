@@ -47,6 +47,7 @@ pub(super) struct Child {
     pub pidfd_open: bool,
     pub pipes: Vec<ChildPipe>,
     pub service: Option<Pid>,
+    pub given: Vec<(u32, crate::net::SocketId)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -116,7 +117,7 @@ impl Sim {
     }
 
     /// Starts the service selected by a successful spawn. The returned
-    /// descriptors are the child's inherited pipe table, keyed by the
+    /// descriptors are the child's inherited pipes and given listeners, keyed by the
     /// descriptor numbers requested in `Spawn`. The world hosts this process
     /// and drives it through `submit` and `reap` (simulator.md, section 3).
     pub fn bind_service(&mut self, parent: Pid, pidfd: Fd) -> (Pid, Vec<(u32, Fd)>) {
@@ -126,9 +127,20 @@ impl Sim {
         assert!(child.service.is_none(), "a service is bound once");
         assert!(child.exit.is_none(), "a finished service cannot be bound");
         let specs: Vec<Pipe> = child.pipes.iter().map(|pipe| pipe.spec).collect();
+        let given = core::mem::take(&mut self.process_mut(parent).children.get_mut(&child_id).expect("child").given);
         let pid = self.spawn_process();
+        for &(descriptor, socket) in &given {
+            assert!(!self.fds_full(pid), "a bound service needs a descriptor slot");
+            let raw = i32::try_from(descriptor).expect("validated child descriptor");
+            let process = self.process_mut(pid);
+            process.fds.insert(Fd::new(raw), socket);
+            process.next_fd = process.next_fd.max(raw.checked_add(1).expect("room above child descriptor"));
+        }
         self.process_mut(pid).parent = Some((parent, child_id));
-        let mut inherited = Vec::with_capacity(specs.len());
+        let mut inherited: Vec<_> = given
+            .iter()
+            .map(|&(child, _)| (child, Fd::new(i32::try_from(child).expect("validated descriptor"))))
+            .collect();
         for (index, spec) in specs.into_iter().enumerate() {
             assert!(!self.fds_full(pid), "a bound service needs a descriptor slot");
             let fd = self.new_process_fd(pid);
@@ -492,7 +504,9 @@ impl Sim {
     pub(super) fn process_op(&mut self, pid: Pid, token: Token, serial: u64, op: Op) {
         match op {
             Op::Spawn { spawn } => {
-                let wanted = 1_u32.saturating_add(u32::try_from(spawn.pipes.len()).unwrap_or(u32::MAX));
+                let wanted = 1_u32.saturating_add(
+                    u32::try_from(spawn.pipes.iter().filter(|pipe| is_pipe(pipe.way)).count()).unwrap_or(u32::MAX),
+                );
                 let open = self
                     .open_fds(pid)
                     .saturating_add(self.process(pid).opening)
@@ -711,15 +725,34 @@ impl Sim {
         let (pid, token) = self.spawn_asked.remove(&ticket).expect("a spawn call waiting");
         let mut op = self.unpark(pid, token);
         let Op::Spawn { ref mut spawn } = op else { self.bug("a spawn call holds Spawn") };
-        let reserved = u32::try_from(spawn.pipes.len()).unwrap_or(u32::MAX).saturating_add(1);
+        let reserved = u32::try_from(spawn.pipes.iter().filter(|pipe| is_pipe(pipe.way)).count())
+            .unwrap_or(u32::MAX)
+            .saturating_add(1);
         self.process_mut(pid).spawning = self.process(pid).spawning.checked_sub(reserved).expect("reserved spawn fds");
         match result {
             Ok(Reply::Program(program)) => {
+                let given: Vec<_> = spawn
+                    .pipes
+                    .iter()
+                    .filter_map(|spec| match spec.way {
+                        Way::Given(_) => {
+                            let fd = spec.parent.expect("io resolved a given descriptor");
+                            let socket = self.process(pid).fds[&fd];
+                            assert!(
+                                matches!(self.sockets[&socket].state, crate::net::State::Listening(_)),
+                                "only a listening socket can be given"
+                            );
+                            Some((spec.child, socket))
+                        }
+                        Way::In | Way::Out => None,
+                    })
+                    .collect();
                 let specs = spawn.pipes.clone();
                 let child_id = self.next_child;
                 self.next_child = child_id.checked_add(1).expect("fewer than 2^64 children");
                 let pipes = specs
                     .iter()
+                    .filter(|spec| is_pipe(spec.way))
                     .map(|&spec| ChildPipe {
                         spec,
                         open: true,
@@ -749,11 +782,12 @@ impl Sim {
                         pidfd_open: true,
                         pipes,
                         service: None,
+                        given: if exit.is_none() { given } else { Vec::new() },
                     },
                 );
                 let pidfd = self.new_process_fd(pid);
                 self.process_mut(pid).pidfds.insert(pidfd, child_id);
-                for (index, pipe) in spawn.pipes.iter_mut().enumerate() {
+                for (index, pipe) in spawn.pipes.iter_mut().filter(|pipe| is_pipe(pipe.way)).enumerate() {
                     let fd = self.new_process_fd(pid);
                     self.process_mut(pid).pipe_fds.insert(fd, PipeEnd { child: child_id, index });
                     pipe.parent = Some(fd);
@@ -921,6 +955,7 @@ impl Sim {
         let Some(token) = pipe.waiting else { return };
         let shared = &child.pipes[end.index];
         let ready = match shared.spec.way {
+            Way::Given(_) => unreachable!("a given descriptor has no child pipe"),
             Way::In => !shared.bytes.is_empty() || shared.ended || child.exit.is_some(),
             Way::Out => {
                 !shared.open
@@ -949,12 +984,19 @@ impl Sim {
             return;
         }
         child.exit = Some(exit);
+        let given = core::mem::take(&mut child.given);
         for pipe in &mut child.pipes {
             pipe.ended = !child.descendant_running;
         }
         if let Some(token) = child.wait.take() {
             let op = self.unpark(pid, token);
             self.complete(pid, token, op, Ok(Done::Exit(exit)));
+        }
+        let mut sockets: Vec<_> = given.into_iter().map(|(_, socket)| socket).collect();
+        sockets.sort_unstable();
+        sockets.dedup();
+        for socket in sockets {
+            self.release_socket(socket);
         }
         self.wake_pipe(pid, child_id);
         let count = self.process(pid).children[&child_id].pipes.len();
@@ -982,6 +1024,7 @@ impl Sim {
                 (pipe.spec, pipe.ended, !pipe.bytes.is_empty(), child.exit.is_some() && !child.descendant_running)
             };
             let ready = match spec.way {
+                Way::Given(_) => unreachable!("a given descriptor has no child pipe"),
                 Way::Out => available || ended || exit,
                 Way::In => ended || exit || self.echo_room(pid, child_id, index),
             };
@@ -1032,9 +1075,20 @@ fn add_resources(total: &mut Resources, child: Resources) {
     total.peak_rss_bytes = total.peak_rss_bytes.max(child.peak_rss_bytes);
 }
 
+fn is_pipe(way: Way) -> bool {
+    match way {
+        Way::In | Way::Out => true,
+        Way::Given(_) => false,
+    }
+}
+
 #[cfg(test)]
 #[path = "../tests/closed_input.rs"]
 mod closed_input;
+
+#[cfg(test)]
+#[path = "../tests/given_listener.rs"]
+mod given_listener;
 
 #[cfg(test)]
 mod tests {

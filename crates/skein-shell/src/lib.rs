@@ -5,6 +5,7 @@
 //!   (`skein_io::kernel`; shell.md, 3), opened once, then submitted to
 //!   and reaped from once per iteration.
 //! - [`open_append`]: a regular file opened beneath a root for output at startup.
+//! - [`inherited_listeners`], [`listener_at`] and [`open_listener`]: startup listeners.
 //! - [`open_root`]: a directory opened at startup as a root for io's files.
 //! - [`effective_user`]: the startup user ID for io's private-file configuration.
 //! - [`directory_access`]: the kernel's startup answer on writing and searching a directory.
@@ -28,6 +29,7 @@ mod darwin;
 mod drive;
 mod group;
 mod kernel;
+mod listeners;
 // Linux's calls, ring adapter and their unit tests are Linux's alone.
 #[cfg(target_os = "linux")]
 mod linux;
@@ -54,6 +56,7 @@ pub(crate) use linux as system;
 
 pub use group::{child_id, group_live, process_live, signal_group};
 pub use kernel::{Backend, Chosen, Config, Kernel, OpenError, Wait};
+pub use listeners::{ListenersRefusal, MAX_INHERITED_LISTENERS, inherited_listeners, listener_at, open_listener};
 pub use process::{
     HostedPipes, abandon_binary, close_keeper_fd, hosted_pipes, open_signal_pipe, open_termination_signals, poll_child,
     signal_current_thread, signal_kept_child, start_binary, write_service_signal,

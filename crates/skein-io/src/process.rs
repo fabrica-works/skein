@@ -15,7 +15,7 @@
 use alloc::boxed::Box;
 use skein_lib::{Id, List, Queue, Token};
 
-use crate::kernel::{self, Done, Fd, Op, Signal, Spawn, Submit, Target};
+use crate::kernel::{self, Done, Fd, Op, Signal, Spawn, Submit, Target, Way};
 use crate::layer::{Entity, Io, Landed, Purpose};
 use crate::records::{Error, Event};
 
@@ -67,8 +67,41 @@ impl Child {
     }
 }
 
-pub(crate) fn spawn(io: &mut Io, owner: Token, spawn: Spawn, subs: &mut Queue<Submit>) {
-    let Ok(count) = u32::try_from(spawn.pipes.len()) else {
+pub(crate) fn spawn(io: &mut Io, owner: Token, mut spawn: Spawn, subs: &mut Queue<Submit>) {
+    for (at, spec) in spawn.pipes.iter().enumerate() {
+        let before = spawn.pipes.get(..at).expect("entry prefix is within the table");
+        for prior in before {
+            if prior.child == spec.child {
+                io.tables.refused.push(owner);
+                return;
+            }
+        }
+    }
+    for spec in &mut spawn.pipes {
+        match spec.way {
+            Way::Given(token) => {
+                let fd = match io.entities.get(Id::from_token(token)) {
+                    Some(Entity::Listener(listener)) => listener.held_fd(),
+                    Some(
+                        Entity::Named(_)
+                        | Entity::Joined(_)
+                        | Entity::Stream(_)
+                        | Entity::Pipe(_)
+                        | Entity::Child(_)
+                        | Entity::Signals(_),
+                    )
+                    | None => None,
+                };
+                let Some(fd) = fd else {
+                    io.tables.refused.push(owner);
+                    return;
+                };
+                spec.parent = Some(fd);
+            }
+            Way::In | Way::Out => {}
+        }
+    }
+    let Some(count) = pipe_count(&spawn) else {
         io.tables.refused.push(owner);
         return;
     };
@@ -82,6 +115,9 @@ pub(crate) fn spawn(io: &mut Io, owner: Token, spawn: Spawn, subs: &mut Queue<Su
     }
     let mut pipes = List::with_capacity(count);
     for spec in &spawn.pipes {
+        if !is_pipe(spec.way) {
+            continue;
+        }
         let id = io
             .entities
             .insert(Entity::Pipe(crate::pipe::Pipe::pending(spec.way)))
@@ -106,16 +142,24 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
                     let Some(Entity::Child(child)) = io.entities.get_mut(id) else {
                         unreachable!("a child owns spawn")
                     };
-                    assert_eq!(spawn.pipes.len(), child.pipes.len(), "a pipe per request");
+                    assert_eq!(
+                        pipe_count(&spawn).expect("spawn pipe count fits u32"),
+                        u32::try_from(child.pipes.len()).expect("pipe entity count fits u32"),
+                        "an entity per real pipe"
+                    );
                     child.pidfd = Some(pidfd);
                     child.phase = Phase::Running;
                     let owner = child.owner;
                     let pipe_ids = child.pipes.clone();
                     let count = u32::try_from(pipe_ids.len()).expect("pipe count fits u32");
                     let mut tokens = List::with_capacity(count);
-                    for (at, spec) in spawn.pipes.iter().enumerate() {
+                    let mut ids = pipe_ids.iter();
+                    for spec in &spawn.pipes {
+                        if !is_pipe(spec.way) {
+                            continue;
+                        }
                         let fd = spec.parent.expect("a successful spawn fills every parent end");
-                        let pipe_id = *pipe_ids.get(at).expect("one id per fd");
+                        let pipe_id = *ids.next().expect("one id per fd");
                         let Some(Entity::Pipe(pipe)) = io.entities.get_mut(pipe_id) else {
                             unreachable!("the child owns its pipes")
                         };
@@ -332,4 +376,21 @@ fn spawn_error(error: kernel::Error) -> Error {
         | kernel::Error::InvalidArgument
         | kernel::Error::Other(_) => Error::Other,
     }
+}
+
+fn is_pipe(way: Way) -> bool {
+    match way {
+        Way::In | Way::Out => true,
+        Way::Given(_) => false,
+    }
+}
+
+fn pipe_count(spawn: &Spawn) -> Option<u32> {
+    let mut count = 0_u32;
+    for spec in &spawn.pipes {
+        if is_pipe(spec.way) {
+            count = count.checked_add(1)?;
+        }
+    }
+    Some(count)
 }

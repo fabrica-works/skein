@@ -758,3 +758,37 @@ fn responses_function_output_and_user_text_select_the_same_input_turn() {
     sim.assert_no_open_fds(server);
     sim.assert_no_open_fds(client);
 }
+
+#[test]
+fn an_llm_peer_answers_on_its_adopted_listener() {
+    let mut sim = skein_sim::Sim::new(23, skein_sim::Config::calm());
+    let (server, client) = (sim.spawn_process(), sim.spawn_process());
+    let (fd, address) = support::held_listener(&mut sim, server);
+    let endpoint = Endpoint::openai();
+    let mut peer = make_on(endpoint.clone(), key(), address, Transport::Plaintext).expect("configured peer");
+    peer.adopt_listener(fd, address).expect("held listener before the first drive");
+    let response = request::request(
+        &mut sim,
+        server,
+        client,
+        &mut peer,
+        &endpoint.target,
+        b"authorization: Bearer k0\r\n",
+        &body(""),
+    );
+    assert_eq!(peer.address(), Some(address));
+    assert!(response.starts_with(b"HTTP/1.1 200"));
+    assert!(peer.observations().iter().any(|event| matches!(event, llm::Observation::Answered { result: Ok(()), .. })));
+    peer.shutdown();
+    for _ in 0..1000 {
+        if peer.is_empty() {
+            break;
+        }
+        request::pass(&mut sim, server, &mut peer);
+    }
+    assert!(peer.is_empty());
+    for pid in [server, client] {
+        sim.assert_quiescent(pid);
+        sim.assert_no_open_fds(pid);
+    }
+}

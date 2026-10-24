@@ -44,6 +44,10 @@ pub(crate) struct Pipe {
 
 impl Pipe {
     pub(crate) fn pending(way: Way) -> Pipe {
+        match way {
+            Way::In | Way::Out => {}
+            Way::Given(_) => unreachable!("a given descriptor has no io pipe entity"),
+        }
         Pipe {
             child: None,
             way,

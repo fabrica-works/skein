@@ -106,7 +106,7 @@ fn pipe_pair() -> Result<(OwnedFd, OwnedFd), i32> {
     Ok((read, write))
 }
 
-type PreparedPipes = (OwnedFd, Vec<OwnedFd>, Vec<OwnedFd>, Vec<Option<OwnedFd>>);
+type PreparedPipes = (OwnedFd, Vec<Option<OwnedFd>>, Vec<OwnedFd>, Vec<Option<OwnedFd>>);
 
 fn prepare(command: &Spawn) -> Result<PreparedPipes, i32> {
     let dir = directory(command)?;
@@ -115,16 +115,27 @@ fn prepare(command: &Spawn) -> Result<PreparedPipes, i32> {
     let mut parents = Vec::with_capacity(command.pipes.len());
     let mut children = Vec::with_capacity(command.pipes.len());
     for pipe in &command.pipes {
+        if let Way::Given(_) = pipe.way {
+            let source = pipe.parent.ok_or(libc::EINVAL)?;
+            // Keep every source above every target so file actions cannot
+            // overwrite another entry's source. io retains the original fd.
+            // SAFETY: fcntl duplicates the borrowed source with CLOEXEC.
+            let high = fd(unsafe { libc::fcntl(source.raw(), libc::F_DUPFD_CLOEXEC, start) })?;
+            parents.push(None);
+            children.push(high);
+            continue;
+        }
         let (read, write) = pipe_pair()?;
         let (parent, child) = match pipe.way {
             Way::In => (write, read),
             Way::Out => (read, write),
+            Way::Given(_) => unreachable!("given descriptors do not make pipes"),
         };
         // Move the source above every child target: ordered dup2 actions can
         // then never overwrite the source of a later action.
         // SAFETY: `child` is open, and fcntl duplicates it with CLOEXEC.
         let high = fd(unsafe { libc::fcntl(child.as_raw_fd(), libc::F_DUPFD_CLOEXEC, start) })?;
-        parents.push(parent);
+        parents.push(Some(parent));
         children.push(high);
     }
     let mut nulls = Vec::with_capacity(3);
@@ -300,7 +311,7 @@ fn cpu(value: libc::timeval) -> Result<skein_lib::Duration, Error> {
     Ok(skein_lib::Duration::from_nanos(nanos))
 }
 
-fn finish_spawn(command: &mut Spawn, pid: libc::pid_t, parents: Vec<OwnedFd>) -> Result<Done, i32> {
+fn finish_spawn(command: &mut Spawn, pid: libc::pid_t, parents: Vec<Option<OwnedFd>>) -> Result<Done, i32> {
     let handle = match child_handle(pid) {
         Ok(handle) => handle,
         Err(errno) => {
@@ -311,7 +322,9 @@ fn finish_spawn(command: &mut Spawn, pid: libc::pid_t, parents: Vec<OwnedFd>) ->
         }
     };
     for (pipe, parent) in command.pipes.iter_mut().zip(parents) {
-        pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+        if let Some(parent) = parent {
+            pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+        }
     }
     Ok(Done::Spawned { pidfd: handle })
 }
@@ -459,7 +472,9 @@ pub(crate) fn hosted_pipes(command: &mut Spawn) -> Result<HostedPipes, Error> {
     let pipes =
         command.pipes.iter().zip(children).map(|(pipe, child)| (pipe.child, Fd::new(child.into_raw_fd()))).collect();
     for (pipe, parent) in command.pipes.iter_mut().zip(parents) {
-        pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+        if let Some(parent) = parent {
+            pipe.parent = Some(Fd::new(parent.into_raw_fd()));
+        }
     }
     Ok(HostedPipes { pidfd: Fd::new(placeholder.into_raw_fd()), pipes, signal, signal_writer })
 }

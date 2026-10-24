@@ -15,12 +15,19 @@ use crate::stream;
 /// A listener and the owner it tells.
 #[derive(Debug)]
 pub(crate) struct Listener {
-    owner: Token,
+    owner: Option<Token>,
+    /// The claimed address, told in the next up pass.
+    announce: Option<Addr>,
     state: State,
 }
 
 #[derive(Debug)]
 enum State {
+    /// Adopted, with no accept in flight.
+    Held {
+        fd: Fd,
+        addr: Addr,
+    },
     /// Its `Socket` in flight.
     Socket {
         addr: Addr,
@@ -130,14 +137,44 @@ enum Outcome {
 
 /// A listener whose `Socket` was just submitted.
 pub(crate) const fn opened(owner: Token, addr: Addr) -> Listener {
-    Listener { owner, state: State::Socket { addr } }
+    Listener { owner: Some(owner), announce: None, state: State::Socket { addr } }
+}
+
+/// An adopted listener, held until its address is claimed.
+pub(crate) const fn held(fd: Fd, addr: Addr) -> Listener {
+    Listener { owner: None, announce: None, state: State::Held { fd, addr } }
 }
 
 impl Listener {
+    /// Only an unclaimed, held listener can be given to a child.
+    pub(crate) const fn held_fd(&self) -> Option<Fd> {
+        match self.state {
+            State::Held { fd, .. } => Some(fd),
+            State::Socket { .. }
+            | State::Binding { .. }
+            | State::Arming { .. }
+            | State::Listening(_)
+            | State::Settling(_)
+            | State::Releasing
+            | State::Closed => None,
+        }
+    }
+
+    /// A Listen takes the held descriptor; its announcement waits for resume.
+    pub(crate) fn claim(&mut self, owner: Token) {
+        let State::Held { fd, addr } = self.state else {
+            unreachable!("only a held listener can be claimed");
+        };
+        self.owner = Some(owner);
+        self.announce = Some(addr);
+        self.state = State::Listening(Listening { fd, accept: Accept::Idle, discards: 0 });
+    }
+
     pub(crate) const fn is_closed(&self) -> bool {
         match self.state {
             State::Closed => true,
-            State::Socket { .. }
+            State::Held { .. }
+            | State::Socket { .. }
             | State::Binding { .. }
             | State::Arming { .. }
             | State::Listening(_)
@@ -149,7 +186,8 @@ impl Listener {
     const fn is_listening(&self) -> bool {
         match self.state {
             State::Listening(_) => true,
-            State::Socket { .. }
+            State::Held { .. }
+            | State::Socket { .. }
             | State::Binding { .. }
             | State::Arming { .. }
             | State::Settling(_)
@@ -165,7 +203,7 @@ pub(crate) fn landed(io: &mut Io, env: &Env<Limits>, landed: Landed, up: &mut Qu
     let happened = decode(io, landed);
     let room = !io.entities.is_full();
     let listener = borrow(&mut io.entities, id);
-    let me = Me { id, owner: listener.owner, room };
+    let me = Me { id, owner: listener.owner.unwrap_or(id.token()), room };
     let state = mem::replace(&mut listener.state, State::Closed);
     listener.state = step(state, me, happened, env, &mut io.tables, up, subs);
     tidy(listener, id, &mut io.tables);
@@ -178,16 +216,21 @@ pub(crate) fn resume(
     room: bool,
     env: &Env<Limits>,
     tables: &mut Tables,
+    up: &mut Queue<Event>,
     subs: &mut Queue<Submit>,
 ) {
-    let me = Me { id, owner: listener.owner, room };
+    let me = Me { id, owner: listener.owner.unwrap_or(id.token()), room };
+    if let Some(addr) = listener.announce.take() {
+        up.push(Event::Listening { owner: me.owner, listener: id.token(), addr: crate::Addr::Ip(addr) });
+    }
     match &mut listener.state {
         State::Listening(listening) => match listening.accept {
             Accept::Idle => listening.accept = arm(listening.fd, listening.discards, me, env, tables, subs),
             // Readied, then moved on: nothing to do.
             Accept::Armed(_) | Accept::Answering(_) | Accept::Stopped => {}
         },
-        State::Socket { .. }
+        State::Held { .. }
+        | State::Socket { .. }
         | State::Binding { .. }
         | State::Arming { .. }
         | State::Settling(_)
@@ -207,7 +250,7 @@ pub(crate) fn retried(
     tables: &mut Tables,
     subs: &mut Queue<Submit>,
 ) {
-    let me = Me { id, owner: listener.owner, room };
+    let me = Me { id, owner: listener.owner.unwrap_or(id.token()), room };
     match &mut listener.state {
         State::Listening(listening) => match listening.accept {
             Accept::Idle => listening.accept = arm(listening.fd, listening.discards, me, env, tables, subs),
@@ -215,7 +258,8 @@ pub(crate) fn retried(
                 unreachable!("a listener's retry deadline runs only while its accept is idle")
             }
         },
-        State::Socket { .. }
+        State::Held { .. }
+        | State::Socket { .. }
         | State::Binding { .. }
         | State::Arming { .. }
         | State::Settling(_)
@@ -234,7 +278,8 @@ fn tidy(listener: &Listener, id: Id<Entity>, tables: &mut Tables) {
             Accept::Idle => true,
             Accept::Armed(_) | Accept::Answering(_) | Accept::Stopped => false,
         },
-        State::Socket { .. }
+        State::Held { .. }
+        | State::Socket { .. }
         | State::Binding { .. }
         | State::Arming { .. }
         | State::Settling(_)
@@ -262,7 +307,7 @@ pub(crate) fn answered(
     tables: &mut Tables,
     subs: &mut Queue<Submit>,
 ) {
-    let me = Me { id, owner: listener.owner, room };
+    let me = Me { id, owner: listener.owner.unwrap_or(id.token()), room };
     match &mut listener.state {
         State::Listening(listening) => match listening.accept {
             Accept::Answering(announced) => {
@@ -275,7 +320,7 @@ pub(crate) fn answered(
         },
         // Closing since: it accepts no more.
         State::Settling(_) | State::Releasing | State::Closed => {}
-        State::Socket { .. } | State::Binding { .. } | State::Arming { .. } => {
+        State::Held { .. } | State::Socket { .. } | State::Binding { .. } | State::Arming { .. } => {
             unreachable!("a listener announces sockets only once it listens")
         }
     }
@@ -285,10 +330,16 @@ pub(crate) fn answered(
 /// `Close` or `Abort`: a listener has nothing to flush, so both stop its
 /// accept and close it.
 pub(crate) fn close(listener: &mut Listener, id: Id<Entity>, tables: &mut Tables, subs: &mut Queue<Submit>) {
+    listener.announce = None;
+    tables.ready.forget(id);
     let state = mem::replace(&mut listener.state, State::Closed);
     listener.state = match state {
+        State::Held { fd, addr } => {
+            let held = tables.held.remove(&addr);
+            assert!(held == Some(id), "a held listener owns its address entry");
+            release(fd, id, tables, subs)
+        }
         State::Listening(Listening { fd, accept, discards }) => {
-            tables.ready.forget(id);
             let accept = match accept {
                 Accept::Armed(flight) => {
                     tables.cancel(subs, id, flight);
@@ -489,6 +540,7 @@ fn step(
     subs: &mut Queue<Submit>,
 ) -> State {
     match state {
+        State::Held { .. } => unreachable!("a held listener has nothing in flight"),
         State::Socket { addr } => match happened {
             Happened::Socket(Ok(fd)) => made(fd, addr, me, tables, subs),
             Happened::Socket(Err(error)) => unmade(me, error, up),

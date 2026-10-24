@@ -17,6 +17,8 @@
 pub(crate) mod files;
 pub(crate) mod group;
 mod kqueue;
+#[path = "listener_calls.rs"]
+pub(crate) mod listener_calls;
 mod listing;
 pub(crate) mod process;
 mod signals;

@@ -809,6 +809,8 @@ impl Sim {
     }
 
     fn accept(&mut self, pid: Pid, token: Token, op: Op, id: SocketId) {
+        let Op::Accept { fd } = op else { self.bug("accept holds its descriptor") };
+        self.socket_mut(id).owner = Some((pid, fd));
         let State::Listening(listener) = &mut self.socket_mut(id).state else {
             self.complete(pid, token, op, Err(Error::InvalidArgument));
             return;
@@ -932,6 +934,30 @@ impl Sim {
 
     fn close_socket(&mut self, pid: Pid, fd: Fd, id: SocketId) {
         self.process_mut(pid).fds.remove(&fd);
+        self.release_socket(id);
+    }
+
+    // A given listener stays bound while any process or unbound child holds it.
+    fn release_socket(&mut self, id: SocketId) {
+        let owner = self.processes.iter().enumerate().find_map(|(at, process)| {
+            process.fds.iter().find_map(|(&fd, &socket)| {
+                (socket == id).then_some((Pid(u32::try_from(at).expect("process index fits")), fd))
+            })
+        });
+        if let Some(owner) = owner {
+            let socket = self.socket_mut(id);
+            if !waits(socket) {
+                socket.owner = Some(owner);
+            }
+            return;
+        }
+        if self
+            .processes
+            .iter()
+            .any(|process| process.children.values().any(|child| child.given.iter().any(|&(_, socket)| socket == id)))
+        {
+            return;
+        }
         let socket = self.sockets.remove(&id).expect("checked at submit");
         match socket.state {
             State::Fresh => {}

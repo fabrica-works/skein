@@ -329,3 +329,109 @@ fn an_answer_naming_a_listener_is_the_owner_s_bug() {
     let (listener, _addr, _accept) = listening(&mut rig, owner(1), LISTENER);
     let _out = rig.down(Request::Reject { socket: listener });
 }
+
+#[test]
+fn an_adopted_listener_waits_for_its_address_then_accepts_for_the_claimant() {
+    let mut rig = Rig::new(limits());
+    let token = rig.io.adopt_listener(LISTENER, local(40001)).expect("room for the held listener");
+    assert_eq!(rig.io.in_flight(), 0, "adoption submits nothing");
+    rig.next().nothing();
+    rig.down(Request::Listen { owner: owner(1), addr: addr(40001) }).nothing();
+    let mut out = rig.next();
+    assert_eq!(out.events, [Event::Listening { owner: owner(1), listener: token, addr: addr(40001) }]);
+    let accept = out.take(Kind::Accept);
+    assert_eq!(accept.kind, Op::Accept { fd: LISTENER });
+    assert!(out.subs.is_empty(), "the claim skips socket, bind and listen");
+    let socket = announced(&mut rig, accept, ACCEPTED);
+    let discarded = rig.down(Request::Reject { socket }).take(Kind::Close);
+    rig.complete(discarded, Ok(Done::Nothing)).nothing();
+    let close = rig.down(Request::Close { entity: token }).take(Kind::Close);
+    assert_eq!(rig.complete(close, Ok(Done::Nothing)).events, [Event::Closed { owner: owner(1) }]);
+    rig.empty();
+}
+
+#[test]
+fn closing_or_aborting_an_unclaimed_listener_tells_one_closed_to_its_token() {
+    for abort in [false, true] {
+        let mut rig = Rig::new(limits());
+        let token = rig.io.adopt_listener(LISTENER, local(40001)).expect("held listener");
+        let request = if abort { Request::Abort { entity: token } } else { Request::Close { entity: token } };
+        let mut out = rig.down(request);
+        let close = out.take(Kind::Close);
+        assert_eq!(close.kind, Op::Close { fd: LISTENER });
+        out.nothing();
+        rig.down(Request::Close { entity: token }).nothing();
+        rig.down(Request::Abort { entity: token }).nothing();
+        assert_eq!(rig.complete(close, Ok(Done::Nothing)).events, [Event::Closed { owner: token }]);
+        rig.next().nothing();
+        rig.down(Request::Close { entity: token }).nothing();
+        rig.empty();
+    }
+}
+
+#[test]
+fn adopting_into_a_full_slab_returns_the_descriptor() {
+    let mut rig = Rig::new(Limits { sockets: 1, ..limits() });
+    let token = rig.io.adopt_listener(LISTENER, local(40001)).expect("one slot");
+    assert_eq!(rig.io.adopt_listener(ACCEPTED, local(40002)), Err(ACCEPTED));
+    // A claim needs no new slot; only its accept waits for room.
+    rig.down(Request::Listen { owner: owner(1), addr: addr(40001) }).nothing();
+    let out = rig.next();
+    assert_eq!(out.events, [Event::Listening { owner: owner(1), listener: token, addr: addr(40001) }]);
+    assert!(out.subs.is_empty());
+    let close = rig.down(Request::Close { entity: token }).take(Kind::Close);
+    assert_eq!(rig.complete(close, Ok(Done::Nothing)).events, [Event::Closed { owner: owner(1) }]);
+    rig.empty();
+}
+
+#[test]
+fn adopting_an_address_already_held_returns_the_descriptor() {
+    let mut rig = Rig::new(limits());
+    let token = rig.io.adopt_listener(LISTENER, local(40001)).expect("held listener");
+    assert_eq!(rig.io.adopt_listener(ACCEPTED, local(40001)), Err(ACCEPTED));
+    assert_eq!(rig.io.sockets(), 1);
+    let close = rig.down(Request::Close { entity: token }).take(Kind::Close);
+    rig.complete(close, Ok(Done::Nothing));
+    rig.empty();
+    let token = rig.io.adopt_listener(ACCEPTED, local(40001)).expect("closing releases the held address");
+    let close = rig.down(Request::Close { entity: token }).take(Kind::Close);
+    rig.complete(close, Ok(Done::Nothing));
+    rig.empty();
+}
+
+#[test]
+fn listening_on_another_ip_or_port_including_zero_makes_a_socket() {
+    use core::net::{Ipv4Addr, SocketAddr};
+
+    for address in [local(0), local(40002), SocketAddr::from((Ipv4Addr::new(127, 0, 0, 2), 40001))] {
+        let mut rig = Rig::new(limits());
+        rig.io.adopt_listener(LISTENER, local(40001)).expect("held listener");
+        let socket = rig.down(Request::Listen { owner: owner(1), addr: crate::Addr::Ip(address) }).take(Kind::Socket);
+        let bind = rig.complete(socket, Ok(Done::Fd(ACCEPTED))).take(Kind::Bind);
+        assert_eq!(bind.kind, Op::Bind { fd: ACCEPTED, addr: address });
+    }
+}
+
+#[test]
+fn teardown_closes_every_unclaimed_listener_and_leaves_io_empty() {
+    let mut rig = Rig::new(limits());
+    let first = rig.io.adopt_listener(LISTENER, local(40001)).expect("first listener");
+    let second = rig.io.adopt_listener(ACCEPTED, local(40002)).expect("second listener");
+    for (token, fd) in [(first, LISTENER), (second, ACCEPTED)] {
+        let close = rig.down(Request::Close { entity: token }).take(Kind::Close);
+        assert_eq!(close.kind, Op::Close { fd });
+        assert_eq!(rig.complete(close, Ok(Done::Nothing)).events, [Event::Closed { owner: token }]);
+    }
+    rig.empty();
+}
+
+#[test]
+fn a_claim_closed_before_resume_tells_only_closed_to_the_claimant() {
+    let mut rig = Rig::new(limits());
+    let token = rig.io.adopt_listener(LISTENER, local(40001)).expect("held listener");
+    rig.down(Request::Listen { owner: owner(1), addr: addr(40001) }).nothing();
+    let close = rig.down(Request::Close { entity: token }).take(Kind::Close);
+    rig.next().nothing();
+    assert_eq!(rig.complete(close, Ok(Done::Nothing)).events, [Event::Closed { owner: owner(1) }]);
+    rig.empty();
+}
