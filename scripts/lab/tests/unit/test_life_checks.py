@@ -186,7 +186,119 @@ class Life(unittest.TestCase):
         self.assertEqual(effects[-1]['group'], 'checks')
 
 
+class Faults(unittest.TestCase):
+    def provision(self, n=1):
+        state, _ = world()
+        state.data['exp'].update(processes=state.data['exp']['processes'][:1], collect=[], checks=[],
+            driver=dict(charter='charter.md', tools=[]),
+            faults=[dict(kill='backend', signal='SIGKILL', after_actions=[n, n])])
+        state, _ = event(state, 'validated')
+        state, _ = event(state, 'provisioned')
+        state, _ = ready(state, 'backend', 'address')
+        state, effects = event(state, 'command_done', name='seed', record=dict(group='actions', exit=dict(status=0)))
+        self.assertFalse(any(e['op'] == 'signal_first' for e in effects))
+        return state
+
+    def drive(self, n=1):
+        state = self.provision(n)
+        state, _ = event(state, 'tools_provisioned', errors=[])
+        state, _ = event(state, 'driver_spawned')
+        return state
+
+    def item(self, state, method, identity, ms):
+        return event(state, 'driver_event', ms=ms, message=dict(method='item/' + method,
+            params=dict(item=dict(type='commandExecution', id=identity))))
+
+    def test_fault_waits_for_its_numbered_action_even_when_second_ends_first(self):
+        state = self.drive()
+        for method, identity, ms in (('started', 'first', 1), ('started', 'second', 2), ('completed', 'second', 3)):
+            state, effects = self.item(state, method, identity, ms)
+            self.assertEqual(effects, [])
+            self.assertFalse(state.data['schedule']['faults'][0]['fired'])
+        state, effects = self.item(state, 'completed', 'first', 4)
+        self.assertEqual(effects, [dict(op='signal_first', name='backend', signal='SIGKILL', fault=0)])
+        state, effects = event(state, 'fault_fired', ms=5, index=0)
+        self.assertEqual(effects, [])
+        self.assertEqual(state.data['schedule']['faults'][0],
+                         dict(index=0, kill='backend', signal='SIGKILL', n=1, fired=True, ms=5))
+        self.assertFalse(state.data['processes']['backend']['stopping'])
+        state, effects = self.item(state, 'completed', 'first', 6)
+        self.assertEqual(effects, [])
+        state, effects = event(state, 'exit', ms=7, name='backend', result=dict(signal='SIGKILL'))
+        self.assertIn(dict(op='stop_driver'), effects)
+        self.assertTrue(state.data['driver']['ending'])
+        self.assertFalse(state.data['processes']['backend']['exit']['stopped'])
+
+    def test_tool_end_fires_once_across_broker_and_host_observations(self):
+        for first in ('broker', 'host'):
+            with self.subTest(first=first):
+                state = self.drive()
+                item = dict(type='mcpToolCall', server='lab', tool='echo', arguments=dict(args=[], stdin=None))
+                state, effects = event(state, 'driver_call', item=item)
+                self.assertEqual(effects, [])
+                state, _ = event(state, 'driver_event', message=dict(method='item/started', params=dict(item=dict(item, id='call'))))
+                completions = [('driver_call_done', dict(n=1)), ('driver_event', dict(message=dict(
+                    method='item/completed', params=dict(item=dict(item, id='call')))))]
+                if first == 'host':
+                    completions.reverse()
+                requested = []
+                for kind, fields in completions:
+                    state, effects = event(state, kind, **fields)
+                    requested.extend(effects)
+                self.assertEqual(requested, [dict(op='signal_first', name='backend', signal='SIGKILL', fault=0)])
+
+    def test_provisioning_calls_and_seed_commands_do_not_fire_faults(self):
+        state = self.provision()
+        item = dict(type='mcpToolCall', server='lab', tool='echo', id='provision', arguments=dict(args=[], stdin=None))
+        for kind, fields in (('provision_call', dict(item=item)),
+                             ('provision_event', dict(message=dict(method='item/completed', params=dict(item=item))))):
+            state, effects = event(state, kind, **fields)
+            self.assertFalse(any(e['op'] == 'signal_first' for e in effects))
+        self.assertEqual(state.data['driver']['observed']['actions'], [])
+        self.assertEqual(checks.faults(state.data['schedule']['faults']),
+                         [dict(check='fault/0', reason='fault did not fire')])
+
+    def test_unreached_action_and_ended_target_leave_fault_undecided(self):
+        for target_ended in (False, True):
+            with self.subTest(target_ended=target_ended):
+                state = self.drive(n=2)
+                state, _ = self.item(state, 'started', 'first', 1)
+                state, _ = self.item(state, 'completed', 'first', 2)
+                if target_ended:
+                    state, _ = event(state, 'exit', name='backend', result=dict(status=0))
+                    state, _ = self.item(state, 'started', 'second', 3)
+                    state, effects = self.item(state, 'completed', 'second', 4)
+                    self.assertFalse(any(e['op'] == 'signal_first' for e in effects))
+                state.data['driver']['inventory'] = {}
+                state, _ = event(state, 'driver_closed', result=dict(status=0))
+                faults = state.data['schedule']['faults']
+                self.assertFalse(faults[0]['fired'])
+                self.assertIsNone(faults[0]['ms'])
+                unknown = checks.faults(faults)
+                self.assertEqual(unknown, [dict(check='fault/0', reason='fault did not fire')])
+                self.assertEqual(judge.outcome([], [], unknown, None, driver_required=False), 'incomplete')
+                self.assertEqual(judge.outcome(['failure'], [], unknown, None, driver_required=False), 'fail')
+
+
 class Checks(unittest.TestCase):
+    def test_requested_stop_must_exit_zero_unless_killed_past_its_bound(self):
+        for end, expected in ((dict(status=0), []),
+                              (dict(status=3), ['stopped/P/exit:3']),
+                              (dict(signal='SIGTERM'), ['stopped/P/signal:SIGTERM']),
+                              (dict(status=None, signal='SIGTERM'), ['stopped/P/signal:SIGTERM']),
+                              (dict(signal='SIGKILL', killed=True), [])):
+            with self.subTest(end=end):
+                record = dict(exit=dict(stopped=True, **end), output=dict(stderr=dict(path='proc/P/stderr')),
+                              memory=dict(peak_bytes=1, bound_bytes=None))
+                failures, unknown = checks.process('P', record, [])
+                self.assertEqual([f['signature'] for f in failures], expected)
+                self.assertEqual(unknown, [])
+                if failures:
+                    self.assertEqual(failures[0]['kind'], 'stop')
+                    self.assertEqual(failures[0]['evidence'], ['proc/P/stderr'])
+                panic = checks.panics('P', "thread 'main' panicked at main.rs:1:2:\nfailed\n", ['proc/P/stderr'])
+                self.assertEqual(checks.process('P', record, panic), (panic, []))
+
     def test_command_contract(self):
         cases = [
             (0, b'', (0, 0, 0)),

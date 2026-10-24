@@ -103,6 +103,13 @@ class Experiment(unittest.TestCase):
         facts['experiment_files']['charter.md'] = 'Exercise the client.'
         facts['driver_host'] = True
         self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
+        fault = dict(kill='backend', signal='SIGKILL', after_actions=[1, 2])
+        exp['faults'] = [fault]
+        self.assertEqual(experiment.validate(exp, subject, settings, facts), [])
+        for field, value in (('kill', 'absent'), ('signal', 'TERM'), ('after_actions', [2, 1])):
+            exp['faults'] = [{**fault, field: value}]
+            self.assertEqual([r.member for r in experiment.validate(exp, subject, settings, facts)], ['faults.0.' + field])
+        exp['faults'] = []
         exp['driver']['tools'][0].update(stdin='unknown member', writes=['../escape'])
         settings['driver'] = None
         settings['triager'] = None

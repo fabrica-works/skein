@@ -74,6 +74,37 @@ class Rehearsal(unittest.TestCase):
         record = self.story('wrong', 1)
         self.assertIn('check/answer/answer/wrong', [f['signature'] for f in record['failures']])
 
+    def fault_story(self, n, status):
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp.update(collect=[], checks=[], faults=[dict(kill='ledger', signal='SIGKILL', after_actions=[n, n])],
+                   planted=['stop/ledger/signal:SIGKILL'])
+        path.write_bytes(canonical.record_bytes(exp))
+        self.settings['costs']['squares']['driver_input_tokens'] = 1000
+        settings = self.lab_root / 'settings.json'
+        settings.chmod(0o600)
+        settings.write_bytes(canonical.record_bytes(self.settings))
+        code, run_id, stderr = self.invoke('correct')
+        self.assertEqual(code, status, stderr)
+        root = self.lab_root / 'rehearsals/squares' / run_id
+        record = canonical.loads((root / 'run.json').read_bytes())
+        self.assertFalse((root / 'live.json').exists())
+        self.assertFalse((self.lab_root / 'keys/squares' / record['key'] / 'evidence.jsonl').exists())
+        return record
+
+    def test_rehearsal_fires_fault_after_a_drive_action(self):
+        record = self.fault_story(1, 1)
+        self.assertEqual([f['signature'] for f in record['failures']], ['stop/ledger/signal:SIGKILL'])
+        self.assertTrue(record['schedule']['faults'][0]['fired'])
+        self.assertIsInstance(record['schedule']['faults'][0]['ms'], int)
+        self.assertFalse(record['processes']['ledger']['exit']['stopped'])
+
+    def test_rehearsal_with_unreached_fault_is_incomplete(self):
+        record = self.fault_story(20, 3)
+        self.assertEqual(record['failures'], [])
+        self.assertEqual(record['undecided'], [dict(check='fault/0', reason='fault did not fire')])
+        self.assertFalse(record['schedule']['faults'][0]['fired'])
+
     def test_campaign_and_malformed_script_are_refused_before_a_run(self):
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
             self.invoke('correct', '--campaign', 'invented')

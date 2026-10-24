@@ -168,6 +168,57 @@ class Driver(unittest.TestCase):
         self.assertEqual([f['signature'] for f in record['failures']], ['bound/driver_seconds'])
         self.assertLess(record['usage']['driver']['elapsed_ms'], 1500)
 
+    def canary_fault(self, n):
+        self.exp['processes'] = [dict(name=name, argv=[native.PYTHON, '-I', '-B', '-S',
+            '{experiment}/participant.py', 'server', '-', 'none', '{run.id}'], env={}, memory_bytes=None,
+            ready=[dict(stream='stdout', prefix='ready ', capture=None)]) for name in ('canary', 'peer')]
+        self.exp['faults'] = [dict(kill='canary', signal='SIGKILL', after_actions=[n, n])]
+        self.exp['planted'] = ['stop/canary/signal:SIGKILL']
+        self.exp['collect'] = [dict(name='live', argv=['/bin/true'], env={}, scan=[]),
+                               dict(name='stopped', cluster='stopped', argv=['/bin/true'], env={}, scan=[])]
+        self.exp['release'] = [dict(name='release', argv=['/bin/true'], env={})]
+        self.exp['checks'] = [dict(name='stopped', cluster='stopped', argv=['/bin/true'], env={})]
+
+    def fault_story(self, action):
+        self.canary_fault(1)
+        record = self.story(dict(items=[action], wait_after_actions=True), 1)
+        self.assertEqual([f['signature'] for f in record['failures']], ['stop/canary/signal:SIGKILL'])
+        self.assertFalse(record['processes']['canary']['exit']['stopped'])
+        self.assertEqual(record['processes']['canary']['exit']['phase'], 'drive')
+        self.assertIsNotNone(record['driver']['end'])
+        fault = record['schedule']['faults'][0]
+        self.assertEqual({k: fault[k] for k in ('index', 'kill', 'signal', 'n', 'fired')},
+                         dict(index=0, kill='canary', signal='SIGKILL', n=1, fired=True))
+        self.assertIsInstance(fault['ms'], int)
+        self.assertEqual(record['undecided'], [])
+        self.assertEqual(record['errors'], [])
+        self.assertEqual([(c['group'], c['name']) for c in record['commands']],
+                         [('collect', 'live'), ('release', 'release'), ('collect', 'stopped'), ('checks', 'stopped')])
+        self.assertTrue(all(c['exit']['status'] == 0 for c in record['commands']))
+        events = [json.loads(line) for line in (self.root_run / 'events.jsonl').read_text().splitlines()]
+        fired = [e for e in events if e['event'] == 'fault']
+        self.assertEqual(len(fired), 1)
+        self.assertEqual((fired[0]['ms'], fired[0]['target']), (fault['ms'], 'first'))
+        driver_exit = next(i for i, e in enumerate(events) if e['event'] == 'exit' and e['group'] == 'driver'
+                           and e['name'] == 'driver')
+        collect = next(i for i, e in enumerate(events) if e['event'] == 'phase' and e['phase'] == 'collect')
+        self.assertLess(driver_exit, collect)
+
+    def test_command_fault_kills_first_process_cuts_driver_and_runs_stopped_commands(self):
+        self.fault_story(dict(type='commandExecution', argv=['/bin/true']))
+
+    def test_tool_fault_kills_first_process_cuts_driver_and_runs_stopped_commands(self):
+        self.fault_story(dict(type='mcpToolCall', server='lab', tool='echo', arguments=dict(args=[], stdin=None)))
+
+    def test_unreached_fault_is_incomplete_without_planted_missing(self):
+        self.canary_fault(2)
+        record = self.story(dict(items=[dict(type='commandExecution', argv=['/bin/true'])]), 3)
+        self.assertEqual(record['failures'], [])
+        self.assertEqual(record['errors'], [])
+        self.assertEqual(record['undecided'], [dict(check='fault/0', reason='fault did not fire')])
+        self.assertEqual(record['schedule']['faults'][0],
+                         dict(index=0, kill='canary', signal='SIGKILL', n=2, fired=False, ms=None))
+
     def waiting_tool(self, *, command_timeout=False):
         endpoint = str(self.root / 'endpoint')
         helper = str(native.PACKAGE / 'tests/support/tool_client.py')

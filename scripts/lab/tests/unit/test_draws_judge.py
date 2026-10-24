@@ -1,11 +1,28 @@
 import json
 from pathlib import Path
 import unittest
-from runner import draws, judge
+from runner import canonical, draws, judge, life
 from runner.records import Refused
+from .fixtures import fixture
 
 
 class Draws(unittest.TestCase):
+    def test_faults_draw_at_provision_with_their_own_labels(self):
+        exp, _, settings, _, _ = fixture()
+        exp['faults'] = [dict(kill='backend', signal='SIGKILL', after_actions=[2, 8]),
+                         dict(kill='app', signal='SIGTERM', after_actions=[4, 4])]
+        for seed in ('0', '1', '18446744073709551615'):
+            with self.subTest(seed=seed):
+                state = life.initial(exp, seed, settings['costs']['smoke'], {}, {})
+                state, _ = life.step(state, dict(kind='validated', ms=1))
+                schedule = state.data['schedule']
+                self.assertEqual(schedule['draws'], {f'fault.{i}': draws.draw(seed, f'fault.{i}') for i in range(2)})
+                self.assertEqual(schedule['faults'], [dict(index=i, kill=f['kill'], signal=f['signal'],
+                    n=draws.fault_n(seed, i, *f['after_actions']), fired=False, ms=None)
+                    for i, f in enumerate(exp['faults'])])
+                for i, (low, high) in enumerate(((2, 8), (4, 4))):
+                    self.assertEqual(schedule['faults'][i]['n'], low + canonical.u64(schedule['draws'][f'fault.{i}']) % (high - low + 1))
+
     def test_fixed_vectors(self):
         vectors = json.loads((Path(__file__).parent / 'vectors/draws.json').read_text())
         for vector in vectors['draws']:

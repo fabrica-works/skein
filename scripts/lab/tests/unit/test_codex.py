@@ -380,11 +380,11 @@ class DriveLife(unittest.TestCase):
         self.assertIn('settings.driver.config', [p.member for p in problems])
         self.assertIn('settings.triager', [p.member for p in problems])
 
-    def test_faults_remain_refused(self):
+    def test_faults_are_admitted(self):
         exp, _, settings, _, _ = fixture()
         exp['faults'] = [dict(kill='backend', signal='SIGTERM', after_actions=[1, 2])]
-        with self.assertRaisesRegex(Refused, 'unsupported by this runtime'):
-            life.initial(exp, '1', settings['costs']['smoke'], {}, {})
+        state = life.initial(exp, '1', settings['costs']['smoke'], {}, {})
+        self.assertEqual(state.data['exp']['faults'], exp['faults'])
 
     def test_use_and_missing_or_malformed_report(self):
         for report, use in ((REPORT, False), ({**REPORT, 'done': False}, True),

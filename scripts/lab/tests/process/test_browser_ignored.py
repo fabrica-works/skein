@@ -50,7 +50,7 @@ class BrowserIgnored(unittest.TestCase):
                         [dict(path='subject.json', data=canonical.record_bytes(subject), exec=False)], empty_dirs=('source',))
         self.directory = self.root / 'experiment'
         self.directory.mkdir(mode=0o700)
-        (self.directory / 'ready.py').write_text("import signal\nprint('ready', flush=True)\nsignal.pause()\n")
+        (self.directory / 'ready.py').write_text("import signal, sys\nsignal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))\nprint('ready', flush=True)\nsignal.pause()\n")
         exp = dict(format='lab-experiment/1', name='browser-ignored', cost='smoke', dirs=[],
                    processes=[dict(name='ready', argv=[PYTHON, '-I', '-B', '-S', '{experiment}/ready.py'], env={},
                                    ready=[dict(stream='stdout', prefix='ready', capture=None)], memory_bytes=None)],

@@ -12,6 +12,26 @@ from .fixtures import D, fixture
 
 
 class Timeline(unittest.TestCase):
+    def test_fault_signal_targets_first_process_and_records_only_a_successful_send(self):
+        from types import SimpleNamespace
+        from runner.loop import Run
+        for present, success in ((True, True), (True, False), (False, False)):
+            with self.subTest(present=present, success=success):
+                sent, fed, timeline = [], [], []
+                run = Run.__new__(Run)
+                run.host = SimpleNamespace(children={'proc-P': {}} if present else {},
+                    signal_first=lambda identity, sig: sent.append((identity, sig.name)) or success)
+                fault = dict(index=0, kill='P', signal='SIGKILL', n=1, fired=False, ms=None)
+                run.state = SimpleNamespace(data=dict(schedule=dict(faults=[fault])))
+                run.ms = lambda: 17
+                run.feed = lambda kind, **fields: fed.append((kind, fields))
+                run.timeline = lambda kind, **fields: timeline.append((kind, fields))
+                run.effect(dict(op='signal_first', name='P', signal='SIGKILL', fault=0))
+                self.assertEqual(sent, [('proc-P', 'SIGKILL')] if present else [])
+                self.assertEqual(fed, [('fault_fired', dict(ms=17, index=0))] if success else [])
+                self.assertEqual(timeline, [('fault', dict(ms=17, index=0, kill='P', signal='SIGKILL', n=1,
+                                                          target='first'))] if success else [])
+
     def test_exit_event_retains_observed_time_instead_of_resampling_it(self):
         from types import SimpleNamespace
         from runner.loop import Run

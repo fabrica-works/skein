@@ -327,9 +327,19 @@ class Run:
                 record['awaited'] = dict(ms=request['ms'], captures=request['captures'])
             self.timeline('awaited', ms=request['ms'], name=request['name'], captures=request['captures'])
         elif op == 'signal_first':
-            if self.host.signal_first('proc-' + request['name'], signal.SIGTERM):
-                self.feed('signalled', name=request['name'])
-                self.timeline('signal', name=request['name'], signal='SIGTERM', target='first')
+            identity = 'proc-' + request['name']
+            if 'fault' in request and identity not in self.host.children:
+                return
+            if self.host.signal_first(identity, getattr(signal, request['signal'])):
+                if 'fault' in request:
+                    ms = self.ms()
+                    self.feed('fault_fired', ms=ms, index=request['fault'])
+                    fault = self.state.data['schedule']['faults'][request['fault']]
+                    self.timeline('fault', ms=ms, index=fault['index'], kill=fault['kill'],
+                                  signal=fault['signal'], n=fault['n'], target='first')
+                else:
+                    self.feed('signalled', name=request['name'])
+                    self.timeline('signal', name=request['name'], signal=request['signal'], target='first')
         elif op == 'kill_tree':
             identity = 'proc-' + request['name']
             self.host.kill_tree(identity)
@@ -637,10 +647,12 @@ class Run:
         self.freeze_collections()
         for name, record in self.records.items():
             panic = [f for f in self.failures if f['kind'] == 'panic' and f['signature'].startswith('panic/' + name + '/')]
-            failures, unknown = checks.process(name, record, panic)
+            stop_bound = any(b['name'] == 'stop_seconds' and b.get('who') == name for b in self.state.data['bounds'])
+            failures, unknown = checks.process(name, record, panic, stop_bound=stop_bound)
             self.failures.extend(f for f in failures if f not in self.failures)
             self.undecided.extend(unknown)
         self.errors.extend(self.state.data['errors'])
+        self.undecided.extend(checks.faults(self.state.data['schedule']['faults']))
         if self.driver is not None and self.driver_record is None:
             self.driver_record, self.driver_usage = self.driver.finish()
         observed = self.state.data['driver']

@@ -49,14 +49,13 @@ def _collection_inputs(item):
 
 
 def initial(exp, seed, cost, known, texts):
-    if exp['faults']:
-        raise Refused('faults', 'unsupported by this runtime')
     canonical.u64(seed)
     return State(dict(exp=exp, seed=seed, cost=cost, known=known, texts=texts,
                       phase='validate', order=[], ready=[], closed=[], processes={}, commands=[],
                       current=None, index=0, deadline=None, awaiting=None, stop_queue=[], cut=False,
                       started_commands=[], collections={}, driver=None, tool_provision=None, meter=None,
-                      interrupted=None, machinery=False, errors=[], bounds=[], schedule=dict(draws={}, start_order=[], faults=[])))
+                      interrupted=None, machinery=False, errors=[], bounds=[], fault_requested=[],
+                      schedule=dict(draws={}, start_order=[], faults=[])))
 
 
 def _phase(d, phase, effects):
@@ -365,6 +364,17 @@ def _driver_limits(d, effects, ms):
         _end_driver(d, effects)
 
 
+def _faults(d, completed, effects):
+    if d['phase'] != 'drive' or d['driver']['started_ms'] is None or d['driver']['ended_ms'] is not None:
+        return
+    for fault in d['schedule']['faults']:
+        index, name = fault['index'], fault['kill']
+        if (fault['n'] in completed and index not in d['fault_requested']
+                and name in d['processes'] and d['processes'][name]['exit'] is None):
+            d['fault_requested'].append(index)
+            effects.append(dict(op='signal_first', name=name, signal=fault['signal'], fault=index))
+
+
 def _driver_event(d, event, effects, ms):
     driver = d['driver']
     if driver is None:
@@ -380,10 +390,13 @@ def _driver_event(d, event, effects, ms):
         elif event['kind'] == 'driver_call':
             action = codex.action_start(driver['observed'], event['item'], ms, 'broker')
             driver['call_number'] = action['n']
+        elif event['kind'] == 'driver_call_done':
+            _faults(d, {event['n']}, effects)
         else:
             driver['observed'] = codex.fold(driver['observed'], event['message'], ms)
             if driver['observed']['unhandled'] is not None:
                 raise Refused('driver/audit', driver['observed']['unhandled'])
+        _faults(d, {a['n'] for a in driver['observed']['actions'] if a['completed_ms'] is not None}, effects)
         _driver_limits(d, effects, ms)
         report = driver['observed']['report']
         if report is not None and not driver['ending']:
@@ -406,6 +419,10 @@ def step(state, event):
         effects.append(dict(op='validate'))
     elif kind == 'validated':
         _phase(d, 'provision', effects)
+        for i, fault in enumerate(d['exp']['faults']):
+            d['schedule']['draws'][f'fault.{i}'] = draws.draw(d['seed'], f'fault.{i}')
+            d['schedule']['faults'].append(dict(index=i, kill=fault['kill'], signal=fault['signal'],
+                n=draws.fault_n(d['seed'], i, *fault['after_actions']), fired=False, ms=None))
         effects.append(dict(op='provision'))
     elif kind == 'provisioned':
         _phase(d, 'start', effects)
@@ -462,8 +479,10 @@ def step(state, event):
     elif kind == 'driver_spawned':
         d['driver']['started_ms'] = ms
         d['deadline'] = ms + d['cost']['driver_seconds'] * 1000
-    elif kind in ('driver_inventory', 'driver_event', 'driver_call'):
+    elif kind in ('driver_inventory', 'driver_event', 'driver_call', 'driver_call_done'):
         _driver_event(d, event, effects, ms)
+    elif kind == 'fault_fired':
+        d['schedule']['faults'][event['index']].update(fired=True, ms=ms)
     elif kind == 'driver_command_bound':
         if not d['driver']['ending']:
             d['bounds'].append(dict(name='command_seconds', ms=ms))
@@ -542,6 +561,11 @@ def step(state, event):
     elif kind == 'exit':
         name = event['name']
         record = d['processes'][name]
+        if (record['stopping'] and d['phase'] == 'stop' and d['current'] == name
+                and d['deadline'] is not None and ms >= d['deadline']):
+            d['bounds'].append(dict(name='stop_seconds', who=name, ms=ms))
+            effects.append(dict(op='bound', name='stop_seconds', who=name))
+            d['deadline'] = None
         record['exit'] = dict(ms=ms, phase=d['phase'], stopped=record['stopping'],
                               killed=event.get('killed', False), **event['result'])
         effects.append(dict(op='reap_tree', name=name))

@@ -225,7 +225,7 @@ campaigns, general recovery and pruning remain unsupported.
 
 
 `run` and `judge` support null drivers and the pinned Codex app-server adapter.
-Faults, nonnull triagers and `--campaign` are refused as unsupported. Judged
+Nonnull triagers and `--campaign` are refused as unsupported. Judged
 failures publish finding candidates and occurrences from retained evidence.
 
 The lifecycle in `runner/life.py` consumes events and returns ordered requests.
@@ -257,6 +257,28 @@ process in reverse start order, then uses the cost class's stop bound and
 `cgroup.kill`, awaits tree emptiness and removes the tree. Descendants left by
 an ended command or process are recorded as survivors and killed. A cleanup
 failure remains an error with its tree retained for whole-unit cleanup.
+
+A process stopped by the runner must exit with status 0 within `stop_seconds`.
+A nonzero exit or a signal before that bound fails `stopped/P/exit:STATUS` or
+`stopped/P/signal:NAME`, with its stderr as evidence. A panic replaces that
+stop failure. A process killed past the stop bound fails
+`bound/stop_seconds/P` alone.
+
+An experiment with a driver may declare runner faults:
+`{"kill": "canary", "signal": "SIGKILL", "after_actions": [1, 3]}`.
+At provision, fault i draws its action N with `fault.<i>` from the inclusive
+range. `run.json` records the draw in `schedule.draws` and the fault as
+`{"index", "kill", "signal", "n", "fired", "ms"}` in `schedule.faults`.
+The fault sends its signal once to the target's first process, if still
+running, when action N ends. Actions keep their start-order numbers even
+when they end out of order. Seed actions and tool provisioning do not count.
+Rehearsals run faults too. A successful signal sets `fired` and its time and
+adds a `fault` timeline event; its target's exit is an ordinary early stop,
+cutting the drive and failing `stop/P/signal:NAME` for a signal exit. Live
+commands, release and stopped commands still run after the cut. Every fault
+that did not fire adds `{"check": "fault/i", "reason": "fault did not fire"}`
+to `undecided`, leaving the run incomplete unless a failure or error takes
+precedence. Planted signatures still have to be observed on a judged run.
 
 `runner/host.py` provides the native tree operations; `runner/loop.py` connects
 pipes, pidfds, cgroup events and the clock to the pure life. A run lives inside

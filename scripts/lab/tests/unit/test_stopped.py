@@ -1,7 +1,7 @@
 """Stopped commands need confirmed closure and whole terminal collections."""
 from copy import deepcopy
 import unittest
-from runner import experiment, life
+from runner import checks, experiment, life
 from .fixtures import fixture
 
 
@@ -81,6 +81,36 @@ class Validation(unittest.TestCase):
 
 
 class Stopped(unittest.TestCase):
+    def test_exit_observed_at_or_after_stop_bound_reports_bound_alone(self):
+        for delta in (-1, 0, 1):
+            for status in (0, 3):
+                with self.subTest(delta=delta, status=status):
+                    state, _ = stopping()
+                    state, _ = send(state, 'signalled', ms=10, name='backend')
+                    deadline = 10 + state.data['cost']['stop_seconds'] * 1000
+                    state, effects = send(state, 'exit', ms=deadline + delta, name='backend', result=dict(status=status))
+                    bounds = [e for e in effects if e['op'] == 'bound']
+                    self.assertEqual(bounds, [dict(op='bound', name='stop_seconds', who='backend')] if delta >= 0 else [])
+                    record = dict(exit=state.data['processes']['backend']['exit'], memory=dict(bound_bytes=None, peak_bytes=1))
+                    failures, _ = checks.process('backend', record, [], stop_bound=bool(bounds))
+                    self.assertEqual([f['signature'] for f in failures],
+                                     ['stopped/backend/exit:3'] if delta < 0 and status == 3 else [])
+
+    def test_killed_stop_fails_only_its_stop_bound(self):
+        state, _ = stopping()
+        state, _ = send(state, 'signalled', ms=10, name='backend')
+        deadline = 10 + state.data['cost']['stop_seconds'] * 1000
+        state, effects = send(state, 'tick', ms=deadline)
+        self.assertIn(dict(op='bound', name='stop_seconds', who='backend'), effects)
+        self.assertIn(dict(op='kill_tree', name='backend'), effects)
+        state, _ = send(state, 'exit', ms=deadline + 1, name='backend', killed=True, result=dict(signal='SIGKILL'))
+        record = dict(exit=state.data['processes']['backend']['exit'], memory=dict(bound_bytes=None, peak_bytes=1))
+        failures, unknown = checks.process('backend', record, [])
+        failures += [checks.failure('bound/' + b['name'] + '/' + b['who'], 'bound', 'bound passed')
+                     for b in state.data['bounds']]
+        self.assertEqual([f['signature'] for f in failures], ['bound/stop_seconds/backend'])
+        self.assertEqual(unknown, [])
+
     def test_live_stop_closed_stopped_collect_check_sequence(self):
         state, effects = stopping()
         self.assertEqual(effects[-1], dict(op='signal_first', name='backend', signal='SIGTERM'))

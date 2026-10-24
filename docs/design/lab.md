@@ -1305,6 +1305,7 @@ evidence for the owner, not failures.
 | Check | Fails on | Signature |
 |---|---|---|
 | stops | a process that ended before the runner stopped it | `stop/<process>/exit:<status>` or `stop/<process>/signal:<name>` |
+| stopped | a process the runner stopped that then exited non-zero or by a signal, its stop bound not passed | `stopped/<process>/exit:<status>` or `stopped/<process>/signal:<name>` |
 | panics | a Rust panic's header, `thread '…' panicked at FILE:LINE:COL:`, in the stderr of a process, a command or a tool call, or in a collected log | `panic/<who>/<FILE>:<LINE>:<COL>`, the message in the summary |
 | survivors | a process, command or call whose tree outlived it | `survivor/<who>` |
 | memory | a peak past `memory_bytes` | `memory/<process>` |
@@ -1316,6 +1317,9 @@ evidence for the owner, not failures.
 | planted | a planted signature missing from a judged run | `planted-missing/<signature>` |
 
 - **A stop whose stderr holds a panic** is reported once, as the panic.
+- **A requested stop exits zero:** a process given `SIGTERM` by the runner's stop must end by
+  itself with status 0 within `stop_seconds`. Past them it is killed and fails
+  `bound/stop_seconds/<process>` alone.
 - **No early exit is ignored,** one the runner's own fault caused
   included (9.4).
 - **Private bootstrap streams** (4.3) are excluded from panic-text

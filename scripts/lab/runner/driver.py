@@ -344,6 +344,8 @@ class Driver:
             self.calls[n]['end'] = record
             connection['active'].remove(n)
             self.command_deadlines.pop(n, None)
+            if not self.provisioning:
+                self.feed('driver_call_done', n=n)
         else:
             raise RuntimeError('invalid tool broker message')
 

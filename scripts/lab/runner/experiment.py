@@ -620,7 +620,6 @@ def validate(experiment, subject, settings, facts):
 
     for i, entry in enumerate(_list(exp.get("faults"), "faults", out)):
         m = f"faults.{i}"
-        out.append(Refusal(m, 'unsupported by this runtime'))
         fault = shape(entry, ("kill", "signal", "after_actions"), (), m, out)
         if type(fault.get("kill")) is not str or fault["kill"] not in processes:
             out.append(Refusal(m + ".kill", "unknown process"))

@@ -221,6 +221,8 @@ def play():
             return False
     for item in pending:
         tools.complete(item)
+    if script.get('wait_after_actions'):
+        return False
     for usage in script.get('usage', []):
         event('thread/tokenUsage/updated', tokenUsage=dict(last=usage, total=usage, modelContextWindow=None))
     report = script.get('report', dict(done=True, retried=[], unseen=[], surprises=[]))

@@ -57,16 +57,19 @@ def command(name, status, stdout, *, timed_out=False):
     return failures, undecided, errors
 
 
-def process(name, record, panic_failures):
+def process(name, record, panic_failures, *, stop_bound=False):
     failures, undecided = list(panic_failures), []
     if 'spawn_error' in record:
         return failures, undecided
     end = record.get('exit')
-    if end is not None and not end['stopped'] and not panic_failures:
-        reason = 'exit:' + str(end['status']) if 'status' in end else 'signal:' + end['signal']
+    failed_stop = (end is not None and end['stopped'] and not (end.get('killed') or stop_bound)
+                   and (end.get('status') != 0 or end.get('signal')))
+    if end is not None and not panic_failures and (not end['stopped'] or failed_stop):
+        reason = 'signal:' + end['signal'] if end.get('signal') else 'exit:' + str(end['status'])
         stderr = record.get('output', {}).get('stderr')
         paths = [stderr['path']] if stderr is not None else []
-        failures.append(failure(f'stop/{name}/{reason}', 'stop', 'process ended before stop', paths))
+        prefix, summary = ('stopped', 'requested stop did not exit zero') if end['stopped'] else ('stop', 'process ended before stop')
+        failures.append(failure(f'{prefix}/{name}/{reason}', 'stop', summary, paths))
     memory = record['memory']
     if memory['bound_bytes'] is not None:
         if memory['peak_bytes'] is None:
@@ -99,6 +102,11 @@ def release(name, record):
     stderr = record['output']['stderr']
     paths = [stderr['path']] if stderr is not None else []
     return [failure(f'release/{name}/{suffix}', 'release', 'release command did not exit zero', paths)]
+
+
+def faults(schedule_faults):
+    return [dict(check=f"fault/{fault['index']}", reason='fault did not fire')
+            for fault in schedule_faults if not fault['fired']]
 
 
 def planted(required, failures, outcome):

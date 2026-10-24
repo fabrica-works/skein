@@ -185,6 +185,22 @@ class Runtime(unittest.TestCase):
         self.assertGreaterEqual(stopped, emptied)
         self.assert_empty(record)
 
+    def test_requested_stop_nonzero_exit_fails(self):
+        self.experiment()
+        path = self.directory / 'experiment.json'
+        exp = canonical.loads(path.read_bytes())
+        exp['processes'] = [dict(name='canary', argv=[PYTHON, '-I', '-B', '-S', '-c',
+            "import signal, sys; signal.signal(signal.SIGTERM, lambda s, f: sys.exit(1)); print('ready', flush=True); signal.pause()"],
+            env={}, ready=[dict(stream='stdout', prefix='ready', capture=None)], memory_bytes=None)]
+        path.write_bytes(canonical.record_bytes(exp))
+        status, _run, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 1, stderr)
+        record = self.records()[2][0]
+        self.assertEqual([f['signature'] for f in record['failures']], ['stopped/canary/exit:1'])
+        self.assertTrue(record['processes']['canary']['exit']['stopped'])
+        self.assertEqual(record['failures'][0]['evidence'], ['proc/canary/stderr'])
+        self.assert_empty(record)
+
     def test_partial_failed_stopped_copy_never_starts_dependent_check(self):
         self.experiment()
         self.stopped_experiment(failed_copy=True)
