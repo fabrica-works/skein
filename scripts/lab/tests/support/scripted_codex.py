@@ -20,7 +20,8 @@ if sys.argv[1:3] == ['sandbox', '-P']:
     Path(__file__).with_suffix('.probe').write_text(json.dumps(dict(argv=sys.argv[1:], profile=profile)))
     json.load(sys.stdin)
     checks = ('canary_read', 'home_list', 'source_write', 'network', 'pid_namespace', 'canary_process', 'work_write')
-    print(json.dumps({name: name != script.get('probe_failure') for name in checks}), flush=True)
+    probe_script = script.get('triage', {}) if tomllib.loads(profile)['default_permissions'] == 'triage' else script
+    print(json.dumps({name: name != probe_script.get('probe_failure') for name in checks}), flush=True)
     raise SystemExit(0)
 assert sys.argv[1:] == ['app-server', '--stdio', '--strict-config']
 signal.signal(signal.SIGTERM, lambda _sig, _frame: None)
@@ -34,8 +35,11 @@ config_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
 config = {} if script.get('rate_read') else tomllib.loads(config_path.read_text())
 responses_url = config.get('model_providers', {}).get('lab-openai', {}).get('base_url')
 provisioning = config_path.parent.parent.name == 'provision'
+triaging = config.get('default_permissions') == 'triage'
 if provisioning:
     script = script.get('provision', {})
+elif triaging:
+    script = script.get('triage', {})
 work = os.getcwd()
 thread, turn = 'script-thread', 'script-turn'
 
@@ -266,9 +270,9 @@ for line in sys.stdin:
         assert script.get('rate_read') and params == {}
         result = dict(rateLimits=script['rate_read'])
     elif method == 'thread/start':
-        assert params == dict(cwd=work, permissions='lab', ephemeral=True, experimentalRawEvents=True,
+        assert params == dict(cwd=work, permissions='triage' if triaging else 'lab', ephemeral=True, experimentalRawEvents=True,
                               approvalPolicy='never', config={})
-        tools = Tools()
+        tools = None if triaging else Tools()
         for number, item in enumerate(script.get('items', [])):
             if item.get('early'):
                 early = dict(item)
@@ -279,12 +283,15 @@ for line in sys.stdin:
                 assert not list((Path(work).parent / 'calls').iterdir())
                 assert not select.select([tools.process.stdout], [], [], 0)[0]
                 Path(__file__).with_suffix('.held').write_text('call held before inventory')
-        result = dict(thread=dict(id=thread, turns=[]), activePermissionProfile=dict(id='lab', extends=None), instructionSources=[])
+        result = dict(thread=dict(id=thread, turns=[]), activePermissionProfile=dict(id='triage' if triaging else 'lab', extends=None), instructionSources=[])
+        if triaging and 'before_inventory' in script:
+            event('item/completed', item=dict(type='agentMessage', id='early', text=json.dumps(script['before_inventory'])))
+            event('turn/completed', turn=dict(id=turn, status='completed', items=[]))
     elif method == 'mcpServerStatus/list':
         server = dict(name='lab', runtimeStatus='connected', toolsError=None,
                       tools={item['name']: item for item in tools.tools},
-                      resources=[], resourceTemplates=[])
-        result = dict(data=[server], nextCursor=None)
+                      resources=[], resourceTemplates=[]) if tools is not None else None
+        result = dict(data=[] if triaging else [server], nextCursor=None)
         if script.get('pages') and 'cursor' not in params:
             result = dict(data=[], nextCursor='second')
     elif method == 'app/installed':
@@ -303,8 +310,20 @@ for line in sys.stdin:
                              dict(name=dict(type='system', file='/etc/codex/config.toml'), config={})])
     elif method == 'turn/start':
         assert params['threadId'] == thread
-        assert params['outputSchema']['required'] == ['done', 'retried', 'unseen', 'surprises']
-        assert 'charter' in params['input'][0]['text']
+        if triaging:
+            assert params['outputSchema']['required'] == ['failures']
+            supplied = json.loads(params['input'][0]['text'].rsplit('\n\n', 1)[1])
+            proposals = []
+            for failure in supplied['failures']:
+                match = script.get('match_use') if failure['kind'] == 'use' else script.get('match_nonuse')
+                proposals.append(dict(id=failure['id'], match=match,
+                    signature='use/' + failure['id'] if failure['kind'] == 'use' and match is None else None,
+                    title='Scripted proposal', reason='Retained evidence',
+                    **{'class': None if match is not None and failure['kind'] == 'use' else 'tools'}))
+            script['report'] = script.get('output', dict(failures=proposals))
+        else:
+            assert params['outputSchema']['required'] == ['done', 'retried', 'unseen', 'surprises']
+            assert 'charter' in params['input'][0]['text']
         if not provisioning:
             Path(__file__).with_suffix('.turn').write_text(json.dumps(params))
         send(dict(id=request['id'], result=dict(turn=dict(id=turn, status='inProgress', items=[]))))

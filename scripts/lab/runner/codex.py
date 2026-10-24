@@ -42,7 +42,8 @@ def _response(responses, method):
 
 
 def config_toml(python: str, runner: str, run: str, tools: list[str], model: str,
-                effort: str, profile: str, lab_root: str = '{lab.root}', catalog: str | None = None) -> str:
+                effort: str, profile: str, lab_root: str = '{lab.root}', catalog: str | None = None,
+                *, mcp=True) -> str:
     """Permission profile text is supplied by the view builder."""
     # Root keys precede every TOML table, including the profile's tables.
     # No base_url: Codex then picks the endpoint for the login, API key or ChatGPT.
@@ -53,12 +54,13 @@ def config_toml(python: str, runner: str, run: str, tools: list[str], model: str
             # Codex 0.162.1 otherwise leaves only its helper directory on the commands' PATH.
             + profile + '\n[shell_environment_policy]\ninherit = "none"\nset = { PATH = "/usr/bin:/bin" }\n[features]\n'
             + ''.join(f'{name} = false\n' for name in DISABLED)
-            + 'skip_host_skill_discovery = true\n[mcp_servers.lab]\n'
+            + 'skip_host_skill_discovery = true\n'
+            + ('[mcp_servers.lab]\n'
             + f'command = {json.dumps(python)}\n'
             + 'args = ' + json.dumps(['-I', '-B', runner + '/runner/launch.py', lab_root, 'tool', run]) + '\n'
             + 'env_vars = []\nrequired = true\nenabled_tools = ' + json.dumps(sorted(tools)) + '\n'
             # The host's own MCP approval is pre-granted; the runner's broker admits each call (lab.md 6.3).
-            + 'default_tools_approval_mode = "approve"\n'
+            + 'default_tools_approval_mode = "approve"\n' if mcp else '')
             + '[skills.bundled]\nenabled = false\n[tools.experimental_request_user_input]\nenabled = false\n'
             + '[model_providers.lab-openai]\n'
             + 'name = "OpenAI"\nwire_api = "responses"\n'
@@ -86,9 +88,9 @@ def with_endpoint(toml: str, address: str) -> str:
             + 'request_max_retries = 0\nstream_max_retries = 0\n')
 
 
-def catalog_refusals(data: bytes, model: str) -> list:
+def catalog_refusals(data: bytes, model: str, member='settings.driver.catalog') -> list:
     """The pinned catalog must offer the model its tools directly: code mode makes no items."""
-    member = 'settings.driver.catalog'
+    role = member.split('.')[1]
     try:
         value = json.loads(data)
     except (UnicodeDecodeError, ValueError):
@@ -98,15 +100,15 @@ def catalog_refusals(data: bytes, model: str) -> list:
         return [Refusal(member, 'catalog has no models list')]
     entries = [m for m in models if type(m) is dict and m.get('slug') == model]
     if len(entries) != 1:
-        return [Refusal(member, f'catalog must hold the driver model {model!r} once')]
+        return [Refusal(member, f'catalog must hold the {role} model {model!r} once')]
     # Each field adds built-in tools outside the audit's admitted actions (lab.md 6.1).
-    return [Refusal(member, f'the driver model\'s {field} must be {json.dumps(value)}')
+    return [Refusal(member, f'the {role} model\'s {field} must be {json.dumps(value)}')
             for field, value in CATALOG_FIELDS
             if field not in entries[0] or entries[0][field] != value or type(entries[0][field]) is not type(value)]
 
 
-def expected_inventory(tools: list[str], config_path: str) -> dict:
-    return dict(permission_profile='lab', mcp_servers_and_tools={'lab': sorted(tools)},
+def expected_inventory(tools: list[str], config_path: str, *, profile='lab') -> dict:
+    return dict(permission_profile=profile, mcp_servers_and_tools={'lab': sorted(tools)} if profile == 'lab' else {},
                 resources=[], prompts=[], apps=[], plugins=[], hooks=[], skills=[],
                 configuration_layers=config_path, instruction_files=[], built_in_tools=['commandExecution'])
 
@@ -130,13 +132,14 @@ def observe(responses: dict, expected: dict | None = None) -> dict:
              and all(type(p['nextCursor']) is str and bool(p['nextCursor']) for p in pages[:-1])
              and pages[-1]['nextCursor'] is None) if type(pages) is list else False
     entries = [e for p in pages for e in p['data']] if valid else []
-    good = (valid and len(entries) == 1 and type(entries[0]) is dict
-            and entries[0].get('name') == 'lab' and entries[0].get('runtimeStatus') == 'connected'
-            and 'toolsError' in entries[0] and entries[0]['toolsError'] is None
-            and type(entries[0].get('tools')) is dict
-            and sorted(entries[0]['tools']) == expected['mcp_servers_and_tools']['lab'])
+    servers = expected['mcp_servers_and_tools']
+    good = (valid and len(entries) == len(servers) and all(type(e) is dict
+            and type(e.get('name')) is str and e['name'] in servers and e.get('runtimeStatus') == 'connected'
+            and 'toolsError' in e and e['toolsError'] is None and type(e.get('tools')) is dict
+            and sorted(e['tools']) == servers[e['name']] for e in entries)
+            and len({e['name'] for e in entries if type(e) is dict and type(e.get('name')) is str}) == len(servers))
     row('mcp_servers_and_tools', pages, good)
-    row('resources', pages, valid and bool(entries) and all(type(e) is dict
+    row('resources', pages, valid and all(type(e) is dict
         and e.get('resources') == [] and e.get('resourceTemplates') == [] for e in entries))
     apps, plugins = _response(responses, 'app/installed'), _response(responses, 'plugin/list')
     # An app both disabled and not callable offers the model nothing; the entries stay as evidence.
@@ -291,12 +294,14 @@ def action_start(state: dict, item: dict, ms: int, source: str = 'host') -> dict
     return existing
 
 
-def fold(state: dict, message: dict, ms: int) -> dict:
+def fold(state: dict, message: dict, ms: int, *, triage=False) -> dict:
     """Fold one app-server notification; repeated usage replaces that turn's counts."""
     state = json.loads(canonical.dumps(state))
     method, params = message.get('method'), message.get('params', {})
     if method in ('item/started', 'item/completed'):
         item = params['item']
+        if triage and item.get('type') == 'mcpToolCall':
+            raise Refused('triage.audit', 'no MCP tool calls are admitted')
         category = item_kind(item)
         if category == 'action':
             action = action_start(state, item, ms)
@@ -306,6 +311,10 @@ def fold(state: dict, message: dict, ms: int) -> dict:
         elif method == 'item/completed' and item['type'] == 'agentMessage':
             state['final_message'] = item.get('text')
     elif method == 'rawResponseItem/completed':
+        item = params['item']
+        if (triage and item.get('type') == 'function_call'
+                and (item.get('name') not in ('exec_command', 'write_stdin') or item.get('namespace') is not None)):
+            raise Refused('triage.audit', 'unadmitted raw call: ' + str(item.get('name')))
         raw_item(state, params['item'], ms)
     elif method in ('turn/started', 'turn/completed', 'thread/tokenUsage/updated'):
         turn_id = params.get('turnId') if method == 'thread/tokenUsage/updated' else params['turn']['id']
@@ -335,10 +344,11 @@ def fold(state: dict, message: dict, ms: int) -> dict:
                 state['unhandled'] = 'actions without raw response items'
             if turn['status'] != 'completed':
                 raise Refused('driver/turn', 'turn did not complete: ' + str(turn['status']))
-            try:
-                state['report'] = report(state['final_message'])
-            except Refused as error:
-                state['report_error'] = str(error)
+            if not triage:
+                try:
+                    state['report'] = report(state['final_message'])
+                except Refused as error:
+                    state['report_error'] = str(error)
     elif method == 'account/rateLimits/updated':
         state['windows'] = windows(params['rateLimits'])
     elif method == 'error':

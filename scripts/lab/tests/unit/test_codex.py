@@ -368,7 +368,7 @@ class DriveLife(unittest.TestCase):
         self.assertEqual(state.data['driver']['observed']['overshoot'], 3)
         self.assertIn(dict(op='bound', name='driver_input_tokens'), effects)
 
-    def test_settings_config_and_triager_stay_refused(self):
+    def test_settings_config_and_malformed_triager_are_refused(self):
         exp, subject, settings, facts, _ = fixture()
         exp['driver'] = dict(charter='charter.md', tools=[])
         settings['driver'] = dict(program=dict(path='/codex', sha256='sha256:' + 'a' * 64, version='1'),
@@ -378,7 +378,7 @@ class DriveLife(unittest.TestCase):
         facts['experiment_files']['charter.md'] = 'charter'
         problems = experiment.validate(exp, subject, settings, facts)
         self.assertIn('settings.driver.config', [p.member for p in problems])
-        self.assertIn('settings.triager', [p.member for p in problems])
+        self.assertIn('settings.triager.program', [p.member for p in problems])
 
     def test_faults_are_admitted(self):
         exp, _, settings, _, _ = fixture()

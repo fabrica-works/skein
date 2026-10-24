@@ -12,7 +12,7 @@ import subprocess
 import stat
 import sys
 from . import brake, canonical, codex, evidence, experiment, finding_store, held, judge, store
-from .records import CLASSES, Refusal, Refused, cost_refusals, digest_value, relative, subject_refusals
+from .records import CLASSES, RUN_ID, TRIAGE_COST_FIELDS, Refusal, Refused, cost_refusals, digest_value, positive, relative, subject_refusals
 
 
 def _program(path):
@@ -79,6 +79,85 @@ def _runtime_cost(lab, key):
     if problems:
         raise Refused(problems[0].member, '; '.join(str(p) for p in problems))
     return {'name': name, **selected}
+
+
+def _host_facts(configured, member):
+    problems = experiment.host_settings_refusals(configured, member)
+    if problems:
+        return problems
+    try:
+        current = _program(configured['program']['path'])
+        if any(current[k] != configured['program'][k] for k in ('path', 'sha256')):
+            problems.append(Refusal(member + '.program', 'host identity differs from configured program'))
+    except (OSError, Refused) as error:
+        problems.append(Refusal(member + '.program', str(error)))
+    if 'catalog' in configured:
+        catalog = configured['catalog']
+        try:
+            data, _ = store.read_regular(catalog['path'])
+            if store.file_digest(data) != catalog['sha256']:
+                problems.append(Refusal(member + '.catalog', 'catalog differs from its configured digest'))
+            else:
+                problems.extend(codex.catalog_refusals(data, configured['model'], member + '.catalog'))
+        except (OSError, Refused) as error:
+            problems.append(Refusal(member + '.catalog', str(error)))
+    return problems
+
+
+def _triager_settings(settings):
+    configured = settings.get('triager')
+    if configured is None:
+        raise Refused('settings.triager', 'triager settings are null')
+    problems = _host_facts(configured, 'settings.triager')
+    home = settings.get('codex_home')
+    if home is not None and (type(home) is not str or not home.startswith('/') or '\0' in home):
+        problems.append(Refusal('settings.codex_home', 'expected an absolute directory path'))
+    if 'brake' in settings:
+        problems.extend(experiment.brake_settings_refusals(settings['brake'], str(_runner_root())))
+    if problems:
+        raise Refused(problems[0].member, '; '.join(str(p) for p in problems))
+    return configured
+
+
+def triage_command(lab, lock_fd, run_id):
+    from . import triage, triager, transport
+    if not RUN_ID.fullmatch(run_id):
+        raise Refused('triage.run', 'expected a run id')
+    settings = canonical.loads(lab.read('settings.json'))
+    configured = _triager_settings(settings)
+    history, records, paths, facts = finding_store.load(lab)
+    runs = [r for values in records.values() for r in values if r['run'] == run_id]
+    if len(runs) != 1:
+        raise Refused('triage.run', 'expected one retained judged failing run')
+    run = runs[0]
+    key_path = paths[run['key']]
+    run_base = key_path + '/runs/' + run_id
+    triage.input_value(run, history, records, triager.report(lab, run_base, run), facts)
+    key = canonical.loads(lab.read(key_path + '/key.json'))
+    if canonical.digest(key) != run['key']:
+        raise Refused('triage.key', 'retained key identity differs')
+    cost = _runtime_cost(lab, key)
+    for field in TRIAGE_COST_FIELDS:
+        if not positive(cost.get(field)):
+            raise Refused('settings.costs.' + cost['name'] + '.' + field, 'triage requires a positive safe integer')
+    machine = _machine_facts(lab)
+    if machine['disk_ok'] is not True:
+        raise Refused('triage.disk', 'disk floor not met')
+    admitted, refusal = brake.admit(lab, dict(driver={}), cost, str(_runner_root()))
+    if refusal is not None:
+        raise Refused('brake', refusal)
+    names = finding_store._names(lab, run_base + '/triage')
+    if any(not name.isascii() or not name.isdecimal() or str(int(name)) != name or int(name) <= 0 for name in names):
+        raise Refused('triage.n', 'invalid triage directory')
+    n = max((int(name) for name in names), default=0) + 1
+    spec = dict(triage_n=n, run=run_id, run_base=run_base, base=run_base + '/triage/' + str(n),
+                triager=configured, runner=_runner_digest())
+    record, status = transport.launch(lab, lock_fd, key_path, run['seed'], None,
+                                      brake_event=admitted, triage=spec)
+    print(record['outcome'])
+    for error in record['errors']:
+        print(error['what'] + ': ' + error['detail'], file=sys.stderr)
+    return status
 
 
 def _superseded(lab, key_path, previous, current):
@@ -288,6 +367,8 @@ def validate_command(lab, directory, subject_id, *, inputs=None):
                 out.extend(codex.catalog_refusals(data, driver.get("model")))
         except (OSError, TypeError, Refused) as error:
             out.append(Refusal("settings.driver.catalog", str(error)))
+    if settings.get('triager') is not None:
+        out.extend(_host_facts(settings['triager'], 'settings.triager'))
     facts = {**_machine_facts(lab), "subject_available": subject_available,
              "source_available": subject_available and subject.get("source") is not None,
              "artifacts_available": list(subject.get("artifacts", {})), "experiment_files": texts,
@@ -424,6 +505,8 @@ def _artifact(text):
 def main(argv=None, *, lab_root=None, finding_time=None):
     parser = argparse.ArgumentParser(prog="lab", description="Capture, validate, run and judge lab experiments.")
     commands = parser.add_subparsers(dest="command", required=True)
+    triage_parser = commands.add_parser('triage', help='propose findings for a judged failing run')
+    triage_parser.add_argument('run')
     tool = commands.add_parser("tool", help="serve the run’s tools over stdio MCP")
     tool.add_argument("run")
     subject = commands.add_parser("subject", help="capture a commit tree and named artifacts")
@@ -506,6 +589,8 @@ def main(argv=None, *, lab_root=None, finding_time=None):
                 state = next(f['state'] for f in derived['findings'] if f['id'] == args.id)
                 print(args.id + ' ' + state)
                 return 0
+            if args.command == 'triage':
+                return triage_command(lab, lock_fd, args.run)
             if args.command in ('run', 'judge'):
                 return runtime_command(lab, lock_fd, args)
             if args.command == "subject":

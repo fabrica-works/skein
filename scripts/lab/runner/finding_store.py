@@ -198,3 +198,15 @@ def act(lab, identity, action, t, by, *, finding_class=None, fix=None, recheck=N
     for value in additions:
         lab.append_line('findings/' + identity + '.jsonl', value)
     return sync(lab, t)
+
+
+def append_triage(lab, additions):
+    """The triage planner verifies the entire batch through the ordinary fold first."""
+    history, records, _paths, facts = load(lab)
+    for identity, value in additions:
+        history.setdefault(identity, []).append(value)
+    derived = findings.index(history, records, facts)
+    for identity, value in additions:
+        lab.append_line('findings/' + identity + '.jsonl', value)
+    lab.replace_derived('findings/index.json', derived)
+    return additions

@@ -7,6 +7,7 @@ Python 3.11+, standard library only. Run from any directory:
 /path/to/skein/scripts/lab/lab validate EXPERIMENT --subject sha256:...
 /path/to/skein/scripts/lab/lab run EXPERIMENT --subject sha256:... --seed 1
 /path/to/skein/scripts/lab/lab judge EXPERIMENT --subject sha256:...
+/path/to/skein/scripts/lab/lab triage RUN
 ```
 
 The launcher uses `python3 -I -B -S` (including no system site initialization) and adds its own directory for imports.
@@ -34,7 +35,8 @@ one final newline**. Its `lab-settings/1` record has `costs`, `driver`, and
 names to objects with these required positive safe integer fields: `ready_seconds`, `command_seconds`,
 `stop_seconds`, `driver_seconds`, `driver_actions`, `driver_input_tokens`.
 `subject_spend` and `meter_seconds` are optional positive safe integers, required
-when the experiment has a meter.
+when the experiment has a meter. `triage_seconds` and `triage_tokens` are optional
+positive safe integers, both required by `triage` in the run's current cost class.
 There are no default cost values. For experiments with `driver: null`, settings
 `driver` and `triager` can both be null; no driver host or report is needed.
 For agent experiments, settings `driver` is `{program, model, effort}`, with an
@@ -46,7 +48,9 @@ keyed, whose driver-model entry must be `tool_mode: null`, `multi_agent_version:
 five fields changed: every model of a ChatGPT login is `code_mode_only`, and the code-mode
 host stays off; the next three offer built-in tools the audit does not admit; a search tool
 defers the lab's tools behind a `tool_search` the host does not serve.
-`triager` must be null. `codex_home` optionally names a private absolute directory;
+`triager` is null or the same `{program, model, effort}` shape with optional
+`catalog`; the catalog checks above apply to its selected model too.
+`codex_home` optionally names a private absolute directory;
 its default is the lab's `codex/`. Only `config.toml` is written there; the runner
 never opens a credential file. The host owns its login.
 
@@ -97,7 +101,8 @@ capped at 64 KiB. Exit 0 admits and starts the run's timeline with `brake`,
 its last nonempty stdout line and timing. Other ends refuse with `brake: LINE`
 (or `brake: exit STATUS`), exit 2, making no run. `judge` rewrites and prints
 the verdict so far before returning that refusal. Without a settings brake,
-only pause applies.
+only pause applies. `triage` checks pause and the brake in the same way as a run
+with a driver, under the writer lock and before creating a triage directory.
 
 `{runner}/brake/codex --codex PATH --home DIR --five-hour 50 --week 75`
 provides the Codex brake (`--timeout SECONDS`, default 30). It starts
@@ -424,9 +429,50 @@ lock. A judged non-use failure creates `F-0001` upward or attaches to the
 finding with exactly the same signature. Failure identity is `(key, run,
 failure id)`, so repeated reconciliation and repeated publication add no
 duplicate occurrence. Summaries, names, seeds and message similarity do not
-match findings. Use failures await triage; no model, triage invocation,
-proposal, class or human judgment is generated. The pure reader validates
-supplied `proposed` events; the CLI has no triage/import command.
+match findings. Use failures await `lab triage RUN`.
+
+`triage` requires a retained judged failing run, non-null triager settings, and
+both triage bounds in that run's current cost class. It refuses when no use
+failure or candidate created by that run needs triage. Each invocation creates
+`triage/N/` beneath the run, starting at 1, and preserves the run's immutable
+files. Its input is the selected failures, report (or null), derived findings
+index entries and classes. A no-model boundary probe runs before the host.
+
+The triager uses Codex app-server with the driver's strict configuration,
+ephemeral thread, approvals `never`, inventory checks and raw-call audit.
+It uses the settings' `codex_home` and its host's login; only `config.toml` is
+written there. No MCP server is configured and no MCP or resource tool is
+admitted. Its only built-ins are `exec_command` and `write_stdin`. The `triage`
+profile grants reads of minimal roots, the host executable and `evidence/`,
+writes only to `work/`, and no network. `evidence/` is a frozen copy of
+`run.json`, `events.jsonl`, `proc/`, `commands/`, `collected/` and `driver/`,
+excluding the driver's host, rehearsal and provisioning homes. Run `scratch/`
+and `dirs/` are never copied. Inventory limitations remain as in the adapter
+table below; an observed mismatch or unadmitted action ends triage in error.
+
+The host's final message must satisfy `schemas/triage.json`, checked again by
+the runner: exactly one answer for each input failure, with a match or class,
+title and reason. An unmatched use failure needs a printable `use/...`
+signature without spaces. A use match appends `occurred`; an unmatched use
+failure appends `candidate` then `proposed`. A non-use answer appends
+`proposed` to its existing candidate; a suggested match remains in the output
+and reason. Every appended event is by `triager`; owner confirmation stays
+separate. The entire answer and event batch are validated before any append.
+
+`triage_seconds` stops the host on the runner's clock; `triage_tokens` observes
+completed-turn input (cached included) plus output, without counting cached
+twice. Passing either bound appends no findings. Token overshoot is recorded;
+unreported usage remains null. Host errors and malformed answers also append
+no findings. The command prints `proposed`, `bound` or `error` and exits 0, 1
+or 4 respectively; admission refusals exit 2.
+
+Each `triage/N/triage.json` is canonical `lab-triage/1`: run, key, invocation
+number and times, outcome, host invocation, expected/observed inventory, probe,
+input/output file digests, bounds, usage, errors, brake and appended finding
+events. `input.json`, `output.json`, raw `events.jsonl`, `host.stdout` and
+`host.stderr` are retained beside it, with 0600 log modes. The findings index
+is rebuilt after publication. An unfinished triage retains its live marker
+and requires owner recovery before another writing command.
 
 Each `findings/F-NNNN.jsonl` line is canonical `lab-finding/1`, with `event`,
 `t` (UTC milliseconds) and `by`. Candidates retain signature/kind/summary and
