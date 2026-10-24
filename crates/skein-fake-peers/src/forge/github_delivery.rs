@@ -37,7 +37,11 @@ impl Peer {
         let layer::Service::Github(service) = &mut self.service else { unreachable!("GitHub hook owner") };
         match service.hook(hook, wall).expect("admitted GitHub hook bounds") {
             Some(post) => self.github_post(post, now),
-            None => self.observe(Observation::Delivery { post: None, outcome: Delivery::NoAddress }, 0),
+            None => {
+                if self.kept.deliveries {
+                    self.observe(Observation::Delivery { post: None, outcome: Delivery::NoAddress }, 0);
+                }
+            }
         }
     }
     fn github_post(&mut self, post: Post, now: Time) {
@@ -269,6 +273,9 @@ impl Peer {
     fn github_result(&mut self, post: Post, status: u16, outcome: Delivery) {
         let layer::Service::Github(service) = &mut self.service else { unreachable!("GitHub service") };
         service.delivered(post.id, status);
+        if !self.kept.deliveries {
+            return;
+        }
         let size = u64::try_from(post.head.len() + post.body.len()).expect("bounded post");
         let post = skein_fake_forge_protocol::delivery::Post { head: post.head, body: post.body };
         self.observe(Observation::Delivery { post: Some(post), outcome }, size);
