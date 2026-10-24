@@ -204,7 +204,8 @@ fn takes_no_value(schema: &Schema, decl: &str, field: &str) -> bool {
 }
 
 /// Rebuilds operations, retaining values only for the identical added type;
-/// an added field whose type takes no value is `written` at its own site.
+/// an added field whose type takes no value is `written` at its own site,
+/// or at its declaration's.
 pub(super) fn block(diff: &Diff, current: &Text, old: Option<&Block>) -> Result<Block, Error> {
     let schema = schema(current)?;
     let mut operations = Vec::new();
@@ -281,8 +282,11 @@ pub(super) fn block(diff: &Diff, current: &Text, old: Option<&Block>) -> Result<
             sites.push(Line::Site { target, refusals: Vec::new() });
         }
     }
+    // A declaration that is a site gives its added fields too, and has no field site (11.3).
     for target in valueless {
-        if !sites.iter().any(|line| matches!(line, Line::Site { target: name, .. } if *name == target)) {
+        let decl = target.split('.').next().unwrap_or_default();
+        let site = |name: &str| sites.iter().any(|line| matches!(line, Line::Site { target, .. } if target == name));
+        if !site(&target) && !site(decl) {
             sites.push(Line::Site { target, refusals: Vec::new() });
         }
     }

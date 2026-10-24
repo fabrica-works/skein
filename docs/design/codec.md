@@ -1619,7 +1619,8 @@ text at version `c`:
   names as a site (10.3). An added field whose type takes no value
   (11.2: a record, an enumeration whose every variant holds one, a
   secret, a `holds` field) is `written`, with its own `written D.f`
-  site, so its author is asked for the site's function, not a value;
+  site unless its declaration is one (11.3), so its author is asked
+  for the site's function, not a value;
   the diff's line still reads `?`, as a retype's field site is the
   patch's. No comment is written.
 - **Derived again, the author's part kept:** when the branch's patch
@@ -1631,8 +1632,10 @@ text at version `c`:
   all; otherwise it is written whole, without them.
 - **The skeleton,** `patches/pNNNN.rs`, written for a patch with sites,
   and for a site the file lacks a function appended: one function per
-  site in 11.5's signature, named by its target in snake case (`Shape`
-  is `shape`, `Every.score` is `every_score`), its doc comment naming
+  site in 11.5's signature, named by its target in snake case, each
+  capital starting a word as in the generated code's names (`Shape` is
+  `shape`, `Every.score` is `every_score`, `HTTP` is `h_t_t_p`), its
+  doc comment naming
   the site, its family and versions, and the block's lines for its
   declaration, its body `Err(Halt::NoSite(Site::new(n, i)))`, never a
   panic, until its author writes it. Two sites that spell one name are
@@ -1647,8 +1650,8 @@ text at version `c`:
   - `kept::<family>::v<N>::<declaration>::<PART>`, the `FieldIx` and
     `VariantIx` of every part of every kept version, by its index in
     that version's schema; `refusal::pNNNN::<NAME>`, each refusal's
-    `RefusalIx`; names in snake case, parts in upper case, a keyword
-    raw, two names spelling one constant refused;
+    `RefusalIx`; names in the skeleton's snake case, parts in upper
+    case, a keyword raw, two names spelling one constant refused;
   - `written(site, old, new, at, cx)`, the dispatch of 11.5; with no
     site, `Err(Halt::NoSite(site))` alone;
   - its tests: `current`, which fails when `mod.rs` is not as generated,
@@ -1717,6 +1720,9 @@ text at version `c`:
   refusals; its `pNNNN.rs` and `patches/golden/NNNN/` move with it, the
   file's own names rewritten: the module `pNNNN`, `Site::new(n,` and,
   for a family moved meanwhile, its versions in `<family>::v<N>` paths.
+  A family moved meanwhile has its goldens dropped instead of moved,
+  each named in the report: their records are of the version it no
+  longer moves from, so the author writes and reviews them again.
   Then the rebase goes on, and the branch lands.
 
 ### 12.7 The check

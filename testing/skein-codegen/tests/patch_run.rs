@@ -238,6 +238,19 @@ mod tests {
     }
 
     #[test]
+    fn an_added_field_that_takes_no_value_is_given_by_its_declarations_site() {
+        const GROWN: &str = "family shelf 2\nrecord Book { id: bool, key: secret 16 }\nenum State { ready }\n";
+        const TEXT: &str = "patch 1\nowner shop 1\n\nfamily shelf 1 to 2\nretype Book.id u8 bool\nadd Book.key secret 16 written\nwritten Book\n";
+        let root =
+            crate_files("declaration-site", &[("schema/shelf-v2.schema", GROWN), ("schema/kept/shelf-v1.schema", V1)]);
+        let report = run(&root, &landed(&[("schema/kept/shelf-v1.schema", V1)]), &options()).expect("one site");
+        assert_files(&root, &[("patches/0001.patch", TEXT)]);
+        assert_eq!(report.asked, ["patch 0001, shelf: written Book"]);
+        assert_eq!(report.findings, [], "a declaration that is a site has no field site (11.3)");
+        end(&root);
+    }
+
+    #[test]
     fn written_change_writes_its_skeleton_context_and_module_once() {
         const WRITTEN: &str = "family shelf 2\nrecord Book { id: bool }\nenum State { ready }\n";
         const SKELETON: &str = r"//! Patch 0001: the command wrote the skeleton; its functions are the author's (codec.md, 11.5).
