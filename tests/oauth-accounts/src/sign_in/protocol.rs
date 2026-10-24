@@ -16,6 +16,20 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     use skein_lib::stream::{Down, Read, Up};
     use skein_world::stream::Wire;
 
+    // These owners' scripts run only in the simulated world (`run`).
+    assert!(
+        !matches!(
+            story,
+            Story::PasteTwice
+                | Story::PasteWrong
+                | Story::StateRefusals
+                | Story::ListenerWrongState
+                | Story::PasteExpired
+                | Story::PasteCancelled
+                | Story::PasteClose
+        ),
+        "the protocol tier has no script for {story:?}"
+    );
     let mut profile = crate::world::limits();
     if matches!(story, Story::TwoPorts | Story::Restart) {
         profile.listeners = 2;
