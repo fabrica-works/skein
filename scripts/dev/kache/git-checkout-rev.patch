@@ -1,0 +1,386 @@
+From 0f4075c69cd1998242b4747c3a125f89896a8b64 Mon Sep 17 00:00:00 2001
+From: Kache Patch <kache-patch@localhost>
+Date: Sat, 24 Oct 2026 02:05:58 +0000
+Subject: [PATCH] Share git checkout cache entries across revision directories
+
+---
+ Cargo.lock             |   2 +-
+ Cargo.toml             |   2 +-
+ src/cache_key/tests.rs |  69 +++++++++++++++
+ src/path_normalizer.rs | 194 ++++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 262 insertions(+), 5 deletions(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 8548e03..1e2a256 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2251,7 +2251,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "kache"
+-version = "1.2.2"
++version = "1.2.2-gitrev.1"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+diff --git a/Cargo.toml b/Cargo.toml
+index 1afe90a..1368167 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "kache"
+-version = "1.2.2"
++version = "1.2.2-gitrev.1"
+ edition = "2024"
+ description = "Compiler cache for Rust, C/C++ and CUDA, with S3, GCS, shared-filesystem and OCI remotes."
+ license = "Apache-2.0"
+diff --git a/src/cache_key/tests.rs b/src/cache_key/tests.rs
+index 1896758..0c7f71d 100644
+--- a/src/cache_key/tests.rs
++++ b/src/cache_key/tests.rs
+@@ -16741,3 +16741,72 @@ fn environment_detail_hashes_follow_the_normalized_key_inputs() {
+     assert_ne!(first["BUILD_MODE"], second["BUILD_MODE"]);
+     assert!(hashed(Vec::new()).is_empty());
+ }
++
++/// A pin move changes Cargo's source path, but not a byte-identical unit's
++/// key. Values that can escape into the artifact must still bind the checkout.
++#[test]
++fn git_checkout_key_tracks_content_and_embedded_paths() {
++    let _lock = key_test_lock();
++    let dir = tempfile::tempdir().unwrap();
++    let home = dir.path().join("cargo");
++    let key = |rev: &str, code: &str, env_var: Option<&str>, skip_remap: bool| {
++        let member = home
++            .join("git/checkouts/project-01234567")
++            .join(rev)
++            .join("member");
++        std::fs::create_dir_all(&member).unwrap();
++        let source = member.join("lib.rs");
++        std::fs::write(&source, code).unwrap();
++        let mut args = RustcArgs::parse(&base_args(&source)).unwrap();
++        args.path_normalize_disabled = skip_remap;
++        let normalizer = PathNormalizer::empty().with_git_checkout(Some(&home), Some(&member));
++        let raw_path = member.to_str().unwrap();
++        provide_dep_info(
++            DepInfo {
++                source_files: vec![source],
++                env_deps: env_var
++                    .map(|var| vec![(var.into(), raw_path.into())])
++                    .unwrap_or_default(),
++            },
++            None,
++        );
++        compute_cache_key(&args, &FileHasher::new(), &normalizer, &KeyEnv::default()).unwrap()
++    };
++    let code = "pub fn value() -> u32 { 1 }";
++    let first = key("abcdef0", code, None, false);
++    assert_eq!(first, key("1234567", code, None, false));
++    assert_ne!(
++        first,
++        key("1234567", "pub fn value() -> u32 { 2 }", None, false)
++    );
++    for var in ["CARGO_MANIFEST_DIR", "CUSTOM_PATH"] {
++        assert_ne!(
++            key("abcdef0", code, Some(var), false),
++            key("1234567", code, Some(var), false),
++            "{var} may embed the revision in output"
++        );
++    }
++    assert_ne!(
++        key("abcdef0", code, None, true),
++        key("1234567", code, None, true),
++        "without rustc remapping the revision must remain keyed"
++    );
++}
++
++/// A revision-free git root is no longer an immutable Cargo package path:
++/// native archives there need their content folded, even with unchanged Rust.
++#[test]
++fn git_checkout_native_archives_are_content_keyed() {
++    let dir = tempfile::tempdir().unwrap();
++    let home = dir.path().join("cargo");
++    let member = home.join("git/checkouts/project-01234567/abcdef0/member");
++    let native = member.join("native");
++    std::fs::create_dir_all(&native).unwrap();
++    let normalizer = PathNormalizer::empty().with_git_checkout(Some(&home), Some(&member));
++    let context = unix_context("x86_64-unknown-linux-gnu", &normalizer);
++    let dirs = [native.clone()];
++    let args = unit_args("bin", &dir.path().join("deps"), &[]);
++    assert!(fold_rewrites(&native.join("libfoo.a"), || {
++        fold_inputs(&args, &dirs, &[], &context)
++    }));
++}
+diff --git a/src/path_normalizer.rs b/src/path_normalizer.rs
+index 6748610..984f75a 100644
+--- a/src/path_normalizer.rs
++++ b/src/path_normalizer.rs
+@@ -35,6 +35,7 @@
+ //! |---------------------|-----------------|------------------------|
+ //! | workspace root      | `<WORKSPACE>`   | per-checkout location  |
+ //! | `$CARGO_TARGET_DIR` | `<TARGET>`      | per-user / per-job dir |
++//! | active Cargo git checkout | `<GIT_CHECKOUT:repo>` | revision directory |
+ //! | `$CARGO_HOME`       | `<CARGO_HOME>`  | usually `~/.cargo`     |
+ //! | `$RUSTUP_HOME`      | `<RUSTUP_HOME>` | usually `~/.rustup`    |
+ //! | `$HOME`             | `<HOME>`        | per-user               |
+@@ -273,7 +274,7 @@ impl PathNormalizer {
+             .or_else(|| dirs::home_dir().map(|h| h.join(".cargo")));
+         push_rule_with_variants(
+             &mut rules,
+-            cargo_home.and_then(|p| canonical_string(&p)),
++            cargo_home.as_deref().and_then(canonical_string),
+             "<CARGO_HOME>",
+         );
+ 
+@@ -335,6 +336,13 @@ impl PathNormalizer {
+         let mut seen = std::collections::HashSet::new();
+         rules.retain(|r| seen.insert(r.prefix.clone()));
+ 
++        // Build-script declared-input checks intentionally skip Cargo-home
++        // packages as revision-immutable. Keep that revision for scripts and
++        // their libraries until those checks support revision-free git roots.
++        let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").filter(|_| {
++            std::env::var_os("OUT_DIR").is_none()
++                && std::env::var("CARGO_CRATE_NAME").as_deref() != Ok("build_script_build")
++        });
+         Self {
+             rules,
+             configured_base_dir_count: 0,
+@@ -342,6 +350,42 @@ impl PathNormalizer {
+             source_restore_roots,
+             path_only_env_vars: Vec::new(),
+         }
++        .with_git_checkout(
++            cargo_home.as_deref(),
++            manifest_dir.as_deref().map(Path::new),
++        )
++    }
++
++    /// Treat the active Cargo git revision as another checkout of the same
++    /// repository. Use the same rule for keys, rustc paths, and dep-info
++    /// restore; erasing the revision only in keys would reuse different bytes.
++    /// Env-dep values that may be embedded (notably CARGO_MANIFEST_DIR) still
++    /// retain their raw value through cache_key's existing safety checks.
++    pub(crate) fn with_git_checkout(
++        mut self,
++        cargo_home: Option<&Path>,
++        manifest_dir: Option<&Path>,
++    ) -> Self {
++        let Some((root, name)) = cargo_home
++            .zip(manifest_dir)
++            .and_then(|(home, manifest)| git_checkout_root(home, manifest))
++        else {
++            return self;
++        };
++        let sentinel = format!("<GIT_CHECKOUT:{name}>");
++        let mut rules = Vec::new();
++        push_path_rule_aliases(
++            &mut rules,
++            &mut self.source_restore_roots,
++            &root,
++            &sentinel,
++            &sentinel,
++        );
++        rules.append(&mut self.rules);
++        let mut seen = std::collections::HashSet::new();
++        rules.retain(|rule| seen.insert(rule.prefix.clone()));
++        self.rules = rules;
++        self
+     }
+ 
+     /// Opt plain env vars or scoped `rustc_crate_name:VAR` assertions into
+@@ -511,7 +555,14 @@ impl PathNormalizer {
+             "<LOCALAPPDATA>",
+             "<PROGRAMFILES>",
+             "<TMPDIR>",
+-        ] {
++        ]
++        .into_iter()
++        .chain(
++            self.source_restore_roots
++                .iter()
++                .map(|(sentinel, _)| sentinel.as_str())
++                .filter(|sentinel| git_checkout_name(sentinel).is_some()),
++        ) {
+             let owned_rules = self
+                 .rules
+                 .iter()
+@@ -737,7 +788,9 @@ impl PathNormalizer {
+             if rule.prefix.is_empty() {
+                 continue;
+             }
+-            out = if configured_base_dir_index(&rule.key_sentinel).is_some() {
++            out = if configured_base_dir_index(&rule.key_sentinel).is_some()
++                || git_checkout_name(&rule.key_sentinel).is_some()
++            {
+                 replace_configured_path_prefix(&out, &rule.prefix, &rule.key_sentinel)
+             } else {
+                 out.replace(&rule.prefix, &rule.key_sentinel)
+@@ -900,6 +953,9 @@ fn flag_emit_rank(key_sentinel: &str) -> u8 {
+         // root overlaps CARGO_HOME or RUST_SRC.
+         return 8;
+     }
++    if git_checkout_name(key_sentinel).is_some() {
++        return 7;
++    }
+     match key_sentinel {
+         "<TMPDIR>" => 0,
+         "<HOME>" | "<APPDATA>" | "<LOCALAPPDATA>" | "<PROGRAMFILES>" => 1,
+@@ -1057,7 +1113,35 @@ fn configured_base_dir_index(sentinel: &str) -> Option<usize> {
+         .ok()
+ }
+ 
++/// Cargo owns this layout; only the revision component is discarded. Keep
++/// repository identity and the package's path within it. Unknown layouts fail
++/// closed to the ordinary CARGO_HOME rule (and therefore keep the revision).
++fn git_checkout_root(cargo_home: &Path, manifest_dir: &Path) -> Option<(PathBuf, String)> {
++    let checkouts = std::path::absolute(cargo_home).ok()?.join("git/checkouts");
++    let manifest = std::path::absolute(manifest_dir).ok()?;
++    let relative = manifest.strip_prefix(&checkouts).ok()?;
++    let mut components = relative.components();
++    let std::path::Component::Normal(name) = components.next()? else {
++        return None;
++    };
++    let std::path::Component::Normal(rev) = components.next()? else {
++        return None;
++    };
++    let rev = rev.to_str()?;
++    if !(7..=40).contains(&rev.len()) || !rev.bytes().all(|b| b.is_ascii_hexdigit()) {
++        return None;
++    }
++    Some((checkouts.join(name).join(rev), name.to_str()?.to_string()))
++}
++
++fn git_checkout_name(sentinel: &str) -> Option<&str> {
++    sentinel.strip_prefix("<GIT_CHECKOUT:")?.strip_suffix('>')
++}
++
+ fn depinfo_sentinel_for_source(source_sentinel: &str) -> Option<String> {
++    if git_checkout_name(source_sentinel).is_some() {
++        return Some("__kache_git_checkout__/".to_string());
++    }
+     if let Some(index) = configured_base_dir_index(source_sentinel) {
+         return Some(format!("__kache_base_dir_{index}__/"));
+     }
+@@ -1091,6 +1175,9 @@ fn depinfo_sentinel_for_source(source_sentinel: &str) -> Option<String> {
+ /// `/.cargo` so samply's crates.io matcher fires. `<RUST_SRC>` is handled
+ /// separately (its target carries the toolchain commit hash).
+ fn flag_target_for(key_sentinel: &str) -> String {
++    if let Some(name) = git_checkout_name(key_sentinel) {
++        return format!("/kache/git/checkouts/{name}");
++    }
+     match key_sentinel {
+         "<WORKSPACE>" => workspace_flag_target().to_string(),
+         "<BASE_DIR>" => "/kache/base-dir".to_string(),
+@@ -1630,6 +1717,107 @@ mod tests {
+     use std::fs;
+     use tempfile::TempDir;
+ 
++    #[cfg(unix)]
++    #[test]
++    fn git_checkout_rules_share_keys_and_remapped_paths_across_revisions() {
++        let dir = TempDir::new().unwrap();
++        let home = dir.path().join("cargo");
++        for rev in ["abcdef0", "1234567"] {
++            let root = home.join("git/checkouts/project-01234567").join(rev);
++            let member = root.join("crates/member");
++            std::fs::create_dir_all(&member).unwrap();
++            let source = member.join("lib.rs");
++            let normalizer = pn_with_rules(vec![
++                (member.to_str().unwrap(), "<WORKSPACE>"),
++                (home.to_str().unwrap(), "<CARGO_HOME>"),
++            ])
++            .with_git_checkout(Some(&home), Some(&member));
++            assert_eq!(
++                normalizer.normalize(source.to_str().unwrap()),
++                "<GIT_CHECKOUT:project-01234567>/crates/member/lib.rs"
++            );
++            assert_eq!(
++                normalizer.source_path_identity(&source).unwrap(),
++                b"<GIT_CHECKOUT:project-01234567>/crates/member/lib.rs"
++            );
++            assert_eq!(
++                normalizer.remap_args().last().unwrap(),
++                &format!(
++                    "--remap-path-prefix={}=/kache/git/checkouts/project-01234567",
++                    root.display()
++                )
++            );
++            let roots = normalizer.depinfo_source_roots();
++            let checkout = roots.iter().find(|r| r.root == root).unwrap();
++            assert_eq!(checkout.depinfo_sentinel, "__kache_git_checkout__/");
++            assert_eq!(checkout.priority, 7);
++            // Matching a prefix of the revision is not a rustc remap.
++            assert!(
++                !normalizer
++                    .normalize(format!("{}f/lib.rs", root.display()))
++                    .contains("<GIT_CHECKOUT:")
++            );
++        }
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn git_checkout_detection_rejects_other_cargo_layouts() {
++        let home = Path::new("/cargo");
++        for path in [
++            "/cargo/registry/src/index/project-1.0.0",
++            "/cargo/git/checkouts/project-01234567",
++            "/cargo/git/checkouts/project-01234567/not-a-revision/member",
++            "/cargo/git/checkouts/project-01234567/abcdef/member",
++            "/other/git/checkouts/project-01234567/abcdef0/member",
++        ] {
++            assert!(git_checkout_root(home, Path::new(path)).is_none(), "{path}");
++        }
++        assert!(
++            PathNormalizer::empty()
++                .with_git_checkout(None, Some(home))
++                .rules
++                .is_empty()
++        );
++        assert!(
++            PathNormalizer::empty()
++                .with_git_checkout(Some(home), None)
++                .rules
++                .is_empty()
++        );
++    }
++
++    #[test]
++    fn git_build_script_units_keep_the_revision() {
++        let _lock = crate::test_support::process_state_test_lock();
++        let dir = TempDir::new().unwrap();
++        let home = dir.path().join("cargo");
++        let member = home.join("git/checkouts/project-01234567/abcdef0/member");
++        fs::create_dir_all(&member).unwrap();
++        let _home = crate::config::tests::set_env_for_test("CARGO_HOME", Some(home.as_os_str()));
++        let _manifest =
++            crate::config::tests::set_env_for_test("CARGO_MANIFEST_DIR", Some(member.as_os_str()));
++        for (name, out_dir, portable) in [
++            ("build_script_build", None, false),
++            ("member", Some(dir.path().as_os_str()), false),
++            ("member", None, true),
++        ] {
++            let _name = crate::config::tests::set_env_for_test(
++                "CARGO_CRATE_NAME",
++                Some(std::ffi::OsStr::new(name)),
++            );
++            let _out = crate::config::tests::set_env_for_test("OUT_DIR", out_dir);
++            let identity = PathNormalizer::from_env(None)
++                .source_path_identity(&member.join("lib.rs"))
++                .unwrap();
++            assert_eq!(identity.starts_with(b"<GIT_CHECKOUT:"), portable);
++            assert_eq!(
++                String::from_utf8(identity).unwrap().contains("abcdef0"),
++                !portable
++            );
++        }
++    }
++
+     /// The `KACHE_RUSTC_PATH_NORMALIZE` opt-out mirrors the cc toggle
+     /// (`KACHE_CC_PATH_NORMALIZE`): normalization is the default, and only an
+     /// explicit `0`/`false`/`off`/`no` (case- and whitespace-insensitive)
+-- 
+2.47.3
+

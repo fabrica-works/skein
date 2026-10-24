@@ -141,10 +141,11 @@ almost all of it in `src/path_normalizer.rs` and its tests.
   binary at `tmp/kache/kache-1.2.2-gitrev.1` on each machine, and setup
   runs through `heavy --gate`, so no build runs while it swaps the
   wrapper. A new version clears that machine's local store once.
-- **Its source** is, for now, only in `tmp/kache-patch/` on hel8 and
-  hetzner2: the kache clone at `0f4075c`, and
-  `out/git-checkout-rev.patch`. It should move into skein with its build
-  recipe (section 8).
+- **Its source** is kept in `scripts/dev/kache/git-checkout-rev.patch`,
+  based on v1.2.2 (`96052b4`). `scripts/dev/kache/build` fetches the exact
+  base, applies the patch and builds the static musl binary through
+  `heavy`, with Rust 1.95.0. Its README names the prerequisites and how
+  to compare the printed digest with the deployed pin.
 
 ## 5. The shared store
 
@@ -290,9 +291,8 @@ Day to day:
 
 ## 8. Open
 
-- **The patch's home.** Keep the patch and a script that builds the
-  binary in skein (`scripts/dev/kache/`), so it can be rebuilt without
-  `tmp/`. Offer it upstream later.
+- **Upstreaming the patch.** Its patch and build recipe live in
+  `scripts/dev/kache/`; offer the patch upstream later.
 - **An alert** when the store nears its quota or stops answering.
 - **One key per machine,** so a key can be revoked, if the fleet ever
   grows beyond our own machines.
