@@ -21,16 +21,21 @@ and milestones are [owners.md](owners.md).
 - **A set of branches per milestone.** A milestone is built on a set of
   branches, one in each repository it reaches, and the set keeps the
   same invariant inside it (section 3).
-- **One landing per milestone.** At a milestone's end the owner rebases
-  its set on the current mains, makes it green and asks the queue to
-  land it. Tasks inside a milestone merge into the set's branches, not
-  into `main`.
+- **One landing per milestone.** At a milestone's end the set is
+  rebased on the current mains and made green, and the owner asks the
+  queue to land it. Tasks inside a milestone merge into the set's
+  branches, not into `main`.
 - **The next milestone doesn't wait for the landing** (the user,
   10-24). It starts as soon as the set is in the queue, on top of it.
-  - If the landing fails, the ended milestone's sub-owner repairs it
-    beside the new milestone, as a QA pass runs today.
+  - If the landing fails, the set is repaired beside the new
+    milestone, as a QA pass runs today.
   - Once the earlier milestone has landed, the new one rebases on
     `main` when its owner chooses (section 3).
+- **Rebases, repairs and QA fixes are implementer tasks** (the user,
+  10-24). Codex (GPT Sol, high effort) does them, and escalates to the
+  milestone's Claude owner or sub-owner as any implementer does. The
+  owner keeps the judgement: when to rebase, which findings to fix, and
+  the check of each result (section 3).
 - **The queue is `main`'s only writer** (section 4).
   - If `main` moved since the set was rebased, the queue rebases it
     again and runs the gate of every repository the set reaches.
@@ -106,18 +111,43 @@ commit of each.
   `heavy`. An upstream task that downstream work needs merges first,
   and the owner then repins the downstream branches of its own set. No
   one outside the set is involved.
+- **Rebases, repairs and QA fixes are tasks too** (the user, 10-24).
+  Each goes to a Codex implementer, GPT Sol at high effort, briefed and
+  launched like any other task (owners.md 4.2, 4.3):
+  - every rebase of the set, with its conflicts and the gates after it:
+    during the milestone, at its end, and a stacked milestone's onto
+    `main` (below);
+  - the repair of a set the queue sent back (section 4);
+  - the fixes for the findings of the owner's QA pass that triage lets
+    in (owners.md 4.6).
+
+  None of them needs taste once the design is settled, so they go where
+  other work without taste goes (owners.md 1). The milestone's owner,
+  or its sub-owner, keeps the judgement: when to rebase, which findings
+  to fix, the task's brief, the check of each diff (owners.md 4.4) and
+  the request to the queue.
+  - **Escalation** follows the implementers' rules (owners.md 4.3, 5):
+    on a doubt the implementer stops, writes the question in its
+    owner's `inbox/` and ends, and it never improvises across a
+    boundary. A conflict that needs a call on whose intent wins is
+    such a doubt.
+  - Where the work gets hard, Opus advises the owner, as for any task
+    (owners.md 4.2).
 - **Rebasing during the milestone** is the owner's choice, when it needs
   something that has just landed. It follows the same steps as at the
   end.
 - **At the milestone's end:**
   1. Rebase every branch of the set on its repository's current `main`.
-     That gives a new base. The owner resolves conflicts.
+     That gives a new base.
      - A `Cargo.lock` conflict is never merged by hand: take `main`'s
        lock and repin to the set's tuple.
   2. Run the gate of every repository in the set through `heavy
      --gate`. These builds publish to the shared store.
   3. Push the set's branches and ask the queue to land it.
   4. Start the next milestone at once (below).
+
+  Steps 1 and 2 are one implementer task (above). The owner checks its
+  result, then takes steps 3 and 4.
 - **The next milestone stacks on the queued set.** It doesn't wait for
   the landing, just as it doesn't wait for a QA pass (owners.md 3.1).
   - **Where it starts.** Its branches start from the queued set's heads,
@@ -128,16 +158,17 @@ commit of each.
     every unit of that tuple.
   - **Repairs.** The ended milestone's sub-owner stays on for its
     landing, as it stays on for QA. If the queue sends the set back, the
-    sub-owner runs the repair loop beside the new milestone: repair,
-    rebase, gates, then a new request. A returned set goes first
-    (section 4).
+    sub-owner briefs an implementer with the failure, and the repair
+    loop runs beside the new milestone: repair, rebase and gates by the
+    implementer, then the sub-owner's check and a new request. A
+    returned set goes first (section 4).
   - **No early queueing.** The new milestone can't enter the queue
     before the earlier one has landed, since its base would hold
     unlanded work.
   - **Rebasing on `main`.** Once the earlier milestone has landed, the
-    new one rebases when its owner chooses, by moving only its own
-    commits onto `main` (`git rebase --onto main <fork point>` in each
-    repository).
+    new one rebases when its owner chooses. An implementer moves only
+    the new milestone's commits onto `main` (`git rebase --onto main
+    <fork point>` in each repository).
     - The earlier milestone may have changed on its way in, rebased by
       the queue or repaired. If it landed as queued, the tuple is
       unchanged and the rebase rebuilds nothing.
@@ -214,7 +245,8 @@ The split below is a proposal.
   - A request names the set, its branches and heads, its base and its
     receipts.
   - A returned set goes to the sub-owner of the milestone that made it,
-    who repairs it while the mission's next milestone goes on.
+    who has an implementer repair it (section 3) while the mission's
+    next milestone goes on.
 - **Directors and sub-directors** read the landings feed. They hear
   from the keeper only in these cases:
   - an infrastructure fault (a machine, the store, GitHub);
@@ -301,8 +333,8 @@ Each milestone works on its own (owners.md 3.1), and three things now
 run side by side:
 - **The next milestone,** which starts when the set is queued, not when
   it lands, so time in the queue never idles an owner.
-- **The owner's QA pass and any repair loop,** both on the ended
-  milestone, by its sub-owner.
+- **The owner's QA pass, its fixes and any repair loop,** all on the
+  ended milestone: implementer tasks under its sub-owner.
 - **The QA lab,** which takes the milestone from `main` as soon as it
   lands.
 
@@ -344,8 +376,12 @@ mission, then flood it with four milestones at once.
   it lands, at most a milestone later.
 - **Building on a set that fails.** If the earlier milestone needs a
   large repair, the next one has built on code that is about to change,
-  and its owner's rebase absorbs the change. It is the mission's own
-  code, so no one else is involved.
+  and its rebase absorbs the change. It is the mission's own code, so
+  no one else is involved.
+- **Conflicts resolved by Codex.** A rebase's resolution may keep the
+  code compiling but lose one side's intent. The gates catch most of
+  it; the owner's check of the diff and the implementer's escalation on
+  a doubt catch the rest.
 - **One point of failure.** While the queue is down nothing lands, but
   owners keep working on their sets.
 
@@ -357,10 +393,13 @@ mission, then flood it with four milestones at once.
   - It ends when the set has landed. Its 4-hour cap runs to the
     request; the repair loop after it is bounded by the keeper's
     escalations.
-  - Its sub-owner stays on for the landing as well as for QA.
-- **owners.md 4.6:** a QA pass may start on the queued set. Its fixes
-  land as their own small set once the milestone has landed.
+  - Its sub-owner stays on for the landing as well as for QA, and
+    briefs and checks the implementers that repair the set and fix the
+    pass's findings.
+- **owners.md 4.2:** rebases, repairs and QA fixes are implementer
+  tasks at high effort, which the launcher doesn't lower.
 - **owners.md 4.4:** tasks merge into the set's branches. The owner
+  checks the end-of-milestone rebase as it checks any task's diff,
   requests the milestone's landing, and the queue lands it.
 - **owners.md 4.5:**
   - Repins happen inside the set, by its owner, with `scripts/dev/repin`.
@@ -368,6 +407,9 @@ mission, then flood it with four milestones at once.
     downstream fix land together.
   - The footprint stays, to plan narrow sets and to group missions, but
     no longer orders landings.
+- **owners.md 4.6:** a QA pass may start on the queued set. Its fixes
+  are implementer tasks, and land as their own small set once the
+  milestone has landed.
 - **director.md:**
   - The ordering of landings and repins, and the relaying of hashes,
     leave the director and the sub-directors.
