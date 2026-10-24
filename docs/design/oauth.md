@@ -690,7 +690,9 @@ rotated is never spent twice:
     ahead, subject to the subject it expects;
   - **otherwise** it makes its exchange and keeps its record, a sign-in's
     at a generation above the one read.
-- **Then `unlock`,** once the write is kept or has failed. Each `locked`
+- **Then `unlock`,** once the write is kept or has failed and the
+  exchange's sockets have settled; until then the exchange keeps its
+  account (6.5). Each `locked`
   is answered by exactly one `unlock`, whatever happens meanwhile: a
   cancel, a removal, a close or an abort. A `locked` that arrives for no
   pending lock is answered by `unlock` at once. `closed` ends this: the
