@@ -17,7 +17,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     use skein_world::stream::Wire;
 
     let mut profile = crate::world::limits();
-    if story == Story::TwoPorts {
+    if matches!(story, Story::TwoPorts | Story::Restart) {
         profile.listeners = 2;
         profile.io.sockets = 6;
     }
@@ -97,7 +97,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     let mut browser_bytes = Vec::new();
     let mut redirect = None;
     let mut callback_count = 0;
-    let mut scripted = 0;
+    let mut scripted = usize::from(story == Story::Restart);
     let mut callback_pending = false;
     let mut pasted = false;
     let mut trace = Vec::new();
@@ -112,7 +112,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             component.fire(&env, &mut client.above, &mut client.requests, &mut client.files);
         }
         client.observe(&env);
-        if (scripted == 0 || client.facts.contains(&Fact::Granted(1)))
+        if (scripted == 0 || story == Story::Restart || client.facts.contains(&Fact::Granted(1)))
             && let Some(url) = client.visits.get(scripted)
         {
             scripted += 1;

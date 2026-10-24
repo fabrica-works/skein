@@ -309,7 +309,7 @@ impl Component {
         self.exchanges.get_mut(id).expect("bound exchange").file_active = false;
         self.kept(env, account, generation, keeping, up, io);
         if self.exchanges.get(id).is_some() {
-            self.collect(id, up);
+            self.collect(env, id, up, io);
         }
     }
 
@@ -362,7 +362,7 @@ impl Component {
             match signer {
                 Some(id) => {
                     self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Cancelled), up, io);
-                    self.collect(id, up);
+                    self.collect(env, id, up, io);
                 }
                 None => {}
             }
@@ -394,13 +394,13 @@ impl Component {
                         asked: Asked::SignOut,
                         why: Refusal::NoRecord,
                     });
-                    self.collect(id, up);
+                    self.collect(env, id, up, io);
                 }
             }
             Some(_) if sign_in_allowed => self.begin_sign_in(env, account, io),
             Some(id) => {
                 self.fail_exchange(env, id, failure.expect("unread cause prevents sign-in"), up, io);
-                self.collect(id, up);
+                self.collect(env, id, up, io);
             }
             None => {}
         }

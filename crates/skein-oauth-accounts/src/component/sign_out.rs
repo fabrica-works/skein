@@ -54,10 +54,7 @@ impl Component {
         let mut exchange = Exchange::new(account, oauth::Client::new(limits).expect("validated client"), false);
         exchange.purpose = Purpose::SignOut;
         exchange.stage = Stage::Loading;
-        let id = match self.exchanges.insert(exchange) {
-            Ok(id) => id,
-            Err(_) => unreachable!("admitted exchange"),
-        };
+        let id = self.insert_exchange(exchange);
         *self.bindings.get_mut(account).expect("account binding") = Some(id);
         if !loading {
             self.begin_sign_out(env, account, up, io);
@@ -138,7 +135,7 @@ impl Component {
         let revoked = match exchange.stage {
             Stage::Forgetting { revoked } => revoked,
             Stage::Finished => {
-                self.collect(id, up);
+                self.collect(env, id, up, io);
                 return;
             }
             Stage::Loading | Stage::Locking | Stage::Reading | Stage::Running | Stage::Keeping { .. } => {
@@ -175,7 +172,7 @@ impl Component {
             }
         }
         self.finish_sign_out(env, id, revoked, removed, up, io);
-        self.collect(id, up);
+        self.collect(env, id, up, io);
     }
 
     pub(super) fn finish_sign_out(

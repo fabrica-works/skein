@@ -29,6 +29,8 @@ fn io_limits() -> io::Limits {
 /// The outside owner's actions during one sign-in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Story {
+    /// Cancel a visited fixed-port sign-in and start its replacement in the same step.
+    Restart,
     /// The listener's per-sign-in return setting.
     Return(Return),
     /// Two sign-ins fetch fresh issuer documents before their visits.
@@ -151,6 +153,7 @@ pub(super) fn return_location(story: Story) -> Option<Box<[u8]>> {
         | Story::AnotherSubject
         | Story::RequiredScopes
         | Story::Public
+        | Story::Restart
         | Story::VaryingTaken
         | Story::TwoPorts
         | Story::Confidential
@@ -319,7 +322,7 @@ impl Client {
         if matches!(story, Story::Return(_)) {
             limits.server.response = limits.server.response.max(4096);
         }
-        if story == Story::TwoPorts {
+        if matches!(story, Story::TwoPorts | Story::Restart) {
             limits.listeners = 2;
             limits.io.sockets = 6;
         }
@@ -805,7 +808,7 @@ pub fn run(seed: u64, story: Story, faulted: bool, large: bool, memory: Memory) 
         seed,
         config,
         Judge {
-            delivered: 0,
+            delivered: usize::from(story == Story::Restart),
             redirected: false,
             shutdown: false,
             wake: None,

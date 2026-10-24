@@ -3,6 +3,12 @@ use super::{Client, Env, Fact, List, Story, accounts, bytes, registration};
 impl Client {
     fn visited(&mut self, env: &Env<accounts::Limits>) {
         match self.story {
+            Story::Restart => {
+                if self.visits.len() == 1 {
+                    self.ask(env, accounts::Request::Cancel { account: 0 });
+                    self.ask(env, accounts::Request::SignIn { account: 0, subject: None });
+                }
+            }
             Story::CloseWaiting | Story::CloseConfidential | Story::PasteClose => {
                 self.close(env);
                 assert!(!self.closed);
@@ -139,6 +145,7 @@ impl Client {
             | Story::AnotherSubject
             | Story::RequiredScopes
             | Story::Public
+            | Story::Restart
             | Story::VaryingTaken
             | Story::TwoPorts
             | Story::Confidential
@@ -284,10 +291,15 @@ impl Client {
                         self.contracts[usize::try_from(account).expect("account index")].failed();
                     }
                     self.facts.push(Fact::Failed(failure));
-                    if let Some(uri) = self.expired_paste.take() {
-                        self.ask(env, accounts::Request::Redirected { account: 0, uri });
+                    if self.story == Story::Restart {
+                        assert_eq!(failure, accounts::Failure::Exchange(skein_oauth::Failure::Cancelled));
+                        self.contracts[usize::try_from(account).expect("account index")] = super::Contracts::new();
+                    } else {
+                        if let Some(uri) = self.expired_paste.take() {
+                            self.ask(env, accounts::Request::Redirected { account: 0, uri });
+                        }
+                        self.close(env);
                     }
-                    self.close(env);
                 }
                 accounts::Event::Refused { asked: accounts::Asked::Redirected, why, .. } => {
                     self.facts.push(Fact::Refused(why));

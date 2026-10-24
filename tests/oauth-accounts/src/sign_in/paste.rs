@@ -167,7 +167,8 @@ impl Client {
             | Story::Cancel
             | Story::Abort
             | Story::NotKept
-            | Story::Timeout => {}
+            | Story::Timeout
+            | Story::Restart => {}
         }
         self.ask(env, accounts::Request::Redirected { account: 0, uri: uri.clone() });
         if self.story == Story::PasteTwice {

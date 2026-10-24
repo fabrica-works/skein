@@ -3,6 +3,16 @@ use super::{Client, Fact, ISSUED_CLIENT, Judge, Story, accounts, bytes, oauth, p
 const SIGN_INS: usize = 2;
 const FIRST_GENERATION: u64 = 1;
 const SECOND_GENERATION: u64 = FIRST_GENERATION + 1;
+// The cancelled sign-in's terminal, then its replacement's whole sign-in.
+const RESTARTED: &[Fact] = &[
+    Fact::Visit,
+    Fact::Failed(accounts::Failure::Exchange(oauth::Failure::Cancelled)),
+    Fact::Visit,
+    Fact::Keep(1),
+    Fact::SignedIn(1),
+    Fact::Granted(1),
+    Fact::Closed,
+];
 
 impl Judge {
     pub(super) fn client_closed(&self, client: &Client, issuer: &peer::Peer) {
@@ -37,6 +47,7 @@ impl Judge {
                         ]
                     );
                 }
+                Story::Restart => assert_eq!(client.facts, RESTARTED),
                 Story::Public => {
                     assert!(client.facts.contains(&Fact::Granted(2)));
                     assert_eq!(client.records.len(), 2);

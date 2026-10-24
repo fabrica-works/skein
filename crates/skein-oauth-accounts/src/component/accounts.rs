@@ -247,6 +247,12 @@ impl Component {
                 if exchange.pending_grant || unsent(exchange) {
                     return true;
                 }
+            } else if self.account_has_exchanges(place) {
+                if let Store::Private(keeper) = self.keepers.get(place).expect("account keeper")
+                    && keeper.waiting_grant
+                {
+                    return true;
+                }
             } else {
                 match self.keepers.get(place).expect("account keeper") {
                     Store::Owner => return true,
@@ -282,7 +288,7 @@ impl Component {
             let exchange = self.exchanges.get_mut(id).expect("bound exchange");
             if unsent(exchange) {
                 self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Cancelled), up, io);
-                self.collect(id, up);
+                self.collect(env, id, up, io);
                 return true;
             }
             let slot = self.accounts.get_mut(place).expect("account state");
@@ -312,6 +318,9 @@ impl Component {
                 }
             }
             Store::Owner => {}
+        }
+        if self.account_has_exchanges(place) {
+            return false;
         }
         *self.names.get_mut(place).expect("removing name") = Name::Free;
         *self.accounts.get_mut(place).expect("removed account") = State::Empty;

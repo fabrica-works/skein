@@ -53,13 +53,13 @@ impl Component {
             Locked::Busy => {
                 self.exchanges.get_mut(id).expect("bound exchange").lock = OwnerLock::Released;
                 self.fail_exchange(env, id, Failure::Busy, up, io);
-                self.collect(id, up);
+                self.collect(env, id, up, io);
             }
             Locked::Held { record } => {
                 let exchange = self.exchanges.get_mut(id).expect("bound exchange");
                 exchange.lock = OwnerLock::Held;
                 if let Stage::Finished = exchange.stage {
-                    self.collect(id, up);
+                    self.collect(env, id, up, io);
                     return;
                 }
                 match self.keepers.get_mut(account).expect("account keeper") {
@@ -91,14 +91,14 @@ impl Component {
                     Stage::Reading => {
                         if let Some(failure) = failure {
                             self.fail_exchange(env, id, failure, up, io);
-                            self.collect(id, up);
+                            self.collect(env, id, up, io);
                         } else {
                             self.read_locked(env, id, record.take(), up, io);
                         }
                         return true;
                     }
                     Stage::Finished => {
-                        self.collect(id, up);
+                        self.collect(env, id, up, io);
                         return true;
                     }
                     Stage::Loading
@@ -133,7 +133,7 @@ impl Component {
         if different && !exchange.signing_in() {
             self.fail_exchange(env, id, Failure::AnotherSubject, up, io);
             *self.accounts.get_mut(account).expect("account state") = State::Empty;
-            self.collect(id, up);
+            self.collect(env, id, up, io);
             return;
         }
         if let Some((candidate, _)) = &mut exchange.lock_candidate {
@@ -143,7 +143,7 @@ impl Component {
             if let Some(record) = record {
                 let Some(next) = record.generation.checked_add(1) else {
                     self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Limit), up, io);
-                    self.collect(id, up);
+                    self.collect(env, id, up, io);
                     return;
                 };
                 candidate.generation = candidate.generation.max(next);
@@ -178,7 +178,7 @@ impl Component {
                             );
                         }
                         exchange.stage = Stage::Finished;
-                        self.collect(id, up);
+                        self.collect(env, id, up, io);
                         return;
                     }
                 }
@@ -190,7 +190,7 @@ impl Component {
                     self.fail_exchange(env, id, Failure::Expired, up, io);
                 }
                 *self.accounts.get_mut(account).expect("account state") = State::Empty;
-                self.collect(id, up);
+                self.collect(env, id, up, io);
                 return;
             }
         }
@@ -214,7 +214,7 @@ impl Component {
             && record.subject.as_ref() != Some(subject)
         {
             self.fail_exchange(env, id, Failure::AnotherSubject, up, io);
-            self.collect(id, up);
+            self.collect(env, id, up, io);
             return;
         }
         let generation = record.generation;
@@ -243,10 +243,7 @@ impl Component {
         }
         let client = oauth::Client::new(env.limits.client).expect("validated client limits");
         let exchange = Exchange::new(account, client, pending_grant);
-        let id = match self.exchanges.insert(exchange) {
-            Ok(id) => id,
-            Err(_) => unreachable!("exchange slot admitted"),
-        };
+        let id = self.insert_exchange(exchange);
         *self.bindings.get_mut(account).expect("account binding") = Some(id);
         if !self.lock_write(env, id, up) {
             self.begin_refresh(env, id);

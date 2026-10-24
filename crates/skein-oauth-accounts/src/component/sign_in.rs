@@ -9,7 +9,6 @@ use crate::exchange::{Exchange, Stage};
 use crate::keeper::Store;
 use crate::listener::Listener;
 use crate::redirect;
-use crate::route::{self, Socket};
 use crate::{Asked, Ends, Event, Failure, Limits, Lower, Refusal};
 use alloc::boxed::Box;
 use skein_lib::{CryptoRng, Env, Queue, Time, Writer};
@@ -99,31 +98,28 @@ impl Component {
         let public = registration.client_secret.is_none();
         if public {
             let mut listeners = 0_u32;
-            for binding in &self.bindings {
-                match binding {
-                    Some(id) => {
-                        let exchange = self.exchanges.get(*id).expect("bound exchange");
-                        let reserved = match exchange.stage {
-                            Stage::Loading => match self.sources.get(exchange.account).expect("account source") {
-                                Source::SignIn { registration, .. } => registration.client_secret.is_none(),
-                                Source::HandedIn => false,
-                            },
-                            Stage::Locking
-                            | Stage::Reading
-                            | Stage::Running
-                            | Stage::Keeping { .. }
-                            | Stage::Forgetting { .. }
-                            | Stage::Finished => false,
-                        };
-                        let listening = match &exchange.listener {
-                            Some(listener) => !listener.settled(),
-                            None => false,
-                        };
-                        if reserved || listening {
-                            listeners = listeners.checked_add(1).expect("bounded listeners");
-                        }
-                    }
-                    None => {}
+            let mut next = self.first_exchange;
+            while let Some(id) = next {
+                let exchange = self.exchanges.get(id).expect("live exchange");
+                next = exchange.next;
+                let reserved = match exchange.stage {
+                    Stage::Loading => match self.sources.get(exchange.account).expect("account source") {
+                        Source::SignIn { registration, .. } => registration.client_secret.is_none(),
+                        Source::HandedIn => false,
+                    },
+                    Stage::Locking
+                    | Stage::Reading
+                    | Stage::Running
+                    | Stage::Keeping { .. }
+                    | Stage::Forgetting { .. }
+                    | Stage::Finished => false,
+                };
+                let listening = match &exchange.listener {
+                    Some(listener) => !listener.settled(),
+                    None => false,
+                };
+                if reserved || listening {
+                    listeners = listeners.checked_add(1).expect("bounded listeners");
                 }
             }
             if listeners >= env.limits.listeners {
@@ -138,13 +134,11 @@ impl Component {
         let client = oauth::Client::new(env.limits.client).expect("validated client");
         let mut exchange = Exchange::new(account, client, false);
         exchange.subject = subject;
+        exchange.sign_in_deadline = Some(env.now.saturating_add(env.limits.client.sign_in_time));
         exchange.sign_in = Some(prepare_sign_in(registration, number(&self.names, account), env, &mut self.crypto));
         exchange.stage = Stage::Loading;
         exchange.purpose = crate::exchange::Purpose::SignIn { waiting: false };
-        let id = match self.exchanges.insert(exchange) {
-            Ok(id) => id,
-            Err(_) => unreachable!("admitted exchange slot"),
-        };
+        let id = self.insert_exchange(exchange);
         *self.bindings.get_mut(account).expect("account binding") = Some(id);
         let must_load = match self.accounts.get(account).expect("account state") {
             State::Empty => match self.keepers.get_mut(account).expect("account keeper") {
@@ -161,7 +155,7 @@ impl Component {
         }
     }
 
-    pub(super) fn begin_sign_in(&mut self, _env: &Env<Limits>, account: u32, io: &mut Queue<Lower>) {
+    pub(super) fn begin_sign_in(&mut self, env: &Env<Limits>, account: u32, io: &mut Queue<Lower>) {
         let registration = match self.sources.get(account).expect("configured source") {
             Source::SignIn { registration, .. } => copy_registration(registration),
             Source::HandedIn => unreachable!("admitted sign-in source"),
@@ -193,20 +187,57 @@ impl Component {
         exchange.stage = Stage::Running;
         exchange.purpose = crate::exchange::Purpose::SignIn { waiting: true };
         if public {
-            let preferred = redirect::port(&registration.redirect_uri).expect("validated public redirect");
             exchange.listener = Some(Listener::new(
                 &registration.redirect_uri,
                 redirect::varying(&registration),
                 exchange.return_location.take(),
             ));
-            io.push(Lower::Listen {
-                owner: route::owner(id, Socket::Listener),
-                addr: skein_io::Addr::Ip(
-                    redirect::listen_address(&registration.redirect_uri, preferred).expect("validated public redirect"),
-                ),
-            });
+            self.listen_waiting(env, io);
         } else {
             start(exchange, None);
+        }
+    }
+
+    pub(super) fn listen_waiting(&mut self, env: &Env<Limits>, io: &mut Queue<Lower>) {
+        if self.lifecycle == super::Lifecycle::Aborting {
+            return;
+        }
+        let mut next = self.first_exchange;
+        while let Some(id) = next {
+            let exchange = self.exchanges.get(id).expect("live exchange");
+            next = exchange.next;
+            let Some(listener) = &exchange.listener else { continue };
+            if listener.sent || listener.settled() || super::due(exchange.next_deadline(), env.now) {
+                continue;
+            }
+            let address = listener.address();
+            let mut busy = false;
+            if listener.fixed() {
+                let mut other = self.first_exchange;
+                while let Some(other_id) = other {
+                    let other_exchange = self.exchanges.get(other_id).expect("live exchange");
+                    other = other_exchange.next;
+                    if let Some(other_listener) = &other_exchange.listener
+                        && other_id != id
+                        && other_listener.sent
+                        && !other_listener.settled()
+                        && other_listener.address() == address
+                    {
+                        busy = true;
+                        break;
+                    }
+                }
+            }
+            if !busy {
+                self.exchanges
+                    .get_mut(id)
+                    .expect("live exchange")
+                    .listener
+                    .as_mut()
+                    .expect("waiting listener")
+                    .listen(id, io);
+                return;
+            }
         }
     }
 

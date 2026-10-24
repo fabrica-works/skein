@@ -66,6 +66,7 @@ fn callback_url(story: Story, redirect: &[u8]) -> Vec<u8> {
         | Story::AnotherSubject
         | Story::RequiredScopes
         | Story::Public
+        | Story::Restart
         | Story::VaryingTaken
         | Story::TwoPorts
         | Story::Confidential

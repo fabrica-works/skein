@@ -154,6 +154,7 @@ pub struct Component {
     sources: List<Source>,
     bindings: List<Option<Id<Exchange>>>,
     exchanges: Slab<Exchange>,
+    first_exchange: Option<Id<Exchange>>,
     lifecycle: Lifecycle,
     crypto: CryptoRng,
     keepers: List<Store>,
@@ -201,6 +202,7 @@ impl Component {
             sources,
             bindings,
             exchanges: Slab::with_capacity(limits.exchanges),
+            first_exchange: None,
             lifecycle: Lifecycle::Live,
             crypto,
             keepers,
@@ -254,7 +256,7 @@ impl Component {
                 Some(Some(id)) => {
                     let id = *id;
                     self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Cancelled), up, io);
-                    self.collect(id, up);
+                    self.collect(env, id, up, io);
                 }
                 Some(None) | None => {}
             },
@@ -540,7 +542,7 @@ impl Component {
                         None => {}
                     },
                 }
-                self.collect(id, up);
+                self.collect(env, id, up, io);
             }
             None => {}
         }
@@ -558,33 +560,28 @@ impl Component {
         if self.removal_progress(env, up, io) {
             return;
         }
-        for account in 0..self.bindings.len() {
-            match *self.bindings.get(account).expect("account binding") {
-                Some(id) => {
-                    let exchange = self.exchanges.get_mut(id).expect("bound exchange");
-                    if self.lifecycle == Lifecycle::Aborting && !exchange.aborted {
-                        exchange.aborted = true;
-                        self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Cancelled), up, io);
-                        self.collect(id, up);
-                        return;
-                    }
-                    if let OwnerLock::Waiting { until } = exchange.lock
-                        && env.now >= until
-                    {
-                        exchange.lock = OwnerLock::Released;
-                        self.fail_exchange(env, id, Failure::Busy, up, io);
-                        self.collect(id, up);
-                        return;
-                    }
-                    if exchange.has_work()
-                        || (!web_closing(exchange.web.as_ref()) && due(exchange.client.next_deadline(), env.now))
-                    {
-                        self.progress(env, id, up, io);
-                        self.collect(id, up);
-                        return;
-                    }
-                }
-                None => {}
+        let mut next = self.first_exchange;
+        while let Some(id) = next {
+            let exchange = self.exchanges.get_mut(id).expect("live exchange");
+            next = exchange.next;
+            if self.lifecycle == Lifecycle::Aborting && !exchange.aborted {
+                exchange.aborted = true;
+                self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Cancelled), up, io);
+                self.collect(env, id, up, io);
+                return;
+            }
+            if let OwnerLock::Waiting { until } = exchange.lock
+                && env.now >= until
+            {
+                exchange.lock = OwnerLock::Released;
+                self.fail_exchange(env, id, Failure::Busy, up, io);
+                self.collect(env, id, up, io);
+                return;
+            }
+            if exchange.has_work() || (!web_closing(exchange.web.as_ref()) && due(exchange.next_deadline(), env.now)) {
+                self.progress(env, id, up, io);
+                self.collect(env, id, up, io);
+                return;
             }
         }
         if self.private_progress(env, up, io, files) {
@@ -658,7 +655,11 @@ impl Component {
             }
             return;
         }
-        if exchange.waiting() && exchange.above.is_empty() && due(exchange.client.next_deadline(), env.now) {
+        if exchange.waiting() && exchange.above.is_empty() && due(exchange.next_deadline(), env.now) {
+            if exchange.sign_in.is_some() {
+                self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::TimedOut), up, io);
+                return;
+            }
             exchange.client.step(oauth::Event::Tick { now: env.now }, &mut exchange.above);
             exchange.received();
             if let Some(listener) = &mut exchange.listener {
@@ -723,10 +724,7 @@ impl Component {
             }
             None => {}
         }
-        if exchange.above.is_empty()
-            && !web_closing(exchange.web.as_ref())
-            && due(exchange.client.next_deadline(), env.now)
-        {
+        if exchange.above.is_empty() && !web_closing(exchange.web.as_ref()) && due(exchange.next_deadline(), env.now) {
             exchange.client.step(oauth::Event::Tick { now: env.now }, &mut exchange.above);
             if exchange.client.is_done() {
                 match &mut exchange.web {
@@ -894,7 +892,7 @@ impl Component {
             Some(listener) => listener.close(env, false, io),
             None => {}
         }
-        self.collect(id, up);
+        self.collect(env, id, up, io);
     }
 
     fn end_exchange(&mut self, env: &Env<Limits>, account: u32, io: &mut Queue<Lower>) {
@@ -1013,7 +1011,57 @@ impl Component {
         }
     }
 
-    fn collect(&mut self, id: Id<Exchange>, up: &mut Queue<Event>) {
+    // The live exchange chain includes detached sockets; retired slots stay in the slab
+    // until reclaim (programming-model.md, 5.2; oauth.md, 6.5).
+    fn insert_exchange(&mut self, exchange: Exchange) -> Id<Exchange> {
+        let id = match self.exchanges.insert(exchange) {
+            Ok(id) => id,
+            Err(_) => unreachable!("admitted exchange slot"),
+        };
+        let mut next = self.first_exchange;
+        while let Some(previous) = next {
+            let exchange = self.exchanges.get_mut(previous).expect("live exchange");
+            if exchange.next.is_none() {
+                exchange.next = Some(id);
+                return id;
+            }
+            next = exchange.next;
+        }
+        self.first_exchange = Some(id);
+        id
+    }
+
+    fn retire_exchange(&mut self, id: Id<Exchange>) {
+        let following = self.exchanges.get(id).expect("live exchange").next;
+        if self.first_exchange == Some(id) {
+            self.first_exchange = following;
+        } else {
+            let mut next = self.first_exchange;
+            while let Some(previous) = next {
+                let exchange = self.exchanges.get_mut(previous).expect("live exchange");
+                if exchange.next == Some(id) {
+                    exchange.next = following;
+                    break;
+                }
+                next = exchange.next;
+            }
+        }
+        self.exchanges.retire(id);
+    }
+
+    fn account_has_exchanges(&self, account: u32) -> bool {
+        let mut next = self.first_exchange;
+        while let Some(id) = next {
+            let exchange = self.exchanges.get(id).expect("live exchange");
+            if exchange.account == account {
+                return true;
+            }
+            next = exchange.next;
+        }
+        false
+    }
+
+    fn collect(&mut self, env: &Env<Limits>, id: Id<Exchange>, up: &mut Queue<Event>, io: &mut Queue<Lower>) {
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         match &exchange.web {
             Some(web)
@@ -1030,9 +1078,22 @@ impl Component {
                 exchange.lock = OwnerLock::Released;
                 up.push(Event::Unlock { account: number(&self.names, exchange.account) });
             }
+            if self.bindings.get(exchange.account) == Some(&Some(id)) {
+                *self.bindings.get_mut(exchange.account).expect("account binding") = None;
+            }
+            self.retire_exchange(id);
+        } else if exchange.signing_in()
+            && !exchange.file_active
+            && exchange.lock == OwnerLock::Released
+            && let Stage::Finished = exchange.stage
+            && self.bindings.get(exchange.account) == Some(&Some(id))
+        {
+            // A finished sign-in's sockets settle on their own; a pending keeper reply or a
+            // lock keeps the account, since `Unlock` names only the account (oauth.md, 6.4
+            // and 6.5).
             *self.bindings.get_mut(exchange.account).expect("account binding") = None;
-            self.exchanges.retire(id);
         }
+        self.listen_waiting(env, io);
         self.settled(up);
     }
 
@@ -1044,10 +1105,8 @@ impl Component {
         if self.removing() {
             return;
         }
-        for binding in &self.bindings {
-            if binding.is_some() {
-                return;
-            }
+        if self.first_exchange.is_some() {
+            return;
         }
         for keeper in &self.keepers {
             match keeper {
@@ -1093,17 +1152,12 @@ impl Component {
                 Store::Owner => {}
             }
         }
-        for binding in &self.bindings {
-            match binding {
-                Some(id) => match self.exchanges.get(*id) {
-                    Some(exchange)
-                        if exchange.has_work() || (self.lifecycle == Lifecycle::Aborting && !exchange.aborted) =>
-                    {
-                        return true;
-                    }
-                    Some(_) | None => {}
-                },
-                None => {}
+        let mut next = self.first_exchange;
+        while let Some(id) = next {
+            let exchange = self.exchanges.get(id).expect("live exchange");
+            next = exchange.next;
+            if exchange.has_work() || (self.lifecycle == Lifecycle::Aborting && !exchange.aborted) {
+                return true;
             }
         }
         if self.lifecycle == Lifecycle::Live && !self.exchanges.is_full() {
@@ -1133,17 +1187,21 @@ impl Component {
                 Store::Owner => {}
             }
         }
+        let mut next = self.first_exchange;
+        while let Some(id) = next {
+            let exchange = self.exchanges.get(id).expect("live exchange");
+            next = exchange.next;
+            if let OwnerLock::Waiting { until } = exchange.lock {
+                earlier(&mut earliest, until);
+            }
+            if !web_closing(exchange.web.as_ref())
+                && let Some(at) = exchange.next_deadline()
+            {
+                earlier(&mut earliest, at);
+            }
+        }
         for account in 0..self.accounts.len() {
-            if let Some(id) = *self.bindings.get(account).expect("account binding") {
-                let exchange = self.exchanges.get(id).expect("bound exchange");
-                if let OwnerLock::Waiting { until } = exchange.lock {
-                    earlier(&mut earliest, until);
-                }
-                if !web_closing(exchange.web.as_ref())
-                    && let Some(next) = exchange.client.next_deadline()
-                {
-                    earlier(&mut earliest, next);
-                }
+            if self.bindings.get(account) != Some(&None) {
                 continue;
             }
             if self.lifecycle != Lifecycle::Live || !self.live(account) {

@@ -806,8 +806,10 @@ sign-in at once. The load goes on for the account.
   than a sign-in failed before its `visit`. A sign-in that has ended leaves
   its account at its terminal, while its listener still settles: the
   account admits its next sign-in at once, and that sign-in's listener
-  binds once the last listener on the port has settled. A listener that
-  still settles counts toward the listeners limit (6.7).
+  binds once the last listener on the port has settled; a sign-in that
+  still holds the owner's lock (6.4) keeps its account until its sockets
+  have settled and it unlocks, since `unlock` names only the account. A
+  listener that still settles counts toward the listeners limit (6.7).
 - **A confidential client's redirect** reaches the owner's web server. The
   owner hands it in (`redirected`), and the component checks it the same way.
 - **The component never opens a browser:** the owner shows `visit`.

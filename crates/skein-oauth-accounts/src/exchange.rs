@@ -42,6 +42,8 @@ pub(crate) enum OwnerLock {
 
 pub(crate) struct Exchange {
     pub(crate) account: u32,
+    pub(crate) next: Option<skein_lib::Id<Exchange>>,
+    pub(crate) sign_in_deadline: Option<Time>,
     pub(crate) client: oauth::Client,
     pub(crate) above: Queue<oauth::Request>,
     pub(crate) web: Option<Web>,
@@ -89,6 +91,8 @@ impl Exchange {
     pub(crate) fn new(account: u32, client: oauth::Client, pending_grant: bool) -> Exchange {
         Exchange {
             account,
+            next: None,
+            sign_in_deadline: None,
             client,
             above: Queue::with_capacity(oauth::MAX_OUT),
             web: None,
@@ -106,6 +110,10 @@ impl Exchange {
             lock: OwnerLock::Released,
             lock_candidate: None,
         }
+    }
+
+    pub(crate) fn next_deadline(&self) -> Option<Time> {
+        if self.waiting() && self.sign_in.is_some() { self.sign_in_deadline } else { self.client.next_deadline() }
     }
 
     pub(crate) fn has_work(&self) -> bool {

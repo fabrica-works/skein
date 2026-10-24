@@ -92,6 +92,12 @@ fn signing_in() -> Owner {
     signing_in_as(None)
 }
 fn signing_in_as(subject: Option<Box<[u8]>>) -> Owner {
+    let (mut owner, identity) = locking(subject);
+    owner.socket(LowerEvent::Closed { owner: identity });
+    owner
+}
+// A shared sign-in asking the lock, its token socket still closing.
+fn locking(subject: Option<Box<[u8]>>) -> (Owner, skein_lib::Token) {
     let account = shared_account(|account| {
         if let Account::SignIn { registration, .. } = account {
             registration.client_secret = Some(bytes::copy_of(b"fake secret"));
@@ -103,8 +109,23 @@ fn signing_in_as(subject: Option<Box<[u8]>>) -> Owner {
     assert_event(owner.above.pop(), Event::Taken { account: 0 });
     let identity = owner.sent();
     owner.above = owner.finish_tokens(identity, private::BODY);
+    (owner, identity)
+}
+#[test]
+fn a_finished_sign_in_holding_the_lock_keeps_its_account_until_its_sockets_settle() {
+    // `Unlock` names only the account, so the next exchange waits for it (oauth.md, 6.4).
+    let (mut owner, identity) = locking(None);
+    assert_event(owner.above.pop(), Event::Lock { account: ACCOUNT });
+    answer(&mut owner, shared_record(READ_GENERATION));
+    drop(owner.above.pop());
+    owner.ask(Request::Kept { account: ACCOUNT, generation: KEPT_GENERATION, keeping: Keeping::Kept });
+    assert_eq!(seen(&mut owner.above), Seen::SignedIn(KEPT_GENERATION));
+    assert!(owner.above.is_empty(), "the lock is held while the token socket settles");
+    owner.ask(Request::SignIn { account: ACCOUNT, subject: None });
+    assert_refused(owner.above.pop(), ACCOUNT, Asked::SignIn, Refusal::Busy);
     owner.socket(LowerEvent::Closed { owner: identity });
-    owner
+    assert_eq!(seen(&mut owner.above), Seen::Unlock);
+    assert!(owner.above.is_empty());
 }
 fn lending() -> Owner {
     let account = shared_account(|account| {

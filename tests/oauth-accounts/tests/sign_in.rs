@@ -359,3 +359,9 @@ fn a_paste_completes_a_public_sign_in_through_close() {
     use sign_in::Fact::{Closed, Keep, SignedIn, Taken, Visit};
     assert_paste_story(Story::PasteClose, false, &[Visit, Taken, Keep(1), SignedIn(1), Closed]);
 }
+
+#[test]
+fn a_sign_in_started_again_after_cancel_gets_its_fixed_port() {
+    drop(sign_in::run(97, Story::Restart, false, false, Memory::Checked));
+    drop(sign_in::protocol(97, Story::Restart));
+}

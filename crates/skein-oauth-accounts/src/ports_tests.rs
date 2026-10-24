@@ -1,6 +1,7 @@
 //! Bound redirect ports, client fields and request-ordered seeded draws.
 use super::private::Owner;
 use super::*;
+use skein_lib::Token;
 
 const ZERO: &[u8] = b"http://127.0.0.1:0/callback";
 const PREFERRED: &[u8] = b"http://127.0.0.1:31234/callback";
@@ -290,4 +291,266 @@ fn signing_in_again_carries_the_held_records_hints() {
         subject: Owner::query(&url, b"login_hint") == Some(b"person"),
     };
     assert_eq!(seen, Hints { issued: true, id_token: true, subject: true });
+}
+
+// Two listener reservations each need a listener and callback socket (oauth.md, 6.7).
+const RESTART_LISTENERS: u32 = 2;
+const RESTART_SOCKETS: u32 = 6;
+const FIXED_PORT: u16 = 31234;
+const OLD_SOCKET: Token = Token::new(10);
+const NEW_SOCKET: Token = Token::new(11);
+fn restart_owner(accounts: u32, varying_port: bool, listeners: u32) -> Owner {
+    let mut profile = limits();
+    profile.listeners = listeners;
+    profile.io.sockets = RESTART_SOCKETS;
+    let mut configured = List::with_capacity(accounts);
+    for number in 0..accounts {
+        let account = refresh_account(number, ADDRESS);
+        configured.push(if varying_port { varying(account, PREFERRED) } else { account }).ok().expect("account room");
+    }
+    Owner::configured(configured.into_boxed(), &profile)
+}
+fn first_visit(owner: &mut Owner) -> Token {
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    let identity = owner.listen();
+    owner.listening(identity, FIXED_PORT);
+    drop(owner.visit());
+    identity
+}
+fn cancelled(owner: &mut Owner, account: u32) {
+    assert_eq!(
+        failure_of(owner.above.pop()),
+        Some(Failed { account, ends: Ends::SignIn, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) })
+    );
+}
+fn cancel_first(owner: &mut Owner) {
+    owner.ask(Request::Cancel { account: 0 });
+}
+fn take_abort(owner: &mut Owner) {
+    let Some(Lower::Abort { entity }) = owner.io.pop() else { panic!("old listener abort") };
+    assert_eq!(entity, OLD_SOCKET);
+}
+fn restart_waiting() -> (Owner, Token) {
+    let mut owner = restart_owner(1, false, RESTART_LISTENERS);
+    let old = first_visit(&mut owner);
+    cancel_first(&mut owner);
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    cancelled(&mut owner, 0);
+    take_abort(&mut owner);
+    (owner, old)
+}
+
+#[test]
+fn a_sign_in_started_again_in_the_step_of_its_cancel_waits_for_the_port_then_visits() {
+    let (mut owner, old) = restart_waiting();
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+    assert!(!owner.component.has_work());
+    owner.socket(LowerEvent::Closed { owner: old });
+    let (new, port) = owner.take_listen();
+    assert_eq!(port, FIXED_PORT);
+    assert_ne!(new, old);
+    assert!(owner.above.is_empty());
+    owner.socket(LowerEvent::Listening {
+        owner: new,
+        listener: NEW_SOCKET,
+        addr: skein_io::Addr::Ip(([127, 0, 0, 1], FIXED_PORT).into()),
+    });
+    let visit = owner.visit();
+    let state = Owner::query(&visit, b"state").expect("new sign-in state");
+    let parts = [b"http://localhost:31234/callback?state=".as_slice(), state, b"&code=fake-code"];
+    let mut length = 0_usize;
+    for part in parts {
+        length = length.checked_add(part.len()).expect("fixture length");
+    }
+    let mut uri = skein_lib::Writer::new(length);
+    for part in parts {
+        uri.put(part).expect("fixture room");
+    }
+    owner.ask(Request::Redirected { account: 0, uri: uri.finish() });
+    assert_event(owner.above.pop(), Event::Taken { account: 0 });
+}
+
+#[test]
+fn two_accounts_on_one_fixed_port_listen_one_at_a_time() {
+    let mut owner = restart_owner(2, false, RESTART_LISTENERS);
+    let old = first_visit(&mut owner);
+    owner.ask(Request::SignIn { account: 1, subject: None });
+    assert!(owner.io.is_empty() && owner.above.is_empty());
+    cancel_first(&mut owner);
+    cancelled(&mut owner, 0);
+    take_abort(&mut owner);
+    assert!(owner.io.is_empty());
+    owner.socket(LowerEvent::Closed { owner: old });
+    let (new, port) = owner.take_listen();
+    assert_eq!(port, FIXED_PORT);
+    owner.listening(new, FIXED_PORT);
+    drop(owner.visit());
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+}
+
+#[test]
+fn a_restart_with_one_listener_allowed_is_full_until_the_old_listener_settles() {
+    let mut owner = restart_owner(1, false, 1);
+    let old = first_visit(&mut owner);
+    cancel_first(&mut owner);
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    cancelled(&mut owner, 0);
+    assert_refused(owner.above.pop(), 0, Asked::SignIn, Refusal::Full { bound: 1 });
+    take_abort(&mut owner);
+    owner.socket(LowerEvent::Closed { owner: old });
+    owner.component.reclaim();
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    assert_eq!(owner.take_listen().1, FIXED_PORT);
+}
+
+#[test]
+fn a_varying_port_never_waits_for_another_listener() {
+    let mut owner = restart_owner(1, true, RESTART_LISTENERS);
+    let _old = first_visit(&mut owner);
+    cancel_first(&mut owner);
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    cancelled(&mut owner, 0);
+    take_abort(&mut owner);
+    assert_eq!(owner.take_listen().1, FIXED_PORT);
+}
+
+#[test]
+fn close_and_abort_wait_for_a_detached_exchange_before_closed() {
+    for abort in [false, true] {
+        let mut owner = restart_owner(1, false, RESTART_LISTENERS);
+        let old = first_visit(&mut owner);
+        cancel_first(&mut owner);
+        cancelled(&mut owner, 0);
+        take_abort(&mut owner);
+        owner.ask(Request::Close);
+        if abort {
+            owner.ask(Request::Abort);
+            owner.fire();
+        }
+        assert!(owner.above.is_empty());
+        assert!(!owner.component.has_work());
+        assert_eq!(owner.component.next_deadline(), None);
+        owner.socket(LowerEvent::Closed { owner: old });
+        assert_event(owner.above.pop(), Event::Closed);
+        assert!(owner.above.is_empty() && owner.io.is_empty());
+    }
+}
+
+#[test]
+fn a_removal_waits_for_its_detached_exchange_before_removed() {
+    let mut owner = restart_owner(1, false, RESTART_LISTENERS);
+    let old = first_visit(&mut owner);
+    cancel_first(&mut owner);
+    cancelled(&mut owner, 0);
+    take_abort(&mut owner);
+    owner.ask(Request::Remove { account: 0 });
+    owner.fire();
+    assert!(owner.above.is_empty());
+    assert!(!owner.component.has_work());
+    owner.socket(LowerEvent::Closed { owner: old });
+    owner.fire();
+    assert_event(owner.above.pop(), Event::Removed { account: 0 });
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+}
+
+#[test]
+fn a_waiting_listen_ends_on_cancel_and_on_its_deadline_without_a_socket() {
+    for timeout in [false, true] {
+        let (mut owner, old) = restart_waiting();
+        if timeout {
+            owner.env.now = Time::ZERO.saturating_add(owner.env.limits.client.sign_in_time);
+            assert_eq!(owner.component.next_deadline(), Some(owner.env.now));
+            owner.fire();
+            assert_eq!(
+                failure_of(owner.above.pop()),
+                Some(Failed {
+                    account: 0,
+                    ends: Ends::SignIn,
+                    failure: Failure::Exchange(skein_oauth::Failure::TimedOut)
+                })
+            );
+        } else {
+            owner.ask(Request::Cancel { account: 0 });
+            cancelled(&mut owner, 0);
+        }
+        assert!(owner.io.is_empty());
+        assert!(!owner.component.has_work());
+        assert_eq!(owner.component.next_deadline(), None);
+        owner.ask(Request::Close);
+        owner.socket(LowerEvent::Closed { owner: old });
+        assert_event(owner.above.pop(), Event::Closed);
+        assert!(owner.above.is_empty() && owner.io.is_empty());
+    }
+}
+
+#[test]
+fn a_fixed_port_waits_until_the_old_listeners_callback_has_settled_too() {
+    let mut owner = restart_owner(1, false, RESTART_LISTENERS);
+    let old = first_visit(&mut owner);
+    let callback = owner.callback(old);
+    cancel_first(&mut owner);
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    cancelled(&mut owner, 0);
+    while owner.io.pop().is_some() {}
+    owner.socket(LowerEvent::Closed { owner: old });
+    assert!(owner.io.is_empty());
+    owner.socket(LowerEvent::Closed { owner: callback });
+    assert_eq!(owner.take_listen().1, FIXED_PORT);
+}
+
+#[test]
+fn waiting_for_a_fixed_port_does_not_extend_the_sign_ins_deadline() {
+    let (mut owner, old) = restart_waiting();
+    let deadline = Time::ZERO.saturating_add(owner.env.limits.client.sign_in_time);
+    owner.env.now = Time::ZERO.saturating_add(Duration::from_secs(1));
+    owner.socket(LowerEvent::Closed { owner: old });
+    let new = owner.listen();
+    owner.listening(new, FIXED_PORT);
+    drop(owner.visit());
+    assert_eq!(owner.component.next_deadline(), Some(deadline));
+}
+
+#[test]
+fn a_close_drains_a_waiting_listen_and_abort_cancels_it_without_a_socket() {
+    let (mut owner, old) = restart_waiting();
+    owner.ask(Request::Close);
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+    owner.ask(Request::Abort);
+    while owner.component.has_work() {
+        owner.fire();
+    }
+    cancelled(&mut owner, 0);
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+    owner.socket(LowerEvent::Closed { owner: old });
+    assert_event(owner.above.pop(), Event::Closed);
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+}
+
+#[test]
+fn removing_a_waiting_listen_cancels_it_and_waits_for_its_detached_listener() {
+    let (mut owner, old) = restart_waiting();
+    owner.ask(Request::Remove { account: 0 });
+    cancelled(&mut owner, 0);
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+    assert!(!owner.component.has_work());
+    owner.socket(LowerEvent::Closed { owner: old });
+    owner.fire();
+    assert_event(owner.above.pop(), Event::Removed { account: 0 });
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+}
+
+#[test]
+fn detached_exchanges_still_count_toward_the_exchanges_limit() {
+    let mut profile = limits();
+    profile.listeners = RESTART_LISTENERS;
+    profile.exchanges = 1;
+    profile.io.sockets = RESTART_SOCKETS;
+    let mut owner = Owner::configured([refresh_account(0, ADDRESS)], &profile);
+    let _old = first_visit(&mut owner);
+    cancel_first(&mut owner);
+    owner.ask(Request::SignIn { account: 0, subject: None });
+    cancelled(&mut owner, 0);
+    assert_refused(owner.above.pop(), 0, Asked::SignIn, Refusal::Full { bound: 1 });
+    take_abort(&mut owner);
+    assert!(owner.above.is_empty() && owner.io.is_empty());
 }

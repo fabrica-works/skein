@@ -53,6 +53,7 @@ pub(crate) struct Listener {
     pub(crate) return_location: Option<Box<[u8]>>,
     pub(crate) registered: Box<[u8]>,
     binding: Binding,
+    pub(crate) sent: bool,
     socket: Option<Token>,
     close_sent: bool,
     phase: Phase,
@@ -85,6 +86,7 @@ impl Listener {
             } else {
                 Binding::Preferred
             },
+            sent: false,
             socket: None,
             close_sent: false,
             phase: Phase::Listening,
@@ -92,6 +94,23 @@ impl Listener {
             read: None,
             failure: None,
         }
+    }
+
+    pub(crate) fn address(&self) -> core::net::SocketAddr {
+        redirect::listen_address(&self.registered, redirect::port(&self.registered).expect("public redirect"))
+            .expect("public redirect")
+    }
+
+    pub(crate) fn fixed(&self) -> bool {
+        self.binding == Binding::Fixed
+    }
+
+    pub(crate) fn listen(&mut self, id: Id<Exchange>, io: &mut Queue<Request>) {
+        self.sent = true;
+        io.push(Request::Listen {
+            owner: route::owner(id, Socket::Listener),
+            addr: skein_io::Addr::Ip(self.address()),
+        });
     }
 
     pub(crate) fn bound_port(&self) -> Option<u16> {
@@ -237,6 +256,9 @@ impl Listener {
     }
 
     pub(crate) fn close(&mut self, env: &Env<Limits>, abort: bool, io: &mut Queue<Request>) {
+        if !self.sent {
+            self.phase = Phase::Closed;
+        }
         match self.phase {
             Phase::Listening | Phase::Received => self.phase = if abort { Phase::Aborting } else { Phase::Closing },
             Phase::Closing if abort => {
