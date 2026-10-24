@@ -156,6 +156,40 @@ fn loopback_calls_and_deliveries_leave_frozen_observations() {
 }
 
 #[test]
+fn a_peer_keeping_connections_and_deliveries_freezes_no_heads_or_calls() {
+    let mut every = World::delivery(fixtures::SEED);
+    every.bind_receiver(false);
+    let expected_response = every.create_issue_and_settle();
+    assert_eq!(every.domain_calls(), fixtures::WRITE_AND_READBACK);
+
+    let mut world = World::delivery(fixtures::SEED);
+    let bound = world.peer.worst_case();
+    world.peer = world.peer.keeping(forge::Kept { connections: true, deliveries: true, ..forge::Kept::NONE });
+    assert_eq!(world.peer.worst_case(), bound);
+    world.bind_receiver(false);
+    let response = world.create_issue_and_settle();
+    assert_eq!(response, expected_response);
+    assert_eq!(world.forge.borrow().domain.tally(), every.forge.borrow().domain.tally());
+    assert_eq!(world.received_posts(), fixtures::ONE_POST);
+    assert_eq!(world.delivery_outcomes(), [&forge::Delivery::Written]);
+    assert_eq!(fixtures::record_kinds(&world), ["connection", "delivery"]);
+    assert_eq!(world.peer.worst_case(), bound);
+}
+
+#[test]
+fn keeping_every_kind_reproduces_the_default_frozen_trace() {
+    let mut every = World::delivery(fixtures::SEED);
+    every.peer = every.peer.keeping(forge::Kept::EVERY);
+    every.bind_receiver(false);
+    every.create_issue_and_settle();
+
+    let mut default = World::delivery(fixtures::SEED);
+    default.bind_receiver(false);
+    default.create_issue_and_settle();
+    assert_eq!(every.frozen_trace(), default.frozen_trace());
+}
+
+#[test]
 fn late_deliveries_are_written_once() {
     let mut world = World::late_delivery(fixtures::SEED);
     world.bind_receiver(false);
@@ -195,6 +229,39 @@ fn a_seed_replays_names_replies_observations_and_deliveries() {
     assert_eq!(first.peer.observations(), second.peer.observations());
     assert_eq!(first.wire_posts(), second.wire_posts());
     assert_eq!(first.frozen_trace(), second.frozen_trace());
+}
+
+#[test]
+fn connection_records_fill_a_cap_that_every_kind_exceeds() {
+    const CONNECTION_OPEN_AND_CLOSE_RECORDS: u32 = 2;
+    for kept in [forge::Kept { connections: true, ..forge::Kept::NONE }, forge::Kept::EVERY] {
+        let mut world = World::new();
+        world.peer = forge::Peer::new(
+            address(),
+            Limits { observations: CONNECTION_OPEN_AND_CLOSE_RECORDS, ..limits() },
+            config(),
+            protocol_limits(),
+            std::rc::Rc::clone(&world.forge),
+            SEED,
+        )
+        .unwrap()
+        .keeping(kept);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fd = world.open();
+            world.send(fd, &request(b"/api/v1/repos/org/repo"));
+            let response = world.response(fd);
+            world.close(fd);
+            world.settle();
+            response
+        }));
+        if kept == forge::Kept::EVERY {
+            skein_fake_peers_tests::assert_panic(result, "frozen record count fits");
+        } else {
+            assert!(result.unwrap().starts_with(b"HTTP/1.1 200"));
+            assert_eq!(world.peer.observations().len(), usize::try_from(CONNECTION_OPEN_AND_CLOSE_RECORDS).unwrap());
+            assert_eq!(fixtures::record_kinds(&world), ["connection"]);
+        }
+    }
 }
 
 #[test]

@@ -62,6 +62,20 @@ pub enum Observation {
     },
 }
 
+/// The kinds of outside records a peer keeps (fake-forge.md, section 5).
+#[expect(clippy::struct_excessive_bools, reason = "each outside record kind is kept independently (fake-forge.md, 5)")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Kept {
+    pub connections: bool,
+    pub heads: bool,
+    pub calls: bool,
+    pub deliveries: bool,
+}
+impl Kept {
+    pub const EVERY: Self = Self { connections: true, heads: true, calls: true, deliveries: true };
+    pub const NONE: Self = Self { connections: false, heads: false, calls: false, deliveries: false };
+}
+
 /// One best-effort write terminal, independent of the recipient's verdict.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Delivery {
@@ -108,7 +122,7 @@ pub struct Peer {
     next: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
-    recording: bool,
+    kept: Kept,
     bound: u64,
 }
 
@@ -198,9 +212,15 @@ impl Peer {
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
-            recording: true,
+            kept: Kept::EVERY,
             bound,
         })
+    }
+    /// Keeps only the named kinds of outside records. Call on a fresh peer before its first pass.
+    #[must_use]
+    pub fn keeping(mut self, kept: Kept) -> Self {
+        self.kept = kept;
+        self
     }
     /// Keeps no outside records. Call on a fresh peer before its first pass.
     #[must_use]
@@ -214,7 +234,7 @@ impl Peer {
         self.face.limits.observation_bytes = 0;
         self.observations = Vec::new();
         self.observed_bytes = 0;
-        self.recording = false;
+        self.kept = Kept::NONE;
         self
     }
     #[must_use]
@@ -345,7 +365,9 @@ impl Peer {
                 );
                 self.capture(&mut connection);
                 self.connections.push(connection);
-                self.observe(Observation::Connection { connection: owner, open: true }, 0);
+                if self.kept.connections {
+                    self.observe(Observation::Connection { connection: owner, open: true }, 0);
+                }
             }
             io::Event::Stream { owner, up } => {
                 if let Some(connection) = self.connections.iter_mut().find(|connection| connection.owner == owner) {
@@ -386,7 +408,9 @@ impl Peer {
                 &mut connection.below,
             );
             self.capture(&mut connection);
-            self.observe(Observation::Connection { connection: owner, open: false }, 0);
+            if self.kept.connections {
+                self.observe(Observation::Connection { connection: owner, open: false }, 0);
+            }
         }
     }
 
@@ -400,7 +424,7 @@ impl Peer {
             local,
             connection,
             user,
-            snapshot: self.recording.then(|| (repository.clone(), op.clone())),
+            snapshot: self.kept.calls.then(|| (repository.clone(), op.clone())),
         });
         let Forge { domain, pending, .. } = forge;
         let event = domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op };

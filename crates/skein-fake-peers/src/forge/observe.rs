@@ -7,9 +7,6 @@ use std::mem::size_of_val;
 
 impl Peer {
     pub(super) fn observe(&mut self, record: Observation, bytes: u64) {
-        if !self.recording {
-            return;
-        }
         self.reserve(bytes);
         self.observed_bytes = self.observed_bytes.checked_add(bytes).expect("bounded frozen bytes");
         self.observations.push(record);
@@ -28,7 +25,7 @@ impl Peer {
     }
     pub(super) fn capture(&mut self, connection: &mut Connection) {
         if let Some(call) = connection.server.take_head() {
-            if self.recording {
+            if self.kept.heads {
                 let bytes = sum(&[call.target.heap(), call.headers.heap()]).expect("bounded HTTP head");
                 self.observe(Observation::Head { connection: connection.owner, call }, bytes);
             }

@@ -149,7 +149,7 @@ impl Peer {
         }
     }
     fn delivery_observation(&mut self, post: Option<Post>, outcome: Delivery) {
-        if !self.recording {
+        if !self.kept.deliveries {
             return;
         }
         let bytes = post.as_ref().map_or(0, |post| {

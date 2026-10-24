@@ -472,7 +472,7 @@ peers host theirs. The real loop hosts the same one.
   closes admission, then each connection once its client has settled. It
   implements `Host` (shell.md, section 12), and a checked `worst_case` sums
   the face, the protocol layer, the shared forge, the connections and the
-  observations. It records connections, request heads, calls with their
+  observations. By default it records connections, request heads, calls with their
   terminals, and deliveries with their outcomes: two records for each
   connection (its opening and its close), two for each call (its head and
   its terminal) and one for each delivery. Nothing drains them, and none
@@ -490,6 +490,12 @@ peers host theirs. The real loop hosts the same one.
   still means a story that records nothing, and fails at its first
   record. The LLM and OAuth peers have the same mode (fake-llm.md,
   section 3).
+- **A story keeps what it reads.** `keeping(kept)`, on a fresh peer before
+  its first pass, names the kinds it keeps (connections, heads, calls,
+  deliveries); the others are never copied. The caps still bound what is
+  kept and fail by name past it. A world whose referee reads only
+  deliveries keeps those and the connections, so its records grow with
+  the story's events, not with its clients' polls over wall time.
 - **The owner may seed the setup's accounts.** `setup_mut()` lends the
   protocol layer's setup store (section 4), as `Service::setup_mut`
   does, so that an owner makes, before the peer serves, the site
