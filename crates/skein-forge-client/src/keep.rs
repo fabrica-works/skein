@@ -36,6 +36,9 @@ struct Live {
     writer: bool,
     presence: Presence,
     pushed_by: Option<(Commit, u64)>,
+    // A branch read in flight when this client's own push was reported
+    // answers from before that push, so it is read again.
+    stale: bool,
     hinted: bool,
     state: State,
     interval: Duration,
@@ -191,6 +194,7 @@ fn live(record: LiveRecord, l: &Limits, alarm: u64) -> Live {
         writer: false,
         presence: Presence::Unknown,
         pushed_by: None,
+        stale: false,
         hinted: false,
         state: State::Due(phase, Priority::Keep),
         interval: l.poll,
